@@ -1,19 +1,18 @@
 import * as THREE from 'three';
-
 import Stats from 'three/addons/libs/stats.module.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
-
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
-
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 
 let container, stats, gui, guiStatsEl;
 let camera, controls, scene, renderer, material;
 
 let objGeom = null;
+
 let visNonVg = [];
 let visVg = null;
+let visObj = null;
+
 let ctrlShowVoxels;
 
 // voxel at (ix, iy, iz):
@@ -53,14 +52,13 @@ class VoxelGrid {
 }
 
 const Model = {
-    GEAR: "Helical Gear",
-    DICE_TOWER: "Dice Tower",
+    HELICAL_GEAR: "helical_gear",
+    DICE_TOWER: "dice_tower",
 };
 
 const dicer = {
-    model: Model.GEAR,
-    modelScale: 1,
-    resMm: 1,
+    model: Model.HELICAL_GEAR,
+    resMm: 0.5,
     lineZ: 1,
     lineY: 0,
     showVoxels: false,
@@ -278,63 +276,40 @@ const sliceSurfByPlane = (surfTris, sliceZ) => {
     return segs;
 };
 
+const loadStl = (fname) => {
+    const loader = new STLLoader();
+    loader.load(
+        `models/${fname}.stl`,
+        function (geometry) {
+            objGeom = geometry.getAttribute("position").array;
+    
+            const material = new THREE.MeshPhysicalMaterial({
+                color: 0xb2ffc8,
+                metalness: 0.1,
+                roughness: 0.8,
+                transparent: true,
+                opacity: 0.1,
+            });
 
-const loader = new STLLoader();
-loader.load(
-    'models/Dice Tower.stl',
-    //'models/helical_gear.stl',
-    function (geometry) {
-        objGeom = geometry.getAttribute("position").array;
-
-        const material = new THREE.MeshPhysicalMaterial({
-            color: 0xb2ffc8,
-            metalness: 0.1,
-            roughness: 0.8,
-            transparent: true,
-            opacity: 0.1,
-        });
-
-        const mesh = new THREE.Mesh(geometry, material)
-        scene.add(mesh)
-    },
-    (xhr) => {
-        console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
-    },
-    (error) => {
-        console.log(error)
-    }
-);
+            if (visObj) {
+                scene.remove(visObj);
+                visObj = null;
+            }
+    
+            const mesh = new THREE.Mesh(geometry, material)
+            scene.add(mesh);
+            visObj = mesh;
+        },
+        (xhr) => {
+            console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
+        },
+        (error) => {
+            console.log(error)
+        }
+    );
+};
 
 
-
-//
-
-init();
-initMesh();
-
-//
-
-function clean() {
-
-    const meshes = [];
-
-    scene.traverse(function (object) {
-
-        if (object.isMesh) meshes.push(object);
-
-    });
-
-    for (let i = 0; i < meshes.length; i++) {
-
-        const mesh = meshes[i];
-        mesh.material.dispose();
-        mesh.geometry.dispose();
-
-        scene.remove(mesh);
-
-    }
-
-}
 
 // returns: THREE.Object3D
 const createContourVis = (edges) => {
@@ -400,12 +375,6 @@ const createVgVis = (vg) => {
 };
 
 
-function initMesh() {
-    clean();
-
-}
-
-
 
 function init() {
     const width = window.innerWidth;
@@ -459,9 +428,20 @@ function init() {
     // gui
 
     gui = new GUI();
-    gui.add(dicer, 'model', Model).onChange(initMesh);
-    gui.add(dicer, 'modelScale', [0.01, 0.1, 1, 10, 100]).step(1).onChange(initMesh);
-    gui.add(dicer, "resMm", [1e-3, 1e-2, 1e-1, 1]);
+    gui.add(dicer, 'model', Model).onChange((model) => {
+        // delete vis
+        if (visVg) {
+            scene.remove(visVg);
+        }
+        visVg = null;
+
+        visNonVg.forEach(v => scene.remove(v));
+        visNonVg = [];
+
+        // load new model
+        loadStl(model);
+    });
+    gui.add(dicer, "resMm", [1e-3, 1e-2, 1e-1, 0.25, 0.5, 1]);
     ctrlShowVoxels = gui.add(dicer, "showVoxels").onChange(v => {
         if (visVg) {
             visVg.visible = v;
@@ -478,17 +458,11 @@ function init() {
 
 
     // listeners
-
     window.addEventListener('resize', onWindowResize);
-
     Object.assign(window, { scene });
-
 }
 
-//
-
 function onWindowResize() {
-
     const width = window.innerWidth;
     const height = window.innerHeight;
 
@@ -496,15 +470,13 @@ function onWindowResize() {
     camera.updateProjectionMatrix();
 
     renderer.setSize(width, height);
-
 }
 
 function animate() {
-
     controls.update();
-
     renderer.render(scene, camera);
-
     stats.update();
-
 }
+
+loadStl(dicer.model);
+init();
