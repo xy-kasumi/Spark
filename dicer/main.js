@@ -7,7 +7,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 let container, stats, gui, guiStatsEl;
 let camera, controls, scene, renderer, material;
 
-let objGeom = null;
+let objSurf = null;
 
 let visNonVg = [];
 let visVg = null;
@@ -26,6 +26,30 @@ class VoxelGrid {
         this.numY = numY;
         this.numZ = numZ;
         this.data = new Uint8Array(numX * numY * numZ);
+    }
+
+    clone() {
+        const vg = new VoxelGrid(this.ofs.clone(), this.res, this.numX, this.numY, this.numZ);
+        vg.data.set(this.data);
+        return vg;
+    }
+
+    sub(other) {
+        for (let i = 0; i < this.data.length; i++) {
+            this.data[i] = Math.max(0, this.data[i] - other.data[i]);
+        }
+    }
+
+    add(other) {
+        for (let i = 0; i < this.data.length; i++) {
+            this.data[i] = Math.min(255, this.data[i] + other.data[i]);
+        }
+    }
+
+    multiplyScalar(s) {
+        for (let i = 0; i < this.data.length; i++) {
+            this.data[i] = Math.round(this.data[i] * s);
+        }
     }
 
     set(ix, iy, iz, val) {
@@ -63,26 +87,56 @@ const dicer = {
     lineY: 0,
     showVoxels: false,
     dice: () => {
-        diceAndVisualize(objGeom, dicer.resMm);
+        const blankSurf = convGeomToSurf(generateBlankGeom());
+        diceAndVisualize(blankSurf, objSurf, dicer.resMm);
     },
     diceLine: () => {
-        diceLineAndVisualize(objGeom, dicer.lineY, dicer.lineZ);
+        const sf = convGeomToSurf(generateBlankGeom());
+        diceLineAndVisualize(objSurf, dicer.lineY, dicer.lineZ);
     },
     toolX: 0,
     toolY: 0,
     toolZ: 0,
 };
 
+const convGeomToSurf = (geom) => {
+    if (geom.index === null) {
+        return geom.getAttribute("position").array;
+    } else {
+        const ix = geom.index.array;
+        const pos = geom.getAttribute("position").array;
+
+        const numTris = ix.length / 3;
+        const buf = new Float32Array(numTris * 9);
+        for (let i = 0; i < numTris; i++) {
+            for (let v = 0; v < 3; v++) {
+                const vIx = ix[3 * i + v];
+                buf[9 * i + 3 * v + 0] = pos[3 * vIx + 0];
+                buf[9 * i + 3 * v + 1] = pos[3 * vIx + 1];
+                buf[9 * i + 3 * v + 2] = pos[3 * vIx + 2];
+            }
+        }
+        return buf;
+    }
+};
+
 // surf: tri vertex list
-const diceAndVisualize = (surf, resMm) => {
+const diceAndVisualize = (blankSurf, objSurf, resMm) => {
     // cleanup prev vis
     if (visVg) {
         scene.remove(visVg);
     }
     visVg = null;
 
-    const vg = diceSurf(surf, resMm);
-    visVg = createVgVis(vg);
+    const vgBlank = initVG(blankSurf, resMm);
+    const vgObj = vgBlank.clone();
+
+    diceSurf(blankSurf, vgBlank);
+    diceSurf(objSurf, vgObj);
+    vgBlank.multiplyScalar(0.1);
+    vgBlank.add(vgObj);
+
+    visVg = createVgVis(vgBlank);
     ctrlShowVoxels.setValue(true);
     scene.add(visVg);
 };
@@ -121,7 +175,8 @@ const isectLine2 = (p, q, y) => {
     return p.clone().lerp(q, t);
 };
 
-const diceSurf = (surf, resMm) => {
+
+const initVG = (surf, resMm) => {
     const MARGIN_MM = 1;
 
     // compute AABB
@@ -138,8 +193,10 @@ const diceSurf = (surf, resMm) => {
     aabbMax.addScalar(MARGIN_MM);
     const numV = aabbMax.clone().sub(aabbMin).divideScalar(resMm).ceil();
     console.log("VG size", numV);
-    const vg = new VoxelGrid(aabbMin, resMm, numV.x, numV.y, numV.z);
+    return new VoxelGrid(aabbMin, resMm, numV.x, numV.y, numV.z);
+};
 
+const diceSurf = (surf, vg) => {
     console.log("dicing...");
     for (let iz = 0; iz < vg.numZ; iz++) {
         const sliceZ = vg.ofs.z + (iz + 0.5) * vg.res;
@@ -284,7 +341,7 @@ const loadStl = (fname) => {
     loader.load(
         `models/${fname}.stl`,
         function (geometry) {
-            objGeom = geometry.getAttribute("position").array;
+            objSurf = convGeomToSurf(geometry);
     
             const material = new THREE.MeshPhysicalMaterial({
                 color: 0xb2ffc8,
@@ -362,12 +419,16 @@ const createVgVis = (vg) => {
     for (let iz = 0; iz < vg.numZ; iz++) {
         for (let iy = 0; iy < vg.numY; iy++) {
             for (let ix = 0; ix < vg.numX; ix++) {
-                if (vg.get(ix, iy, iz) === 0) {
+                const v = vg.get(ix, iy, iz);
+                if (v === 0) {
                     continue;
                 }
 
                 const mtx = new THREE.Matrix4();
-                mtx.setPosition(new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res).add(vg.ofs));
+                mtx.compose(
+                    new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res).add(vg.ofs),
+                    new THREE.Quaternion(),
+                    new THREE.Vector3(1, 1, 1).multiplyScalar(v / 255));
                 mesh.setMatrixAt(instanceIx, mtx);
                 instanceIx++;
             }
@@ -375,6 +436,25 @@ const createVgVis = (vg) => {
     }
     console.log(instanceIx, num);
     return mesh;
+};
+
+const generateBlankGeom = () => {
+    const blankRadius = 25;
+    const blankHeight = 50;
+    const geom = new THREE.CylinderGeometry(blankRadius, blankRadius, blankHeight, 64, 1);
+    const transf = new THREE.Matrix4().compose(
+        new THREE.Vector3(0, 0, blankHeight / 2),
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2),
+        new THREE.Vector3(1, 1, 1));
+    geom.applyMatrix4(transf);
+    return geom;
+};
+
+const generateBlank = () => {
+    const blank = new THREE.Mesh(
+        generateBlankGeom(),
+        new THREE.MeshLambertMaterial({color: "blue", wireframe: true}));
+    return blank;
 };
 
 const generateTool = () => {
@@ -446,6 +526,9 @@ function init() {
     // tool
     const tool = generateTool();
     scene.add(tool);
+
+    const blank = generateBlank();
+    scene.add(blank);
 
     // controls
 
