@@ -68,6 +68,9 @@ const dicer = {
     diceLine: () => {
         diceLineAndVisualize(objGeom, dicer.lineY, dicer.lineZ);
     },
+    toolX: 0,
+    toolY: 0,
+    toolZ: 0,
 };
 
 // surf: tri vertex list
@@ -374,6 +377,26 @@ const createVgVis = (vg) => {
     return mesh;
 };
 
+const generateTool = () => {
+    // 25G needle
+    const needleExtRadius = 0.51 / 2;
+    const needleLength = 25;
+    const wireRadius = 0.25 / 2;
+    const wireExtrusion = wireRadius * 2;
+
+    const needle = new THREE.Mesh(
+        new THREE.CylinderGeometry(needleExtRadius, needleExtRadius, needleLength, 32, 1),
+        new THREE.MeshPhysicalMaterial({color: 0xf0f0f0, metalness: 0.9, roughness: 0.3}));
+    needle.position.y = needleLength / 2;
+
+    const wire = new THREE.Mesh(
+        new THREE.CylinderGeometry(wireRadius, wireRadius, wireExtrusion, 16, 1),
+        new THREE.MeshPhysicalMaterial({color: "red", metalness: 0.9, roughness: 0.7}));
+    needle.add(wire);
+    wire.position.y = needleLength / 2 + wireExtrusion / 2;
+
+    return needle;
+};
 
 
 function init() {
@@ -405,8 +428,12 @@ function init() {
     const light = new THREE.AmbientLight(0x404040); // soft white light
     scene.add(light);
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(0, 0, 1);
     scene.add(directionalLight);
+
+    const hemiLight = new THREE.HemisphereLight( 0xffffbb, 0x080820, 1 );
+    scene.add(hemiLight);
 
     const gridHelper = new THREE.GridHelper(100, 10);
     scene.add(gridHelper);
@@ -415,6 +442,10 @@ function init() {
     const axesHelper = new THREE.AxesHelper(8);
     scene.add(axesHelper);
     axesHelper.position.set(-49, -49, 0);
+
+    // tool
+    const tool = generateTool();
+    scene.add(tool);
 
     // controls
 
@@ -452,6 +483,10 @@ function init() {
     gui.add(dicer, "lineZ", -10, 50).step(0.1);
     gui.add(dicer, "lineY", -50, 50).step(0.1);
     gui.add(dicer, "diceLine");
+
+    gui.add(dicer, "toolX", -50, 50).step(0.1).onChange(v => tool.position.x = v);
+    gui.add(dicer, "toolY", -50, 50).step(0.1).onChange(v => tool.position.y = v);
+    gui.add(dicer, "toolZ", 0, 100).step(0.1).onChange(v => tool.position.z = v);
 
     guiStatsEl = document.createElement('div');
     guiStatsEl.classList.add('gui-stats');
