@@ -14,7 +14,41 @@ let camera, controls, scene, renderer, material;
 let objGeom = null;
 let vis = [];
 
-// gui
+// voxel at (ix, iy, iz):
+// * occupies volume: [ofs + i * res, ofs + (i + 1) * res)
+// * has center: ofs + (i + 0.5) * res
+class VoxelGrid {
+    constructor(ofs, res, numX, numY, numZ) {
+        this.ofs = ofs;
+        this.res = res;
+        this.numX = numX;
+        this.numY = numY;
+        this.numZ = numZ;
+        this.data = new Uint8Array(numX * numY * numZ);
+    }
+
+    set(ix, iy, iz, val) {
+        this.data[ix + iy * this.numX + iz * this.numX * this.numY] = val;
+    }
+
+    get(ix, iy, iz) {
+        return this.data[ix + iy * this.numX + iz * this.numX * this.numY];
+    }
+
+    count() {
+        let cnt = 0;
+        for (let i = 0; i < this.data.length; i++) {
+            if (this.data[i] !== 0) {
+                cnt++;
+            }
+        }
+        return cnt;
+    }
+
+    volume() {
+        return this.count() * this.res * this.res * this.res;
+    }
+}
 
 const Model = {
     GEAR: "Helical Gear",
@@ -24,27 +58,83 @@ const Model = {
 const dicer = {
     model: Model.GEAR,
     modelScale: 1,
-    resUm: 100,
+    resMm: 1,
     sliceZ: 1,
     sliceY: 0,
     dice: () => {
-        const cont = sliceSurfByPlane(objGeom, dicer.sliceZ);
-        const bnds = sliceContourByLine(cont, dicer.sliceY);
-
-        vis.forEach(v => scene.remove(v));
-        vis = [];
-
-        const visContour = createContourVis(cont);
-        scene.add(visContour);
-        visContour.position.z = dicer.sliceZ;
-        vis.push(visContour);
-
-        const visBnd = createBndsVis(bnds);
-        scene.add(visBnd);
-        visBnd.position.y = dicer.sliceY;
-        visBnd.position.z = dicer.sliceZ;
-        vis.push(visBnd);
+        diceAndVisualize(objGeom);
     },
+};
+
+// surf: tri vertex list
+const diceAndVisualize = (surf) => {
+    // cleanup prev vis
+    vis.forEach(v => scene.remove(v));
+    vis = [];
+
+    const MARGIN_MM = 1;
+
+    // compute AABB
+    const aabbMin = new THREE.Vector3(surf[0], surf[1], surf[2]);
+    const aabbMax = new THREE.Vector3(surf[0], surf[1], surf[2]);
+    for (let i = 1; i < surf.length / 3; i++) {
+        const v = new THREE.Vector3(surf[3 * i + 0], surf[3 * i + 1], surf[3 * i + 2]);
+        aabbMin.min(v);
+        aabbMax.max(v);
+    }
+    console.log("AABB", aabbMin, aabbMax);
+    
+    aabbMin.subScalar(MARGIN_MM);
+    aabbMax.addScalar(MARGIN_MM);
+    const numV = aabbMax.clone().sub(aabbMin).divideScalar(dicer.resMm).ceil();
+    console.log("VG size", numV);
+    const vg = new VoxelGrid(aabbMin, dicer.resMm, numV.x, numV.y, numV.z);
+
+    console.log("dicing...");
+    for (let iz = 0; iz < vg.numZ; iz++) {
+        const sliceZ = vg.ofs.z + (iz + 0.5) * vg.res;
+        const cont = sliceSurfByPlane(surf, sliceZ);
+
+        for (let iy = 0; iy < vg.numY; iy++) {
+            const sliceY = vg.ofs.y + (iy + 0.5) * vg.res;
+            const bnds = sliceContourByLine(cont, sliceY);
+
+            let isOutside = true;
+            for (let ix = 0; ix < vg.numX; ix++) {
+                if (bnds.length === 0) {
+                    vg.set(ix, iy, iz, 0);
+                    continue;
+                }
+
+                const sliceX = vg.ofs.x + (ix + 0.5) * vg.res;
+
+                if (bnds[0] <= sliceX) {
+                    isOutside = !isOutside;
+                    bnds.shift();
+                }
+                vg.set(ix, iy, iz, isOutside ? 0 : 255);
+            }
+        }
+    }
+    console.log(`dicing done; volume: ${vg.volume()} mm^3 (${vg.count()} voxels)`);
+    const visVg = createVgVis(vg);
+    scene.add(visVg);
+    vis.push(visVg);
+
+    // visualize specific slice
+    const cont = sliceSurfByPlane(surf, dicer.sliceZ);
+    const bnds = sliceContourByLine(cont, dicer.sliceY);
+
+    const visContour = createContourVis(cont);
+    scene.add(visContour);
+    visContour.position.z = dicer.sliceZ;
+    vis.push(visContour);
+
+    const visBnd = createBndsVis(bnds);
+    scene.add(visBnd);
+    visBnd.position.y = dicer.sliceY;
+    visBnd.position.z = dicer.sliceZ;
+    vis.push(visBnd);
 };
 
 const isectLine = (p, q, z) => {
@@ -108,7 +198,7 @@ const sliceContourByLine = (contEdges, sliceY) => {
         }
     });
     if (numFixes > 0) {
-        console.warn(`Fixed ${numFixes} contour boundaries by heuristic`);
+        // console.warn(`Fixed ${numFixes} contour boundaries by heuristic`);
     }
 
     return bndsClean;
@@ -174,6 +264,7 @@ const sliceSurfByPlane = (surfTris, sliceZ) => {
 const loader = new STLLoader();
 loader.load(
     'models/Dice Tower.stl',
+    //'models/helical_gear.stl',
     function (geometry) {
         objGeom = geometry.getAttribute("position").array;
 
@@ -246,6 +337,7 @@ const createContourVis = (edges) => {
     return objEdges;
 };
 
+// returns: THREE.Object3D
 const createBndsVis = (bnds) => {
     const geom = new THREE.BufferGeometry();
     const vertices = new Float32Array(bnds.length * 3);
@@ -262,6 +354,31 @@ const createBndsVis = (bnds) => {
     objEdges.add(objPoints);
 
     return objEdges;
+};
+
+// returns: THREE.Object3D
+const createVgVis = (vg) => {
+    const cubeGeom = new THREE.BoxGeometry(dicer.resMm * 0.9, dicer.resMm * 0.9, dicer.resMm * 0.9);
+
+    const num = vg.count();
+    const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial({ color: 0x707070,}), num);
+    let instanceIx = 0;
+    for (let iz = 0; iz < vg.numZ; iz++) {
+        for (let iy = 0; iy < vg.numY; iy++) {
+            for (let ix = 0; ix < vg.numX; ix++) {
+                if (vg.get(ix, iy, iz) === 0) {
+                    continue;
+                }
+
+                const mtx = new THREE.Matrix4();
+                mtx.setPosition(new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res).add(vg.ofs));
+                mesh.setMatrixAt(instanceIx, mtx);
+                instanceIx++;
+            }
+        }
+    }
+    console.log(instanceIx, num);
+    return mesh;
 };
 
 
@@ -326,7 +443,7 @@ function init() {
     gui = new GUI();
     gui.add(dicer, 'model', Model).onChange(initMesh);
     gui.add(dicer, 'modelScale', [0.01, 0.1, 1, 10, 100]).step(1).onChange(initMesh);
-    gui.add(dicer, "resUm", [1, 10, 100]);
+    gui.add(dicer, "resMm", [1e-3, 1e-2, 1e-1, 1]);
     gui.add(dicer, "sliceZ", -10, 50).step(0.1);
     gui.add(dicer, "sliceY", -50, 50).step(0.1);
     gui.add(dicer, "dice");
