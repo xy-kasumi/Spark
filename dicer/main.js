@@ -12,7 +12,7 @@ let container, stats, gui, guiStatsEl;
 let camera, controls, scene, renderer, material;
 
 let objGeom = null;
-let edgesVis = null;
+let vis = [];
 
 // gui
 
@@ -26,15 +26,24 @@ const dicer = {
     modelScale: 1,
     resUm: 100,
     sliceZ: 1,
+    sliceY: 0,
     dice: () => {
-        const edges = sliceRaw(objGeom, dicer.sliceZ);
+        const cont = sliceSurfByPlane(objGeom, dicer.sliceZ);
+        const bnds = sliceContourByLine(cont, dicer.sliceY);
 
-        if (edgesVis !== null) {
-            scene.remove(edgesVis);
-        }
-        edgesVis = createPlaneEdgeVis(edges);
-        scene.add(edgesVis);
-        edgesVis.position.z = dicer.sliceZ;
+        vis.forEach(v => scene.remove(v));
+        vis = [];
+
+        const visContour = createContourVis(cont);
+        scene.add(visContour);
+        visContour.position.z = dicer.sliceZ;
+        vis.push(visContour);
+
+        const visBnd = createBndsVis(bnds);
+        scene.add(visBnd);
+        visBnd.position.y = dicer.sliceY;
+        visBnd.position.z = dicer.sliceZ;
+        vis.push(visBnd);
     },
 };
 
@@ -44,15 +53,79 @@ const isectLine = (p, q, z) => {
     return p.clone().lerp(q, t);
 };
 
-const sliceRaw = (tris, sliceZ) => {
-    const edges = [];
+const isectLine2 = (p, q, y) => {
+    const d = q.y - p.y;
+    const t = (d === 0) ? 0.5 : (y - p.y) / d;
+    return p.clone().lerp(q, t);
+};
+
+// contEdges: [x0, y0, x1, y1, ...]
+// returns: seg set [x0, x1, x2, ...]
+const sliceContourByLine = (contEdges, sliceY) => {
+    const bnds = [];
+    const numEdges = contEdges.length / 4;
+    for (let i = 0; i < numEdges; i++) {
+        const p0 = new THREE.Vector2(contEdges[4 * i + 0], contEdges[4 * i + 1]);
+        const p1 = new THREE.Vector2(contEdges[4 * i + 2], contEdges[4 * i + 3]);
+
+        const s0 = Math.sign(p0.y - sliceY);
+        const s1 = Math.sign(p1.y - sliceY);
+
+        // early exit
+        if (s0 >= 0 && s1 >= 0) {
+            continue;
+        }
+        if (s0 < 0 && s1 < 0) {
+            continue;
+        }
+
+        const isect = isectLine2(p0, p1, sliceY);
+        bnds.push({ x: isect.x, isEnter: s0 >= 0 });
+    }
+    bnds.sort((a, b) => a.x - b.x);
+
+    const bndsClean = [];
+    let isOutside = true;
+    let numFixes = 0;
+    bnds.forEach(b => {
+        if (isOutside && b.isEnter) {
+            bndsClean.push(b.x);
+            isOutside = false;
+        } else if (!isOutside && !b.isEnter) {
+            bndsClean.push(b.x);
+            isOutside = true;
+        } else {
+            // messed up data -> interpret as largest bnds
+            if (b.isEnter) {
+                // ignore (use previous enter)
+                numFixes++;
+            } else {
+                // discard previous one
+                bndsClean.pop();
+                bndsClean.push(b.x);
+                numFixes++;
+            }
+        }
+    });
+    if (numFixes > 0) {
+        console.warn(`Fixed ${numFixes} contour boundaries by heuristic`);
+    }
+
+    return bndsClean;
+};
+
+
+// surfTris: [x0, y0, z0, x1, y1, z1, ...]
+// returns: contour edges
+const sliceSurfByPlane = (surfTris, sliceZ) => {
+    const segs = [];
 
     // tris are CCW.
-    const numTris = tris.length / 9;
+    const numTris = surfTris.length / 9;
     for (let i = 0; i < numTris; i++) {
-        const p0 = new THREE.Vector3(tris[9 * i + 0], tris[9 * i + 1], tris[9 * i + 2]);
-        const p1 = new THREE.Vector3(tris[9 * i + 3], tris[9 * i + 4], tris[9 * i + 5]);
-        const p2 = new THREE.Vector3(tris[9 * i + 6], tris[9 * i + 7], tris[9 * i + 8]);
+        const p0 = new THREE.Vector3(surfTris[9 * i + 0], surfTris[9 * i + 1], surfTris[9 * i + 2]);
+        const p1 = new THREE.Vector3(surfTris[9 * i + 3], surfTris[9 * i + 4], surfTris[9 * i + 5]);
+        const p2 = new THREE.Vector3(surfTris[9 * i + 6], surfTris[9 * i + 7], surfTris[9 * i + 8]);
 
         const s0 = Math.sign(p0.z - sliceZ);
         const s1 = Math.sign(p1.z - sliceZ);
@@ -91,14 +164,10 @@ const sliceRaw = (tris, sliceZ) => {
             throw "Degenerate triangle";
         }
 
-        edges.push(down.x, down.y, up.x, up.y); // down -> up is CCW contor in XY plane.
+        segs.push(down.x, down.y, up.x, up.y); // down -> up is CCW contor in XY plane.
     }
 
-    return edges;
-};
-
-const diceRaw = (tris) => {
-    sliceRaw(tris, 1);
+    return segs;
 };
 
 
@@ -106,7 +175,6 @@ const loader = new STLLoader();
 loader.load(
     'models/Dice Tower.stl',
     function (geometry) {
-        console.log(geometry);
         objGeom = geometry.getAttribute("position").array;
 
         const material = new THREE.MeshPhysicalMaterial({
@@ -160,19 +228,37 @@ function clean() {
 }
 
 // returns: THREE.Object3D
-const createPlaneEdgeVis = (edges) => {
-    const geomEdges = new THREE.BufferGeometry();
+const createContourVis = (edges) => {
+    const geom = new THREE.BufferGeometry();
     const vertices = new Float32Array(edges.length / 2 * 3);
     for (let i = 0; i < edges.length / 2; i++) {
         vertices[3 * i + 0] = edges[2 * i + 0];
         vertices[3 * i + 1] = edges[2 * i + 1];
         vertices[3 * i + 2] = 0;
     }
-    geomEdges.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-    const matEdges = new THREE.LineBasicMaterial({ color: "gray" });
-    const objEdges = new THREE.LineSegments(geomEdges, matEdges);
+    geom.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
 
-    const objPoints = new THREE.Points(geomEdges, new THREE.PointsMaterial({ color: "black", size: 3 }));
+    const matEdges = new THREE.LineBasicMaterial({ color: 0x8080a0 });
+    const objEdges = new THREE.LineSegments(geom, matEdges);
+    const objPoints = new THREE.Points(geom, new THREE.PointsMaterial({ color: 0x8080f0, size: 3 }));
+    objEdges.add(objPoints);
+
+    return objEdges;
+};
+
+const createBndsVis = (bnds) => {
+    const geom = new THREE.BufferGeometry();
+    const vertices = new Float32Array(bnds.length * 3);
+    for (let i = 0; i < bnds.length; i++) {
+        vertices[3 * i + 0] = bnds[i];
+        vertices[3 * i + 1] = 0;
+        vertices[3 * i + 2] = 0;
+    }
+    geom.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+
+    const matEdges = new THREE.LineBasicMaterial({ color: 0x80a080 });
+    const objEdges = new THREE.LineSegments(geom, matEdges);
+    const objPoints = new THREE.Points(geom, new THREE.PointsMaterial({ color: 0x80f080, size: 3 }));
     objEdges.add(objPoints);
 
     return objEdges;
@@ -242,6 +328,7 @@ function init() {
     gui.add(dicer, 'modelScale', [0.01, 0.1, 1, 10, 100]).step(1).onChange(initMesh);
     gui.add(dicer, "resUm", [1, 10, 100]);
     gui.add(dicer, "sliceZ", -10, 50).step(0.1);
+    gui.add(dicer, "sliceY", -50, 50).step(0.1);
     gui.add(dicer, "dice");
 
     guiStatsEl = document.createElement('div');
