@@ -38,18 +38,21 @@ class VoxelGrid {
         for (let i = 0; i < this.data.length; i++) {
             this.data[i] = Math.max(0, this.data[i] - other.data[i]);
         }
+        return this;
     }
 
     add(other) {
         for (let i = 0; i < this.data.length; i++) {
             this.data[i] = Math.min(255, this.data[i] + other.data[i]);
         }
+        return this;
     }
 
     multiplyScalar(s) {
         for (let i = 0; i < this.data.length; i++) {
             this.data[i] = Math.round(this.data[i] * s);
         }
+        return this;
     }
 
     set(ix, iy, iz, val) {
@@ -133,6 +136,9 @@ const diceAndVisualize = (blankSurf, objSurf, resMm) => {
 
     diceSurf(blankSurf, vgBlank);
     diceSurf(objSurf, vgObj);
+    const diff = vgBlank.clone().sub(vgObj);
+    console.log(`removal: ${diff.volume()}mm^3 (${diff.count()} voxels)`, );
+
     vgBlank.multiplyScalar(0.1);
     vgBlank.add(vgObj);
 
@@ -434,7 +440,6 @@ const createVgVis = (vg) => {
             }
         }
     }
-    console.log(instanceIx, num);
     return mesh;
 };
 
@@ -486,9 +491,9 @@ function init() {
     // camera
     const aspect = width / height;
     camera = new THREE.OrthographicCamera(-50 * aspect, 50 * aspect, 50, -50, 0.1, 300);
-    camera.position.x = -100;
-    camera.position.y = -100;
-    camera.position.z = 100;
+    camera.position.x = -30;
+    camera.position.y = -80;
+    camera.position.z = 90;
     camera.up.set(0, 0, 1);
 
     // renderer
@@ -515,13 +520,13 @@ function init() {
     const hemiLight = new THREE.HemisphereLight( 0xffffbb, 0x080820, 1 );
     scene.add(hemiLight);
 
-    const gridHelper = new THREE.GridHelper(100, 10);
+    const gridHelper = new THREE.GridHelper(60, 6);
     scene.add(gridHelper);
     gridHelper.rotateX(Math.PI / 2);
 
     const axesHelper = new THREE.AxesHelper(8);
     scene.add(axesHelper);
-    axesHelper.position.set(-49, -49, 0);
+    axesHelper.position.set(-29, -29, 0);
 
     // tool
     const tool = generateTool();
