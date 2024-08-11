@@ -12,7 +12,9 @@ let container, stats, gui, guiStatsEl;
 let camera, controls, scene, renderer, material;
 
 let objGeom = null;
-let vis = [];
+let visNonVg = [];
+let visVg = null;
+let ctrlShowVoxels;
 
 // voxel at (ix, iy, iz):
 // * occupies volume: [ofs + i * res, ofs + (i + 1) * res)
@@ -59,19 +61,66 @@ const dicer = {
     model: Model.GEAR,
     modelScale: 1,
     resMm: 1,
-    sliceZ: 1,
-    sliceY: 0,
+    lineZ: 1,
+    lineY: 0,
+    showVoxels: false,
     dice: () => {
-        diceAndVisualize(objGeom);
+        diceAndVisualize(objGeom, dicer.resMm);
+    },
+    diceLine: () => {
+        diceLineAndVisualize(objGeom, dicer.lineY, dicer.lineZ);
     },
 };
 
 // surf: tri vertex list
-const diceAndVisualize = (surf) => {
+const diceAndVisualize = (surf, resMm) => {
     // cleanup prev vis
-    vis.forEach(v => scene.remove(v));
-    vis = [];
+    if (visVg) {
+        scene.remove(visVg);
+    }
+    visVg = null;
 
+    const vg = diceSurf(surf, resMm);
+    visVg = createVgVis(vg);
+    ctrlShowVoxels.setValue(true);
+    scene.add(visVg);
+};
+
+const diceLineAndVisualize = (surf, lineY, lineZ) => {
+    // cleanup prev vis
+    visNonVg.forEach(v => scene.remove(v));
+    visNonVg = [];
+
+    // slice specific (Y, Z) line.
+    const cont = sliceSurfByPlane(surf, lineZ);
+    const bnds = sliceContourByLine(cont, lineY);
+
+    // visualize
+    const visContour = createContourVis(cont);
+    scene.add(visContour);
+    visContour.position.z = lineZ;
+    visNonVg.push(visContour);
+
+    const visBnd = createBndsVis(bnds);
+    scene.add(visBnd);
+    visBnd.position.y = lineY;
+    visBnd.position.z = lineZ;
+    visNonVg.push(visBnd);
+};
+
+const isectLine = (p, q, z) => {
+    const d = q.z - p.z;
+    const t = (d === 0) ? 0.5 : (z - p.z) / d;
+    return p.clone().lerp(q, t);
+};
+
+const isectLine2 = (p, q, y) => {
+    const d = q.y - p.y;
+    const t = (d === 0) ? 0.5 : (y - p.y) / d;
+    return p.clone().lerp(q, t);
+};
+
+const diceSurf = (surf, resMm) => {
     const MARGIN_MM = 1;
 
     // compute AABB
@@ -86,9 +135,9 @@ const diceAndVisualize = (surf) => {
     
     aabbMin.subScalar(MARGIN_MM);
     aabbMax.addScalar(MARGIN_MM);
-    const numV = aabbMax.clone().sub(aabbMin).divideScalar(dicer.resMm).ceil();
+    const numV = aabbMax.clone().sub(aabbMin).divideScalar(resMm).ceil();
     console.log("VG size", numV);
-    const vg = new VoxelGrid(aabbMin, dicer.resMm, numV.x, numV.y, numV.z);
+    const vg = new VoxelGrid(aabbMin, resMm, numV.x, numV.y, numV.z);
 
     console.log("dicing...");
     for (let iz = 0; iz < vg.numZ; iz++) {
@@ -117,36 +166,7 @@ const diceAndVisualize = (surf) => {
         }
     }
     console.log(`dicing done; volume: ${vg.volume()} mm^3 (${vg.count()} voxels)`);
-    const visVg = createVgVis(vg);
-    scene.add(visVg);
-    vis.push(visVg);
-
-    // visualize specific slice
-    const cont = sliceSurfByPlane(surf, dicer.sliceZ);
-    const bnds = sliceContourByLine(cont, dicer.sliceY);
-
-    const visContour = createContourVis(cont);
-    scene.add(visContour);
-    visContour.position.z = dicer.sliceZ;
-    vis.push(visContour);
-
-    const visBnd = createBndsVis(bnds);
-    scene.add(visBnd);
-    visBnd.position.y = dicer.sliceY;
-    visBnd.position.z = dicer.sliceZ;
-    vis.push(visBnd);
-};
-
-const isectLine = (p, q, z) => {
-    const d = q.z - p.z;
-    const t = (d === 0) ? 0.5 : (z - p.z) / d;
-    return p.clone().lerp(q, t);
-};
-
-const isectLine2 = (p, q, y) => {
-    const d = q.y - p.y;
-    const t = (d === 0) ? 0.5 : (y - p.y) / d;
-    return p.clone().lerp(q, t);
+    return vg;
 };
 
 // contEdges: [x0, y0, x1, y1, ...]
@@ -175,30 +195,28 @@ const sliceContourByLine = (contEdges, sliceY) => {
     bnds.sort((a, b) => a.x - b.x);
 
     const bndsClean = [];
-    let isOutside = true;
-    let numFixes = 0;
+    let insideness = 0; // supports non-manifold, nested surfaces by allowing multiple enter.
     bnds.forEach(b => {
-        if (isOutside && b.isEnter) {
-            bndsClean.push(b.x);
-            isOutside = false;
-        } else if (!isOutside && !b.isEnter) {
-            bndsClean.push(b.x);
-            isOutside = true;
-        } else {
-            // messed up data -> interpret as largest bnds
-            if (b.isEnter) {
-                // ignore (use previous enter)
-                numFixes++;
-            } else {
-                // discard previous one
-                bndsClean.pop();
+        if (b.isEnter) {
+            insideness++;
+            if (insideness === 1) {
                 bndsClean.push(b.x);
-                numFixes++;
+            }
+        } else {
+            insideness--;
+            if (insideness === 0) {
+                bndsClean.push(b.x);
+            }
+            if (insideness < 0) {
+                console.error("Corrupt surface data (hole)");
             }
         }
     });
-    if (numFixes > 0) {
-        // console.warn(`Fixed ${numFixes} contour boundaries by heuristic`);
+    if (insideness !== 0) {
+        console.error("Corrupt surface data (hole)");
+    }
+    if (bndsClean.length % 2 !== 0) {
+        bndsClean.pop();
     }
 
     return bndsClean;
@@ -361,7 +379,7 @@ const createVgVis = (vg) => {
     const cubeGeom = new THREE.BoxGeometry(dicer.resMm * 0.9, dicer.resMm * 0.9, dicer.resMm * 0.9);
 
     const num = vg.count();
-    const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial({ color: 0x707070,}), num);
+    const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial(), num);
     let instanceIx = 0;
     for (let iz = 0; iz < vg.numZ; iz++) {
         for (let iy = 0; iy < vg.numY; iy++) {
@@ -444,9 +462,16 @@ function init() {
     gui.add(dicer, 'model', Model).onChange(initMesh);
     gui.add(dicer, 'modelScale', [0.01, 0.1, 1, 10, 100]).step(1).onChange(initMesh);
     gui.add(dicer, "resMm", [1e-3, 1e-2, 1e-1, 1]);
-    gui.add(dicer, "sliceZ", -10, 50).step(0.1);
-    gui.add(dicer, "sliceY", -50, 50).step(0.1);
+    ctrlShowVoxels = gui.add(dicer, "showVoxels").onChange(v => {
+        if (visVg) {
+            visVg.visible = v;
+        }
+    });
     gui.add(dicer, "dice");
+
+    gui.add(dicer, "lineZ", -10, 50).step(0.1);
+    gui.add(dicer, "lineY", -50, 50).step(0.1);
+    gui.add(dicer, "diceLine");
 
     guiStatsEl = document.createElement('div');
     guiStatsEl.classList.add('gui-stats');
