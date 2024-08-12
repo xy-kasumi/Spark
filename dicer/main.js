@@ -4,16 +4,10 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-let container, stats, gui, guiStatsEl;
-let camera, controls, scene, renderer, material;
-
+// TODO: Refactor
 let objSurf = null;
 
-let visNonVg = [];
-let visVg = null;
-let visObj = null;
 
-let ctrlShowVoxels;
 
 // voxel at (ix, iy, iz):
 // * occupies volume: [ofs + i * res, ofs + (i + 1) * res)
@@ -78,29 +72,6 @@ class VoxelGrid {
     }
 }
 
-const Model = {
-    HELICAL_GEAR: "helical_gear",
-    DICE_TOWER: "dice_tower",
-};
-
-const dicer = {
-    model: Model.HELICAL_GEAR,
-    resMm: 0.5,
-    lineZ: 1,
-    lineY: 0,
-    showVoxels: false,
-    dice: () => {
-        const blankSurf = convGeomToSurf(generateBlankGeom());
-        diceAndVisualize(blankSurf, objSurf, dicer.resMm);
-    },
-    diceLine: () => {
-        const sf = convGeomToSurf(generateBlankGeom());
-        diceLineAndVisualize(objSurf, dicer.lineY, dicer.lineZ);
-    },
-    toolX: 0,
-    toolY: 0,
-    toolZ: 0,
-};
 
 const convGeomToSurf = (geom) => {
     if (geom.index === null) {
@@ -126,10 +97,10 @@ const convGeomToSurf = (geom) => {
 // surf: tri vertex list
 const diceAndVisualize = (blankSurf, objSurf, resMm) => {
     // cleanup prev vis
-    if (visVg) {
-        scene.remove(visVg);
+    if (view.visVg) {
+        scene.remove(view.visVg);
     }
-    visVg = null;
+    view.visVg = null;
 
     const vgBlank = initVG(blankSurf, resMm);
     const vgObj = vgBlank.clone();
@@ -137,20 +108,20 @@ const diceAndVisualize = (blankSurf, objSurf, resMm) => {
     diceSurf(blankSurf, vgBlank);
     diceSurf(objSurf, vgObj);
     const diff = vgBlank.clone().sub(vgObj);
-    console.log(`removal: ${diff.volume()}mm^3 (${diff.count()} voxels)`, );
+    console.log(`removal: ${diff.volume()}mm^3 (${diff.count()} voxels)`,);
 
     vgBlank.multiplyScalar(0.1);
     vgBlank.add(vgObj);
 
-    visVg = createVgVis(vgBlank);
-    ctrlShowVoxels.setValue(true);
-    scene.add(visVg);
+    view.visVg = createVgVis(vgBlank);
+    dicer.showVoxels = true;
+    view.scene.add(view.visVg);
 };
 
 const diceLineAndVisualize = (surf, lineY, lineZ) => {
     // cleanup prev vis
-    visNonVg.forEach(v => scene.remove(v));
-    visNonVg = [];
+    view.visNonVg.forEach(v => view.scene.remove(v));
+    view.visNonVg = [];
 
     // slice specific (Y, Z) line.
     const cont = sliceSurfByPlane(surf, lineZ);
@@ -158,15 +129,15 @@ const diceLineAndVisualize = (surf, lineY, lineZ) => {
 
     // visualize
     const visContour = createContourVis(cont);
-    scene.add(visContour);
+    view.scene.add(visContour);
     visContour.position.z = lineZ;
-    visNonVg.push(visContour);
+    view.visNonVg.push(visContour);
 
     const visBnd = createBndsVis(bnds);
-    scene.add(visBnd);
+    view.scene.add(visBnd);
     visBnd.position.y = lineY;
     visBnd.position.z = lineZ;
-    visNonVg.push(visBnd);
+    view.visNonVg.push(visBnd);
 };
 
 const isectLine = (p, q, z) => {
@@ -194,7 +165,7 @@ const initVG = (surf, resMm) => {
         aabbMax.max(v);
     }
     console.log("AABB", aabbMin, aabbMax);
-    
+
     aabbMin.subScalar(MARGIN_MM);
     aabbMax.addScalar(MARGIN_MM);
     const numV = aabbMax.clone().sub(aabbMin).divideScalar(resMm).ceil();
@@ -348,7 +319,7 @@ const loadStl = (fname) => {
         `models/${fname}.stl`,
         function (geometry) {
             objSurf = convGeomToSurf(geometry);
-    
+
             const material = new THREE.MeshPhysicalMaterial({
                 color: 0xb2ffc8,
                 metalness: 0.1,
@@ -357,20 +328,20 @@ const loadStl = (fname) => {
                 opacity: 0.1,
             });
 
-            if (visObj) {
-                scene.remove(visObj);
-                visObj = null;
+            if (view.visObj) {
+                view.scene.remove(view.visObj);
+                view.visObj = null;
             }
-    
+
             const mesh = new THREE.Mesh(geometry, material)
-            scene.add(mesh);
-            visObj = mesh;
+            view.scene.add(mesh);
+            view.visObj = mesh;
         },
         (xhr) => {
             console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
         },
         (error) => {
-            console.log(error)
+            console.log(error);
         }
     );
 };
@@ -458,7 +429,7 @@ const generateBlankGeom = () => {
 const generateBlank = () => {
     const blank = new THREE.Mesh(
         generateBlankGeom(),
-        new THREE.MeshLambertMaterial({color: "blue", wireframe: true}));
+        new THREE.MeshLambertMaterial({ color: "blue", wireframe: true }));
     return blank;
 };
 
@@ -471,135 +442,168 @@ const generateTool = () => {
 
     const needle = new THREE.Mesh(
         new THREE.CylinderGeometry(needleExtRadius, needleExtRadius, needleLength, 32, 1),
-        new THREE.MeshPhysicalMaterial({color: 0xf0f0f0, metalness: 0.9, roughness: 0.3}));
+        new THREE.MeshPhysicalMaterial({ color: 0xf0f0f0, metalness: 0.9, roughness: 0.3 }));
     needle.position.y = needleLength / 2;
 
     const wire = new THREE.Mesh(
         new THREE.CylinderGeometry(wireRadius, wireRadius, wireExtrusion, 16, 1),
-        new THREE.MeshPhysicalMaterial({color: "red", metalness: 0.9, roughness: 0.7}));
+        new THREE.MeshPhysicalMaterial({ color: "red", metalness: 0.9, roughness: 0.7 }));
     needle.add(wire);
     wire.position.y = needleLength / 2 + wireExtrusion / 2;
 
     return needle;
 };
 
+class View3D {
+    constructor() {
+        this.tool = null;
+        this.visNonVg = [];
+        this.visVg = null;
+        this.visObj = null;
 
-function init() {
-    const width = window.innerWidth;
-    const height = window.innerHeight;
+        this.init();
+    }
 
-    // camera
-    const aspect = width / height;
-    camera = new THREE.OrthographicCamera(-50 * aspect, 50 * aspect, 50, -50, 0.1, 300);
-    camera.position.x = -30;
-    camera.position.y = -80;
-    camera.position.z = 90;
-    camera.up.set(0, 0, 1);
+    init() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
 
-    // renderer
+        // camera
+        const aspect = width / height;
+        this.camera = new THREE.OrthographicCamera(-50 * aspect, 50 * aspect, 50, -50, 0.1, 300);
+        this.camera.position.x = -30;
+        this.camera.position.y = -80;
+        this.camera.position.z = 90;
+        this.camera.up.set(0, 0, 1);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(width, height);
-    renderer.setAnimationLoop(animate);
-    container = document.getElementById('container');
-    container.appendChild(renderer.domElement);
+        // renderer
 
-    // scene (scene is in mm unit)
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setSize(width, height);
+        this.renderer.setAnimationLoop(() => this.animate());
+        this.container = document.getElementById('container');
+        this.container.appendChild(this.renderer.domElement);
 
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xffffff);
+        // scene (scene is in mm unit)
 
-    const light = new THREE.AmbientLight(0x404040); // soft white light
-    scene.add(light);
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0xffffff);
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-    directionalLight.position.set(0, 0, 1);
-    scene.add(directionalLight);
+        const light = new THREE.AmbientLight(0x404040); // soft white light
+        this.scene.add(light);
 
-    const hemiLight = new THREE.HemisphereLight( 0xffffbb, 0x080820, 1 );
-    scene.add(hemiLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(0, 0, 1);
+        this.scene.add(directionalLight);
 
-    const gridHelper = new THREE.GridHelper(60, 6);
-    scene.add(gridHelper);
-    gridHelper.rotateX(Math.PI / 2);
+        const hemiLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 1);
+        this.scene.add(hemiLight);
 
-    const axesHelper = new THREE.AxesHelper(8);
-    scene.add(axesHelper);
-    axesHelper.position.set(-29, -29, 0);
+        const gridHelper = new THREE.GridHelper(60, 6);
+        this.scene.add(gridHelper);
+        gridHelper.rotateX(Math.PI / 2);
 
-    // tool
-    const tool = generateTool();
-    scene.add(tool);
+        const axesHelper = new THREE.AxesHelper(8);
+        this.scene.add(axesHelper);
+        axesHelper.position.set(-29, -29, 0);
 
-    const blank = generateBlank();
-    scene.add(blank);
+        this.tool = generateTool();
+        this.scene.add(this.tool);
 
-    // controls
+        const blank = generateBlank();
+        this.scene.add(blank);
 
-    controls = new OrbitControls(camera, renderer.domElement);
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
 
-    // stats
+        this.stats = new Stats();
+        container.appendChild(this.stats.dom);
 
-    stats = new Stats();
-    container.appendChild(stats.dom);
 
-    // gui
 
-    gui = new GUI();
+        const guiStatsEl = document.createElement('div');
+        guiStatsEl.classList.add('gui-stats');
+
+        // listeners
+        window.addEventListener('resize', () => this.onWindowResize());
+        Object.assign(window, { scene: this.scene });
+    }
+
+    onWindowResize() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+
+        this.renderer.setSize(width, height);
+    }
+
+    animate() {
+        this.controls.update();
+        this.renderer.render(this.scene, this.camera);
+        this.stats.update();
+    }
+}
+
+function initGui(view) {
+    const gui = new GUI();
     gui.add(dicer, 'model', Model).onChange((model) => {
         // delete vis
-        if (visVg) {
-            scene.remove(visVg);
+        if (view.visVg) {
+            view.scene.remove(view.visVg);
         }
-        visVg = null;
+        view.visVg = null;
 
-        visNonVg.forEach(v => scene.remove(v));
-        visNonVg = [];
+        view.visNonVg.forEach(v => view.scene.remove(v));
+        view.visNonVg = [];
 
         // load new model
         loadStl(model);
     });
     gui.add(dicer, "resMm", [1e-3, 1e-2, 1e-1, 0.25, 0.5, 1]);
-    ctrlShowVoxels = gui.add(dicer, "showVoxels").onChange(v => {
-        if (visVg) {
-            visVg.visible = v;
+    gui.add(dicer, "showVoxels").onChange(v => {
+        if (view.visVg) {
+            view.visVg.visible = v;
         }
-    });
+    }).listen();
     gui.add(dicer, "dice");
 
     gui.add(dicer, "lineZ", -10, 50).step(0.1);
     gui.add(dicer, "lineY", -50, 50).step(0.1);
     gui.add(dicer, "diceLine");
 
-    gui.add(dicer, "toolX", -50, 50).step(0.1).onChange(v => tool.position.x = v);
-    gui.add(dicer, "toolY", -50, 50).step(0.1).onChange(v => tool.position.y = v);
-    gui.add(dicer, "toolZ", 0, 100).step(0.1).onChange(v => tool.position.z = v);
-
-    guiStatsEl = document.createElement('div');
-    guiStatsEl.classList.add('gui-stats');
-
-
-    // listeners
-    window.addEventListener('resize', onWindowResize);
-    Object.assign(window, { scene });
+    gui.add(dicer, "toolX", -50, 50).step(0.1).onChange(v => view.tool.position.x = v);
+    gui.add(dicer, "toolY", -50, 50).step(0.1).onChange(v => view.tool.position.y = v);
+    gui.add(dicer, "toolZ", 0, 100).step(0.1).onChange(v => view.tool.position.z = v);
 }
 
-function onWindowResize() {
-    const width = window.innerWidth;
-    const height = window.innerHeight;
 
-    camera.aspect = width / height;
-    camera.updateProjectionMatrix();
+const Model = {
+    HELICAL_GEAR: "helical_gear",
+    DICE_TOWER: "dice_tower",
+};
 
-    renderer.setSize(width, height);
-}
+const dicer = {
+    model: Model.HELICAL_GEAR,
+    resMm: 0.5,
+    lineZ: 1,
+    lineY: 0,
+    showVoxels: false,
+    dice: () => {
+        const blankSurf = convGeomToSurf(generateBlankGeom());
+        diceAndVisualize(blankSurf, objSurf, dicer.resMm);
+    },
+    diceLine: () => {
+        const sf = convGeomToSurf(generateBlankGeom());
+        diceLineAndVisualize(objSurf, dicer.lineY, dicer.lineZ);
+    },
+    toolX: 0,
+    toolY: 0,
+    toolZ: 0,
+};
 
-function animate() {
-    controls.update();
-    renderer.render(scene, camera);
-    stats.update();
-}
 
 loadStl(dicer.model);
-init();
+const view = new View3D();
+initGui(view);
