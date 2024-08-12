@@ -82,7 +82,10 @@ const isectLine2 = (p, q, y) => {
     return p.clone().lerp(q, t);
 };
 
-
+// returns: VoxelGrid (255: voxel to mill, from Z top to bottom)
+export const millLayersZ = (workVg, targVg) => {
+    return workVg.clone().sub(targVg);
+};
 
 export const initVG = (surf, resMm) => {
     const MARGIN_MM = 1;

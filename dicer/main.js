@@ -3,7 +3,7 @@ import Stats from 'three/addons/libs/stats.module.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { initVG, diceSurf, sliceSurfByPlane, sliceContourByLine } from './geom.js';
+import { initVG, diceSurf, sliceSurfByPlane, sliceContourByLine, millLayersZ } from './geom.js';
 
 
 const convGeomToSurf = (geom) => {
@@ -27,50 +27,32 @@ const convGeomToSurf = (geom) => {
     }
 };
 
-// surf: tri vertex list
-const diceAndVisualize = (blankSurf, objSurf, resMm) => {
-    // cleanup prev vis
-    if (view.visVg) {
-        scene.remove(view.visVg);
-    }
-    view.visVg = null;
-
-    const vgBlank = initVG(blankSurf, resMm);
-    const vgObj = vgBlank.clone();
-
-    diceSurf(blankSurf, vgBlank);
-    diceSurf(objSurf, vgObj);
-    const diff = vgBlank.clone().sub(vgObj);
+const visualizeDice = (workVg, targVg) => {
+    const diff = workVg.clone().sub(targVg);
     console.log(`removal: ${diff.volume()}mm^3 (${diff.count()} voxels)`,);
 
-    vgBlank.multiplyScalar(0.1);
-    vgBlank.add(vgObj);
+    workVg.multiplyScalar(0.1);
+    workVg.add(targVg);
 
-    view.visVg = createVgVis(vgBlank);
+    const visVg = createVgVis(workVg);
+    view.updateVisVg(visVg);
     dicer.showVoxels = true;
-    view.scene.add(view.visVg);
 };
 
 const diceLineAndVisualize = (surf, lineY, lineZ) => {
-    // cleanup prev vis
-    view.visNonVg.forEach(v => view.scene.remove(v));
-    view.visNonVg = [];
-
     // slice specific (Y, Z) line.
     const cont = sliceSurfByPlane(surf, lineZ);
     const bnds = sliceContourByLine(cont, lineY);
 
     // visualize
     const visContour = createContourVis(cont);
-    view.scene.add(visContour);
     visContour.position.z = lineZ;
-    view.visNonVg.push(visContour);
 
     const visBnd = createBndsVis(bnds);
-    view.scene.add(visBnd);
     visBnd.position.y = lineY;
     visBnd.position.z = lineZ;
-    view.visNonVg.push(visBnd);
+
+    view.updateVisMisc([visContour, visBnd]);
 };
 
 
@@ -89,14 +71,8 @@ const loadStl = (fname) => {
                 opacity: 0.1,
             });
 
-            if (view.visObj) {
-                view.scene.remove(view.visObj);
-                view.visObj = null;
-            }
-
             const mesh = new THREE.Mesh(geometry, material)
-            view.scene.add(mesh);
-            view.visObj = mesh;
+            view.updateVisObj(mesh);
         },
         (xhr) => {
             console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
@@ -222,7 +198,7 @@ const generateTool = () => {
 class View3D {
     constructor() {
         this.tool = null;
-        this.visNonVg = [];
+        this.visMisc = [];
         this.visVg = null;
         this.visObj = null;
 
@@ -284,14 +260,48 @@ class View3D {
         this.stats = new Stats();
         container.appendChild(this.stats.dom);
 
-
-
         const guiStatsEl = document.createElement('div');
         guiStatsEl.classList.add('gui-stats');
 
         // listeners
         window.addEventListener('resize', () => this.onWindowResize());
         Object.assign(window, { scene: this.scene });
+    }
+
+    updateVisVg(v) {
+        if (this.visVg) {
+            this.scene.remove(this.visVg);
+        }
+
+        if (v) {
+            this.scene.add(v);
+        }
+        this.visVg = v;
+    }
+
+    setVisVgVisibility(visible) {
+        if (this.visVg) {
+            this.visVg.visible = visible;
+        }
+    }
+
+    updateVisMisc(vs) {
+        this.visMisc.forEach(v => this.scene.remove(v));
+        this.visMisc = [];
+
+        vs.forEach(v => this.scene.add(v));
+        this.visMisc = vs;
+    }
+
+    updateVisObj(v) {
+        if (this.visObj) {
+            this.scene.remove(this.visObj);
+        }
+
+        if (v) {
+            this.scene.add(v);
+        }
+        this.visObj = v;
     }
 
     onWindowResize() {
@@ -327,8 +337,15 @@ const dicer = {
     showVoxels: false,
     objSurf: null,
     dice: () => {
-        const blankSurf = convGeomToSurf(generateBlankGeom());
-        diceAndVisualize(blankSurf, dicer.objSurf, dicer.resMm);
+        const surfBlank = convGeomToSurf(generateBlankGeom());
+
+        const workVg = initVG(surfBlank, dicer.resMm);
+        const targVg = workVg.clone();
+        diceSurf(surfBlank, workVg);
+        diceSurf(dicer.objSurf, targVg);
+        millLayersZ(workVg, targVg);
+
+        visualizeDice(workVg, targVg);
     },
     diceLine: () => {
         const sf = convGeomToSurf(generateBlankGeom());
@@ -342,33 +359,26 @@ const dicer = {
 function initGui(view) {
     const gui = new GUI();
     gui.add(dicer, 'model', Model).onChange((model) => {
-        // delete vis
-        if (view.visVg) {
-            view.scene.remove(view.visVg);
-        }
-        view.visVg = null;
+        view.updateVisVg(null);
+        view.updateVisMisc([]);
 
-        view.visNonVg.forEach(v => view.scene.remove(v));
-        view.visNonVg = [];
-
-        // load new model
         loadStl(model);
     });
     gui.add(dicer, "resMm", [1e-3, 1e-2, 1e-1, 0.25, 0.5, 1]);
     gui.add(dicer, "showVoxels").onChange(v => {
-        if (view.visVg) {
-            view.visVg.visible = v;
-        }
+        view.setVisVgVisibility(v);
     }).listen();
     gui.add(dicer, "dice");
 
-    gui.add(dicer, "lineZ", -10, 50).step(0.1);
-    gui.add(dicer, "lineY", -50, 50).step(0.1);
-    gui.add(dicer, "diceLine");
+    const sd = gui.addFolder("Slice Debug");
+    sd.add(dicer, "lineZ", -10, 50).step(0.1);
+    sd.add(dicer, "lineY", -50, 50).step(0.1);
+    sd.add(dicer, "diceLine");
 
-    gui.add(dicer, "toolX", -50, 50).step(0.1).onChange(v => view.tool.position.x = v);
-    gui.add(dicer, "toolY", -50, 50).step(0.1).onChange(v => view.tool.position.y = v);
-    gui.add(dicer, "toolZ", 0, 100).step(0.1).onChange(v => view.tool.position.z = v);
+    const sim = gui.addFolder("Tool Sim");
+    sim.add(dicer, "toolX", -50, 50).step(0.1).onChange(v => view.tool.position.x = v);
+    sim.add(dicer, "toolY", -50, 50).step(0.1).onChange(v => view.tool.position.y = v);
+    sim.add(dicer, "toolZ", 0, 100).step(0.1).onChange(v => view.tool.position.z = v);
 
     loadStl(dicer.model);
 }
