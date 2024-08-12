@@ -40,7 +40,7 @@ const diceLineAndVisualize = (surf, lineY, lineZ) => {
     visBnd.position.y = lineY;
     visBnd.position.z = lineZ;
 
-    view.updateVisMisc([visContour, visBnd]);
+    view.updateVis("misc", [visContour, visBnd]);
 };
 
 
@@ -60,7 +60,7 @@ const loadStl = (fname) => {
             });
 
             const mesh = new THREE.Mesh(geometry, material)
-            view.updateVisObj(mesh);
+            view.updateVis("obj", [mesh]);
         },
         (xhr) => {
             console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
@@ -189,6 +189,7 @@ const generateTool = () => {
 class View3D {
     constructor() {
         this.tool = null;
+        this.visGroups = {};
         this.visMisc = [];
         this.visVg = null;
         this.visObj = null;
@@ -257,48 +258,18 @@ class View3D {
         Object.assign(window, { scene: this.scene });
     }
 
-    updateVisVg(v) {
-        if (this.visVg) {
-            this.scene.remove(this.visVg);
+    updateVis(group, vs) {
+        if (this.visGroups[group]) {
+            this.visGroups[group].forEach(v => this.scene.remove(v));
         }
-
-        if (v) {
-            this.scene.add(v);
-        }
-        this.visVg = v;
-    }
-
-    setVisVgVisibility(visible) {
-        if (this.visVg) {
-            this.visVg.visible = visible;
-        }
-    }
-
-    updateVisMisc(vs) {
-        this.visMisc.forEach(v => this.scene.remove(v));
-        this.visMisc = [];
-
         vs.forEach(v => this.scene.add(v));
-        this.visMisc = vs;
+        this.visGroups[group] = vs;
     }
 
-    updateVisMill(vs) {
-        this.visMill.forEach(v => this.scene.remove(v));
-        this.visMill = [];
-
-        vs.forEach(v => this.scene.add(v));
-        this.visMill = vs;
-    }
-
-    updateVisObj(v) {
-        if (this.visObj) {
-            this.scene.remove(this.visObj);
+    setVisVisibility(group, visible) {
+        if (this.visGroups[group]) {
+            this.visGroups[group].forEach(v => v.visible = visible);
         }
-
-        if (v) {
-            this.scene.add(v);
-        }
-        this.visObj = v;
     }
 
     onWindowResize() {
@@ -343,7 +314,7 @@ const dicer = {
         diceSurf(dicer.objSurf, targVg);
         dicer.millVg = millLayersZ(workVg, targVg);
 
-        view.updateVisVg(createVgVis(targVg));
+        view.updateVis("vg", [createVgVis(targVg)]);
         dicer.showVoxels = true;
     },
     diceLine: () => {
@@ -359,14 +330,14 @@ const dicer = {
 function initGui(view) {
     const gui = new GUI();
     gui.add(dicer, 'model', Model).onChange((model) => {
-        view.updateVisVg(null);
-        view.updateVisMisc([]);
+        view.updateVis("vg", []);
+        view.updateVis("misc", []);
 
         loadStl(model);
     });
     gui.add(dicer, "resMm", [1e-3, 1e-2, 1e-1, 0.25, 0.5, 1]);
     gui.add(dicer, "showVoxels").onChange(v => {
-        view.setVisVgVisibility(v);
+        view.setVisVisibility("vg", v);
     }).listen();
     gui.add(dicer, "dice");
 
@@ -378,9 +349,9 @@ function initGui(view) {
     const sim = gui.addFolder("Tool Sim");
     sim.add(dicer, "layerZ", 0, 200).step(1).onChange(iz => {
         if (dicer.millVg && 0 <= iz && iz < dicer.millVg.numZ) {
-            view.updateVisMill([createVgVis(dicer.millVg.clone().filterZ(iz))]);
+            view.updateVis("mill", [createVgVis(dicer.millVg.clone().filterZ(iz))]);
         } else {
-            view.updateVisMill([]);
+            view.updateVis("mill", []);
         }
     });
     sim.add(dicer, "toolX", -50, 50).step(0.1).onChange(v => view.tool.position.x = v);
