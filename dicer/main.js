@@ -195,6 +195,9 @@ const generateTool = () => {
 ////////////////////////////////////////////////////////////////////////////////
 // 3D view
 
+/**
+ * Scene is in mm unit. Right-handed, Z+ up.
+ */
 class View3D {
     constructor() {
         this.tool = null;
@@ -203,13 +206,18 @@ class View3D {
         this.visObj = null;
 
         this.init();
+
+        this.tool = generateTool();
+        this.scene.add(this.tool);
+
+        const blank = generateBlank();
+        this.scene.add(blank);
     }
 
     init() {
         const width = window.innerWidth;
         const height = window.innerHeight;
 
-        // camera
         const aspect = width / height;
         this.camera = new THREE.OrthographicCamera(-50 * aspect, 50 * aspect, 50, -50, 0.1, 300);
         this.camera.position.x = -30;
@@ -217,16 +225,12 @@ class View3D {
         this.camera.position.z = 90;
         this.camera.up.set(0, 0, 1);
 
-        // renderer
-
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(width, height);
         this.renderer.setAnimationLoop(() => this.animate());
         this.container = document.getElementById('container');
         this.container.appendChild(this.renderer.domElement);
-
-        // scene (scene is in mm unit)
 
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0xffffff);
@@ -241,6 +245,7 @@ class View3D {
         const hemiLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 1);
         this.scene.add(hemiLight);
 
+
         const gridHelper = new THREE.GridHelper(60, 6);
         this.scene.add(gridHelper);
         gridHelper.rotateX(Math.PI / 2);
@@ -249,13 +254,8 @@ class View3D {
         this.scene.add(axesHelper);
         axesHelper.position.set(-29, -29, 0);
 
-        this.tool = generateTool();
-        this.scene.add(this.tool);
-
-        const blank = generateBlank();
-        this.scene.add(blank);
-
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+
 
         this.stats = new Stats();
         container.appendChild(this.stats.dom);
@@ -263,7 +263,7 @@ class View3D {
         const guiStatsEl = document.createElement('div');
         guiStatsEl.classList.add('gui-stats');
 
-        // listeners
+
         window.addEventListener('resize', () => this.onWindowResize());
         Object.assign(window, { scene: this.scene });
     }
