@@ -3,7 +3,10 @@ import Stats from 'three/addons/libs/stats.module.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { initVG, diceSurf, sliceSurfByPlane, sliceContourByLine, millLayersZ, millLayersY } from './geom.js';
+import {
+    initVG, diceSurf, sliceSurfByPlane, sliceContourByLine,
+    millLayersZDown, millLayersYDown, millLayersXDown, millLayersYUp, millLayersXUp
+} from './geom.js';
 
 
 const convGeomToSurf = (geom) => {
@@ -307,11 +310,13 @@ const dicer = {
         const targVg = workVg.clone();
         diceSurf(surfBlank, workVg);
         diceSurf(dicer.objSurf, targVg);
-        
+
         dicer.millVgs = [];
-        dicer.millVgs.push(millLayersZ(workVg, targVg));
-        dicer.millVgs.push(millLayersY(workVg, targVg));
-        dicer.millVgs.push(millLayersZ(workVg, targVg));
+        dicer.millVgs.push(millLayersZDown(workVg, targVg));
+        dicer.millVgs.push(millLayersYDown(workVg, targVg));
+        dicer.millVgs.push(millLayersXDown(workVg, targVg));
+        dicer.millVgs.push(millLayersYUp(workVg, targVg));
+        dicer.millVgs.push(millLayersXUp(workVg, targVg));
         console.log(`milling done; ${dicer.millVgs.length} steps emitted`);
 
         view.updateVis("vg-targ", [createVgVis(targVg)]);

@@ -63,6 +63,15 @@ export class VoxelGrid {
         return this;
     }
 
+    filterX(ix) {
+        for (let i = 0; i < this.data.length; i++) {
+            if (i % this.numX !== ix) {
+                this.data[i] = 0;
+            }
+        }
+        return this;
+    }
+
     /////
     // boolean ops
 
@@ -70,7 +79,7 @@ export class VoxelGrid {
      * Project existence of [iz+1, numZ) layers to layer iz.
      * Keep layers below intact.
      */
-    projectZ(toIz) {
+    projectZDown(toIz) {
         for (let iy = 0; iy < this.numY; iy++) {
             for (let ix = 0; ix < this.numX; ix++) {
                 let accum = false;
@@ -87,7 +96,7 @@ export class VoxelGrid {
         return this;
     }
 
-    projectY(toIy) {
+    projectYDown(toIy) {
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let ix = 0; ix < this.numX; ix++) {
                 let accum = false;
@@ -98,6 +107,54 @@ export class VoxelGrid {
                     }
                 }
                 this.set(ix, toIy, iz, accum ? 255 : 0);
+            }
+        }
+        return this;
+    }
+
+    projectXDown(toIx) {
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                let accum = false;
+                for (let ix = toIx + 1; ix < this.numX; ix++) {
+                    if (this.get(ix, iy, iz) > 0) {
+                        accum = true;
+                        break;
+                    }
+                }
+                this.set(toIx, iy, iz, accum ? 255 : 0);
+            }
+        }
+        return this;
+    }
+
+    projectYUp(toIy) {
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let ix = 0; ix < this.numX; ix++) {
+                let accum = false;
+                for (let iy = toIy - 1; iy >= 0; iy--) {
+                    if (this.get(ix, iy, iz) > 0) {
+                        accum = true;
+                        break;
+                    }
+                }
+                this.set(ix, toIy, iz, accum ? 255 : 0);
+            }
+        }
+        return this;
+    }
+
+    projectXUp(toIx) {
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                let accum = false;
+                for (let ix = toIx - 1; ix >= 0; ix--) {
+                    if (this.get(ix, iy, iz) > 0) {
+                        accum = true;
+                        break;
+                    }
+                }
+                this.set(toIx, iy, iz, accum ? 255 : 0);
             }
         }
         return this;
@@ -151,6 +208,38 @@ export class VoxelGrid {
                                 continue;
                             }
                             if (buffer[nx + nz * this.numX] > 0) {
+                                accum = true;
+                                break;
+                            }
+                        }
+                    }
+                    this.set(ix, iy, iz, accum ? 255 : 0);
+                }
+            }
+        }
+        return this;
+    }
+
+    convolveYZ() {
+        const buffer = new Uint8Array(this.numY * this.numZ);
+        for (let ix = 0; ix < this.numX; ix++) {
+            for (let iz = 0; iz < this.numZ; iz++) {
+                for (let iy = 0; iy < this.numY; iy++) {
+                    buffer[iy + iz * this.numY] = this.get(ix, iy, iz);
+                }
+            }
+
+            for (let iz = 0; iz < this.numZ; iz++) {
+                for (let iy = 0; iy < this.numY; iy++) {
+                    let accum = false;
+                    for (let dz = -1; dz <= 1; dz++) {
+                        for (let dy = -1; dy <= 1; dy++) {
+                            const ny = iy + dy;
+                            const nz = iz + dz;
+                            if (ny < 0 || ny >= this.numY || nz < 0 || nz >= this.numZ) {
+                                continue;
+                            }
+                            if (buffer[ny + nz * this.numY] > 0) {
                                 accum = true;
                                 break;
                             }
@@ -232,13 +321,13 @@ const isectLine2 = (p, q, y) => {
 // Removes layer-by-layer in Z+ -> Z- direction.
 // Modifies workVg.
 // returns: mill vg: VoxelGrid (255: voxel to mill, from Z top to bottom)
-export const millLayersZ = (workVg, targVg) => {
+export const millLayersZDown = (workVg, targVg) => {
     const wantToMillVg = workVg.clone().sub(targVg);
     const millVg = workVg.clone().fill(0);
 
     for (let iz = workVg.numZ - 1; iz >= 0; iz--) {
         // millable = want-to-mill && !blocked
-        const blockedVg = workVg.clone().projectZ(iz).convolveXY();
+        const blockedVg = workVg.clone().projectZDown(iz).convolveXY();
         const millLayer = blockedVg.not().and(wantToMillVg).filterZ(iz);
 
         millVg.or(millLayer);
@@ -247,14 +336,59 @@ export const millLayersZ = (workVg, targVg) => {
     return millVg;
 };
 
-export const millLayersY = (workVg, targVg) => {
+export const millLayersYDown = (workVg, targVg) => {
     const wantToMillVg = workVg.clone().sub(targVg);
     const millVg = workVg.clone().fill(0);
 
     for (let iy = workVg.numY - 1; iy >= 0; iy--) {
         // millable = want-to-mill && !blocked
-        const blockedVg = workVg.clone().projectY(iy).convolveXZ();
+        const blockedVg = workVg.clone().projectYDown(iy).convolveXZ();
         const millLayer = blockedVg.not().and(wantToMillVg).filterY(iy);
+
+        millVg.or(millLayer);
+        workVg.sub(millLayer);
+    }
+    return millVg;
+};
+
+export const millLayersYUp = (workVg, targVg) => {
+    const wantToMillVg = workVg.clone().sub(targVg);
+    const millVg = workVg.clone().fill(0);
+
+    for (let iy = 0; iy < workVg.numY; iy++) {
+        // millable = want-to-mill && !blocked
+        const blockedVg = workVg.clone().projectYUp(iy).convolveXZ();
+        const millLayer = blockedVg.not().and(wantToMillVg).filterY(iy);
+
+        millVg.or(millLayer);
+        workVg.sub(millLayer);
+    }
+    return millVg;
+};
+
+export const millLayersXDown = (workVg, targVg) => {
+    const wantToMillVg = workVg.clone().sub(targVg);
+    const millVg = workVg.clone().fill(0);
+
+    for (let ix = workVg.numX - 1; ix >= 0; ix--) {
+        // millable = want-to-mill && !blocked
+        const blockedVg = workVg.clone().projectXDown(ix).convolveYZ();
+        const millLayer = blockedVg.not().and(wantToMillVg).filterX(ix);
+
+        millVg.or(millLayer);
+        workVg.sub(millLayer);
+    }
+    return millVg;
+};
+
+export const millLayersXUp = (workVg, targVg) => {
+    const wantToMillVg = workVg.clone().sub(targVg);
+    const millVg = workVg.clone().fill(0);
+
+    for (let ix = 0; ix < workVg.numX; ix++) {
+        // millable = want-to-mill && !blocked
+        const blockedVg = workVg.clone().projectXUp(ix).convolveYZ();
+        const millLayer = blockedVg.not().and(wantToMillVg).filterX(ix);
 
         millVg.or(millLayer);
         workVg.sub(millLayer);
