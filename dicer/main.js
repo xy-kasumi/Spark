@@ -188,14 +188,8 @@ const generateTool = () => {
  */
 class View3D {
     constructor() {
-        this.tool = null;
-        this.visGroups = {};
-        this.visMisc = [];
-        this.visVg = null;
-        this.visObj = null;
-        this.visMill = [];
-
         this.init();
+        this.visGroups = {};
 
         this.tool = generateTool();
         this.scene.add(this.tool);
