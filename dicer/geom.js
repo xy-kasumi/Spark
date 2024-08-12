@@ -54,6 +54,58 @@ export class VoxelGrid {
         return this;
     }
 
+    /////
+    // boolean ops
+
+    /**
+     * Project existence of [iz+1, numZ) layers to layer iz.
+     * Keep layers below intact.
+     */
+    projectZ(toIz) {
+        for (let iy = 0; iy < this.numY; iy++) {
+            for (let ix = 0; ix < this.numX; ix++) {
+                let accum = false;
+                for (let iz = toIz + 1; iz < this.numZ; iz++) {
+                    if (this.get(ix, iy, iz) > 0) {
+                        accum = true;
+                        break;
+                    }
+                }
+
+                this.set(ix, iy, toIz, accum ? 255 : 0);
+            }
+        }
+        return this;
+    }
+
+    not() {
+        for (let i = 0; i < this.data.length; i++) {
+            this.data[i] = this.data[i] > 0 ? 0 : 255;
+        }
+        return this;
+    }
+
+    and(other) {
+        for (let i = 0; i < this.data.length; i++) {
+            this.data[i] = (this.data[i] > 0 && other.data[i] > 0) ? 255 : 0;
+        }
+        return this;
+    }
+
+    or(other) {
+        for (let i = 0; i < this.data.length; i++) {
+            this.data[i] = (this.data[i] > 0 || other.data[i] > 0) ? 255 : 0;
+        }
+        return this;
+    }
+
+    /////
+    // read/write
+    fill(val) {
+        this.data.fill(val);
+        return this;
+    }
+
     set(ix, iy, iz, val) {
         this.data[ix + iy * this.numX + iz * this.numX * this.numY] = val;
     }
@@ -92,9 +144,24 @@ const isectLine2 = (p, q, y) => {
     return p.clone().lerp(q, t);
 };
 
-// returns: VoxelGrid (255: voxel to mill, from Z top to bottom)
+// returns: [millVg, workVg]
+//    millVg: VoxelGrid (255: voxel to mill, from Z top to bottom)
+//    workVg: VoxelGrid, work after milling
 export const millLayersZ = (workVg, targVg) => {
-    return workVg.clone().sub(targVg);
+    const wantToMillVg = workVg.clone().sub(targVg);
+    workVg = workVg.clone();
+    const millVg = workVg.clone().fill(0);
+
+    for (let iz = workVg.numZ - 1; iz >= 0; iz--) {
+        // millable = want-to-mill && !blocked
+        const blockedVg = workVg.clone().projectZ(iz);
+        const millLayer = blockedVg.not().and(wantToMillVg).filterZ(iz);
+
+        millVg.or(millLayer);
+        workVg.sub(millLayer);
+    }
+
+    return {mill: millVg, work: workVg};
 };
 
 export const initVG = (surf, resMm) => {

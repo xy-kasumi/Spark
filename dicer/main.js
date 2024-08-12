@@ -154,7 +154,7 @@ const createVgVis = (vg) => {
 const generateBlank = () => {
     const blank = new THREE.Mesh(
         generateBlankGeom(),
-        new THREE.MeshLambertMaterial({ color: "blue", wireframe: true }));
+        new THREE.MeshLambertMaterial({ color: "blue", wireframe: true, transparent: true, opacity: 0.05 }));
     return blank;
 };
 
@@ -296,7 +296,8 @@ const dicer = {
     resMm: 0.5,
     lineZ: 1,
     lineY: 0,
-    showVoxels: false,
+    showTarget: false,
+    showWork: false,
     objSurf: null,
     millVg: null,
     dice: () => {
@@ -306,10 +307,14 @@ const dicer = {
         const targVg = workVg.clone();
         diceSurf(surfBlank, workVg);
         diceSurf(dicer.objSurf, targVg);
-        dicer.millVg = millLayersZ(workVg, targVg);
+        const res = millLayersZ(workVg, targVg);
+        dicer.millVg = res.mill;
 
-        view.updateVis("vg", [createVgVis(targVg)]);
-        dicer.showVoxels = true;
+        view.updateVis("vg-targ", [createVgVis(targVg)]);
+        dicer.showTarget = true;
+
+        view.updateVis("vg-work", [createVgVis(res.work)]);
+        view.setVisVisibility("vg-work", false);
     },
     diceLine: () => {
         const sf = convGeomToSurf(generateBlankGeom());
@@ -324,14 +329,18 @@ const dicer = {
 function initGui(view) {
     const gui = new GUI();
     gui.add(dicer, 'model', Model).onChange((model) => {
-        view.updateVis("vg", []);
+        view.updateVis("vg-targ", []);
+        view.updateVis("vg-work", []);
         view.updateVis("misc", []);
 
         loadStl(model);
     });
     gui.add(dicer, "resMm", [1e-3, 1e-2, 1e-1, 0.25, 0.5, 1]);
-    gui.add(dicer, "showVoxels").onChange(v => {
-        view.setVisVisibility("vg", v);
+    gui.add(dicer, "showTarget").onChange(v => {
+        view.setVisVisibility("vg-targ", v);
+    }).listen();
+    gui.add(dicer, "showWork").onChange(v => {
+        view.setVisVisibility("vg-work", v);
     }).listen();
     gui.add(dicer, "dice");
 
