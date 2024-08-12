@@ -78,6 +78,34 @@ export class VoxelGrid {
         return this;
     }
 
+    convolveXY() {
+        const buffer = new Uint8Array(this.numX * this.numY);
+        for (let iz = 0; iz < this.numZ; iz++) {
+            buffer.set(this.data.subarray(iz * this.numX * this.numY, (iz + 1) * this.numX * this.numY));
+
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    let accum = false;
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            const nx = ix + dx;
+                            const ny = iy + dy;
+                            if (nx < 0 || nx >= this.numX || ny < 0 || ny >= this.numY) {
+                                continue;
+                            }
+                            if (buffer[nx + ny * this.numX] > 0) {
+                                accum = true;
+                                break;
+                            }
+                        }
+                    }
+                    this.set(ix, iy, iz, accum ? 255 : 0);
+                }
+            }
+        }
+        return this;
+    }
+
     not() {
         for (let i = 0; i < this.data.length; i++) {
             this.data[i] = this.data[i] > 0 ? 0 : 255;
@@ -154,7 +182,7 @@ export const millLayersZ = (workVg, targVg) => {
 
     for (let iz = workVg.numZ - 1; iz >= 0; iz--) {
         // millable = want-to-mill && !blocked
-        const blockedVg = workVg.clone().projectZ(iz);
+        const blockedVg = workVg.clone().projectZ(iz).convolveXY();
         const millLayer = blockedVg.not().and(wantToMillVg).filterZ(iz);
 
         millVg.or(millLayer);
