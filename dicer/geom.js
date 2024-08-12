@@ -327,7 +327,7 @@ export const millLayersZDown = (workVg, targVg) => {
 
     for (let iz = workVg.numZ - 1; iz >= 0; iz--) {
         // millable = want-to-mill && !blocked
-        const blockedVg = workVg.clone().projectZDown(iz).convolveXY();
+        const blockedVg = workVg.clone().projectZDown(iz); // .convolveXY();
         const millLayer = blockedVg.not().and(wantToMillVg).filterZ(iz);
 
         millVg.or(millLayer);
@@ -342,7 +342,7 @@ export const millLayersYDown = (workVg, targVg) => {
 
     for (let iy = workVg.numY - 1; iy >= 0; iy--) {
         // millable = want-to-mill && !blocked
-        const blockedVg = workVg.clone().projectYDown(iy).convolveXZ();
+        const blockedVg = workVg.clone().projectYDown(iy); //.convolveXZ();
         const millLayer = blockedVg.not().and(wantToMillVg).filterY(iy);
 
         millVg.or(millLayer);
@@ -357,7 +357,7 @@ export const millLayersYUp = (workVg, targVg) => {
 
     for (let iy = 0; iy < workVg.numY; iy++) {
         // millable = want-to-mill && !blocked
-        const blockedVg = workVg.clone().projectYUp(iy).convolveXZ();
+        const blockedVg = workVg.clone().projectYUp(iy); //.convolveXZ();
         const millLayer = blockedVg.not().and(wantToMillVg).filterY(iy);
 
         millVg.or(millLayer);
@@ -372,7 +372,7 @@ export const millLayersXDown = (workVg, targVg) => {
 
     for (let ix = workVg.numX - 1; ix >= 0; ix--) {
         // millable = want-to-mill && !blocked
-        const blockedVg = workVg.clone().projectXDown(ix).convolveYZ();
+        const blockedVg = workVg.clone().projectXDown(ix); // .convolveYZ();
         const millLayer = blockedVg.not().and(wantToMillVg).filterX(ix);
 
         millVg.or(millLayer);
@@ -387,7 +387,7 @@ export const millLayersXUp = (workVg, targVg) => {
 
     for (let ix = 0; ix < workVg.numX; ix++) {
         // millable = want-to-mill && !blocked
-        const blockedVg = workVg.clone().projectXUp(ix).convolveYZ();
+        const blockedVg = workVg.clone().projectXUp(ix); // .convolveYZ();
         const millLayer = blockedVg.not().and(wantToMillVg).filterX(ix);
 
         millVg.or(millLayer);

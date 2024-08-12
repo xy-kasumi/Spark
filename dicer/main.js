@@ -75,8 +75,8 @@ const loadStl = (fname) => {
 };
 
 const generateBlankGeom = () => {
-    const blankRadius = 25;
-    const blankHeight = 50;
+    const blankRadius = 10;
+    const blankHeight = 25;
     const geom = new THREE.CylinderGeometry(blankRadius, blankRadius, blankHeight, 64, 1);
     const transf = new THREE.Matrix4().compose(
         new THREE.Vector3(0, 0, blankHeight / 2),
@@ -206,10 +206,10 @@ class View3D {
         const height = window.innerHeight;
 
         const aspect = width / height;
-        this.camera = new THREE.OrthographicCamera(-50 * aspect, 50 * aspect, 50, -50, 0.1, 300);
-        this.camera.position.x = -30;
-        this.camera.position.y = -80;
-        this.camera.position.z = 90;
+        this.camera = new THREE.OrthographicCamera(-25 * aspect, 25 * aspect, 25, -25, 0.1, 150);
+        this.camera.position.x = -15;
+        this.camera.position.y = -40;
+        this.camera.position.z = 20;
         this.camera.up.set(0, 0, 1);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -233,13 +233,17 @@ class View3D {
         this.scene.add(hemiLight);
 
 
-        const gridHelper = new THREE.GridHelper(60, 6);
-        this.scene.add(gridHelper);
-        gridHelper.rotateX(Math.PI / 2);
+        const gridHelperBottom = new THREE.GridHelper(40, 4);
+        const gridHelperTop = new THREE.GridHelper(40, 1);
+        this.scene.add(gridHelperBottom);
+        this.scene.add(gridHelperTop);
+        gridHelperBottom.rotateX(Math.PI / 2);
+        gridHelperTop.rotateX(Math.PI / 2);
+        gridHelperTop.position.z = 40;
 
         const axesHelper = new THREE.AxesHelper(8);
         this.scene.add(axesHelper);
-        axesHelper.position.set(-29, -29, 0);
+        axesHelper.position.set(-19, -19, 0);
 
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
 
@@ -291,12 +295,15 @@ class View3D {
 
 const Model = {
     HELICAL_GEAR: "helical_gear",
+    HELICAL_GEAR_STANDING: "helical_gear_standing",
     DICE_TOWER: "dice_tower",
+    BENCHY: "benchy_25p",
+    BOLT_M3: "M3x10"
 };
 
 const dicer = {
     model: Model.HELICAL_GEAR,
-    resMm: 0.5,
+    resMm: 0.25,
     lineZ: 1,
     lineY: 0,
     showTarget: false,
@@ -312,7 +319,7 @@ const dicer = {
         diceSurf(dicer.objSurf, targVg);
 
         dicer.millVgs = [];
-        dicer.millVgs.push(millLayersZDown(workVg, targVg));
+        //dicer.millVgs.push(millLayersZDown(workVg, targVg));
         dicer.millVgs.push(millLayersYDown(workVg, targVg));
         dicer.millVgs.push(millLayersXDown(workVg, targVg));
         dicer.millVgs.push(millLayersYUp(workVg, targVg));
