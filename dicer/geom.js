@@ -43,6 +43,16 @@ export class VoxelGrid {
         }
         return this;
     }
+    
+    /** Keep specified Z-layer, set 0 to all others. */
+    filterZ(iz) {
+        for (let i = 0; i < this.data.length; i++) {
+            if (Math.floor(i / (this.numX * this.numY)) !== iz) {
+                this.data[i] = 0;
+            }
+        }
+        return this;
+    }
 
     set(ix, iy, iz, val) {
         this.data[ix + iy * this.numX + iz * this.numX * this.numY] = val;

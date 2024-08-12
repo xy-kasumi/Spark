@@ -27,18 +27,6 @@ const convGeomToSurf = (geom) => {
     }
 };
 
-const visualizeDice = (workVg, targVg) => {
-    const diff = workVg.clone().sub(targVg);
-    console.log(`removal: ${diff.volume()}mm^3 (${diff.count()} voxels)`,);
-
-    workVg.multiplyScalar(0.1);
-    workVg.add(targVg);
-
-    const visVg = createVgVis(workVg);
-    view.updateVisVg(visVg);
-    dicer.showVoxels = true;
-};
-
 const diceLineAndVisualize = (surf, lineY, lineZ) => {
     // slice specific (Y, Z) line.
     const cont = sliceSurfByPlane(surf, lineZ);
@@ -204,6 +192,7 @@ class View3D {
         this.visMisc = [];
         this.visVg = null;
         this.visObj = null;
+        this.visMill = [];
 
         this.init();
 
@@ -293,6 +282,14 @@ class View3D {
         this.visMisc = vs;
     }
 
+    updateVisMill(vs) {
+        this.visMill.forEach(v => this.scene.remove(v));
+        this.visMill = [];
+
+        vs.forEach(v => this.scene.add(v));
+        this.visMill = vs;
+    }
+
     updateVisObj(v) {
         if (this.visObj) {
             this.scene.remove(this.visObj);
@@ -336,6 +333,7 @@ const dicer = {
     lineY: 0,
     showVoxels: false,
     objSurf: null,
+    millVg: null,
     dice: () => {
         const surfBlank = convGeomToSurf(generateBlankGeom());
 
@@ -343,14 +341,16 @@ const dicer = {
         const targVg = workVg.clone();
         diceSurf(surfBlank, workVg);
         diceSurf(dicer.objSurf, targVg);
-        millLayersZ(workVg, targVg);
+        dicer.millVg = millLayersZ(workVg, targVg);
 
-        visualizeDice(workVg, targVg);
+        view.updateVisVg(createVgVis(targVg));
+        dicer.showVoxels = true;
     },
     diceLine: () => {
         const sf = convGeomToSurf(generateBlankGeom());
         diceLineAndVisualize(dicer.objSurf, dicer.lineY, dicer.lineZ);
     },
+    layerZ: 0,
     toolX: 0,
     toolY: 0,
     toolZ: 0,
@@ -376,6 +376,13 @@ function initGui(view) {
     sd.add(dicer, "diceLine");
 
     const sim = gui.addFolder("Tool Sim");
+    sim.add(dicer, "layerZ", 0, 200).step(1).onChange(iz => {
+        if (dicer.millVg && 0 <= iz && iz < dicer.millVg.numZ) {
+            view.updateVisMill([createVgVis(dicer.millVg.clone().filterZ(iz))]);
+        } else {
+            view.updateVisMill([]);
+        }
+    });
     sim.add(dicer, "toolX", -50, 50).step(0.1).onChange(v => view.tool.position.x = v);
     sim.add(dicer, "toolY", -50, 50).step(0.1).onChange(v => view.tool.position.y = v);
     sim.add(dicer, "toolZ", 0, 100).step(0.1).onChange(v => view.tool.position.z = v);
