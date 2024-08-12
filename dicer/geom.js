@@ -54,6 +54,15 @@ export class VoxelGrid {
         return this;
     }
 
+    filterY(iy) {
+        for (let i = 0; i < this.data.length; i++) {
+            if (Math.floor(i / this.numX) % this.numY !== iy) {
+                this.data[i] = 0;
+            }
+        }
+        return this;
+    }
+
     /////
     // boolean ops
 
@@ -78,6 +87,22 @@ export class VoxelGrid {
         return this;
     }
 
+    projectY(toIy) {
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let ix = 0; ix < this.numX; ix++) {
+                let accum = false;
+                for (let iy = toIy + 1; iy < this.numY; iy++) {
+                    if (this.get(ix, iy, iz) > 0) {
+                        accum = true;
+                        break;
+                    }
+                }
+                this.set(ix, toIy, iz, accum ? 255 : 0);
+            }
+        }
+        return this;
+    }
+
     convolveXY() {
         const buffer = new Uint8Array(this.numX * this.numY);
         for (let iz = 0; iz < this.numZ; iz++) {
@@ -94,6 +119,38 @@ export class VoxelGrid {
                                 continue;
                             }
                             if (buffer[nx + ny * this.numX] > 0) {
+                                accum = true;
+                                break;
+                            }
+                        }
+                    }
+                    this.set(ix, iy, iz, accum ? 255 : 0);
+                }
+            }
+        }
+        return this;
+    }
+
+    convolveXZ() {
+        const buffer = new Uint8Array(this.numX * this.numZ);
+        for (let iy = 0; iy < this.numY; iy++) {
+            for (let iz = 0; iz < this.numZ; iz++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    buffer[ix + iz * this.numX] = this.get(ix, iy, iz);
+                }
+            }
+
+            for (let iz = 0; iz < this.numZ; iz++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    let accum = false;
+                    for (let dz = -1; dz <= 1; dz++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            const nx = ix + dx;
+                            const nz = iz + dz;
+                            if (nx < 0 || nx >= this.numX || nz < 0 || nz >= this.numZ) {
+                                continue;
+                            }
+                            if (buffer[nx + nz * this.numX] > 0) {
                                 accum = true;
                                 break;
                             }
@@ -172,12 +229,11 @@ const isectLine2 = (p, q, y) => {
     return p.clone().lerp(q, t);
 };
 
-// returns: [millVg, workVg]
-//    millVg: VoxelGrid (255: voxel to mill, from Z top to bottom)
-//    workVg: VoxelGrid, work after milling
+// Removes layer-by-layer in Z+ -> Z- direction.
+// Modifies workVg.
+// returns: mill vg: VoxelGrid (255: voxel to mill, from Z top to bottom)
 export const millLayersZ = (workVg, targVg) => {
     const wantToMillVg = workVg.clone().sub(targVg);
-    workVg = workVg.clone();
     const millVg = workVg.clone().fill(0);
 
     for (let iz = workVg.numZ - 1; iz >= 0; iz--) {
@@ -188,8 +244,22 @@ export const millLayersZ = (workVg, targVg) => {
         millVg.or(millLayer);
         workVg.sub(millLayer);
     }
+    return millVg;
+};
 
-    return {mill: millVg, work: workVg};
+export const millLayersY = (workVg, targVg) => {
+    const wantToMillVg = workVg.clone().sub(targVg);
+    const millVg = workVg.clone().fill(0);
+
+    for (let iy = workVg.numY - 1; iy >= 0; iy--) {
+        // millable = want-to-mill && !blocked
+        const blockedVg = workVg.clone().projectY(iy).convolveXZ();
+        const millLayer = blockedVg.not().and(wantToMillVg).filterY(iy);
+
+        millVg.or(millLayer);
+        workVg.sub(millLayer);
+    }
+    return millVg;
 };
 
 export const initVG = (surf, resMm) => {

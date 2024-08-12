@@ -3,7 +3,7 @@ import Stats from 'three/addons/libs/stats.module.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { initVG, diceSurf, sliceSurfByPlane, sliceContourByLine, millLayersZ } from './geom.js';
+import { initVG, diceSurf, sliceSurfByPlane, sliceContourByLine, millLayersZ, millLayersY } from './geom.js';
 
 
 const convGeomToSurf = (geom) => {
@@ -299,7 +299,7 @@ const dicer = {
     showTarget: false,
     showWork: false,
     objSurf: null,
-    millVg: null,
+    millVgs: [],
     dice: () => {
         const surfBlank = convGeomToSurf(generateBlankGeom());
 
@@ -307,20 +307,24 @@ const dicer = {
         const targVg = workVg.clone();
         diceSurf(surfBlank, workVg);
         diceSurf(dicer.objSurf, targVg);
-        const res = millLayersZ(workVg, targVg);
-        dicer.millVg = res.mill;
+        
+        dicer.millVgs = [];
+        dicer.millVgs.push(millLayersZ(workVg, targVg));
+        dicer.millVgs.push(millLayersY(workVg, targVg));
+        dicer.millVgs.push(millLayersZ(workVg, targVg));
+        console.log(`milling done; ${dicer.millVgs.length} steps emitted`);
 
         view.updateVis("vg-targ", [createVgVis(targVg)]);
         dicer.showTarget = true;
 
-        view.updateVis("vg-work", [createVgVis(res.work)]);
+        view.updateVis("vg-work", [createVgVis(workVg)]);
         view.setVisVisibility("vg-work", false);
     },
     diceLine: () => {
         const sf = convGeomToSurf(generateBlankGeom());
         diceLineAndVisualize(dicer.objSurf, dicer.lineY, dicer.lineZ);
     },
-    layerZ: 0,
+    millStep: 0,
     toolX: 0,
     toolY: 0,
     toolZ: 0,
@@ -350,9 +354,9 @@ function initGui(view) {
     sd.add(dicer, "diceLine");
 
     const sim = gui.addFolder("Tool Sim");
-    sim.add(dicer, "layerZ", 0, 200).step(1).onChange(iz => {
-        if (dicer.millVg && 0 <= iz && iz < dicer.millVg.numZ) {
-            view.updateVis("mill", [createVgVis(dicer.millVg.clone().filterZ(iz))]);
+    sim.add(dicer, "millStep", 0, 10).step(1).onChange(step => {
+        if (0 <= step && step < dicer.millVgs.length) {
+            view.updateVis("mill", [createVgVis(dicer.millVgs[step])]);
         } else {
             view.updateVis("mill", []);
         }
