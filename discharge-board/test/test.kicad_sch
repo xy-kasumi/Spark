@@ -1007,7 +1007,7 @@
 				)
 			)
 		)
-		(property "Value" "12ohm, 25W"
+		(property "Value" "47ohm, 25W"
 			(at 102.87 43.18 90)
 			(effects
 				(font
