@@ -162,22 +162,21 @@ const generateBlank = () => {
 };
 
 const generateTool = () => {
-    // 25G needle
-    const needleExtRadius = 0.51 / 2;
+    // 0.5mm nozzle & 0.7mm end
+    const needleExtRadius = 0.5 / 2;
     const needleLength = 25;
-    const wireRadius = 0.25 / 2;
-    const wireExtrusion = wireRadius * 2;
+    const ballRadius = 0.7 / 2;
 
     const needle = new THREE.Mesh(
         new THREE.CylinderGeometry(needleExtRadius, needleExtRadius, needleLength, 32, 1),
         new THREE.MeshPhysicalMaterial({ color: 0xf0f0f0, metalness: 0.9, roughness: 0.3 }));
     needle.position.y = needleLength / 2;
 
-    const wire = new THREE.Mesh(
-        new THREE.CylinderGeometry(wireRadius, wireRadius, wireExtrusion, 16, 1),
+    const ball = new THREE.Mesh(
+        new THREE.SphereGeometry(ballRadius, 10, 10),
         new THREE.MeshPhysicalMaterial({ color: "red", metalness: 0.9, roughness: 0.7 }));
-    needle.add(wire);
-    wire.position.y = needleLength / 2 + wireExtrusion / 2;
+    needle.add(ball);
+    ball.position.y = needleLength / 2;
 
     return needle;
 };
@@ -320,10 +319,10 @@ const dicer = {
 
         dicer.millVgs = [];
         //dicer.millVgs.push(millLayersZDown(workVg, targVg));
-        dicer.millVgs.push(millLayersYDown(workVg, targVg));
+        //dicer.millVgs.push(millLayersYDown(workVg, targVg));
         dicer.millVgs.push(millLayersXDown(workVg, targVg));
-        dicer.millVgs.push(millLayersYUp(workVg, targVg));
-        dicer.millVgs.push(millLayersXUp(workVg, targVg));
+        //dicer.millVgs.push(millLayersYUp(workVg, targVg));
+        //dicer.millVgs.push(millLayersXUp(workVg, targVg));
         console.log(`milling done; ${dicer.millVgs.length} steps emitted`);
 
         view.updateVis("vg-targ", [createVgVis(targVg)]);

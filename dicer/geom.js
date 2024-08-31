@@ -367,13 +367,14 @@ export const millLayersYUp = (workVg, targVg) => {
 };
 
 export const millLayersXDown = (workVg, targVg) => {
-    const wantToMillVg = workVg.clone().sub(targVg);
+    const wantToMillVg = workVg.clone().sub(targVg).not().convolveYZ().not();
     const millVg = workVg.clone().fill(0);
 
     for (let ix = workVg.numX - 1; ix >= 0; ix--) {
         // millable = want-to-mill && !blocked
         const blockedVg = workVg.clone().projectXDown(ix); // .convolveYZ();
         const millLayer = blockedVg.not().and(wantToMillVg).filterX(ix);
+        millLayer.convolveYZ();
 
         millVg.or(millLayer);
         workVg.sub(millLayer);
