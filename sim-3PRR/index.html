@@ -1,24 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3-PRR Mechanism Simulator</title>
     <style>
-        body { font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; }
-        canvas { border: 1px solid #000; margin: 20px 0; }
-        input { width: 300px; }
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        canvas {
+            border: 1px solid #000;
+            margin: 20px 0;
+        }
+
+        input {
+            width: 300px;
+        }
     </style>
 </head>
+
 <body>
     <h1>3-PRR Mechanism Simulator</h1>
     <canvas id="mechanismCanvas" width="400" height="300"></canvas>
     <div>
-        <input type="range" id="slider1" min="0" max="100" value="10"><br/>
-        <input type="range" id="slider2" min="0" max="100" value="40"><br/>
+        <input type="range" id="slider1" min="0" max="100" value="10"><br />
+        <input type="range" id="slider2" min="0" max="100" value="40"><br />
         <input type="range" id="slider3" min="0" max="100" value="60">
     </div>
+    <button id="resetButton">Reset</button>
+    <button id="playButton">Play</button>
+
+    <div style="flex:auto">
+        <canvas id="inputSpaceCanvas" width="200" height="200"></canvas>
+        <canvas id="outputSpaceCanvas" width="200" height="200"></canvas>
+    </div>
+
     <script type="module" src="main.js">
     </script>
 </body>
+
 </html>
