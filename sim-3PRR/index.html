@@ -26,11 +26,13 @@
 
 <body>
     <h1>3-PRR Mechanism Simulator</h1>
+    ↑X+
+    →Z+
     <canvas id="mechanismCanvas" width="400" height="300"></canvas>
     <div>
-        <input type="range" id="slider1" min="0" max="100" value="10"><br />
-        <input type="range" id="slider2" min="0" max="100" value="40"><br />
-        <input type="range" id="slider3" min="0" max="100" value="60">
+        z1 <input type="range" id="slider1" min="0" max="100" value="30"><br />
+        z2 <input type="range" id="slider2" min="0" max="150" value="40"><br />
+        z3 <input type="range" id="slider3" min="0" max="150" value="60">
     </div>
     <button id="resetButton">Reset</button>
     <button id="playButton">Play</button>
@@ -39,6 +41,18 @@
         <canvas id="inputSpaceCanvas" width="200" height="200"></canvas>
         <canvas id="outputSpaceCanvas" width="200" height="200"></canvas>
     </div>
+
+    <figure class="highcharts-figure">
+        <div id="container"></div>
+    </figure>
+
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="https://code.highcharts.com/modules/exporting.js"></script>
+    <script src="https://code.highcharts.com/modules/export-data.js"></script>
+    <script src="https://code.highcharts.com/modules/accessibility.js"></script>
+
+
+
 
     <script type="module" src="main.js">
     </script>
