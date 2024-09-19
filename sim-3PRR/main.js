@@ -11,9 +11,9 @@ let eRPrev = null;
 let chart = null;
 
 const mech = {
-    z1: 30,
-    z2: 40,
-    z3: 60,
+    z1: 40,
+    z2: 70,
+    z3: 30,
     samples: [],
     reset: () => {
         mech.samples = [];
@@ -36,7 +36,7 @@ function computePositions() {
     }
     eLPrev = eL;
 
-    const eR = solveTriangle(eL, effectorLength, p3, linkLength, eRPrev || new THREE.Vector2(50, -50));
+    const eR = solveTriangle(eL, effectorLength, p3, linkLength, eRPrev || new THREE.Vector2(70, -30));
     if (eR === null || eR.y > 0 || eR.x < eL.x) {
         return { links: [] };
     }
@@ -149,7 +149,7 @@ const series = [{
     }
 },];
 
-chart = Highcharts.chart('container', {
+chart = Highcharts.chart('chart', {
     chart: {
         type: 'scatter',
         zooming: {
@@ -216,6 +216,20 @@ chart = Highcharts.chart('container', {
 ////////////////////////////////////////////////////////////////////////////////
 // 3D view
 
+function box(sx, sy, sz, hue) {
+    const geom = new THREE.BoxGeometry(sx, sy, sz);
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(hue, 0.5, 0.3) });
+    return new THREE.Mesh(geom, mat);
+}
+
+function cylinder(dia, h, hue) {
+    const r = dia / 2;
+    const geom = new THREE.CylinderGeometry(r, r, h, 32);
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(hue, 0.5, 0.3) });
+    return new THREE.Mesh(geom, mat);
+}
+
+
 /**
  * Scene is in mm unit. Right-handed, Z+ up.
  */
@@ -229,7 +243,7 @@ class View3D {
         const height = window.innerHeight;
 
         const aspect = width / height;
-        this.camera = new THREE.OrthographicCamera(-50 * aspect, 50 * aspect, 50, -50, 1, 500);
+        this.camera = new THREE.OrthographicCamera(-50 * aspect, 50 * aspect, 50, -50, -500, 500);
         this.camera.position.x = -15;
         this.camera.position.y = -40;
         this.camera.position.z = 20;
@@ -255,56 +269,86 @@ class View3D {
         const hemiLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 1);
         this.scene.add(hemiLight);
 
-
-        const gridHelperBottom = new THREE.GridHelper(100, 10);
-        this.scene.add(gridHelperBottom);
-        gridHelperBottom.rotateX(Math.PI / 2);
-
         const axesHelper = new THREE.AxesHelper(8);
         this.scene.add(axesHelper);
-        axesHelper.position.set(-19, -19, 0);
 
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
 
-        const geom = new THREE.CylinderGeometry(5, 5, 8, 32);
-        
-        const mat1 = new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(0.1, 0.5, 0.3) });
-        const mat2 = new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(0.2, 0.5, 0.3) });
-        const mat3 = new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(0.3, 0.5, 0.3) });
-        const slider1 = new THREE.Mesh(geom, mat1);
-        const slider2 = new THREE.Mesh(geom, mat2);
-        const slider3 = new THREE.Mesh(geom, mat3);
+        this.setupMech();
+
+        const guiStatsEl = document.createElement('div');
+        guiStatsEl.classList.add('gui-stats');
+
+        window.addEventListener('resize', () => this.onWindowResize());
+        Object.assign(window, { scene: this.scene });
+    }
+
+    setupMech() {
+        const railDiameter = 6;
+        const railLength = 150;
+        const railDistance = 20;
+
+        // cf. THK LM6 / https://www.monotaro.com/p/0723/1542/
+        const lbLength = 19;
+        const lbDiameter = 12;
+
+        const slider1 = cylinder(lbDiameter, lbLength, 0.1);
+        const slider2 = cylinder(lbDiameter, lbLength, 0.2);
+        const slider3 = cylinder(lbDiameter, lbLength, 0.3);
+
         this.scene.add(slider1);
         this.scene.add(slider2);
         this.scene.add(slider3);
         slider1.rotateZ(Math.PI / 2);
         slider2.rotateZ(Math.PI / 2);
         slider3.rotateZ(Math.PI / 2);
+        slider3.position.y = 20;
 
         this.slider1 = slider1;
         this.slider2 = slider2;
         this.slider3 = slider3;
 
-        const geomLink = new THREE.BoxGeometry(linkLength, 3, 3);
-        const geomEff = new THREE.BoxGeometry(effectorLength, 5, 5);
-
-        const link1Raw = new THREE.Mesh(geomLink, mat1);
+        const link1Raw = box(linkLength, 3, 3, 0.12);
         const link1 = new THREE.Object3D();
         link1.add(link1Raw);
         link1Raw.position.x = linkLength / 2;
-        const link2Raw = new THREE.Mesh(geomLink, mat2);
+        const link2Raw = box(linkLength, 3, 3, 0.22);
         const link2 = new THREE.Object3D();
         link2.add(link2Raw);
         link2Raw.position.x = linkLength / 2;
-        const link3Raw = new THREE.Mesh(geomLink, mat3);
+        const link3Raw = box(linkLength, 3, 3, 0.32);
         const link3 = new THREE.Object3D();
         link3.add(link3Raw);
         link3Raw.position.x = linkLength / 2;
+        link3.position.y = 20;
 
-        const effRaw = new THREE.Mesh(geomEff, new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(0.5, 0.5, 0.3) }));
+        const effRaw = box(effectorLength, 5, 5, 0.5);
         const eff = new THREE.Object3D();
         eff.add(effRaw);
         effRaw.position.x = effectorLength / 2;
+
+        const spindle = box(50, 20, 30, 0.6);
+        eff.add(spindle);
+        spindle.position.y = -10;
+        spindle.position.z = 15;
+        spindle.rotateY(-10 / 180 * Math.PI);
+
+        const tool = cylinder(2, 30, 0.7);
+        spindle.add(tool);
+        tool.rotateZ(Math.PI / 2);
+        tool.rotateX(Math.PI / 2);
+        tool.position.z = -30;
+
+        const rail1 = cylinder(railDiameter, railLength, 0.08);
+        this.scene.add(rail1);
+        rail1.rotateZ(Math.PI / 2);
+        rail1.position.x = railLength / 2;
+
+        const rail2 = cylinder(railDiameter, railLength, 0.28);
+        this.scene.add(rail2);
+        rail2.rotateZ(Math.PI / 2);
+        rail2.position.y = railDistance;
+        rail2.position.x = railLength / 2;
         
         this.scene.add(link1);
         this.scene.add(link2);
@@ -314,13 +358,6 @@ class View3D {
         this.link2 = link2;
         this.link3 = link3;
         this.eff = eff;
-
-        const guiStatsEl = document.createElement('div');
-        guiStatsEl.classList.add('gui-stats');
-
-
-        window.addEventListener('resize', () => this.onWindowResize());
-        Object.assign(window, { scene: this.scene });
     }
 
     onWindowResize() {
