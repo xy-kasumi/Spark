@@ -4,9 +4,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const railLength = 200;
 const railHeightX = 100;
-const spindleSlant = 10;
-const linkLength = 75;
-const effectorLength = 20;
+let spindleSlant = 10;
+let linkLength = 75;
+let effectorLength = 20;
 
 const mech = {
     z1: 50,
@@ -25,6 +25,10 @@ const mech = {
         mech.usableX = usable.x;
         mech.usableZ = usable.z;
     },
+    optimize: () => {
+        console.log("Optimizing...");
+        console.log(findBestSA());
+    }
 };
 
 // Returns: true if the solution is valid, false otherwise.
@@ -134,6 +138,63 @@ function findUsableRange() {
     };
 }
 
+function findBestSA() {
+    let st = {
+        slant: spindleSlant,
+        linkLen: linkLength,
+        effLen: effectorLength,
+    };
+    let scoreBest = score(st);
+    let stBest = st;
+    const numIter = 1000;
+    console.log("Initial score", scoreBest);
+    for (let i = 0; i < numIter; i++) {
+        const sCand = neighbor(st);
+        const scoreCand = score(sCand);
+        if (scoreCand.score > scoreBest.score) {
+            stBest = sCand;
+            scoreBest = scoreCand;
+            st = sCand;
+        } else {
+            const delta = scoreBest.score - scoreCand.score;
+            const prob = Math.exp(-delta * 0.1 / (1 - i / numIter));
+            console.log(`Pworse=${prob} i=${i} delta=${delta}`);
+            if (Math.random() < prob) {
+                console.log(`Picked worse solution P=${prob} sBefore=${scoreBest.score} sAfter=${scoreCand.score}`);
+                st = sCand;
+            }
+        }
+        console.log(i, stBest, scoreBest);
+    }
+    return stBest;
+}
+
+function score(s) {
+    spindleSlant = s.slant;
+    linkLength = s.linkLen;
+    effectorLength = s.effLen;
+    const range = findUsableRange();
+
+    const zThresh = 52;
+    const xThresh = 38;
+    let res = 0;
+    res += Math.min(1, range.z / zThresh);
+    res += Math.min(1, range.x / xThresh);
+    return {score: res, range: range};
+}
+
+function clamp(v, min, max) {
+    return Math.min(Math.max(v, min), max);
+}
+
+function neighbor(s) {
+    return {
+        slant: clamp(s.slant + Math.random() - 0.5, -30, 30),
+        linkLen: clamp(s.linkLen + Math.random() * 2 - 1.0, 10, 150),
+        effLen: clamp(s.effLen + Math.random() * 1 - 1.0, 10, 150),
+    };
+}
+
 function angleBetween(v1, v2) {
     const a = v1.angleTo(v2);
     if (a < Math.PI / 2) {
@@ -155,6 +216,7 @@ function solveFK() {
     const eL = eLs[0];
 
     const eRs = solveTriangle(eL, effectorLength, p3, linkLength).filter(e => e.y < 0 && e.x > eL.x);
+    eRs.sort((a, b) => b.y - a.y);
     if (eRs.length === 0) {
         return null;
     }
@@ -168,7 +230,7 @@ function solveFK() {
         angleBetween(eL.clone().sub(p1), eL.clone().sub(p2)),
         //angleBetween(eL.clone().sub(p1), eR.clone().sub(eL)),
         //angleBetween(eL.clone().sub(p2), eR.clone().sub(eL)),
-        angleBetween(eR.clone().sub(p3), eR.clone().sub(eR)),
+        angleBetween(eR.clone().sub(p3), eR.clone().sub(eL)),
     );
 
     const railEndMargin = Math.min(
@@ -416,6 +478,7 @@ function initGui(view) {
     gui.add(mech, "z3", 0, railLength).step(0.1).listen().decimals(3).onChange(() => updateFK());
 
     gui.add(mech, "compute");
+    gui.add(mech, "optimize");
 
     gui.add(mech, "toolBaseZ", 0, 150).listen().decimals(3).onChange(() => updateIK());
     gui.add(mech, "toolBaseX", 0, 100).listen().decimals(3).onChange(() => updateIK());
