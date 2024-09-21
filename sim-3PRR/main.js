@@ -21,10 +21,12 @@ const mech = {
 
     minAngle: 0,
     usableX: 0,
+    usableZ: 0,
     compute: () => {
         const usable = findUsableRange();
         console.log(usable);
         mech.usableX = usable.x;
+        mech.usableZ = usable.z;
     },
 };
 
@@ -53,44 +55,86 @@ function solveIK() {
 // Returns: {z, x} (movable region)
 function findUsableRange() {
     const minAngleDeg = 17;
+    const railMargin = 6 + 19 / 2 + 1; // support + LB half width + margin
 
-    let inRange = false;
-    let xMin = null;
-    let xMax = null;
-    for (let x = 0; x < 100; x += 0.5) {
-        let angleOk = true;
-        for (let angle = 0; angle <= 90; angle += 10) {
-            mech.toolBaseX = x;
-            mech.toolAngle = angle;
-            const ok = solveIK();
-            if (!ok) {
-                angleOk = false;
-                break;
+    const scanX = () => {
+        let inRange = false;
+        let xMin = null;
+        let xMax = null;
+        for (let x = 0; x < 100; x += 0.5) {
+            let angleOk = true;
+            for (let angle = 0; angle <= 90; angle += 10) {
+                mech.toolBaseX = x;
+                mech.toolAngle = angle;
+                const ok = solveIK();
+                if (!ok) {
+                    angleOk = false;
+                    break;
+                }
+                const pos = solveFK();
+                if (pos === null || pos.minAngle < minAngleDeg * Math.PI / 180 || pos.railEndMargin < railMargin) {
+                    angleOk = false;
+                    break;
+                }
             }
-            const pos = solveFK();
-            if (pos === null || pos.minAngle < minAngleDeg * Math.PI / 180) {
-                angleOk = false;
-                break;
+    
+            if (!inRange) {
+                if (angleOk) {
+                    inRange = true;
+                    xMin = x;
+                }
+            } else {
+                if (!angleOk) {
+                    xMax = x - 0.5;
+                    break;
+                }
             }
         }
+        if (xMin === null) {
+            return {x: 0, xMin: 0, xMax: 0};
+        }
+        if (xMax === null) {
+            console.log("Failed to compute range / X scan didn't finish; setting max value");
+            xMax = 100 - 0.5;
+        }
+        return {x: xMax - xMin, xMin, xMax};
+    };
 
+    mech.toolBaseZ = 100; // center-ish value (maximum x range)
+    const res = scanX();
+    if (res.x === 0) {
+        return {x: 0, z: 0};
+    }
+    let inRange = false;
+    let zMin = null;
+    let zMax = null;
+    for (let z = 40; z < 150; z += 0.5) {
+        mech.toolBaseZ = z;
+        const curr = scanX();
+        const ok = curr.xMin <= res.xMin && curr.xMax >= res.xMax;
         if (!inRange) {
-            if (angleOk) {
+            if (ok) {
                 inRange = true;
-                xMin = x;
+                zMin = z;
             }
         } else {
-            if (!angleOk) {
-                xMax = x - 0.5;
+            if (!ok) {
+                zMax = z - 0.5;
                 break;
             }
         }
     }
-    if (xMax === null) {
-        console.log("Failed to compute range / scan didn't finish");
+    if (zMin === null) {
+        return {x: 0, z: 0};
     }
-
-    return {x: xMax - xMin, xMin, xMax};
+    if (zMax === null) {
+        console.log("Failed to compute range / Z scan didn't finish; setting max value");
+        zMax = 150 - 0.5;
+    }
+    return {
+        x: res.xMax - res.xMin, xMin: res.xMin, xMax: res.xMax,
+        z: zMax - zMin, zMin, zMax,
+    };
 }
 
 function angleBetween(v1, v2) {
@@ -130,6 +174,15 @@ function solveFK() {
         angleBetween(eR.clone().sub(p3), eR.clone().sub(eR)),
     );
 
+    const railEndMargin = Math.min(
+        mech.z1,
+        mech.z2,
+        mech.z3,
+        railLength - mech.z1,
+        railLength - mech.z2,
+        railLength - mech.z3,
+    );
+
     return {
         effZ: eL.x,
         effX: eL.y,
@@ -150,6 +203,7 @@ function solveFK() {
         ],
 
         minAngle: minAngle,
+        railEndMargin,
     };
 }
 
@@ -374,6 +428,7 @@ function initGui(view) {
 
     gui.add(mech, "minAngle").listen();
     gui.add(mech, "usableX").listen();
+    gui.add(mech, "usableZ").listen();
 }
 
 
@@ -392,7 +447,6 @@ function updateFK() {
     mech.toolBaseX = positions.effX + railHeightX;
     mech.toolAngle = (spindleSlant + 90 + positions.effA  * 180 / Math.PI + 90) % 360 - 180;
     mech.minAngle = positions.minAngle * 180 / Math.PI;
-    console.log(positions);
 
     view.slider1.position.x = positions.l1Z;
     view.slider2.position.x = positions.l2Z;
