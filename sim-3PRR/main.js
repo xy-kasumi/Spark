@@ -2,16 +2,14 @@ import * as THREE from 'three';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+const railLength = 200;
 const railHeightX = 100;
 const spindleSlant = 10;
-const linkLength = 60;
-const effectorLength = 30;
+const linkLength = 75;
+const effectorLength = 20;
 
-let eRPrev = null;
 let eLPrev = null;
-
-
-let chart = null;
+let eRPrev = null;
 
 const mech = {
     z1: 50,
@@ -20,21 +18,19 @@ const mech = {
     toolBaseZ: 0,
     toolBaseX: 0,
     toolAngle: 0,
-    samples: [],
-    reset: () => {
-        mech.samples = [];
-        chart.series[0].setData([]);
-    },
-    play: () => {
-        execStep();
+
+    usableX: 0,
+    compute: () => {
+        mech.usableX = findUsableRange().x;
     },
 };
 
+// Returns: true if the solution is valid, false otherwise.
 function solveIK() {
     const h = Math.abs(mech.toolBaseX - railHeightX);
     const baseHalfW = Math.sqrt(linkLength * linkLength - h * h);
     if (isNaN(baseHalfW)) {
-        return;
+        return false;
     }
 
     mech.z1 = mech.toolBaseZ - baseHalfW;
@@ -45,57 +41,103 @@ function solveIK() {
     const eRX = (railHeightX - mech.toolBaseX) - Math.sin(theta) * effectorLength;
     const dz = Math.sqrt(linkLength * linkLength - eRX * eRX);
     if (isNaN(dz)) {
-        return;
+        return false;
     }
     mech.z3 = eRZ - dz;
+    return true;
 }
 
-function computePositions() {
+// Returns: {z, x} (movable region)
+function findUsableRange() {
+    let inRange = false;
+    let xMin = null;
+    let xMax = null;
+    for (let x = 0; x < 100; x += 0.5) {
+        let angleOk = true;
+        for (let angle = 0; angle <= 90; angle += 10) {
+            mech.toolBaseX = x;
+            mech.toolAngle = angle;
+            const ok = solveIK();
+            if (!ok) {
+                angleOk = false;
+                break;
+            }
+        }
+
+        if (!inRange) {
+            if (angleOk) {
+                inRange = true;
+                xMin = x;
+            }
+        } else {
+            if (!angleOk) {
+                xMax = x - 0.5;
+                break;
+            }
+        }
+        console.log(x, angleOk, inRange);
+    }
+
+    return {x: xMax - xMin};
+}
+
+function angleBetween(v1, v2) {
+    const a = v1.angleTo(v2);
+    if (a < Math.PI / 2) {
+        return a;
+    } else {
+        return Math.PI - a;
+    }
+}
+
+function solveFK() {
     // V2.x : Z, V2.y : X
     const p1 = new THREE.Vector2(mech.z1, 0);
     const p2 = new THREE.Vector2(mech.z2, 0);
     const p3 = new THREE.Vector2(mech.z3, 0);
-    const eR = solveTriangle(p1, linkLength, p2, linkLength, eRPrev || new THREE.Vector2(50, -50));
-    if (eR === null) {
-        return { links: [] };
-    }
-    eRPrev = eR;
-
-    const eL = solveTriangle(eR, effectorLength, p3, linkLength, eLPrev || new THREE.Vector2(70, -30));
-    if (eL === null || eL.y > 0 || eL.x < eR.x) {
+    const eL = solveTriangle(p1, linkLength, p2, linkLength, eLPrev || new THREE.Vector2(50, -50));
+    if (eL === null) {
         return { links: [] };
     }
     eLPrev = eL;
 
-    const delta = eL.clone().sub(eR).normalize();
+    const eR = solveTriangle(eL, effectorLength, p3, linkLength, eRPrev || new THREE.Vector2(70, -30));
+    if (eR === null || eR.y > 0 || eR.x < eL.x) {
+        return { links: [] };
+    }
+    eRPrev = eR;
 
-    mech.samples.push({
-        z1: mech.z1,
-        z2: mech.z2,
-        z3: mech.z3,
-        x: eR.x,
-        y: eR.y,
-        t: Math.atan2(delta.y, delta.x) * 180 / Math.PI,
-    });
+    const railAxial = new THREE.Vector3(1, 0, 0);
+    const minAngle = Math.min(
+        angleBetween(railAxial, eL.clone().sub(p1)),
+        angleBetween(railAxial, eL.clone().sub(p2)),
+        angleBetween(railAxial, eR.clone().sub(p3)),
+        angleBetween(eL.clone().sub(p1), eL.clone().sub(p2)),
+        angleBetween(eL.clone().sub(p1), eR.clone().sub(eL)),
+        angleBetween(eL.clone().sub(p2), eR.clone().sub(eL)),
+        angleBetween(eR.clone().sub(p3), eR.clone().sub(eR)),
+    );
 
     return {
-        effZ: eR.x,
-        effX: eR.y,
-        effA: eL.clone().sub(eR).angle(),
+        effZ: eL.x,
+        effX: eL.y,
+        effA: eR.clone().sub(eL).angle(),
 
         l1Z: p1.x,
-        l1A: eR.clone().sub(p1).angle(),
+        l1A: eL.clone().sub(p1).angle(),
         l2Z: p2.x,
-        l2A: eR.clone().sub(p2).angle(),
+        l2A: eL.clone().sub(p2).angle(),
         l3Z: p3.x,
-        l3A: eL.clone().sub(p3).angle(),
+        l3A: eR.clone().sub(p3).angle(),
 
         links: [
-            { p: p1, q: eR },
-            { p: p2, q: eR },
-            { p: p3, q: eL },
-            { p: eR, q: eL },
+            { p: p1, q: eL },
+            { p: p2, q: eL },
+            { p: p3, q: eR },
+            { p: eL, q: eR },
         ],
+
+        minAngle: minAngle,
     };
 }
 
@@ -130,7 +172,7 @@ function execStep() {
     mech.z1 = 30;
     mech.z3 = 1 + 140 * (playIx0 / playN);
     mech.z2 = 31 + 140 * (playIx1 / playN);
-    const success = update();
+    const success = updateFK();
     if (success) {
         playIx0++;
     } else {
@@ -148,94 +190,6 @@ function execStep() {
     }
     setTimeout(execStep, 5);
 }
-
-
-Highcharts.setOptions({
-    colors: [
-        'rgba(5,141,199,0.5)'
-    ]
-});
-
-
-function refreshChart(samples) {
-    if (!chart) {
-        return;
-    }
-    //chart.series[0].setData(samples.map(s => [s.t, s.y]));
-    const s = samples[samples.length - 1];
-    chart.series[0].addPoint([s.t, s.y]);
-}
-
-const series = [{
-    name: 'TY',
-    id: 'TY',
-    marker: {
-        symbol: 'circle'
-    }
-},];
-
-chart = Highcharts.chart('chart', {
-    chart: {
-        type: 'scatter',
-        zooming: {
-            type: 'xy'
-        },
-    },
-    title: {
-        text: 'Output Space',
-    },
-    xAxis: {
-        title: {
-            text: 'θ'
-        },
-        labels: {
-            format: '{value}°'
-        },
-        min: -120,
-        max: 120,
-        startOnTick: true,
-        endOnTick: true,
-        showLastLabel: true
-    },
-    yAxis: {
-        title: {
-            text: 'Y'
-        },
-        labels: {
-            format: '{value} mm'
-        },
-        min: -60,
-        max: -20,
-    },
-    legend: {
-        enabled: true
-    },
-    plotOptions: {
-        scatter: {
-            marker: {
-                radius: 2.5,
-                symbol: 'circle',
-                states: {
-                    hover: {
-                        enabled: true,
-                        lineColor: 'rgb(100,100,100)'
-                    }
-                }
-            },
-            states: {
-                hover: {
-                    marker: {
-                        enabled: false
-                    }
-                }
-            },
-            jitter: {
-                x: 0.005
-            }
-        }
-    },
-    series
-});
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -316,8 +270,8 @@ class View3D {
     }
 
     setupMech() {
+        const waterRailMargin = 20;
         const railDiameter = 6;
-        const railLength = 150;
         const railDistance = 20;
 
         // cf. THK LM6 / https://www.monotaro.com/p/0723/1542/
@@ -329,7 +283,7 @@ class View3D {
         this.scene.add(water);
         water.rotateX(Math.PI / 2);
         water.position.x = railLength / 2;
-        water.position.z = -30;
+        water.position.z = -waterRailMargin;
 
         const slider1 = cylinder(lbDiameter, lbLength, 0.1);
         const slider2 = cylinder(lbDiameter, lbLength, 0.2);
@@ -366,19 +320,19 @@ class View3D {
         eff.add(effRaw);
         effRaw.position.x = effectorLength / 2;
 
-        const spindle = box(30, 20, 30, 0.6, 0.3);
+        const spindle = box(60, 20, 60, 0.6, 0.3);
         eff.add(spindle);
         spindle.position.y = -10;
-        spindle.position.z = 15;
-        spindle.position.x = 10;
+        spindle.position.z = 30;
+        spindle.position.x = 25;
         spindle.rotateY(-spindleSlant / 180 * Math.PI);
 
         const tool = cylinder(2, 30, 0.7);
         spindle.add(tool);
         tool.rotateZ(Math.PI / 2);
         //tool.rotateX(Math.PI / 2);
-        tool.position.z = -15;
-        tool.position.x = -30;
+        tool.position.z = -30;
+        tool.position.x = -45;
 
         const rail1 = cylinder(railDiameter, railLength, 0.08);
         this.scene.add(rail1);
@@ -424,16 +378,17 @@ class View3D {
 function initGui(view) {
     const gui = new GUI();
 
-    gui.add(mech, "z1", 0, 150).step(0.1).listen().decimals(3).onChange(() => update());
-    gui.add(mech, "z2", 0, 150).step(0.1).listen().decimals(3).onChange(() => update());
-    gui.add(mech, "z3", 0, 150).step(0.1).listen().decimals(3).onChange(() => update());
+    gui.add(mech, "z1", 0, railLength).step(0.1).listen().decimals(3).onChange(() => updateFK());
+    gui.add(mech, "z2", 0, railLength).step(0.1).listen().decimals(3).onChange(() => updateFK());
+    gui.add(mech, "z3", 0, railLength).step(0.1).listen().decimals(3).onChange(() => updateFK());
     
-    gui.add(mech, "reset");
-    gui.add(mech, "play");
+    gui.add(mech, "compute");
 
-    gui.add(mech, "toolBaseZ", 0, 100).listen().decimals(3).onChange(() => updateIK());
+    gui.add(mech, "toolBaseZ", 0, 150).listen().decimals(3).onChange(() => updateIK());
     gui.add(mech, "toolBaseX", 0, 100).listen().decimals(3).onChange(() => updateIK());
     gui.add(mech, "toolAngle", 0, 90).listen().decimals(3).onChange(() => updateIK());
+
+    gui.add(mech, "usableX").listen();
 }
 
 
@@ -442,8 +397,8 @@ function initGui(view) {
 const view = new View3D();
 initGui(view);
 
-function update() {
-    const positions = computePositions();
+function updateFK() {
+    const positions = solveFK();
     if (positions.links.length === 0) {
         return false;
     }
@@ -467,13 +422,12 @@ function update() {
     view.eff.position.z = positions.effX;
     view.eff.setRotationFromEuler(new THREE.Euler(0, -positions.effA, 0));
 
-    refreshChart(mech.samples);
     return true;
 }
 
 function updateIK() {
     solveIK();
-    update();
+    updateFK();
 }
 
-update(); // Initial render
+updateFK(); // Initial render
