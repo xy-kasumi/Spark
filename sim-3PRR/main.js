@@ -19,9 +19,12 @@ const mech = {
     toolBaseX: 0,
     toolAngle: 0,
 
+    minAngle: 0,
     usableX: 0,
     compute: () => {
-        mech.usableX = findUsableRange().x;
+        const usable = findUsableRange();
+        console.log(usable);
+        mech.usableX = usable.x;
     },
 };
 
@@ -49,6 +52,8 @@ function solveIK() {
 
 // Returns: {z, x} (movable region)
 function findUsableRange() {
+    const minAngleDeg = 17;
+
     let inRange = false;
     let xMin = null;
     let xMax = null;
@@ -59,6 +64,11 @@ function findUsableRange() {
             mech.toolAngle = angle;
             const ok = solveIK();
             if (!ok) {
+                angleOk = false;
+                break;
+            }
+            const pos = solveFK();
+            if (pos === null || pos.minAngle < minAngleDeg * Math.PI / 180) {
                 angleOk = false;
                 break;
             }
@@ -75,10 +85,12 @@ function findUsableRange() {
                 break;
             }
         }
-        console.log(x, angleOk, inRange);
+    }
+    if (xMax === null) {
+        console.log("Failed to compute range / scan didn't finish");
     }
 
-    return {x: xMax - xMin};
+    return {x: xMax - xMin, xMin, xMax};
 }
 
 function angleBetween(v1, v2) {
@@ -97,24 +109,24 @@ function solveFK() {
     const p3 = new THREE.Vector2(mech.z3, 0);
     const eL = solveTriangle(p1, linkLength, p2, linkLength, eLPrev || new THREE.Vector2(50, -50));
     if (eL === null) {
-        return { links: [] };
+        return null;
     }
     eLPrev = eL;
 
     const eR = solveTriangle(eL, effectorLength, p3, linkLength, eRPrev || new THREE.Vector2(70, -30));
     if (eR === null || eR.y > 0 || eR.x < eL.x) {
-        return { links: [] };
+        return null;
     }
     eRPrev = eR;
 
-    const railAxial = new THREE.Vector3(1, 0, 0);
+    const railAxial = new THREE.Vector2(1, 0);
     const minAngle = Math.min(
         angleBetween(railAxial, eL.clone().sub(p1)),
         angleBetween(railAxial, eL.clone().sub(p2)),
         angleBetween(railAxial, eR.clone().sub(p3)),
         angleBetween(eL.clone().sub(p1), eL.clone().sub(p2)),
-        angleBetween(eL.clone().sub(p1), eR.clone().sub(eL)),
-        angleBetween(eL.clone().sub(p2), eR.clone().sub(eL)),
+        //angleBetween(eL.clone().sub(p1), eR.clone().sub(eL)),
+        //angleBetween(eL.clone().sub(p2), eR.clone().sub(eL)),
         angleBetween(eR.clone().sub(p3), eR.clone().sub(eR)),
     );
 
@@ -161,34 +173,6 @@ function solveTriangle(p, lenP, q, lenQ, near) {
     const sol2 = midpoint.clone().sub(perpendicular.clone().multiplyScalar(h));
 
     return sol1.distanceTo(near) < sol2.distanceTo(near) ? sol1 : sol2;
-}
-
-
-const playN = 25;
-let playIx0 = 0;
-let playIx1 = 0;
-
-function execStep() {
-    mech.z1 = 30;
-    mech.z3 = 1 + 140 * (playIx0 / playN);
-    mech.z2 = 31 + 140 * (playIx1 / playN);
-    const success = updateFK();
-    if (success) {
-        playIx0++;
-    } else {
-        playIx0 = 0;
-        playIx1++;
-    }
-
-    if (playIx0 >= playN) {
-        playIx0 = 0;
-        playIx1++;
-    }
-    if (playIx1 >= playN) {
-        playIx1 = 0;
-        return;
-    }
-    setTimeout(execStep, 5);
 }
 
 
@@ -388,6 +372,7 @@ function initGui(view) {
     gui.add(mech, "toolBaseX", 0, 100).listen().decimals(3).onChange(() => updateIK());
     gui.add(mech, "toolAngle", 0, 90).listen().decimals(3).onChange(() => updateIK());
 
+    gui.add(mech, "minAngle").listen();
     gui.add(mech, "usableX").listen();
 }
 
@@ -399,13 +384,15 @@ initGui(view);
 
 function updateFK() {
     const positions = solveFK();
-    if (positions.links.length === 0) {
+    if (positions === null) {
         return false;
     }
 
     mech.toolBaseZ = positions.effZ;
     mech.toolBaseX = positions.effX + railHeightX;
     mech.toolAngle = (spindleSlant + 90 + positions.effA  * 180 / Math.PI + 90) % 360 - 180;
+    mech.minAngle = positions.minAngle * 180 / Math.PI;
+    console.log(positions);
 
     view.slider1.position.x = positions.l1Z;
     view.slider2.position.x = positions.l2Z;
