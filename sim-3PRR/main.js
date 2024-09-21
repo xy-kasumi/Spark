@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+const railHeightX = 100;
+const spindleSlant = 10;
 const linkLength = 60;
 const effectorLength = 30;
 
@@ -28,6 +30,25 @@ const mech = {
     },
 };
 
+function solveIK() {
+    const h = Math.abs(mech.toolBaseX - railHeightX);
+    const baseHalfW = Math.sqrt(linkLength * linkLength - h * h);
+    if (isNaN(baseHalfW)) {
+        return;
+    }
+
+    mech.z1 = mech.toolBaseZ - baseHalfW;
+    mech.z2 = mech.toolBaseZ + baseHalfW;
+
+    const theta = (mech.toolAngle - spindleSlant) / 180 * Math.PI;
+    const eRZ = mech.toolBaseZ + Math.cos(theta) * effectorLength;
+    const eRX = (railHeightX - mech.toolBaseX) - Math.sin(theta) * effectorLength;
+    const dz = Math.sqrt(linkLength * linkLength - eRX * eRX);
+    if (isNaN(dz)) {
+        return;
+    }
+    mech.z3 = eRZ - dz;
+}
 
 function computePositions() {
     // V2.x : Z, V2.y : X
@@ -350,7 +371,7 @@ class View3D {
         spindle.position.y = -10;
         spindle.position.z = 15;
         spindle.position.x = 10;
-        spindle.rotateY(-10 / 180 * Math.PI);
+        spindle.rotateY(-spindleSlant / 180 * Math.PI);
 
         const tool = cylinder(2, 30, 0.7);
         spindle.add(tool);
@@ -403,16 +424,16 @@ class View3D {
 function initGui(view) {
     const gui = new GUI();
 
-    gui.add(mech, "z1", 0, 150).step(0.1).onChange(() => update());
-    gui.add(mech, "z2", 0, 150).step(0.1).onChange(() => update());
-    gui.add(mech, "z3", 0, 150).step(0.1).onChange(() => update());
+    gui.add(mech, "z1", 0, 150).step(0.1).listen().decimals(3).onChange(() => update());
+    gui.add(mech, "z2", 0, 150).step(0.1).listen().decimals(3).onChange(() => update());
+    gui.add(mech, "z3", 0, 150).step(0.1).listen().decimals(3).onChange(() => update());
     
     gui.add(mech, "reset");
     gui.add(mech, "play");
 
-    gui.add(mech, "toolBaseZ").listen().decimals(3);
-    gui.add(mech, "toolBaseX").listen().decimals(3);
-    gui.add(mech, "toolAngle").listen().decimals(3);
+    gui.add(mech, "toolBaseZ", 0, 100).listen().decimals(3).onChange(() => updateIK());
+    gui.add(mech, "toolBaseX", 0, 100).listen().decimals(3).onChange(() => updateIK());
+    gui.add(mech, "toolAngle", 0, 90).listen().decimals(3).onChange(() => updateIK());
 }
 
 
@@ -428,8 +449,8 @@ function update() {
     }
 
     mech.toolBaseZ = positions.effZ;
-    mech.toolBaseX = positions.effX + 100;
-    mech.toolAngle = (10 + 90 + positions.effA  * 180 / Math.PI + 90) % 360 - 180;
+    mech.toolBaseX = positions.effX + railHeightX;
+    mech.toolAngle = (spindleSlant + 90 + positions.effA  * 180 / Math.PI + 90) % 360 - 180;
 
     view.slider1.position.x = positions.l1Z;
     view.slider2.position.x = positions.l2Z;
@@ -448,6 +469,11 @@ function update() {
 
     refreshChart(mech.samples);
     return true;
+}
+
+function updateIK() {
+    solveIK();
+    update();
 }
 
 update(); // Initial render
