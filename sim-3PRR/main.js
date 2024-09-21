@@ -2,18 +2,22 @@ import * as THREE from 'three';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-const linkLength = 50;
-const effectorLength = 25;
+const linkLength = 60;
+const effectorLength = 30;
 
-let eLPrev = null;
 let eRPrev = null;
+let eLPrev = null;
+
 
 let chart = null;
 
 const mech = {
-    z1: 40,
-    z2: 70,
-    z3: 30,
+    z1: 50,
+    z2: 90,
+    z3: 60,
+    toolBaseZ: 0,
+    toolBaseX: 0,
+    toolAngle: 0,
     samples: [],
     reset: () => {
         mech.samples = [];
@@ -30,46 +34,46 @@ function computePositions() {
     const p1 = new THREE.Vector2(mech.z1, 0);
     const p2 = new THREE.Vector2(mech.z2, 0);
     const p3 = new THREE.Vector2(mech.z3, 0);
-    const eL = solveTriangle(p1, linkLength, p2, linkLength, eLPrev || new THREE.Vector2(50, -50));
-    if (eL === null) {
-        return { links: [] };
-    }
-    eLPrev = eL;
-
-    const eR = solveTriangle(eL, effectorLength, p3, linkLength, eRPrev || new THREE.Vector2(70, -30));
-    if (eR === null || eR.y > 0 || eR.x < eL.x) {
+    const eR = solveTriangle(p1, linkLength, p2, linkLength, eRPrev || new THREE.Vector2(50, -50));
+    if (eR === null) {
         return { links: [] };
     }
     eRPrev = eR;
 
-    const delta = eR.clone().sub(eL).normalize();
+    const eL = solveTriangle(eR, effectorLength, p3, linkLength, eLPrev || new THREE.Vector2(70, -30));
+    if (eL === null || eL.y > 0 || eL.x < eR.x) {
+        return { links: [] };
+    }
+    eLPrev = eL;
+
+    const delta = eL.clone().sub(eR).normalize();
 
     mech.samples.push({
         z1: mech.z1,
         z2: mech.z2,
         z3: mech.z3,
-        x: eL.x,
-        y: eL.y,
+        x: eR.x,
+        y: eR.y,
         t: Math.atan2(delta.y, delta.x) * 180 / Math.PI,
     });
 
     return {
-        effZ: eL.x,
-        effX: eL.y,
-        effA: eR.clone().sub(eL).angle(),
+        effZ: eR.x,
+        effX: eR.y,
+        effA: eL.clone().sub(eR).angle(),
 
         l1Z: p1.x,
-        l1A: eL.clone().sub(p1).angle(),
+        l1A: eR.clone().sub(p1).angle(),
         l2Z: p2.x,
-        l2A: eL.clone().sub(p2).angle(),
+        l2A: eR.clone().sub(p2).angle(),
         l3Z: p3.x,
-        l3A: eR.clone().sub(p3).angle(),
+        l3A: eL.clone().sub(p3).angle(),
 
         links: [
-            { p: p1, q: eL },
-            { p: p2, q: eL },
-            { p: p3, q: eR },
-            { p: eL, q: eR },
+            { p: p1, q: eR },
+            { p: p2, q: eR },
+            { p: p3, q: eL },
+            { p: eR, q: eL },
         ],
     };
 }
@@ -216,9 +220,16 @@ chart = Highcharts.chart('chart', {
 ////////////////////////////////////////////////////////////////////////////////
 // 3D view
 
-function box(sx, sy, sz, hue) {
+function box(sx, sy, sz, hue, opacity) {
+    if (opacity === undefined) {
+        opacity = 1;
+    }
     const geom = new THREE.BoxGeometry(sx, sy, sz);
     const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(hue, 0.5, 0.3) });
+    if (opacity < 1) {
+        mat.transparent = true;
+        mat.opacity = opacity;
+    }
     return new THREE.Mesh(geom, mat);
 }
 
@@ -292,6 +303,13 @@ class View3D {
         const lbLength = 19;
         const lbDiameter = 12;
 
+        const col = new THREE.Color("skyblue");
+        const water = new THREE.GridHelper(railLength, 25, col, col);
+        this.scene.add(water);
+        water.rotateX(Math.PI / 2);
+        water.position.x = railLength / 2;
+        water.position.z = -30;
+
         const slider1 = cylinder(lbDiameter, lbLength, 0.1);
         const slider2 = cylinder(lbDiameter, lbLength, 0.2);
         const slider3 = cylinder(lbDiameter, lbLength, 0.3);
@@ -327,17 +345,19 @@ class View3D {
         eff.add(effRaw);
         effRaw.position.x = effectorLength / 2;
 
-        const spindle = box(50, 20, 30, 0.6);
+        const spindle = box(30, 20, 30, 0.6, 0.3);
         eff.add(spindle);
         spindle.position.y = -10;
         spindle.position.z = 15;
+        spindle.position.x = 10;
         spindle.rotateY(-10 / 180 * Math.PI);
 
         const tool = cylinder(2, 30, 0.7);
         spindle.add(tool);
         tool.rotateZ(Math.PI / 2);
-        tool.rotateX(Math.PI / 2);
-        tool.position.z = -30;
+        //tool.rotateX(Math.PI / 2);
+        tool.position.z = -15;
+        tool.position.x = -30;
 
         const rail1 = cylinder(railDiameter, railLength, 0.08);
         this.scene.add(rail1);
@@ -389,6 +409,10 @@ function initGui(view) {
     
     gui.add(mech, "reset");
     gui.add(mech, "play");
+
+    gui.add(mech, "toolBaseZ").listen().decimals(3);
+    gui.add(mech, "toolBaseX").listen().decimals(3);
+    gui.add(mech, "toolAngle").listen().decimals(3);
 }
 
 
@@ -402,6 +426,10 @@ function update() {
     if (positions.links.length === 0) {
         return false;
     }
+
+    mech.toolBaseZ = positions.effZ;
+    mech.toolBaseX = positions.effX + 100;
+    mech.toolAngle = (10 + 90 + positions.effA  * 180 / Math.PI + 90) % 360 - 180;
 
     view.slider1.position.x = positions.l1Z;
     view.slider2.position.x = positions.l2Z;
