@@ -8,9 +8,6 @@ const spindleSlant = 10;
 const linkLength = 75;
 const effectorLength = 20;
 
-let eLPrev = null;
-let eRPrev = null;
-
 const mech = {
     z1: 50,
     z2: 90,
@@ -54,7 +51,7 @@ function solveIK() {
 
 // Returns: {z, x} (movable region)
 function findUsableRange() {
-    const minAngleDeg = 17;
+    const minAngleDeg = 15; // 25% force efficiency
     const railMargin = 6 + 19 / 2 + 1; // support + LB half width + margin
 
     const scanX = () => {
@@ -77,7 +74,7 @@ function findUsableRange() {
                     break;
                 }
             }
-    
+
             if (!inRange) {
                 if (angleOk) {
                     inRange = true;
@@ -91,19 +88,19 @@ function findUsableRange() {
             }
         }
         if (xMin === null) {
-            return {x: 0, xMin: 0, xMax: 0};
+            return { x: 0, xMin: 0, xMax: 0 };
         }
         if (xMax === null) {
             console.log("Failed to compute range / X scan didn't finish; setting max value");
             xMax = 100 - 0.5;
         }
-        return {x: xMax - xMin, xMin, xMax};
+        return { x: xMax - xMin, xMin, xMax };
     };
 
     mech.toolBaseZ = 100; // center-ish value (maximum x range)
     const res = scanX();
     if (res.x === 0) {
-        return {x: 0, z: 0};
+        return { x: 0, z: 0 };
     }
     let inRange = false;
     let zMin = null;
@@ -125,7 +122,7 @@ function findUsableRange() {
         }
     }
     if (zMin === null) {
-        return {x: 0, z: 0};
+        return { x: 0, z: 0 };
     }
     if (zMax === null) {
         console.log("Failed to compute range / Z scan didn't finish; setting max value");
@@ -151,17 +148,17 @@ function solveFK() {
     const p1 = new THREE.Vector2(mech.z1, 0);
     const p2 = new THREE.Vector2(mech.z2, 0);
     const p3 = new THREE.Vector2(mech.z3, 0);
-    const eL = solveTriangle(p1, linkLength, p2, linkLength, eLPrev || new THREE.Vector2(50, -50));
-    if (eL === null) {
+    const eLs = solveTriangle(p1, linkLength, p2, linkLength).filter(e => e.y < 0);
+    if (eLs.length === 0) {
         return null;
     }
-    eLPrev = eL;
+    const eL = eLs[0];
 
-    const eR = solveTriangle(eL, effectorLength, p3, linkLength, eRPrev || new THREE.Vector2(70, -30));
-    if (eR === null || eR.y > 0 || eR.x < eL.x) {
+    const eRs = solveTriangle(eL, effectorLength, p3, linkLength).filter(e => e.y < 0 && e.x > eL.x);
+    if (eRs.length === 0) {
         return null;
     }
-    eRPrev = eR;
+    const eR = eRs[0];
 
     const railAxial = new THREE.Vector2(1, 0);
     const minAngle = Math.min(
@@ -208,13 +205,12 @@ function solveFK() {
 }
 
 // Finds a find that's lenP from p, and lenQ from q.
-// If multiple solutions exists, return the one closest to near.
-// If no solution exists, return null.
-// p, q, near: THREE.Vector2
+// Return all solutions.
+// p, q: THREE.Vector2
 // lenP, lenQ: number
-function solveTriangle(p, lenP, q, lenQ, near) {
+function solveTriangle(p, lenP, q, lenQ) {
     const d = q.clone().sub(p).length();
-    if (lenP + lenQ < d || Math.abs(lenP - lenQ) > d) return null;
+    if (lenP + lenQ <= d || Math.abs(lenP - lenQ) >= d) return [];
 
     const a = (lenP * lenP - lenQ * lenQ + d * d) / (2 * d);
     const h = Math.sqrt(lenP * lenP - a * a);
@@ -225,8 +221,7 @@ function solveTriangle(p, lenP, q, lenQ, near) {
     const midpoint = p.clone().add(pq.clone().multiplyScalar(a));
     const sol1 = midpoint.clone().add(perpendicular.clone().multiplyScalar(h));
     const sol2 = midpoint.clone().sub(perpendicular.clone().multiplyScalar(h));
-
-    return sol1.distanceTo(near) < sol2.distanceTo(near) ? sol1 : sol2;
+    return [sol1, sol2];
 }
 
 
@@ -382,7 +377,7 @@ class View3D {
         rail2.rotateZ(Math.PI / 2);
         rail2.position.y = railDistance;
         rail2.position.x = railLength / 2;
-        
+
         this.scene.add(link1);
         this.scene.add(link2);
         this.scene.add(link3);
@@ -419,7 +414,7 @@ function initGui(view) {
     gui.add(mech, "z1", 0, railLength).step(0.1).listen().decimals(3).onChange(() => updateFK());
     gui.add(mech, "z2", 0, railLength).step(0.1).listen().decimals(3).onChange(() => updateFK());
     gui.add(mech, "z3", 0, railLength).step(0.1).listen().decimals(3).onChange(() => updateFK());
-    
+
     gui.add(mech, "compute");
 
     gui.add(mech, "toolBaseZ", 0, 150).listen().decimals(3).onChange(() => updateIK());
@@ -445,7 +440,7 @@ function updateFK() {
 
     mech.toolBaseZ = positions.effZ;
     mech.toolBaseX = positions.effX + railHeightX;
-    mech.toolAngle = (spindleSlant + 90 + positions.effA  * 180 / Math.PI + 90) % 360 - 180;
+    mech.toolAngle = (spindleSlant + 90 + positions.effA * 180 / Math.PI + 90) % 360 - 180;
     mech.minAngle = positions.minAngle * 180 / Math.PI;
 
     view.slider1.position.x = positions.l1Z;
