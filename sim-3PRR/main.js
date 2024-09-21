@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const railLength = 200;
 const railHeightX = 100;
 let spindleSlant = 10;
+// Contrary to naive thought, changing each link length individually doesn't lead to better score.
 let linkLength = 75;
 let effectorLength = 20;
 
