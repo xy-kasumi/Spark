@@ -4,10 +4,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const railLength = 200;
 const railHeightX = 100;
-let spindleSlant = 10;
 // Contrary to naive thought, changing each link length individually doesn't lead to better score.
-let linkLength = 75;
-let effectorLength = 20;
+let linkLength = 62;
+let effectorLength = 10;
+let targetRadius = 10;
 
 const mech = {
     z1: 50,
@@ -29,23 +29,29 @@ const mech = {
     optimize: () => {
         console.log("Optimizing...");
         console.log(findBestSA());
+    },
+    home: () => {
+        home();
     }
 };
 
 // Returns: true if the solution is valid, false otherwise.
 function solveIK() {
-    const h = Math.abs(mech.toolBaseX - railHeightX);
+    const theta = mech.toolAngle / 180 * Math.PI;
+    const link0TargetX = mech.toolBaseX + Math.sin(theta) * targetRadius;
+    const link0TargetZ = mech.toolBaseZ + Math.cos(theta) * targetRadius;
+
+    const h = Math.abs(link0TargetX - railHeightX);
     const baseHalfW = Math.sqrt(linkLength * linkLength - h * h);
     if (isNaN(baseHalfW)) {
         return false;
     }
 
-    mech.z1 = mech.toolBaseZ - baseHalfW;
-    mech.z2 = mech.toolBaseZ + baseHalfW;
+    mech.z1 = link0TargetZ - baseHalfW;
+    mech.z2 = link0TargetZ + baseHalfW;
 
-    const theta = (mech.toolAngle - spindleSlant) / 180 * Math.PI;
-    const eRZ = mech.toolBaseZ + Math.cos(theta) * effectorLength;
-    const eRX = (railHeightX - mech.toolBaseX) - Math.sin(theta) * effectorLength;
+    const eRZ = link0TargetZ + Math.cos(theta) * effectorLength;
+    const eRX = (railHeightX - link0TargetX) - Math.sin(theta) * effectorLength;
     const dz = Math.sqrt(linkLength * linkLength - eRX * eRX);
     if (isNaN(dz)) {
         return false;
@@ -141,13 +147,12 @@ function findUsableRange() {
 
 function findBestSA() {
     let st = {
-        slant: spindleSlant,
         linkLen: linkLength,
         effLen: effectorLength,
     };
     let scoreBest = score(st);
     let stBest = st;
-    const numIter = 1000;
+    const numIter = 300;
     console.log("Initial score", scoreBest);
     for (let i = 0; i < numIter; i++) {
         const sCand = neighbor(st);
@@ -171,7 +176,6 @@ function findBestSA() {
 }
 
 function score(s) {
-    spindleSlant = s.slant;
     linkLength = s.linkLen;
     effectorLength = s.effLen;
     const range = findUsableRange();
@@ -190,7 +194,6 @@ function clamp(v, min, max) {
 
 function neighbor(s) {
     return {
-        slant: clamp(s.slant + Math.random() - 0.5, -30, 30),
         linkLen: clamp(s.linkLen + Math.random() * 2 - 1.0, 10, 150),
         effLen: clamp(s.effLen + Math.random() * 1 - 1.0, 10, 150),
     };
@@ -216,7 +219,7 @@ function solveFK() {
     }
     const eL = eLs[0];
 
-    const eRs = solveTriangle(eL, effectorLength, p3, linkLength).filter(e => e.y < 0 && e.x > eL.x);
+    const eRs = solveTriangle(eL, effectorLength, p3, linkLength).filter(e => e.y < 0); // && e.x >= eL.x);
     eRs.sort((a, b) => b.y - a.y);
     if (eRs.length === 0) {
         return null;
@@ -391,6 +394,7 @@ class View3D {
         slider1.rotateZ(Math.PI / 2);
         slider2.rotateZ(Math.PI / 2);
         slider3.rotateZ(Math.PI / 2);
+        slider2.position.y = 20;
         slider3.position.y = 20;
 
         this.slider1 = slider1;
@@ -405,6 +409,7 @@ class View3D {
         const link2 = new THREE.Object3D();
         link2.add(link2Raw);
         link2Raw.position.x = linkLength / 2;
+        link2.position.y = 20;
         const link3Raw = box(linkLength, 3, 3, 0.32);
         const link3 = new THREE.Object3D();
         link3.add(link3Raw);
@@ -421,7 +426,6 @@ class View3D {
         spindle.position.y = -10;
         spindle.position.z = 30;
         spindle.position.x = 25;
-        spindle.rotateY(-spindleSlant / 180 * Math.PI);
 
         const tool = cylinder(2, 30, 0.7);
         spindle.add(tool);
@@ -502,9 +506,13 @@ function updateFK() {
         return false;
     }
 
-    mech.toolBaseZ = positions.effZ;
-    mech.toolBaseX = positions.effX + railHeightX;
-    mech.toolAngle = (spindleSlant + 90 + positions.effA * 180 / Math.PI + 90) % 360 - 180;
+    const angle = mech.toolAngle / 180 * Math.PI;
+    //const link0TargetX = mech.toolBaseX + ;
+    //const link0TargetZ = mech.toolBaseZ + 
+
+    mech.toolBaseZ = positions.effZ - Math.cos(angle) * targetRadius;
+    mech.toolBaseX = positions.effX + railHeightX - Math.sin(angle) * targetRadius;
+    mech.toolAngle = (90 + positions.effA * 180 / Math.PI + 90) % 360 - 180;
     mech.minAngle = positions.minAngle * 180 / Math.PI;
 
     view.slider1.position.x = positions.l1Z;
