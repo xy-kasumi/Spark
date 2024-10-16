@@ -26,6 +26,7 @@ fp-info-cache
 *.dsn
 *.ses
 
-# Exported BOM files
+# Exported BOM, gerber, CPL files
 *.xml
 *.csv
+production/
