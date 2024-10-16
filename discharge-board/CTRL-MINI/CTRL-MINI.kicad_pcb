@@ -658,7 +658,7 @@
 		(descr "JST XH series connector, B4B-XH-A (http://www.jst-mfg.com/product/pdf/eng/eXH.pdf), generated with kicad-footprint-generator")
 		(tags "connector JST XH vertical")
 		(property "Reference" "J5"
-			(at 3.75 -3.55 90)
+			(at 9.652 4.953 180)
 			(layer "F.SilkS")
 			(uuid "6fb6f23c-c7b0-4626-b18d-ec30d84d6459")
 			(effects
@@ -3126,7 +3126,7 @@
 		(descr "JST XH series connector, B4B-XH-A (http://www.jst-mfg.com/product/pdf/eng/eXH.pdf), generated with kicad-footprint-generator")
 		(tags "connector JST XH vertical")
 		(property "Reference" "J10"
-			(at 3.75 -3.55 90)
+			(at 9.652 5.207 180)
 			(layer "F.SilkS")
 			(uuid "4473abee-088e-4f0b-be11-fb98c91a02a4")
 			(effects
@@ -5947,7 +5947,7 @@
 		(descr "JST XH series connector, B4B-XH-A (http://www.jst-mfg.com/product/pdf/eng/eXH.pdf), generated with kicad-footprint-generator")
 		(tags "connector JST XH vertical")
 		(property "Reference" "J1"
-			(at 3.75 -3.55 90)
+			(at 9.699 4.911 180)
 			(layer "F.SilkS")
 			(uuid "6a30507d-a7b6-4ad2-b287-a02d4ff32fe2")
 			(effects
