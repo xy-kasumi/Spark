@@ -5,15 +5,15 @@
 	(uuid "3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5")
 	(paper "A4")
 	(lib_symbols
-		(symbol "Analog_Switch:DG419xY"
+		(symbol "Analog_Switch:TS5A3159DCK"
 			(pin_names
-				(offset 0.254)
+				(offset 0.127)
 			)
 			(exclude_from_sim no)
 			(in_bom yes)
 			(on_board yes)
 			(property "Reference" "U"
-				(at -3.175 7.62 0)
+				(at -3.175 7.493 0)
 				(effects
 					(font
 						(size 1.27 1.27)
@@ -21,8 +21,8 @@
 					(justify left)
 				)
 			)
-			(property "Value" "DG419xY"
-				(at -3.175 5.461 0)
+			(property "Value" "TS5A3159DCK"
+				(at -3.175 5.715 0)
 				(effects
 					(font
 						(size 1.27 1.27)
@@ -30,18 +30,8 @@
 					(justify left)
 				)
 			)
-			(property "Footprint" "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
-				(at 3.81 -13.335 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(justify left)
-					(hide yes)
-				)
-			)
-			(property "Datasheet" "https://datasheets.maximintegrated.com/en/ds/DG417-DG419.pdf"
-				(at 3.81 -11.43 0)
+			(property "Footprint" "Package_TO_SOT_SMD:SOT-363_SC-70-6"
+				(at 0.635 -13.335 0)
 				(effects
 					(font
 						(size 1.27 1.27)
@@ -50,7 +40,17 @@
 					(hide yes)
 				)
 			)
-			(property "Description" "Single SPDT Monolithic CMOS Analog Switch, 20Ohm Ron, SOIC-8"
+			(property "Datasheet" "http://www.ti.com/lit/ds/symlink/ts5a3159.pdf"
+				(at 0.635 -11.43 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify left)
+					(hide yes)
+				)
+			)
+			(property "Description" "Single SPDT Analog Switch, 1.65-V to 5.5-V Single-Supply Operation, 1Ohm Ron, SC-70-6"
 				(at 0 0 0)
 				(effects
 					(font
@@ -59,7 +59,7 @@
 					(hide yes)
 				)
 			)
-			(property "ki_keywords" "CMOS Analog Switch"
+			(property "ki_keywords" "Analog Switch SPDT"
 				(at 0 0 0)
 				(effects
 					(font
@@ -68,7 +68,7 @@
 					(hide yes)
 				)
 			)
-			(property "ki_fp_filters" "SOIC*3.9x4.9mm*P1.27mm*"
+			(property "ki_fp_filters" "*SC?70*"
 				(at 0 0 0)
 				(effects
 					(font
@@ -77,7 +77,7 @@
 					(hide yes)
 				)
 			)
-			(symbol "DG419xY_1_1"
+			(symbol "TS5A3159DCK_1_1"
 				(rectangle
 					(start -3.81 4.445)
 					(end 3.81 -4.445)
@@ -315,7 +315,7 @@
 					)
 				)
 				(pin passive line
-					(at -7.62 0 0)
+					(at 7.62 -2.54 180)
 					(length 2.54)
 					(name "~"
 						(effects
@@ -342,7 +342,25 @@
 							)
 						)
 					)
-					(number "2"
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -7.62 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "4"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -368,26 +386,8 @@
 						)
 					)
 				)
-				(pin passive line
-					(at 7.62 -2.54 180)
-					(length 2.54)
-					(name "~"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "8"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
 			)
-			(symbol "DG419xY_2_0"
+			(symbol "TS5A3159DCK_2_0"
 				(pin power_in line
 					(at 0 -12.7 90)
 					(length 2.54)
@@ -398,7 +398,7 @@
 							)
 						)
 					)
-					(number "3"
+					(number "2"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -416,24 +416,6 @@
 							)
 						)
 					)
-					(number "4"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin power_in line
-					(at 2.54 12.7 270)
-					(length 2.54)
-					(name "VL"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
 					(number "5"
 						(effects
 							(font
@@ -442,29 +424,11 @@
 						)
 					)
 				)
-				(pin power_in line
-					(at 2.54 -12.7 90)
-					(length 2.54)
-					(name "V-"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "7"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
 			)
-			(symbol "DG419xY_2_1"
+			(symbol "TS5A3159DCK_2_1"
 				(rectangle
 					(start -3.81 10.16)
-					(end 6.35 -10.16)
+					(end 3.81 -10.16)
 					(stroke
 						(width 0.254)
 						(type default)
@@ -3857,7 +3821,7 @@
 		(uuid "240ede49-52f8-46dc-a050-0f3f770d3fb4")
 	)
 	(junction
-		(at 87.63 185.42)
+		(at 91.44 185.42)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "2a7e16e5-62de-4917-ac3a-ec6dc90dbda2")
@@ -3923,7 +3887,7 @@
 		(uuid "48a6f1f6-7991-43e6-bf39-e853b026474e")
 	)
 	(junction
-		(at 87.63 154.94)
+		(at 91.44 154.94)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "4df68f60-51d0-454d-b3f5-5b44443f4633")
@@ -3953,12 +3917,6 @@
 		(uuid "70171840-db2b-4fce-91c7-0814af7d14d8")
 	)
 	(junction
-		(at 90.17 154.94)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "734ec2c7-a5c4-4461-8999-3c46c206685f")
-	)
-	(junction
 		(at 238.76 93.98)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -3975,12 +3933,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "81eb23e8-0bd9-463e-bb05-6e8a5fdd4d93")
-	)
-	(junction
-		(at 90.17 185.42)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "8b91f595-0cf8-4cff-a2ab-f35dc3761d21")
 	)
 	(junction
 		(at 246.38 77.47)
@@ -4162,16 +4114,6 @@
 	)
 	(wire
 		(pts
-			(xy 177.8 68.58) (xy 180.34 68.58)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "10737a8d-0073-456f-ab34-bd7e696aec3c")
-	)
-	(wire
-		(pts
 			(xy 163.83 143.51) (xy 187.96 143.51)
 		)
 		(stroke
@@ -4202,7 +4144,7 @@
 	)
 	(wire
 		(pts
-			(xy 106.68 166.37) (xy 106.68 154.94)
+			(xy 107.95 166.37) (xy 107.95 154.94)
 		)
 		(stroke
 			(width 0)
@@ -4292,7 +4234,7 @@
 	)
 	(wire
 		(pts
-			(xy 87.63 154.94) (xy 90.17 154.94)
+			(xy 91.44 154.94) (xy 107.95 154.94)
 		)
 		(stroke
 			(width 0)
@@ -4319,16 +4261,6 @@
 			(type default)
 		)
 		(uuid "2a7ef903-6552-4852-baa2-9aded6b0d8b8")
-	)
-	(wire
-		(pts
-			(xy 106.68 154.94) (xy 90.17 154.94)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "2c434338-51ec-4972-8c87-3fdf917a26e0")
 	)
 	(wire
 		(pts
@@ -4562,6 +4494,16 @@
 	)
 	(wire
 		(pts
+			(xy 173.99 64.77) (xy 180.34 64.77)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "55f7d9dd-4c76-4d35-a6b1-3874e621876c")
+	)
+	(wire
+		(pts
 			(xy 29.21 86.36) (xy 40.64 86.36)
 		)
 		(stroke
@@ -4762,16 +4704,6 @@
 	)
 	(wire
 		(pts
-			(xy 90.17 182.88) (xy 90.17 185.42)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "75a84378-9143-4660-b42d-f58a7d88977a")
-	)
-	(wire
-		(pts
 			(xy 246.38 44.45) (xy 246.38 49.53)
 		)
 		(stroke
@@ -4932,7 +4864,7 @@
 	)
 	(wire
 		(pts
-			(xy 106.68 173.99) (xy 106.68 185.42)
+			(xy 107.95 173.99) (xy 107.95 185.42)
 		)
 		(stroke
 			(width 0)
@@ -5192,6 +5124,16 @@
 	)
 	(wire
 		(pts
+			(xy 180.34 64.77) (xy 180.34 71.12)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a896fc16-2941-47cb-b679-c821a973ae46")
+	)
+	(wire
+		(pts
 			(xy 66.04 96.52) (xy 77.47 96.52)
 		)
 		(stroke
@@ -5322,26 +5264,6 @@
 	)
 	(wire
 		(pts
-			(xy 90.17 157.48) (xy 90.17 154.94)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "bef80664-5875-4bf5-9bf0-493a03c21bfc")
-	)
-	(wire
-		(pts
-			(xy 180.34 68.58) (xy 180.34 71.12)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "bf56e0fa-236b-4731-a538-430f86af2c3b")
-	)
-	(wire
-		(pts
 			(xy 25.4 78.74) (xy 25.4 83.82)
 		)
 		(stroke
@@ -5372,7 +5294,7 @@
 	)
 	(wire
 		(pts
-			(xy 87.63 152.4) (xy 87.63 154.94)
+			(xy 91.44 152.4) (xy 91.44 154.94)
 		)
 		(stroke
 			(width 0)
@@ -5412,7 +5334,7 @@
 	)
 	(wire
 		(pts
-			(xy 87.63 154.94) (xy 87.63 157.48)
+			(xy 91.44 154.94) (xy 91.44 157.48)
 		)
 		(stroke
 			(width 0)
@@ -5562,7 +5484,7 @@
 	)
 	(wire
 		(pts
-			(xy 87.63 182.88) (xy 87.63 185.42)
+			(xy 91.44 182.88) (xy 91.44 185.42)
 		)
 		(stroke
 			(width 0)
@@ -5742,7 +5664,7 @@
 	)
 	(wire
 		(pts
-			(xy 87.63 185.42) (xy 90.17 185.42)
+			(xy 91.44 185.42) (xy 107.95 185.42)
 		)
 		(stroke
 			(width 0)
@@ -5812,16 +5734,6 @@
 	)
 	(wire
 		(pts
-			(xy 106.68 185.42) (xy 90.17 185.42)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "f2a12752-217f-42e8-9843-f4432dd3f7b9")
-	)
-	(wire
-		(pts
 			(xy 257.81 137.16) (xy 257.81 146.05)
 		)
 		(stroke
@@ -5842,7 +5754,7 @@
 	)
 	(wire
 		(pts
-			(xy 87.63 185.42) (xy 87.63 187.96)
+			(xy 91.44 185.42) (xy 91.44 187.96)
 		)
 		(stroke
 			(width 0)
@@ -6419,28 +6331,6 @@
 			)
 		)
 	)
-	(global_label "DCHG_GATE"
-		(shape input)
-		(at 177.8 68.58 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "c813b4dd-8c01-427b-b1b8-a87a26b29296")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 164.2315 68.58 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
 	(global_label "S_E-"
 		(shape passive)
 		(at 248.92 80.01 270)
@@ -6476,6 +6366,28 @@
 		(uuid "d889e7fc-9297-460d-b63d-cd973ed86868")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 119.4792 148.59 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "DCHG_GATE"
+		(shape input)
+		(at 173.99 64.77 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "db87e5e2-5f0a-4ff8-bec7-5b8a5bbd8d72")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 160.4215 64.77 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6693,6 +6605,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 73.66 170.18 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "1e85ddaa-ecf2-464e-a028-600b414ae9a8")
 		)
@@ -6818,6 +6739,15 @@
 			)
 		)
 		(property "Description" "Resistor"
+			(at 194.31 76.2 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
 			(at 194.31 76.2 0)
 			(effects
 				(font
@@ -7026,6 +6956,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 176.53 118.11 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "349e13e0-c541-46b5-8c38-3c18fa6e4584")
 		)
@@ -7096,6 +7035,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 138.43 154.94 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "c4545dc1-538c-4df7-957e-8852a0da8374")
 		)
@@ -7156,6 +7104,15 @@
 			)
 		)
 		(property "Description" "Generic connector, single row, 01x08, script generated"
+			(at 17.78 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C2915520"
 			(at 17.78 93.98 0)
 			(effects
 				(font
@@ -7241,6 +7198,15 @@
 			)
 		)
 		(property "Description" "Resistor"
+			(at 191.77 110.49 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
 			(at 191.77 110.49 0)
 			(effects
 				(font
@@ -7384,6 +7350,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 213.36 76.2 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "ddda52aa-91db-4248-a57a-a8904bc5793c")
 		)
@@ -7457,6 +7432,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 259.08 96.52 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "416aa0e2-c0dc-4f36-94bf-6227eb9c8341")
 		)
@@ -7518,6 +7502,15 @@
 			)
 		)
 		(property "Description" "test point"
+			(at 199.39 69.85 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
 			(at 199.39 69.85 0)
 			(effects
 				(font
@@ -7725,6 +7718,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 105.41 129.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "bfbbba80-2362-4583-a7a4-0b2d8089f989")
 		)
@@ -7757,7 +7759,7 @@
 				)
 			)
 		)
-		(property "Value" "Opamp_Dual"
+		(property "Value" "TLV2316IDGKR"
 			(at 163.83 83.82 0)
 			(effects
 				(font
@@ -7821,6 +7823,15 @@
 			)
 		)
 		(property "Sim.Pins" "1=out1 2=in1- 3=in1+ 4=vee 5=in2+ 6=in2- 7=out2 8=vcc"
+			(at 163.83 76.2 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C89405"
 			(at 163.83 76.2 0)
 			(effects
 				(font
@@ -7917,6 +7928,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 199.39 115.57 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "f5c6a526-1e09-4d6b-9f48-48ed08908dbb")
 		)
@@ -7979,6 +7999,15 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 224.79 144.78 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
 			(at 224.79 144.78 0)
 			(effects
 				(font
@@ -8185,6 +8214,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 208.28 101.6 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "4ea96788-078b-40ec-bf92-2ea408ddc865")
 		)
@@ -8244,6 +8282,15 @@
 			)
 		)
 		(property "Description" "Resistor"
+			(at 201.93 151.13 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
 			(at 201.93 151.13 0)
 			(effects
 				(font
@@ -8320,6 +8367,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 143.51 148.59 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "612a4cf0-3050-497c-bdb4-28e85f902d64")
 		)
@@ -8330,6 +8386,97 @@
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
 					(reference "R16")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Analog_Switch:TS5A3159DCK")
+		(at 180.34 78.74 180)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "387bd865-daed-4056-ab77-979d0eead96b")
+		(property "Reference" "U2"
+			(at 180.34 85.09 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "TS5A3159DCK"
+			(at 180.34 87.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Package_TO_SOT_SMD:SOT-363_SC-70-6"
+			(at 179.705 65.405 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "http://www.ti.com/lit/ds/symlink/ts5a3159.pdf"
+			(at 179.705 67.31 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Description" "Single SPDT Analog Switch, 1.65-V to 5.5-V Single-Supply Operation, 1Ohm Ron, SC-70-6"
+			(at 180.34 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C46388"
+			(at 180.34 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "06965e33-7ed6-4b81-b8bf-3463351f0549")
+		)
+		(pin "1"
+			(uuid "4b16924f-930b-4195-ac2e-81fb7678cad3")
+		)
+		(pin "3"
+			(uuid "a26b3f70-9d4b-4cad-bee0-1d0eb5ad8ed3")
+		)
+		(pin "5"
+			(uuid "5c2f96ce-9bea-4e44-93f7-324a40af647a")
+		)
+		(pin "4"
+			(uuid "ee0453f8-c133-4157-a8d9-4d3968d02428")
+		)
+		(pin "6"
+			(uuid "c41d252b-1e58-4dfc-88e3-91bc93a61160")
+		)
+		(instances
+			(project ""
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
+					(reference "U2")
 					(unit 1)
 				)
 			)
@@ -8379,6 +8526,15 @@
 			)
 		)
 		(property "Description" "Resistor"
+			(at 60.96 96.52 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
 			(at 60.96 96.52 0)
 			(effects
 				(font
@@ -8456,6 +8612,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 187.96 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "57b74f1e-178f-4aed-95aa-2837f5c61920")
 		)
@@ -8470,7 +8635,7 @@
 	)
 	(symbol
 		(lib_id "Device:C")
-		(at 106.68 170.18 0)
+		(at 107.95 170.18 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -8479,7 +8644,7 @@
 		(fields_autoplaced yes)
 		(uuid "42c472b2-c990-4b8c-a3a5-bffe3646da82")
 		(property "Reference" "C6"
-			(at 110.49 168.9099 0)
+			(at 111.76 168.9099 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8488,7 +8653,7 @@
 			)
 		)
 		(property "Value" "0.1u 12V"
-			(at 110.49 171.4499 0)
+			(at 111.76 171.4499 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8497,7 +8662,7 @@
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
-			(at 107.6452 173.99 0)
+			(at 108.9152 173.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8506,7 +8671,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 106.68 170.18 0)
+			(at 107.95 170.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8515,7 +8680,16 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
-			(at 106.68 170.18 0)
+			(at 107.95 170.18 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
+			(at 107.95 170.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8655,6 +8829,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 212.09 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "5fd7009b-8b3b-4dbc-bb98-82ad245b7de4")
 		)
@@ -8689,7 +8872,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "Opamp_Dual"
+		(property "Value" "TLV2316IDGKR"
 			(at 68.58 171.4499 0)
 			(effects
 				(font
@@ -8754,6 +8937,15 @@
 			)
 		)
 		(property "Sim.Pins" "1=out1 2=in1- 3=in1+ 4=vee 5=in2+ 6=in2- 7=out2 8=vcc"
+			(at 69.85 170.18 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C89405"
 			(at 69.85 170.18 0)
 			(effects
 				(font
@@ -9047,6 +9239,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 237.49 62.23 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "5d5a427d-be4c-4b09-95c0-6b1bcfe74579")
 		)
@@ -9135,6 +9336,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 44.45 36.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "1e69f332-1e9e-4b81-909c-17f1965e0476")
 		)
@@ -9203,6 +9413,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 77.47 118.11 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "7386378e-ea0c-47b5-8d06-bc4a39e12275")
 		)
@@ -9262,6 +9481,15 @@
 			)
 		)
 		(property "Description" "Fuse"
+			(at 203.2 76.2 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
 			(at 203.2 76.2 0)
 			(effects
 				(font
@@ -9406,6 +9634,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 201.93 35.56 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "be10e48c-e621-45b5-b4ff-e72305ec2867")
 		)
@@ -9494,6 +9731,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 44.45 46.99 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "8b1b579b-35d3-4385-916a-fe8facdb1e3d")
 		)
@@ -9556,6 +9802,15 @@
 			)
 		)
 		(property "Description" "Resistor"
+			(at 105.41 140.97 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
 			(at 105.41 140.97 0)
 			(effects
 				(font
@@ -9634,6 +9889,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 30.48 170.18 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "783f82a6-539c-4f9d-a9c8-5e2fd2982786")
 		)
@@ -9702,6 +9966,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 166.37 118.11 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "7e853935-2c6a-41ca-8f6a-d80d1527a0b2")
 		)
@@ -9735,7 +10008,7 @@
 				)
 			)
 		)
-		(property "Value" "Opamp_Dual"
+		(property "Value" "TLV2316IDGKR"
 			(at 156.21 156.21 0)
 			(effects
 				(font
@@ -9799,6 +10072,15 @@
 			)
 		)
 		(property "Sim.Pins" "1=out1 2=in1- 3=in1+ 4=vee 5=in2+ 6=in2- 7=out2 8=vcc"
+			(at 156.21 148.59 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C89405"
 			(at 156.21 148.59 0)
 			(effects
 				(font
@@ -9961,6 +10243,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 53.34 170.18 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "1a02574e-8a38-406c-af12-caa96e401d8f")
 		)
@@ -10024,6 +10315,15 @@
 			)
 		)
 		(property "Description" ""
+			(at 246.38 74.93 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C469145"
 			(at 246.38 74.93 0)
 			(effects
 				(font
@@ -10112,6 +10412,15 @@
 			)
 		)
 		(property "Description" "Zener diode"
+			(at 69.85 123.19 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
 			(at 69.85 123.19 0)
 			(effects
 				(font
@@ -10219,7 +10528,7 @@
 				)
 			)
 		)
-		(property "Value" "Opamp_Dual"
+		(property "Value" "TLV2316IDGKR"
 			(at 88.9 110.49 0)
 			(effects
 				(font
@@ -10283,6 +10592,15 @@
 			)
 		)
 		(property "Sim.Pins" "1=out1 2=in1- 3=in1+ 4=vee 5=in2+ 6=in2- 7=out2 8=vcc"
+			(at 88.9 118.11 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C89405"
 			(at 88.9 118.11 0)
 			(effects
 				(font
@@ -10442,6 +10760,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 234.95 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "cea078c2-e16e-4e1d-ad58-710586fcad18")
 		)
@@ -10475,7 +10802,7 @@
 				)
 			)
 		)
-		(property "Value" "Opamp_Dual"
+		(property "Value" "TLV2316IDGKR"
 			(at 170.18 113.03 0)
 			(effects
 				(font
@@ -10547,6 +10874,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C89405"
+			(at 170.18 105.41 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "7"
 			(uuid "71b4e599-a6fd-44f3-a9aa-b900d4e2c814")
 		)
@@ -10575,96 +10911,6 @@
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
 					(reference "U1")
-					(unit 2)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Analog_Switch:DG419xY")
-		(at 87.63 170.18 0)
-		(unit 2)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "8b5f0597-779a-4e5c-ac14-7f53180e6017")
-		(property "Reference" "U2"
-			(at 95.25 168.9099 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "DG419xY"
-			(at 95.25 171.4499 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
-			(at 91.44 183.515 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://datasheets.maximintegrated.com/en/ds/DG417-DG419.pdf"
-			(at 91.44 181.61 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Description" "Single SPDT Monolithic CMOS Analog Switch, 20Ohm Ron, SOIC-8"
-			(at 87.63 170.18 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "5"
-			(uuid "0afbb475-9bbc-4439-81a1-654b3c40f2aa")
-		)
-		(pin "7"
-			(uuid "a464eb66-9251-4d4d-91eb-019fda93121f")
-		)
-		(pin "6"
-			(uuid "584d0f26-3b87-49d0-b6d7-d6ea8042d466")
-		)
-		(pin "2"
-			(uuid "047430aa-3033-4e4d-b53c-1eab95fd58dd")
-		)
-		(pin "8"
-			(uuid "88748aa0-ff3d-4d8d-a071-42a779bd2d41")
-		)
-		(pin "3"
-			(uuid "23fe7e11-4d01-4caf-a271-4b244d50334d")
-		)
-		(pin "4"
-			(uuid "06698175-1c8d-4f49-9cb3-1645d8a7287c")
-		)
-		(pin "1"
-			(uuid "ba647afb-cc57-40f1-a3b2-b523cc25beb6")
-		)
-		(instances
-			(project ""
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
-					(reference "U2")
 					(unit 2)
 				)
 			)
@@ -10820,7 +11066,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "Opamp_Dual"
+		(property "Value" "TLV2316IDGKR"
 			(at 22.86 171.958 0)
 			(effects
 				(font
@@ -10885,6 +11131,15 @@
 			)
 		)
 		(property "Sim.Pins" "1=out1 2=in1- 3=in1+ 4=vee 5=in2+ 6=in2- 7=out2 8=vcc"
+			(at 24.13 170.18 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C89405"
 			(at 24.13 170.18 0)
 			(effects
 				(font
@@ -10981,6 +11236,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 257.81 149.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "066ee3dc-e2a8-4763-94a7-b11d98dea4c0")
 		)
@@ -10991,93 +11255,6 @@
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
 					(reference "D7")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Analog_Switch:DG419xY")
-		(at 180.34 78.74 180)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "9be4ad53-ec87-4133-99cc-7e9aa8a3aefc")
-		(property "Reference" "U2"
-			(at 180.34 87.63 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "DG419xY"
-			(at 180.34 85.09 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
-			(at 176.53 65.405 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://datasheets.maximintegrated.com/en/ds/DG417-DG419.pdf"
-			(at 176.53 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Description" "Single SPDT Monolithic CMOS Analog Switch, 20Ohm Ron, SOIC-8"
-			(at 180.34 78.74 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "35006211-b7b1-4e66-83fc-f3ea2b585e3f")
-		)
-		(pin "4"
-			(uuid "26602f12-d8c8-4db5-b1f3-a058337024bd")
-		)
-		(pin "2"
-			(uuid "5246e773-1e1d-4a6f-9035-a2a00c34a470")
-		)
-		(pin "8"
-			(uuid "d3ef919c-80a0-4e11-a4ce-79c937bd5036")
-		)
-		(pin "5"
-			(uuid "607f8281-0261-4d5c-9f0e-49ddb97e818e")
-		)
-		(pin "7"
-			(uuid "f16f9999-a93d-49ac-8a17-f0cfa8cec4e8")
-		)
-		(pin "3"
-			(uuid "c8c9c0f0-def9-4c84-bb94-d452347f2cfa")
-		)
-		(pin "6"
-			(uuid "a868574f-72c7-4de9-b16f-9cada8102944")
-		)
-		(instances
-			(project ""
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
-					(reference "U2")
 					(unit 1)
 				)
 			)
@@ -11101,7 +11278,7 @@
 				)
 			)
 		)
-		(property "Value" "Opamp_Dual"
+		(property "Value" "TLV2316IDGKR"
 			(at 201.93 150.114 0)
 			(effects
 				(font
@@ -11165,6 +11342,15 @@
 			)
 		)
 		(property "Sim.Pins" "1=out1 2=in1- 3=in1+ 4=vee 5=in2+ 6=in2- 7=out2 8=vcc"
+			(at 201.93 143.51 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C89405"
 			(at 201.93 143.51 0)
 			(effects
 				(font
@@ -11272,6 +11458,98 @@
 		)
 	)
 	(symbol
+		(lib_id "Analog_Switch:TS5A3159DCK")
+		(at 91.44 170.18 0)
+		(unit 2)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "a5b8220a-9a1a-4eab-8806-493a9f702e13")
+		(property "Reference" "U2"
+			(at 96.266 179.07 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "TS5A3159DCK"
+			(at 93.218 182.118 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Package_TO_SOT_SMD:SOT-363_SC-70-6"
+			(at 92.075 183.515 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "http://www.ti.com/lit/ds/symlink/ts5a3159.pdf"
+			(at 92.075 181.61 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Description" "Single SPDT Analog Switch, 1.65-V to 5.5-V Single-Supply Operation, 1Ohm Ron, SC-70-6"
+			(at 91.44 170.18 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C46388"
+			(at 91.44 170.18 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "06965e33-7ed6-4b81-b8bf-3463351f0549")
+		)
+		(pin "1"
+			(uuid "4b16924f-930b-4195-ac2e-81fb7678cad3")
+		)
+		(pin "3"
+			(uuid "a26b3f70-9d4b-4cad-bee0-1d0eb5ad8ed3")
+		)
+		(pin "5"
+			(uuid "5c2f96ce-9bea-4e44-93f7-324a40af647a")
+		)
+		(pin "4"
+			(uuid "ee0453f8-c133-4157-a8d9-4d3968d02428")
+		)
+		(pin "6"
+			(uuid "c41d252b-1e58-4dfc-88e3-91bc93a61160")
+		)
+		(instances
+			(project ""
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
+					(reference "U2")
+					(unit 2)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Simulation_SPICE:NMOS")
 		(at 243.84 93.98 0)
 		(unit 1)
@@ -11353,6 +11631,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 243.84 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "88032330-8b73-4498-9447-21c86ef083e8")
 		)
@@ -11415,6 +11702,15 @@
 			)
 		)
 		(property "Description" "Resistor"
+			(at 224.79 153.67 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
 			(at 224.79 153.67 0)
 			(effects
 				(font
@@ -11490,6 +11786,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 184.15 153.67 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "73c5731c-7afd-4866-84e5-394a1f01dc0e")
 		)
@@ -11551,6 +11856,15 @@
 			)
 		)
 		(property "Description" "test point"
+			(at 148.59 107.95 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
 			(at 148.59 107.95 0)
 			(effects
 				(font
@@ -11639,7 +11953,7 @@
 	)
 	(symbol
 		(lib_id "power:GND")
-		(at 87.63 187.96 0)
+		(at 91.44 187.96 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -11648,7 +11962,7 @@
 		(fields_autoplaced yes)
 		(uuid "b62c4821-de6f-4e36-903e-aee8dfc16c8f")
 		(property "Reference" "#PWR026"
-			(at 87.63 194.31 0)
+			(at 91.44 194.31 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11657,7 +11971,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 87.63 193.04 0)
+			(at 91.44 193.04 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11665,7 +11979,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 87.63 187.96 0)
+			(at 91.44 187.96 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11674,7 +11988,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 87.63 187.96 0)
+			(at 91.44 187.96 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11683,7 +11997,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 87.63 187.96 0)
+			(at 91.44 187.96 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11823,6 +12137,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 201.93 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "cade35e2-053e-4ad7-a638-e77113a4b0e2")
 		)
@@ -11884,6 +12207,15 @@
 			)
 		)
 		(property "Description" "Generic screw terminal, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)"
+			(at 280.67 60.96 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C8269"
 			(at 280.67 60.96 0)
 			(effects
 				(font
@@ -12028,6 +12360,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 199.39 83.82 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "1d7f6437-6c3d-4e6c-bbb9-031e92271a05")
 		)
@@ -12097,6 +12438,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 215.9 105.41 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "d30908d0-01ee-48f6-8968-e52ae1d4dbb3")
 		)
@@ -12156,6 +12506,15 @@
 			)
 		)
 		(property "Description" "Resistor"
+			(at 265.43 137.16 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
 			(at 265.43 137.16 0)
 			(effects
 				(font
@@ -12430,6 +12789,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C8269"
+			(at 26.67 49.53 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "a751ed09-aca7-433c-8478-8fdbe60a9b0e")
 		)
@@ -12492,6 +12860,15 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 66.04 102.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
 			(at 66.04 102.87 0)
 			(effects
 				(font
@@ -12634,6 +13011,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 137.16 181.61 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "392a81d0-bd08-40fe-b3d6-0add6eb9fa3f")
 		)
@@ -12700,6 +13086,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 189.23 41.91 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "612711c8-6bb8-4f72-9edd-ab2ef1762619")
 		)
@@ -12756,6 +13151,15 @@
 			)
 		)
 		(property "Description" "Resistor"
+			(at 173.99 153.67 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
 			(at 173.99 153.67 0)
 			(effects
 				(font
@@ -12832,6 +13236,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C8269"
+			(at 26.67 29.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "e55a13f2-c03b-4820-b6b2-5a3d518dc759")
 		)
@@ -12899,6 +13312,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" ""
+			(at 238.76 99.06 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "43af179a-5bb7-4c37-91a9-0c5f6d37269c")
 		)
@@ -12933,7 +13355,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "Opamp_Dual"
+		(property "Value" "TLV2316IDGKR"
 			(at 46.99 171.4499 0)
 			(effects
 				(font
@@ -13006,6 +13428,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C89405"
+			(at 48.26 170.18 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "84332c0e-a17b-4c9b-b924-a4a41887e57a")
 		)
@@ -13056,7 +13487,7 @@
 				)
 			)
 		)
-		(property "Value" "Opamp_Dual"
+		(property "Value" "TLV2316IDGKR"
 			(at 85.09 106.68 0)
 			(effects
 				(font
@@ -13128,6 +13559,15 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C89405"
+			(at 85.09 99.06 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "aaea5438-587b-4b39-af07-08aab4e4f33c")
 		)
@@ -13163,7 +13603,7 @@
 	)
 	(symbol
 		(lib_id "power:VCC")
-		(at 87.63 152.4 0)
+		(at 91.44 152.4 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -13172,7 +13612,7 @@
 		(fields_autoplaced yes)
 		(uuid "f97ff797-8f0d-48b1-8631-9d9c7bd5405f")
 		(property "Reference" "#PWR018"
-			(at 87.63 156.21 0)
+			(at 91.44 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13181,7 +13621,7 @@
 			)
 		)
 		(property "Value" "VCC"
-			(at 87.63 147.32 0)
+			(at 91.44 147.32 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13189,7 +13629,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 87.63 152.4 0)
+			(at 91.44 152.4 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13198,7 +13638,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 87.63 152.4 0)
+			(at 91.44 152.4 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13207,7 +13647,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"VCC\""
-			(at 87.63 152.4 0)
+			(at 91.44 152.4 0)
 			(effects
 				(font
 					(size 1.27 1.27)
