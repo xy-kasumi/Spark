@@ -20,35 +20,30 @@ void md_bus_init() {
   const uint MD_SPI_BAUDRATE = 3 * 1000 * 1000;
 
   // SPI pins. Keep CSN pins high (select no chip).
-  gpio_init(CTRL_MD_SCK);
-  gpio_set_function(CTRL_MD_SCK, GPIO_FUNC_SPI);
-  gpio_init(CTRL_MD_SDI);
-  gpio_set_function(CTRL_MD_SDI, GPIO_FUNC_SPI);
-  gpio_init(CTRL_MD_SDO);
-  gpio_set_function(CTRL_MD_SDO, GPIO_FUNC_SPI);
+  uint32_t spi_mask =
+      (1 << CTRL_MD_SCK) | (1 << CTRL_MD_SDI) | (1 << CTRL_MD_SDO);
+  gpio_init_mask(spi_mask);
+  gpio_set_function_masked(spi_mask, GPIO_FUNC_SPI);
 
-  gpio_init(CTRL_MD_CSN0_PIN);
-  gpio_init(CTRL_MD_CSN1_PIN);
-  gpio_init(CTRL_MD_CSN2_PIN);
-
-  gpio_put(CTRL_MD_CSN0_PIN, true);
-  gpio_put(CTRL_MD_CSN1_PIN, true);
-  gpio_put(CTRL_MD_CSN2_PIN, true);
+  uint32_t csn_mask = (1 << CTRL_MD_CSN0_PIN) | (1 << CTRL_MD_CSN1_PIN) |
+                      (1 << CTRL_MD_CSN2_PIN);
+  gpio_init_mask(csn_mask);
+  gpio_set_dir_masked(csn_mask, 0xffffffff);
+  gpio_put_masked(csn_mask, 0xffffffff);
 
   // STEP/DIR pins
-  gpio_init(CTRL_MD_DIR_PIN);
-  gpio_put(CTRL_MD_DIR_PIN, false);
-  gpio_init(CTRL_MD_STEP0_PIN);
-  gpio_put(CTRL_MD_STEP0_PIN, false);
-  gpio_init(CTRL_MD_STEP1_PIN);
-  gpio_put(CTRL_MD_STEP1_PIN, false);
-  gpio_init(CTRL_MD_STEP2_PIN);
-  gpio_put(CTRL_MD_STEP2_PIN, false);
+  uint32_t step_dir_mask = (1 << CTRL_MD_DIR_PIN) | (1 << CTRL_MD_STEP0_PIN) |
+                           (1 << CTRL_MD_STEP1_PIN) | (1 << CTRL_MD_STEP2_PIN);
+  gpio_init_mask(step_dir_mask);
+  gpio_set_dir_masked(step_dir_mask, 0xffffffff);
+  gpio_put_masked(step_dir_mask, 0);
 
   // SPI peripheral
   spi_init(MD_SPI, MD_SPI_BAUDRATE);
   spi_set_slave(MD_SPI, false);
-  spi_set_format(MD_SPI, 8, SPI_CPOL_1, SPI_CPHA_0, SPI_MSB_FIRST);
+  // CPOL1: CLK is high in idle.
+  // CPHA1: sample data at CLK rising edge.
+  spi_set_format(MD_SPI, 8, SPI_CPOL_1, SPI_CPHA_1, SPI_MSB_FIRST);
 }
 
 /**
@@ -100,8 +95,11 @@ bool md_send_datagram_blocking(uint8_t md_index,
 
   // send/receive
   gpio_put(gpio_csn, false);
+  wait_100ns();
   int count = spi_write_read_blocking(MD_SPI, tx_data, rx_data, 5);
+  wait_100ns();
   gpio_put(gpio_csn, true);
+  wait_100ns();
 
   // result check
   if (count != 5) {
@@ -238,7 +236,7 @@ void md_step(uint8_t md_index, bool plus) {
   wait_100ns();  // wait tSL ~ 100ns
 }
 
-bool check_stall(uint8_t md_index) {
+bool md_check_stall(uint8_t md_index) {
   if (md_index > MD_NUM_BOARDS - 1) {
     return false;
   }

@@ -43,4 +43,4 @@ void md_step(uint8_t md_index, bool plus);
  * Note it won't return true if motor is disabled by protection like
  * overtemperature, short etc.
  */
-bool check_stall(uint8_t md_index);
+bool md_check_stall(uint8_t md_index);

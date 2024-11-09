@@ -47,7 +47,6 @@ void print_time() {
   printf("%d.%03d ", t_sec, t_ms);
 }
 
-
 void exec_command_status() {
   for (uint8_t i = 0; i < MD_NUM_BOARDS; i++) {
     md_board_status_t status = md_get_status(i);
@@ -79,12 +78,13 @@ void exec_command_step(uint8_t md_ix, int step, int wait) {
     sleep_us(wait);
   }
   print_time();
-  printf("step: DONE");
+  printf("step: DONE\n");
 }
 
 void exec_command_home(uint8_t md_ix, bool dir_plus, int timeout_ms) {
   int64_t timeout_us = timeout_ms * 1000;
-  const int WAIT_US = 20; // about 1 rotation/sec, assuming 1.8deg/step & 256 microstep.
+  const int WAIT_US =
+      20;  // about 1 rotation/sec, assuming 1.8deg/step & 256 microstep.
 
   absolute_time_t t0 = get_absolute_time();
   while (true) {
@@ -92,14 +92,14 @@ void exec_command_home(uint8_t md_ix, bool dir_plus, int timeout_ms) {
     int64_t elapsed_us = absolute_time_diff_us(t0, t1);
     if (elapsed_us >= timeout_us) {
       print_time();
-      printf("home: TIMEOUT");
+      printf("home: TIMEOUT\n");
       return;
     }
 
     md_step(md_ix, dir_plus);
   }
   print_time();
-  printf("home: DONE");
+  printf("home: DONE\n");
 }
 
 // supported commands
@@ -142,7 +142,6 @@ void stdio_getline(char* buf, size_t buf_size) {
     }
   }
 }
-
 
 int main() {
   // init compute
@@ -199,7 +198,8 @@ int main() {
       char* direction_str = strtok(NULL, " ");
       char* timeout_str = strtok(NULL, " ");
 
-      if (board_ix_str == NULL || direction_str == NULL || timeout_str == NULL) {
+      if (board_ix_str == NULL || direction_str == NULL ||
+          timeout_str == NULL) {
         printf("invalid arguments\n");
         continue;
       }

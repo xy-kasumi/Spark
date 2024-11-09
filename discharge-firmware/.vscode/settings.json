@@ -41,6 +41,7 @@
         "stdlib.h": "c",
         "gpio.h": "c",
         "*.inc": "cpp",
-        "cstdint": "cpp"
+        "cstdint": "cpp",
+        "string.h": "c"
     }
 }
