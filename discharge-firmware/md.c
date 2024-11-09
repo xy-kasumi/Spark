@@ -152,8 +152,8 @@ void md_init() {
     if (!read_register(i, REG_DRV_STATUS, &drv_status)) {
       continue;
     }
-    bool olb = drv_status & (1 << 30) != 0;
-    bool ola = drv_status & (1 << 29) != 0;
+    bool olb = (drv_status & (1 << 30)) != 0;
+    bool ola = (drv_status & (1 << 29)) != 0;
     if (olb || ola) {
       boards[i] = MD_NO_MOTOR;
       continue;
@@ -184,7 +184,7 @@ md_board_status_t md_get_status(uint8_t md_index) {
   uint32_t result;
   if (read_register(md_index, REG_GSTAT, &result)) {
     // OVERTEMP (0b010) or UNDERVOLTAGE (0b100)
-    if (result & 0b110 != 0) {
+    if ((result & 0b110) != 0) {
       boards[md_index] = MD_OVERTEMP;
     }
   } else {
@@ -241,5 +241,5 @@ bool check_stall(uint8_t md_index) {
     return false;
   }
 
-  return result & (1 << 24) != 0;  // StallGuard
+  return (result & (1 << 24)) != 0;  // StallGuard
 }
