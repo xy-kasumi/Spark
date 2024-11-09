@@ -40,6 +40,14 @@ void ed_init() {
   */
 }
 
+void print_time() {
+  uint32_t t = to_ms_since_boot(get_absolute_time());
+  uint32_t t_sec = t / 1000;
+  uint32_t t_ms = t % 1000;
+  printf("%d.%03d ", t_sec, t_ms);
+}
+
+
 void exec_command_status() {
   for (uint8_t i = 0; i < MD_NUM_BOARDS; i++) {
     md_board_status_t status = md_get_status(i);
@@ -70,6 +78,7 @@ void exec_command_step(uint8_t md_ix, int step, int wait) {
     md_step(md_ix, step > 0);
     sleep_us(wait);
   }
+  print_time();
   printf("step: DONE");
 }
 
@@ -82,12 +91,14 @@ void exec_command_home(uint8_t md_ix, bool dir_plus, int timeout_ms) {
     absolute_time_t t1 = get_absolute_time();
     int64_t elapsed_us = absolute_time_diff_us(t0, t1);
     if (elapsed_us >= timeout_us) {
+      print_time();
       printf("home: TIMEOUT");
       return;
     }
 
     md_step(md_ix, dir_plus);
   }
+  print_time();
   printf("home: DONE");
 }
 
@@ -118,6 +129,21 @@ void strtrimr(char* str) {
   }
 }
 
+void stdio_getline(char* buf, size_t buf_size) {
+  int ix = 0;
+  while (ix < buf_size - 1) {
+    char ch = stdio_getchar();
+    if (ch == '\n' || ch == '\r') {
+      buf[ix] = 0;
+      break;
+    } else {
+      buf[ix] = ch;
+      ix++;
+    }
+  }
+}
+
+
 int main() {
   // init compute
   stdio_init_all();
@@ -128,15 +154,18 @@ int main() {
   ed_init();
 
   pico_led_set(true);  // I/O init complete
+  print_time();
   printf("init OK\n");
+  exec_command_status();
 
   // main command loop
   char buf[32];
   while (true) {
-    fgets(buf, sizeof(buf), stdin);
+    stdio_getline(buf, sizeof(buf));
+    print_time();
+    printf("processing command\n");
     pico_led_flash();
 
-    strtrimr(buf);
     char* command = strtok(buf, " ");
 
     if (strcmp(command, "status") == 0) {

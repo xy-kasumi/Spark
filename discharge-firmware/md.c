@@ -8,6 +8,7 @@
 
 static const uint8_t REG_GCONF = 0x00;
 static const uint8_t REG_GSTAT = 0x01;
+static const uint8_t REG_IOIN = 0x04;
 static const uint8_t REG_CHOPCONF = 0x6c;
 static const uint8_t REG_DRV_STATUS = 0x6f;
 
@@ -100,6 +101,7 @@ bool md_send_datagram_blocking(uint8_t md_index,
   // send/receive
   gpio_put(gpio_csn, false);
   int count = spi_write_read_blocking(MD_SPI, tx_data, rx_data, 5);
+  gpio_put(gpio_csn, true);
 
   // result check
   if (count != 5) {
@@ -146,6 +148,15 @@ void md_init() {
 
   for (uint8_t i = 0; i < MD_NUM_BOARDS; i++) {
     boards[i] = MD_NO_BOARD;
+
+    // check chip version.
+    uint32_t ioin;
+    if (!read_register(i, REG_IOIN, &ioin)) {
+      continue;
+    }
+    if ((ioin >> 24) != 0x11) {
+      continue;
+    }
 
     // check if motor is connected.
     uint32_t drv_status;
