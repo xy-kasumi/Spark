@@ -79,9 +79,10 @@ void exec_command_step(uint8_t md_ix, int step, int wait) {
 void exec_command_home(uint8_t md_ix, bool dir_plus, int timeout_ms) {
   int64_t timeout_us = timeout_ms * 1000;
   const int WAIT_US =
-      20;  // about 1 rotation/sec, assuming 1.8deg/step & 256 microstep.
+      25;  // about 1 rotation/sec, assuming 1.8deg/step & 256 microstep.
 
   absolute_time_t t0 = get_absolute_time();
+  int i = 0;
   while (true) {
     absolute_time_t t1 = get_absolute_time();
     int64_t elapsed_us = absolute_time_diff_us(t0, t1);
@@ -92,6 +93,23 @@ void exec_command_home(uint8_t md_ix, bool dir_plus, int timeout_ms) {
     }
 
     md_step(md_ix, dir_plus);
+
+    // SPI is slow, need to interleave to avoid rotation slowdown.
+    if (i % 256 == 0) {
+      uint32_t drv_status = md_read_register(md_ix, 0x6f);
+
+      bool sg = (drv_status & (1 << 24)) != 0;
+      uint32_t sg_result = drv_status & 0x3ff;
+      if (sg && i > 1000) {
+        // need to exclude small i, as initial measurement (when motor just
+        // started moving) is inaccurate.
+        printf("home: STALL detected i=%d\n", i);
+        break;
+      }
+    }
+
+    sleep_us(WAIT_US);
+    i++;
   }
   print_time();
   printf("home: DONE\n");

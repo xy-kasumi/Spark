@@ -42,6 +42,7 @@
         "gpio.h": "c",
         "*.inc": "cpp",
         "cstdint": "cpp",
-        "string.h": "c"
+        "string.h": "c",
+        "functional": "c"
     }
 }
