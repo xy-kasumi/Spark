@@ -50,6 +50,7 @@ void print_time() {
 void exec_command_status() {
   for (uint8_t i = 0; i < MD_NUM_BOARDS; i++) {
     md_board_status_t status = md_get_status(i);
+
     printf("board %d: ", i);
     switch (status) {
       case MD_OK:
@@ -58,14 +59,8 @@ void exec_command_status() {
       case MD_NO_BOARD:
         printf("NO_BOARD");
         break;
-      case MD_NO_MOTOR:
-        printf("NO_MOTOR");
-        break;
       case MD_OVERTEMP:
         printf("OVERTEMP");
-        break;
-      case MD_SPI_ERROR:
-        printf("SPI_ERROR");
         break;
     }
     printf("\n");
@@ -102,6 +97,16 @@ void exec_command_home(uint8_t md_ix, bool dir_plus, int timeout_ms) {
   printf("home: DONE\n");
 }
 
+void exec_command_regread(uint8_t md_ix, uint8_t addr) {
+  uint32_t value = md_read_register(md_ix, addr);
+  printf("board %d: reg 0x%02x = 0x%08x\n", md_ix, addr, value);
+}
+
+void exec_command_regwrite(uint8_t md_ix, uint8_t addr, uint32_t data) {
+  md_write_register(md_ix, addr, data);
+  printf("board %d: reg 0x%02x set to 0x%08x\n", md_ix, addr, data);
+}
+
 // supported commands
 // ------------------
 // status
@@ -116,18 +121,15 @@ void exec_command_home(uint8_t md_ix, bool dir_plus, int timeout_ms) {
 //   <board_ix>: 0, 1, 2
 //   <direction>: - or +
 //   <timeout_ms>: integer, timeout in milliseconds
-
-// trim spaces at the end
-void strtrimr(char* str) {
-  int n = strlen(str);
-  for (int i = n - 1; i >= 0; i--) {
-    if (isspace(str[i])) {
-      str[i] = '\0';
-    } else {
-      break;
-    }
-  }
-}
+// regread <board_ix> <addr>
+//   read register from motor driver
+//   <board_ix>: 0, 1, 2
+//   <addr>: 00 to 7f (hexadecimal)
+// regwrite <board_ix> <addr> <data>
+//   write register to motor driver
+//   <board_ix>: 0, 1, 2
+//   <addr>: 00 to 7f (hexadecimal)
+//   <data>: 00000000 to ffffffff (hexadecimal)
 
 void stdio_getline(char* buf, size_t buf_size) {
   int ix = 0;
@@ -219,6 +221,51 @@ int main() {
       int timeout_ms = atoi(timeout_str);
 
       exec_command_home(md_ix, dir_plus, timeout_ms);
+    } else if (strcmp(command, "regread") == 0) {
+      char* board_ix_str = strtok(NULL, " ");
+      char* addr_str = strtok(NULL, " ");
+
+      if (board_ix_str == NULL || addr_str == NULL) {
+        printf("invalid arguments\n");
+        continue;
+      }
+
+      int md_ix = atoi(board_ix_str);
+      if (md_ix < 0 || md_ix >= MD_NUM_BOARDS) {
+        printf("invalid board index\n");
+        continue;
+      }
+
+      int addr = strtol(addr_str, NULL, 16);
+      if (addr < 0 || addr >= 0x80) {
+        printf("invalid address\n");
+        continue;
+      }
+
+      exec_command_regread(md_ix, addr);
+    } else if (strcmp(command, "regwrite") == 0) {
+      char* board_ix_str = strtok(NULL, " ");
+      char* addr_str = strtok(NULL, " ");
+      char* data_str = strtok(NULL, " ");
+
+      if (board_ix_str == NULL || addr_str == NULL || data_str == NULL) {
+        printf("invalid arguments\n");
+        continue;
+      }
+
+      int md_ix = atoi(board_ix_str);
+      if (md_ix < 0 || md_ix >= MD_NUM_BOARDS) {
+        printf("invalid board index\n");
+        continue;
+      }
+      int addr = strtol(addr_str, NULL, 16);
+      if (addr < 0 || addr >= 0x80) {
+        printf("invalid address\n");
+        continue;
+      }
+      uint32_t data = strtol(data_str, NULL, 16);
+
+      exec_command_regwrite(md_ix, addr, data);
     } else {
       printf("unknown command\n");
     }

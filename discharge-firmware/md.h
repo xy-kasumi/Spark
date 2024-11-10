@@ -12,18 +12,11 @@ typedef enum {
   MD_OK = 0,
 
   // board probably doesn't exist (didn't respond to SPI or invalid response
-  // during initialization). all commands to the board will be ignored.
+  // during initialization).
   MD_NO_BOARD = 1,
 
-  // board has correct chip, but says motor is not connected (open load).
-  MD_NO_MOTOR = 2,
-
   // board was working, but chip reported overtemperature and turned off.
-  MD_OVERTEMP = 3,
-
-  // board was working, but chip responded in SPI unexpectedly and in unknown state.
-  // off.
-  MD_SPI_ERROR = 4,
+  MD_OVERTEMP = 2,
 } md_board_status_t;
 
 /** Initializes motor driver component. All other functions must be called after
@@ -44,3 +37,13 @@ void md_step(uint8_t md_index, bool plus);
  * overtemperature, short etc.
  */
 bool md_check_stall(uint8_t md_index);
+
+/* Read TMC2130 register directly.
+This could be potentially dangerous when used to R+C register which clears its
+content upon read.*/
+uint32_t md_read_register(uint8_t md_index, uint8_t addr);
+
+/* Write TMC2130 register directly.
+This is very dangerous operation that can break the driver internal state,
+and also can destroy the hardware if used incorrectly.*/
+void md_write_register(uint8_t md_index, uint8_t addr, uint32_t data);

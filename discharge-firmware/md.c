@@ -9,10 +9,9 @@
 static const uint8_t REG_GCONF = 0x00;
 static const uint8_t REG_GSTAT = 0x01;
 static const uint8_t REG_IOIN = 0x04;
+static const uint8_t REG_IHOLD_IRUN = 0x10;
 static const uint8_t REG_CHOPCONF = 0x6c;
 static const uint8_t REG_DRV_STATUS = 0x6f;
-
-md_board_status_t boards[MD_NUM_BOARDS];
 
 void md_bus_init() {
   // 3 MHz is 75% of 4 MHz max, specified in TMC2130 datasheet "SCK frequency
@@ -145,26 +144,12 @@ void md_init() {
   md_bus_init();
 
   for (uint8_t i = 0; i < MD_NUM_BOARDS; i++) {
-    boards[i] = MD_NO_BOARD;
-
-    // check chip version.
+    // check chip version. since this is non-zero value, it can also reject no board or SPI physical error.
     uint32_t ioin;
     if (!read_register(i, REG_IOIN, &ioin)) {
       continue;
     }
     if ((ioin >> 24) != 0x11) {
-      continue;
-    }
-
-    // check if motor is connected.
-    uint32_t drv_status;
-    if (!read_register(i, REG_DRV_STATUS, &drv_status)) {
-      continue;
-    }
-    bool olb = (drv_status & (1 << 30)) != 0;
-    bool ola = (drv_status & (1 << 29)) != 0;
-    if (olb || ola) {
-      boards[i] = MD_NO_MOTOR;
       continue;
     }
 
@@ -178,7 +163,16 @@ void md_init() {
       continue;
     }
 
-    boards[i] = MD_OK;
+    // configure current.
+    const uint32_t irun = 20; // 0~31. 31 is max current.
+    const uint32_t ihold = irun * 0.7; // 70% of irun. 0~31.
+    const uint32_t iholddelay = 1; // about 250ms to transition from irun to ihold.
+    uint32_t ihold_irun = (iholddelay & 0xf) << 16 | (irun & 0x1f) << 8 | (ihold & 0x1f);
+    write_register(i, REG_IHOLD_IRUN, ihold_irun);
+
+    // configure chopconf.
+
+
   }
 }
 
@@ -186,30 +180,35 @@ md_board_status_t md_get_status(uint8_t md_index) {
   if (md_index > MD_NUM_BOARDS - 1) {
     return MD_NO_BOARD;
   }
-  if (boards[md_index] != MD_OK) {
-    return boards[md_index];
+
+  // check chip version.
+  uint32_t ioin;
+  if (!read_register(md_index, REG_IOIN, &ioin)) {
+    return MD_NO_BOARD;
+  }
+  if ((ioin >> 24) != 0x11) {
+    return MD_NO_BOARD;
   }
 
   uint32_t result;
-  if (read_register(md_index, REG_GSTAT, &result)) {
-    // OVERTEMP (0b010) or UNDERVOLTAGE (0b100)
-    if ((result & 0b110) != 0) {
-      boards[md_index] = MD_OVERTEMP;
-    }
-  } else {
-    boards[md_index] = MD_SPI_ERROR;
+  read_register(md_index, REG_GSTAT, &result);
+  // OVERTEMP (0b010) or UNDERVOLTAGE (0b100)
+  if ((result & 0b110) != 0) {
+    return MD_OVERTEMP;
   }
-
-  return boards[md_index];
+  
+  return MD_OK;
 }
 
 void md_step(uint8_t md_index, bool plus) {
   if (md_index > MD_NUM_BOARDS - 1) {
     return;
   }
+  /*
   if (boards[md_index] != MD_OK) {
     return;
   }
+  */
 
   int gpio_step_pin;
   switch (md_index) {
@@ -231,6 +230,7 @@ void md_step(uint8_t md_index, bool plus) {
 
   gpio_put(gpio_step_pin, true);  // rising edge triggers step
   wait_100ns();                   // wait tSH ~ 100ns
+  wait_100ns();
 
   gpio_put(gpio_step_pin, false);
   wait_100ns();  // wait tSL ~ 100ns
@@ -240,15 +240,32 @@ bool md_check_stall(uint8_t md_index) {
   if (md_index > MD_NUM_BOARDS - 1) {
     return false;
   }
-  if (boards[md_index] != MD_OK) {
-    return false;
-  }
 
   uint32_t result;
-  if (!read_register(md_index, REG_DRV_STATUS, &result)) {
-    boards[md_index] = MD_SPI_ERROR;
-    return false;
+  read_register(md_index, REG_DRV_STATUS, &result);
+  return (result & (1 << 24)) != 0;  // StallGuard
+}
+
+uint32_t md_read_register(uint8_t md_index, uint8_t addr) {
+  if (md_index > MD_NUM_BOARDS - 1) {
+    return 0;
+  }
+  if (addr >= 0x80) {
+    return 0;
   }
 
-  return (result & (1 << 24)) != 0;  // StallGuard
+  uint32_t value;
+  read_register(md_index, addr, &value);
+  return value;
+}
+
+void md_write_register(uint8_t md_index, uint8_t addr, uint32_t data) {
+  if (md_index > MD_NUM_BOARDS - 1) {
+    return;
+  }
+  if (addr >= 0x80) {
+    return;
+  }
+
+  write_register(md_index, addr, data);
 }
