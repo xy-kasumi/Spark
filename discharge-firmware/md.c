@@ -142,8 +142,14 @@ void md_init() {
     }
 
     // configure current sense.
-    uint32_t chopconf = read_register(i, REG_CHOPCONF);
+    const uint32_t toff = 4;   // 0 ~ 15
+    const uint32_t hstrt = 4;  // 0 ~ 7
+    const uint32_t hend = 0;   // 0 ~ 7
+    uint32_t chopconf = 0;
     chopconf |= (1 << 17);  // vsense = 1 (high sensitivity)
+    chopconf |= (toff & 0xf);
+    chopconf |= (hstrt & 0x7) << 4;
+    chopconf |= (hend & 0x7) << 7;
     write_register(i, REG_CHOPCONF, chopconf);
 
     // configure current.

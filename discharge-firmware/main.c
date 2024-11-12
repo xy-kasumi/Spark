@@ -181,6 +181,7 @@ int main() {
   char buf[32];
   while (true) {
     stdio_getline(buf, sizeof(buf));
+    printf("\n");
     print_time();
     printf("processing command\n");
     pico_led_flash();
