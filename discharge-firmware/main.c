@@ -37,7 +37,7 @@ void exec_command_status() {
   for (uint8_t i = 0; i < MD_NUM_BOARDS; i++) {
     md_board_status_t status = md_get_status(i);
 
-    printf("board %d: ", i);
+    printf("MD %d: ", i);
     switch (status) {
       case MD_OK:
         printf("OK");
@@ -117,12 +117,35 @@ void exec_command_regwrite(uint8_t md_ix, uint8_t addr, uint32_t data) {
   printf("board %d: reg 0x%02x set to 0x%08x\n", md_ix, addr, data);
 }
 
+void exec_command_prox(uint32_t timeout_ms) {
+  int64_t timeout_us = timeout_ms * 1000;
+
+  absolute_time_t t0 = get_absolute_time();
+  int i = 0;
+  while (true) {
+    absolute_time_t t1 = get_absolute_time();
+    int64_t elapsed_us = absolute_time_diff_us(t0, t1);
+    if (elapsed_us >= timeout_us) {
+      break;
+    }
+
+    int value = ed_proximity();
+    printf("prox: %d\n", value);
+    sleep_ms(100);
+  }
+}
+
 // supported commands
 // ------------------
 // each line should contain single command
+// Ctrl-C or Ctrl-K during input
+//   cancel current command input
 //
+// Generic commands
 // status
 //   print status of all boards
+//
+// MD commands
 // step <board_ix> <step> <wait>
 //   step one motor in one direction at constant speed
 //   <board_ix>: 0, 1, 2
@@ -143,8 +166,11 @@ void exec_command_regwrite(uint8_t md_ix, uint8_t addr, uint32_t data) {
 //   <addr>: 00 to 7f (hexadecimal)
 //   <data>: 00000000 to ffffffff (hexadecimal)
 //
-// Ctrl-C or Ctrl-K during input
-//   cancel current command input
+// ED commands
+// prox <timeout_ms>
+//   dump proximity value periodically
+//   <timeout_ms>: integer, timeout in milliseconds
+
 
 // Try to get line.
 // Does not include newline character in the buffer.
@@ -353,6 +379,15 @@ int main() {
       }
 
       exec_command_regwrite(md_ix, addr, data);
+    } else if (strcmp(command, "prox") == 0) {
+      char* timeout_str = strtok(NULL, " ");
+
+      uint32_t timeout_ms;
+      if (!parse_positive_int(timeout_str, &timeout_ms)) {
+        continue;
+      }
+
+      exec_command_prox(timeout_ms);
     } else {
       printf("unknown command\n");
     }
