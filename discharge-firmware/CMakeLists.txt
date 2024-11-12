@@ -37,6 +37,7 @@ pico_sdk_init()
 
 add_executable(ctrl_fw
     main.c
+    ed.c
     md.c
     )
 

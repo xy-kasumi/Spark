@@ -6,6 +6,7 @@
 #include "pico/stdlib.h"
 
 #include "config.h"
+#include "ed.h"
 #include "md.h"
 
 void pico_led_init() {
@@ -23,21 +24,6 @@ void pico_led_flash() {
   pico_led_set(false);
   sleep_ms(LED_OFF_TIME_MS);
   pico_led_set(true);
-}
-
-void ed_init() {
-  gpio_init(CTRL_ED_MODE_PIN);
-  gpio_put(CTRL_ED_MODE_PIN, false);  // false = SENSE mode
-
-  // gpio_init(CTRL_ED_SENSE_GATE_PIN);  // PWM?
-
-  // gpio_init(CTRL_ED_SENSE_CURR_PIN);  // SIO? PWM? ADC?
-
-  /*
-  const uint8_t CTRL_ED_DCHG_TARG_PWM_PIN = 7;
-  const uint8_t CTRL_ED_DCHG_GATE_PIN = 8;
-  const uint8_t CTRL_ED_DCHG_DETECT = 9;
-  */
 }
 
 void print_time() {
@@ -64,6 +50,12 @@ void exec_command_status() {
         break;
     }
     printf("\n");
+  }
+
+  if (ed_available()) {
+    printf("ED: OK\n");
+  } else {
+    printf("ED: NO_BOARD\n");
   }
 }
 
