@@ -67,7 +67,7 @@ void exec_command_status() {
   }
 }
 
-void exec_command_step(uint8_t md_ix, int step, int wait) {
+void exec_command_step(uint8_t md_ix, int step, uint32_t wait) {
   for (int i = 0; i < abs(step); i++) {
     md_step(md_ix, step > 0);
     sleep_us(wait);
@@ -163,6 +163,89 @@ void stdio_getline(char* buf, size_t buf_size) {
   }
 }
 
+bool parse_board_ix(const char* board_ix_str, uint8_t* md_ix) {
+  if (board_ix_str == NULL) {
+    printf("missing board index\n");
+    return false;
+  }
+
+  char* end;
+  uint8_t res = strtol(board_ix_str, &end, 10);
+  if (board_ix_str == end || *end != 0 || *md_ix < 0 ||
+      *md_ix >= MD_NUM_BOARDS) {
+    printf("invalid board index\n");
+    return false;
+  }
+  *md_ix = res;
+  return true;
+}
+
+bool parse_int(const char* str, int* val) {
+  if (str == NULL) {
+    printf("missing int\n");
+    return false;
+  }
+
+  char* end;
+  int res = strtol(str, &end, 10);
+  if (str == end || *end != 0) {
+    printf("invalid int\n");
+    return false;
+  }
+  *val = res;
+  return true;
+}
+
+bool parse_positive_int(const char* str, uint32_t* val) {
+  if (str == NULL) {
+    printf("missing positive int\n");
+    return false;
+  }
+
+  char* end;
+  int res = strtol(str, &end, 10);
+  if (str == end || *end != 0 || res <= 0) {
+    printf("invalid positive integer\n");
+    return false;
+  }
+  *val = res;
+  return true;
+}
+
+bool parse_hex(const char* str, uint32_t* val) {
+  if (str == NULL) {
+    printf("missing hex\n");
+    return false;
+  }
+
+  char* end;
+  int res = strtol(str, &end, 16);
+  if (str == end || *end != 0) {
+    printf("invalid hex\n");
+    return false;
+  }
+  *val = res;
+  return true;
+}
+
+bool parse_dir(const char* str, bool* dir_plus) {
+  if (str == NULL) {
+    printf("missing direction\n");
+    return false;
+  }
+
+  if (strcmp(str, "-") == 0) {
+    *dir_plus = false;
+    return true;
+  } else if (strcmp(str, "+") == 0) {
+    *dir_plus = true;
+    return true;
+  } else {
+    printf("invalid direction\n");
+    return false;
+  }
+}
+
 int main() {
   // init compute
   stdio_init_all();
@@ -195,69 +278,49 @@ int main() {
       char* step_str = strtok(NULL, " ");
       char* wait_str = strtok(NULL, " ");
 
-      if (board_ix_str == NULL || step_str == NULL || wait_str == NULL) {
-        printf("invalid arguments\n");
+      uint8_t md_ix;
+      if (!parse_board_ix(board_ix_str, &md_ix)) {
+        continue;
+      }
+      int step;
+      if (!parse_int(step_str, &step)) {
+        continue;
+      }
+      uint32_t wait;
+      if (!parse_positive_int(wait_str, &wait)) {
         continue;
       }
 
-      int md_ix = atoi(board_ix_str);
-      int step = atoi(step_str);
-      int wait = atoi(wait_str);
-
-      if (md_ix < 0 || md_ix >= MD_NUM_BOARDS) {
-        printf("invalid board index\n");
-        continue;
-      }
-
-      if (wait <= 0) {
-        printf("invalid wait time\n");
-        continue;
-      }
       exec_command_step(md_ix, step, wait);
     } else if (strcmp(command, "home") == 0) {
       char* board_ix_str = strtok(NULL, " ");
       char* direction_str = strtok(NULL, " ");
       char* timeout_str = strtok(NULL, " ");
 
-      if (board_ix_str == NULL || direction_str == NULL ||
-          timeout_str == NULL) {
-        printf("invalid arguments\n");
+      uint8_t md_ix;
+      if (!parse_board_ix(board_ix_str, &md_ix)) {
         continue;
       }
-
-      int md_ix = atoi(board_ix_str);
-      if (md_ix < 0 || md_ix >= MD_NUM_BOARDS) {
-        printf("invalid board index\n");
+      bool dir_plus;
+      if (!parse_dir(direction_str, &dir_plus)) {
         continue;
       }
-
-      if (strcmp(direction_str, "-") != 0 && strcmp(direction_str, "+") != 0) {
-        printf("invalid direction\n");
+      int timeout_ms;
+      if (!parse_int(timeout_str, &timeout_ms)) {
         continue;
       }
-
-      bool dir_plus = strcmp(direction_str, "+") == 0;
-      int timeout_ms = atoi(timeout_str);
 
       exec_command_home(md_ix, dir_plus, timeout_ms);
     } else if (strcmp(command, "regread") == 0) {
       char* board_ix_str = strtok(NULL, " ");
       char* addr_str = strtok(NULL, " ");
 
-      if (board_ix_str == NULL || addr_str == NULL) {
-        printf("invalid arguments\n");
+      uint8_t md_ix;
+      if (!parse_board_ix(board_ix_str, &md_ix)) {
         continue;
       }
-
-      int md_ix = atoi(board_ix_str);
-      if (md_ix < 0 || md_ix >= MD_NUM_BOARDS) {
-        printf("invalid board index\n");
-        continue;
-      }
-
-      int addr = strtol(addr_str, NULL, 16);
-      if (addr < 0 || addr >= 0x80) {
-        printf("invalid address\n");
+      uint32_t addr;
+      if (!parse_hex(addr_str, &addr)) {
         continue;
       }
 
@@ -267,22 +330,18 @@ int main() {
       char* addr_str = strtok(NULL, " ");
       char* data_str = strtok(NULL, " ");
 
-      if (board_ix_str == NULL || addr_str == NULL || data_str == NULL) {
-        printf("invalid arguments\n");
+      uint8_t md_ix;
+      if (!parse_board_ix(board_ix_str, &md_ix)) {
         continue;
       }
-
-      int md_ix = atoi(board_ix_str);
-      if (md_ix < 0 || md_ix >= MD_NUM_BOARDS) {
-        printf("invalid board index\n");
+      uint32_t addr;
+      if (!parse_hex(addr_str, &addr)) {
         continue;
       }
-      int addr = strtol(addr_str, NULL, 16);
-      if (addr < 0 || addr >= 0x80) {
-        printf("invalid address\n");
+      uint32_t data;
+      if (!parse_hex(data_str, &data)) {
         continue;
       }
-      uint32_t data = strtol(data_str, NULL, 16);
 
       exec_command_regwrite(md_ix, addr, data);
     } else {
