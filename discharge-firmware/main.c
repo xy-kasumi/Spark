@@ -127,6 +127,8 @@ void exec_command_regwrite(uint8_t md_ix, uint8_t addr, uint32_t data) {
 
 // supported commands
 // ------------------
+// each line should contain single command
+//
 // status
 //   print status of all boards
 // step <board_ix> <step> <wait>
@@ -148,14 +150,24 @@ void exec_command_regwrite(uint8_t md_ix, uint8_t addr, uint32_t data) {
 //   <board_ix>: 0, 1, 2
 //   <addr>: 00 to 7f (hexadecimal)
 //   <data>: 00000000 to ffffffff (hexadecimal)
+//
+// Ctrl-C or Ctrl-K during input
+//   cancel current command input
 
-void stdio_getline(char* buf, size_t buf_size) {
+// Try to get line.
+// Does not include newline character in the buffer.
+// returns true if line is read successfully.
+//
+// If Ctrl-C or Ctrl-K is pressed, line read is canceled; returns false.
+bool stdio_getline(char* buf, size_t buf_size) {
   int ix = 0;
   while (ix < buf_size - 1) {
     char ch = stdio_getchar();
-    if (ch == '\n' || ch == '\r') {
+    if (ch == 3 || ch == 11) {
+      return false;  // cancel waiting
+    } else if (ch == '\n' || ch == '\r') {
       buf[ix] = 0;
-      break;
+      return true;
     } else {
       buf[ix] = ch;
       ix++;
@@ -263,9 +275,14 @@ int main() {
   // main command loop
   char buf[32];
   while (true) {
-    stdio_getline(buf, sizeof(buf));
+    bool success = stdio_getline(buf, sizeof(buf));
     printf("\n");
     print_time();
+
+    if (!success) {
+      printf("command canceled\n");
+      continue;
+    }
     printf("processing command\n");
     pico_led_flash();
 
