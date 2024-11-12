@@ -161,9 +161,9 @@ void md_init() {
     write_register(i, REG_IHOLD_IRUN, ihold_irun);
 
     // configure stallguard threshold.
-    int32_t thresh =
-        35;  // must be between -64 ~ 63. Need to be configured such that
-             // md_check_stall() returns true when motor is stalled.
+    int32_t thresh = 35;  // must be between -64 ~ 63. Need to be configured
+                          // such that md_check_stall() returns true when motor
+                          // is stalled. Use 7 or 8 for 12V driving stage.
     write_register(i, REG_COOLCONF, (thresh & 0x7f) << 16);
   }
 }
