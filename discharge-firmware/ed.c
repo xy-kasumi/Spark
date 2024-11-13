@@ -26,7 +26,7 @@ void ed_init() {
   gpio_set_dir(CTRL_ED_MODE_PIN, GPIO_OUT);
   gpio_put(CTRL_ED_MODE_PIN, false);  // false = SENSE mode
 
-  sleep_ms(100);  // wait relay to settle, just in case
+  sleep_ms(50);  // wait relay to settle, just in case
 
   // sense
   gpio_init(CTRL_ED_SENSE_GATE_PIN);
@@ -47,6 +47,9 @@ void ed_init() {
   }
 
   // discharge
+  gpio_init(CTRL_ED_DCHG_TARG_PWM_PIN);
+  gpio_set_function(CTRL_ED_DCHG_TARG_PWM_PIN, GPIO_FUNC_PWM);
+
   /*
   CTRL_ED_DCHG_TARG_PWM_PIN
   CTRL_ED_DCHG_GATE_PIN
@@ -97,7 +100,7 @@ void ed_to_discharge() {
   }
 
   gpio_put(CTRL_ED_MODE_PIN, true);
-  sleep_ms(100); // wait relay to settle
+  sleep_ms(50); // wait relay to settle
   mode = ED_DISCHARGE;
 }
 
@@ -107,6 +110,6 @@ void ed_to_sense() {
   }
 
   gpio_put(CTRL_ED_MODE_PIN, false);
-  sleep_ms(100); // wait relay to settle
+  sleep_ms(50); // wait relay to settle
   mode = ED_SENSE;
 }
