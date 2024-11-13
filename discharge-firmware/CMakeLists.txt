@@ -44,6 +44,7 @@ add_executable(ctrl_fw
 # pull in common dependencies
 target_link_libraries(ctrl_fw pico_stdlib)
 target_link_libraries(ctrl_fw hardware_spi)
+target_link_libraries(ctrl_fw hardware_pwm)
 
 if (PICO_CYW43_SUPPORTED)
     target_link_libraries(ctrl_fw pico_cyw43_arch_none)

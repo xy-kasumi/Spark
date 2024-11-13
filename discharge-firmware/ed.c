@@ -1,10 +1,19 @@
 #include "ed.h"
 
 #include "hardware/gpio.h"
+#include "hardware/pwm.h"
 #include "hardware/spi.h"
 #include "pico/stdlib.h"
 
 #include "config.h"
+
+// Discharge current level PWM control
+// must be higher than 100kHz because of CTRL-ED filter circuit
+//
+// Pico2 system clock = 150MHz
+// target clock = 300kHz
+// -> period: 500 (150MHz / 300kHz)
+static const uint32_t DCHG_PWM_PERIOD = 500;
 
 typedef enum {
   ED_UNKNOWN,
@@ -22,12 +31,15 @@ typedef enum {
 static ed_mode_t mode = ED_UNKNOWN;
 
 void ed_init() {
+  //
+  // mode (relay)
   gpio_init(CTRL_ED_MODE_PIN);
   gpio_set_dir(CTRL_ED_MODE_PIN, GPIO_OUT);
   gpio_put(CTRL_ED_MODE_PIN, false);  // false = SENSE mode
 
   sleep_ms(50);  // wait relay to settle, just in case
 
+  //
   // sense
   gpio_init(CTRL_ED_SENSE_GATE_PIN);
   gpio_set_dir(CTRL_ED_SENSE_GATE_PIN, GPIO_OUT);
@@ -46,17 +58,46 @@ void ed_init() {
     return;
   }
 
-  // discharge
+  //
+  // discharge control
+  gpio_init(CTRL_ED_DCHG_GATE_PIN);
+  gpio_set_dir(CTRL_ED_DCHG_GATE_PIN, GPIO_OUT);
+  gpio_put(CTRL_ED_DCHG_GATE_PIN, false);
+
+  //
+  // discharge PWM
   gpio_init(CTRL_ED_DCHG_TARG_PWM_PIN);
   gpio_set_function(CTRL_ED_DCHG_TARG_PWM_PIN, GPIO_FUNC_PWM);
+  uint dchg_slice = pwm_gpio_to_slice_num(CTRL_ED_DCHG_TARG_PWM_PIN);
 
-  /*
-  CTRL_ED_DCHG_TARG_PWM_PIN
-  CTRL_ED_DCHG_GATE_PIN
-  CTRL_ED_DCHG_DETECT
-  */
+  //
+  // discharge current detect
+  gpio_init(CTRL_ED_DCHG_DETECT);
+  gpio_set_dir(CTRL_ED_DCHG_DETECT, GPIO_IN);
+
+  pwm_set_wrap(dchg_slice,
+               DCHG_PWM_PERIOD - 1);  // counter value is [0, DCHG_PWM_PERIOD-1]
+
+  // initially set to 0 for safety.
+  pwm_set_both_levels(
+      dchg_slice, 0,
+      0);  // in [0, DCHG_PWM_PERIOD] (corresponds to 0%~100% duty)
+  pwm_set_enabled(dchg_slice, true);
 
   mode = ED_SENSE;
+}
+
+void ed_set_dchg_current(uint8_t percent) {
+  if (percent >= 100) {
+    percent = 100;
+  }
+
+  uint32_t target_level = percent * DCHG_PWM_PERIOD / 100;
+  if (target_level > DCHG_PWM_PERIOD) {
+    target_level = DCHG_PWM_PERIOD;
+  }
+  uint slice = pwm_gpio_to_slice_num(CTRL_ED_DCHG_TARG_PWM_PIN);
+  pwm_set_both_levels(slice, target_level, target_level);
 }
 
 bool ed_available() {
@@ -100,8 +141,34 @@ void ed_to_discharge() {
   }
 
   gpio_put(CTRL_ED_MODE_PIN, true);
-  sleep_ms(50); // wait relay to settle
+  sleep_ms(50);  // wait relay to settle
   mode = ED_DISCHARGE;
+
+  // Test code (gate pulses for different current)
+  
+  for (int step = 0; step < 10; step++) {
+    // 1000 ms sweep
+    for (int i = 0; i <= 100; i++) {
+      ed_set_dchg_current(i);
+      sleep_ms(1); // wait for stabilize
+
+      gpio_put(CTRL_ED_DCHG_GATE_PIN, true); // discharge ON
+      sleep_ms(1); // discharge time
+      gpio_put(CTRL_ED_DCHG_GATE_PIN, false); // discharge OFF
+
+      sleep_ms(8); // cooldown time. total 10ms
+    }
+  }
+  ed_set_dchg_current(0);
+  
+
+  // Test code (keep gate hot)
+  /*
+  ed_set_dchg_current(100);
+  sleep_ms(1);  // wait for stabilize
+
+  gpio_put(CTRL_ED_DCHG_GATE_PIN, true);  // discharge ON
+  */
 }
 
 void ed_to_sense() {
@@ -110,6 +177,6 @@ void ed_to_sense() {
   }
 
   gpio_put(CTRL_ED_MODE_PIN, false);
-  sleep_ms(50); // wait relay to settle
+  sleep_ms(50);  // wait relay to settle
   mode = ED_SENSE;
 }
