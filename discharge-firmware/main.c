@@ -177,8 +177,18 @@ void exec_command_edoff() {
 //   <data>: 00000000 to ffffffff (hexadecimal)
 //
 // ED commands
+// edon
+//  switch ED to discharge mode
+// edoff
+//  switch ED to sense mode
+// edthot
+//  execute hot disconnect test (change to sense after this)
+//  WILL SHORTEN RELAY LIFE
+// edtsweep
+//  execute current sweep pulsing test
 // prox <timeout_ms>
-//   dump proximity value periodically
+//  sense mode command
+//  dump proximity value periodically
 //   <timeout_ms>: integer, timeout in milliseconds
 
 // Try to get line.
@@ -401,6 +411,10 @@ int main() {
       exec_command_edon();
     } else if (strcmp(command, "edoff") == 0) {
       exec_command_edoff();
+    } else if (strcmp(command, "edthot") == 0) {
+      ed_test_hot_disconnect();
+    } else if (strcmp(command, "edtsweep") == 0) {
+      ed_test_sweep();
     } else {
       printf("unknown command\n");
     }

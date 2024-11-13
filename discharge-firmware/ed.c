@@ -143,32 +143,49 @@ void ed_to_discharge() {
   gpio_put(CTRL_ED_MODE_PIN, true);
   sleep_ms(50);  // wait relay to settle
   mode = ED_DISCHARGE;
+}
 
+void ed_test_sweep() {
   // Test code (gate pulses for different current)
-  
-  for (int step = 0; step < 10; step++) {
-    // 1000 ms sweep
+  for (int step = 0; step < 100; step++) {
+    // 10 ms x 100 = 1000 ms sweep
+    // 10% duty. So max power consumption should be 20W.
     for (int i = 0; i <= 100; i++) {
       ed_set_dchg_current(i);
-      sleep_ms(1); // wait for stabilize
+      sleep_ms(1);  // wait for stabilize
 
-      gpio_put(CTRL_ED_DCHG_GATE_PIN, true); // discharge ON
-      sleep_ms(1); // discharge time
-      gpio_put(CTRL_ED_DCHG_GATE_PIN, false); // discharge OFF
+      gpio_put(CTRL_ED_DCHG_GATE_PIN, true);   // discharge ON
+      sleep_ms(1);                             // discharge time
+      gpio_put(CTRL_ED_DCHG_GATE_PIN, false);  // discharge OFF
 
-      sleep_ms(8); // cooldown time. total 10ms
+      sleep_ms(8);  // cooldown time. total 10ms
     }
   }
   ed_set_dchg_current(0);
-  
+}
 
-  // Test code (keep gate hot)
-  /*
+// this will shorten relay life, don't do often.
+// this test is intended to be used with low resistance or short circuit in
+// E+/E-.
+void ed_test_hot_disconnect() {
+  if (mode != ED_DISCHARGE) {
+    return;
+  }
+
   ed_set_dchg_current(100);
-  sleep_ms(1);  // wait for stabilize
-
+  sleep_ms(1);                            // wait for stabilize
   gpio_put(CTRL_ED_DCHG_GATE_PIN, true);  // discharge ON
-  */
+  sleep_ms(10);                           // discharge time
+
+  // FORCE DISCONNECT RELAY DURING DISCHARGE.
+  gpio_put(CTRL_ED_MODE_PIN, false);
+  sleep_ms(50);  // wait relay to settle
+
+  // cleanup
+  gpio_put(CTRL_ED_DCHG_GATE_PIN, false);  // discharge OFF
+  ed_set_dchg_current(0);
+
+  mode = ED_SENSE;
 }
 
 void ed_to_sense() {

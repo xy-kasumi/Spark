@@ -20,3 +20,6 @@ int ed_proximity();
 void ed_to_discharge();
 
 void ed_to_sense();
+
+void ed_test_sweep();
+void ed_test_hot_disconnect();
