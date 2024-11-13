@@ -135,6 +135,16 @@ void exec_command_prox(uint32_t timeout_ms) {
   }
 }
 
+void exec_command_edon() {
+  ed_to_discharge();
+  printf("ED: switched to DISCHARGE\n");
+}
+
+void exec_command_edoff() {
+  ed_to_sense();
+  printf("ED: switched to sense\n");
+}
+
 // supported commands
 // ------------------
 // each line should contain single command
@@ -170,7 +180,6 @@ void exec_command_prox(uint32_t timeout_ms) {
 // prox <timeout_ms>
 //   dump proximity value periodically
 //   <timeout_ms>: integer, timeout in milliseconds
-
 
 // Try to get line.
 // Does not include newline character in the buffer.
@@ -388,6 +397,10 @@ int main() {
       }
 
       exec_command_prox(timeout_ms);
+    } else if (strcmp(command, "edon") == 0) {
+      exec_command_edon();
+    } else if (strcmp(command, "edoff") == 0) {
+      exec_command_edoff();
     } else {
       printf("unknown command\n");
     }
