@@ -145,9 +145,56 @@ void ed_to_discharge() {
   mode = ED_DISCHARGE;
 }
 
-void ed_test_sweep() {
-  // Test code (gate pulses for different current)
-  for (int step = 0; step < 100; step++) {
+void ed_set_current(uint16_t current_ma) {
+  if (mode != ED_DISCHARGE) {
+    return;
+  }
+  if (current_ma >= 2000) {
+    current_ma = 2000;
+  }
+
+  ed_set_dchg_current(current_ma / 20);
+  sleep_ms(1);  // wait for stabilize
+}
+
+uint16_t ed_single_pulse(uint16_t pulse_us) {
+  if (mode != ED_DISCHARGE) {
+    return UINT16_MAX;
+  }
+
+  const uint16_t MAX_WAIT_US = 5000;  // 5 ms
+
+  gpio_put(CTRL_ED_DCHG_GATE_PIN, true);  // discharge ON
+
+  // wait for iginition, with timeout
+  absolute_time_t t0 = get_absolute_time();
+  uint16_t delay;
+  while (true) {
+    absolute_time_t t1 = get_absolute_time();
+    uint16_t elapsed_us = absolute_time_diff_us(t0, t1);
+
+    bool detected = gpio_get(CTRL_ED_DCHG_DETECT);
+    if (detected) {
+      delay = elapsed_us;
+      break;
+    }
+
+    if (elapsed_us >= MAX_WAIT_US) {
+      // pulse didn't happen within timeout. Turn off and return.
+      gpio_put(CTRL_ED_DCHG_GATE_PIN, false);  // discharge OFF
+      return UINT16_MAX;
+    }
+  }
+
+  // Pulse started. Wait for pulse duration.
+  sleep_us(pulse_us);
+  gpio_put(CTRL_ED_DCHG_GATE_PIN, false);  // discharge OFF
+
+  return delay;
+}
+
+void ed_test_sweep(uint32_t numsteps) {
+  for (int step = 0; step < numsteps; step++) {
     // 10 ms x 100 = 1000 ms sweep
     // 10% duty. So max power consumption should be 20W.
     for (int i = 0; i <= 100; i++) {

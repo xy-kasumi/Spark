@@ -145,6 +145,54 @@ void exec_command_edoff() {
   printf("ED: switched to sense\n");
 }
 
+void exec_command_edeexec(uint32_t duration_ms,
+                          uint16_t pulse_dur_us,
+                          uint16_t current_ma,
+                          uint8_t duty) {
+  uint32_t wait_time_us = ((uint32_t)pulse_dur_us) * 100 / duty;
+  uint32_t duration_us = duration_ms * 1000;
+
+  ed_set_current(current_ma);
+  absolute_time_t t0 = get_absolute_time();
+
+  uint32_t count_pulse_success = 0;
+  uint32_t count_pulse_timeout = 0;
+  uint64_t accum_ig_delay = 0;
+  uint32_t max_ig_delay = 0;
+  uint32_t min_ig_delay = UINT32_MAX;
+
+  while (true) {
+    uint16_t ignition_delay_us = ed_single_pulse(pulse_dur_us);
+    absolute_time_t t1 = get_absolute_time();
+    if (absolute_time_diff_us(t0, t1) >= duration_us) {
+      break;
+    }
+
+    if (ignition_delay_us == UINT16_MAX) {
+      count_pulse_timeout++;
+    } else {
+      count_pulse_success++;
+      accum_ig_delay += ignition_delay_us;
+      if (ignition_delay_us > max_ig_delay) {
+        max_ig_delay = ignition_delay_us;
+      }
+      if (ignition_delay_us < min_ig_delay) {
+        min_ig_delay = ignition_delay_us;
+      }
+    }
+
+    sleep_us(wait_time_us);  // defensive; can subtract ignition_delay to
+                             // maximize power output.
+  }
+
+  printf("pulse count: %d success, %d timeout\n");
+  printf("ignition delay(usec): avg=%d, min=%d, max=%d \n",
+         accum_ig_delay / count_pulse_success, min_ig_delay, max_ig_delay);
+
+  print_time();
+  printf("ED: exec done\n");
+}
+
 // supported commands
 // ------------------
 // each line should contain single command
@@ -181,11 +229,17 @@ void exec_command_edoff() {
 //  switch ED to discharge mode
 // edoff
 //  switch ED to sense mode
+// edexec <duration_ms> <pulse_dur_us> <current_ma> <duty>
+//   <duration_ms>: duration of discharge in milliseconds
+//   <pulse_dur_us>: individual pulse duration in microseconds.
+//   <duty>: max duty ratio in percent (1 to 80).
+//   <current>: integer, current in mA (up to 2000)
 // edthot
 //  execute hot disconnect test (change to sense after this)
 //  WILL SHORTEN RELAY LIFE
-// edtsweep
+// edtsweep <numsteps>
 //  execute current sweep pulsing test
+//   <numsteps>: integer, number of steps
 // prox <timeout_ms>
 //  sense mode command
 //  dump proximity value periodically
@@ -212,58 +266,59 @@ bool stdio_getline(char* buf, size_t buf_size) {
   }
 }
 
-bool parse_board_ix(const char* board_ix_str, uint8_t* md_ix) {
-  if (board_ix_str == NULL) {
-    printf("missing board index\n");
-    return false;
-  }
+typedef struct {
+  bool success;
+  int ix;
+} parser_t;
 
-  char* end;
-  uint8_t res = strtol(board_ix_str, &end, 10);
-  if (board_ix_str == end || *end != 0 || *md_ix < 0 ||
-      *md_ix >= MD_NUM_BOARDS) {
-    printf("invalid board index\n");
-    return false;
-  }
-  *md_ix = res;
-  return true;
+/** Initializes parser and returns command. */
+char* parser_init(parser_t* parser, char* str) {
+  parser->success = true;
+  parser->ix = 0;
+  return strtok(str, " ");
 }
 
-bool parse_int(const char* str, int* val) {
+// min & max values are inclusive.
+int32_t parse_int(parser_t* parser, int32_t min, int32_t max) {
+  if (!parser->success) {
+    return 0;
+  }
+
+  char* str = strtok(NULL, " ");
   if (str == NULL) {
-    printf("missing int\n");
-    return false;
+    printf("arg%d missing: expecting int", parser->ix);
+    parser->success = false;
+    return 0;
   }
 
   char* end;
   int res = strtol(str, &end, 10);
   if (str == end || *end != 0) {
-    printf("invalid int\n");
-    return false;
+    printf("arg%d invalid int", parser->ix);
+    parser->success = false;
+    return 0;
   }
-  *val = res;
-  return true;
+
+  if (res < min || res > max) {
+    printf("arg%d must be in [%d, %d]", parser->ix, min, max);
+    parser->success = false;
+    return 0;
+  }
+
+  parser->ix++;
+  return res;
 }
 
-bool parse_positive_int(const char* str, uint32_t* val) {
-  if (str == NULL) {
-    printf("missing positive int\n");
-    return false;
+/** Parse hex int value. Max is inclusive. */
+uint32_t parse_hex(parser_t* parser, uint32_t max) {
+  if (!parser->success) {
+    return 0;
   }
 
-  char* end;
-  int res = strtol(str, &end, 10);
-  if (str == end || *end != 0 || res <= 0) {
-    printf("invalid positive integer\n");
-    return false;
-  }
-  *val = res;
-  return true;
-}
-
-bool parse_hex(const char* str, uint32_t* val) {
+  char* str = strtok(NULL, " ");
   if (str == NULL) {
-    printf("missing hex\n");
+    printf("arg%d missing: expecting hex", parser->ix);
+    parser->success = false;
     return false;
   }
 
@@ -271,27 +326,114 @@ bool parse_hex(const char* str, uint32_t* val) {
   int res = strtol(str, &end, 16);
   if (str == end || *end != 0) {
     printf("invalid hex\n");
+    parser->success = false;
     return false;
   }
-  *val = res;
-  return true;
+
+  if (res > max) {
+    printf("arg%d must be <= %x", parser->ix, max);
+    parser->success = false;
+    return false;
+  }
+
+  parser->ix++;
+  return res;
 }
 
-bool parse_dir(const char* str, bool* dir_plus) {
-  if (str == NULL) {
-    printf("missing direction\n");
+bool parse_dir(parser_t* parser) {
+  if (!parser->success) {
     return false;
   }
 
-  if (strcmp(str, "-") == 0) {
-    *dir_plus = false;
-    return true;
-  } else if (strcmp(str, "+") == 0) {
-    *dir_plus = true;
-    return true;
-  } else {
-    printf("invalid direction\n");
+  char* str = strtok(NULL, " ");
+  if (str == NULL) {
+    printf("arg%d missing: expecting + or -", parser->ix);
+    parser->success = false;
     return false;
+  }
+
+  bool is_plus = strcmp(str, "+") == 0;
+  bool is_minus = strcmp(str, "-") == 0;
+  if (!is_plus && !is_minus) {
+    printf("arg%d invalid direction", parser->ix);
+    parser->success = false;
+    return false;
+  }
+
+  parser->ix++;
+  return is_plus;
+}
+
+/**
+ * Tries to execute a single command. Errors will be printed to stdout.
+ * @param buf command string, without newlines. will be modified during parsing.
+ */
+void try_exec_command(char* buf) {
+  parser_t parser;
+  char* command = parser_init(&parser, buf);
+
+  if (strcmp(command, "status") == 0) {
+    exec_command_status();
+  } else if (strcmp(command, "step") == 0) {
+    uint8_t md_ix = parse_int(&parser, 0, MD_NUM_BOARDS - 1);
+    int step = parse_int(&parser, -1000000, 1000000);
+    uint32_t wait = parse_int(&parser, 0, 1000000);
+    if (!parser.success) {
+      return;
+    }
+    exec_command_step(md_ix, step, wait);
+  } else if (strcmp(command, "home") == 0) {
+    uint8_t md_ix = parse_int(&parser, 0, MD_NUM_BOARDS - 1);
+    bool dir_plus = parse_dir(&parser);
+    int timeout_ms = parse_int(&parser, 0, 1000000);
+    if (!parser.success) {
+      return;
+    }
+    exec_command_home(md_ix, dir_plus, timeout_ms);
+  } else if (strcmp(command, "regread") == 0) {
+    uint8_t md_ix = parse_int(&parser, 0, MD_NUM_BOARDS - 1);
+    uint8_t addr = parse_hex(&parser, 0x7f);
+    if (!parser.success) {
+      return;
+    }
+    exec_command_regread(md_ix, addr);
+  } else if (strcmp(command, "regwrite") == 0) {
+    uint8_t md_ix = parse_int(&parser, 0, MD_NUM_BOARDS - 1);
+    uint8_t addr = parse_hex(&parser, 0x7f);
+    uint32_t data = parse_hex(&parser, 0xffffffff);
+    if (!parser.success) {
+      return;
+    }
+    exec_command_regwrite(md_ix, addr, data);
+  } else if (strcmp(command, "prox") == 0) {
+    uint32_t timeout_ms = parse_int(&parser, 0, 1000000);
+    if (!parser.success) {
+      return;
+    }
+    exec_command_prox(timeout_ms);
+  } else if (strcmp(command, "edon") == 0) {
+    exec_command_edon();
+  } else if (strcmp(command, "edoff") == 0) {
+    exec_command_edoff();
+  } else if (strcmp(command, "edexec") == 0) {
+    uint32_t duration_ms = parse_int(&parser, 1, 1000000);
+    uint16_t pulse_dur_us = parse_int(&parser, 1, 10000);
+    uint16_t current_ma = parse_int(&parser, 1, 2000);
+    uint8_t duty = parse_int(&parser, 0, 80);
+    if (!parser.success) {
+      return;
+    }
+    exec_command_edeexec(duration_ms, pulse_dur_us, current_ma, duty);
+  } else if (strcmp(command, "edthot") == 0) {
+    ed_test_hot_disconnect();
+  } else if (strcmp(command, "edtsweep") == 0) {
+    uint32_t numsteps = parse_int(&parser, 0, 1000000);
+    if (!parser.success) {
+      return;
+    }
+    ed_test_sweep(numsteps);
+  } else {
+    printf("unknown command\n");
   }
 }
 
@@ -322,101 +464,6 @@ int main() {
     }
     printf("processing command\n");
     pico_led_flash();
-
-    char* command = strtok(buf, " ");
-
-    if (strcmp(command, "status") == 0) {
-      exec_command_status();
-    } else if (strcmp(command, "step") == 0) {
-      char* board_ix_str = strtok(NULL, " ");
-      char* step_str = strtok(NULL, " ");
-      char* wait_str = strtok(NULL, " ");
-
-      uint8_t md_ix;
-      if (!parse_board_ix(board_ix_str, &md_ix)) {
-        continue;
-      }
-      int step;
-      if (!parse_int(step_str, &step)) {
-        continue;
-      }
-      uint32_t wait;
-      if (!parse_positive_int(wait_str, &wait)) {
-        continue;
-      }
-
-      exec_command_step(md_ix, step, wait);
-    } else if (strcmp(command, "home") == 0) {
-      char* board_ix_str = strtok(NULL, " ");
-      char* direction_str = strtok(NULL, " ");
-      char* timeout_str = strtok(NULL, " ");
-
-      uint8_t md_ix;
-      if (!parse_board_ix(board_ix_str, &md_ix)) {
-        continue;
-      }
-      bool dir_plus;
-      if (!parse_dir(direction_str, &dir_plus)) {
-        continue;
-      }
-      int timeout_ms;
-      if (!parse_int(timeout_str, &timeout_ms)) {
-        continue;
-      }
-
-      exec_command_home(md_ix, dir_plus, timeout_ms);
-    } else if (strcmp(command, "regread") == 0) {
-      char* board_ix_str = strtok(NULL, " ");
-      char* addr_str = strtok(NULL, " ");
-
-      uint8_t md_ix;
-      if (!parse_board_ix(board_ix_str, &md_ix)) {
-        continue;
-      }
-      uint32_t addr;
-      if (!parse_hex(addr_str, &addr)) {
-        continue;
-      }
-
-      exec_command_regread(md_ix, addr);
-    } else if (strcmp(command, "regwrite") == 0) {
-      char* board_ix_str = strtok(NULL, " ");
-      char* addr_str = strtok(NULL, " ");
-      char* data_str = strtok(NULL, " ");
-
-      uint8_t md_ix;
-      if (!parse_board_ix(board_ix_str, &md_ix)) {
-        continue;
-      }
-      uint32_t addr;
-      if (!parse_hex(addr_str, &addr)) {
-        continue;
-      }
-      uint32_t data;
-      if (!parse_hex(data_str, &data)) {
-        continue;
-      }
-
-      exec_command_regwrite(md_ix, addr, data);
-    } else if (strcmp(command, "prox") == 0) {
-      char* timeout_str = strtok(NULL, " ");
-
-      uint32_t timeout_ms;
-      if (!parse_positive_int(timeout_str, &timeout_ms)) {
-        continue;
-      }
-
-      exec_command_prox(timeout_ms);
-    } else if (strcmp(command, "edon") == 0) {
-      exec_command_edon();
-    } else if (strcmp(command, "edoff") == 0) {
-      exec_command_edoff();
-    } else if (strcmp(command, "edthot") == 0) {
-      ed_test_hot_disconnect();
-    } else if (strcmp(command, "edtsweep") == 0) {
-      ed_test_sweep();
-    } else {
-      printf("unknown command\n");
-    }
+    try_exec_command(buf);
   }
 }
