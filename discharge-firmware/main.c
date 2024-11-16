@@ -149,6 +149,8 @@ void exec_command_edeexec(uint32_t duration_ms,
                           uint16_t pulse_dur_us,
                           uint16_t current_ma,
                           uint8_t duty) {
+  const uint32_t NUM_BUCKETS = 100;
+
   uint32_t wait_time_us = ((uint32_t)pulse_dur_us) * 100 / duty;
   uint32_t duration_us = duration_ms * 1000;
 
@@ -160,14 +162,13 @@ void exec_command_edeexec(uint32_t duration_ms,
   uint64_t accum_ig_delay = 0;
   uint32_t max_ig_delay = 0;
   uint32_t min_ig_delay = UINT32_MAX;
+  uint32_t hist_ig_delay[NUM_BUCKETS];
+  for (int i = 0; i < NUM_BUCKETS; i++) {
+    hist_ig_delay[i] = 0;
+  }
 
-  while (true) {
+  while (absolute_time_diff_us(t0, get_absolute_time()) < duration_us) {
     uint16_t ignition_delay_us = ed_single_pulse(pulse_dur_us);
-    absolute_time_t t1 = get_absolute_time();
-    if (absolute_time_diff_us(t0, t1) >= duration_us) {
-      break;
-    }
-
     if (ignition_delay_us == UINT16_MAX) {
       count_pulse_timeout++;
     } else {
@@ -179,15 +180,33 @@ void exec_command_edeexec(uint32_t duration_ms,
       if (ignition_delay_us < min_ig_delay) {
         min_ig_delay = ignition_delay_us;
       }
+      uint16_t bucket_key = (ignition_delay_us >= NUM_BUCKETS)
+                                ? (NUM_BUCKETS - 1)
+                                : ignition_delay_us;
+      hist_ig_delay[bucket_key]++;
     }
 
     sleep_us(wait_time_us);  // defensive; can subtract ignition_delay to
                              // maximize power output.
   }
 
-  printf("pulse count: %d success, %d timeout\n");
-  printf("ignition delay(usec): avg=%d, min=%d, max=%d \n",
-         accum_ig_delay / count_pulse_success, min_ig_delay, max_ig_delay);
+  printf("pulse count: %u success, %u timeout\n", count_pulse_success,
+         count_pulse_timeout);
+  if (count_pulse_success > 0) {
+    printf("ignition delay stats(usec):\n");
+    printf("avg=%u, min=%u, max=%u\n",
+           (uint32_t)(accum_ig_delay / count_pulse_success), min_ig_delay,
+           max_ig_delay);
+    printf(
+        "histogram: 100 buckets, [0,1),...[99,5000). 100 count values:\n");
+    for (int i = 0; i < NUM_BUCKETS; i++) {
+      printf("%u,", hist_ig_delay[i]);
+      if (i % 50 == 49) {
+        printf("\n");
+      }
+    }
+    printf("\n");
+  }
 
   print_time();
   printf("ED: exec done\n");
