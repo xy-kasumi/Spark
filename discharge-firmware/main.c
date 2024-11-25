@@ -145,6 +145,193 @@ void exec_command_edoff() {
   printf("ED: switched to sense\n");
 }
 
+void exec_command_find(uint8_t md_ix, float distance) {
+  const uint32_t WAIT_US = 25;
+
+  int32_t steps = abs((int32_t)(MD_STEPS_PER_MM * distance));
+  bool is_plus = distance > 0;
+
+  ed_unsafe_set_gate(true);
+  int32_t ix = 0;
+  bool found = false;
+  while (ix < steps) {
+    bool detect = ed_unsafe_get_detect();
+    if (detect) {
+      found = true;
+      break;
+    }
+
+    md_step(md_ix, is_plus);
+    sleep_us(WAIT_US);
+    ix++;
+  }
+  ed_unsafe_set_gate(false);  // immediate turn off to avoid work damage
+
+  print_time();
+  if (found) {
+    float x_mm = MD_MM_PER_STEP * ix;
+    printf("find: found at %.3f\n", x_mm);
+  } else {
+    printf("find: not found\n");
+  }
+}
+
+void exec_command_drill(uint8_t md_ix, float distance) {
+  // ED constants
+  const uint16_t ED_IG_US_SHORT_THRESH = 5;
+  const uint16_t ED_IG_US_MAX_WAIT = 500;
+  const uint16_t ED_IG_US_TARGET = 100;
+
+  const uint16_t ed_duty_pct = 25;
+  uint16_t ed_pulse_dur_us = 100;
+  uint16_t ed_cooldown_us =
+      (ed_pulse_dur_us * 100) / ed_duty_pct - ed_pulse_dur_us;
+
+  // MD constants
+  const float MD_INITIAL_FEED_RATE = 0.05;  // mm/sec
+  const uint16_t MD_MAX_WAIT_US =
+      2000;  // 0.01mm/sec (0.6mm/min ~ 1.0mm^3/min for D1.5 electrode drill)
+  const uint32_t MD_MIN_WAIT_US =
+      25;  // 0.78mm/sec (47mm/min ~ 83mm^3/min for D1.5 electrode drill)
+  const uint32_t md_initial_wait_us =
+      1e6 / (MD_INITIAL_FEED_RATE * MD_STEPS_PER_MM);
+
+  /* MD component status */
+  int32_t md_steps = abs((int32_t)(MD_STEPS_PER_MM * distance));
+  bool md_is_plus = distance > 0;
+
+  uint32_t md_wait_us = md_initial_wait_us;
+  int32_t md_pos = 0;
+  int32_t md_timer = 0;
+
+  /* ED component status */
+  // 0 -> 1: discharge condition met
+  // 1 -> 2: detect become HIGH (normal discharge)
+  // 1 -> 3: detect become HIGH (short circuit; too early)
+  // 1 -> 0: ignition timeout
+  // 2 -> 3: pulse duration ended
+  // 3 -> 0: cooldown timer ended
+  uint8_t ed_state = 0;  // 0: discharge-ready (OFF) 1: waiting ignition (ON) 2:
+                         // discharging (ON) 3: cooldown (OFF)
+  int16_t ed_timer;
+
+  /* Time control */
+  absolute_time_t t0 = get_absolute_time();
+  int32_t tick = 0;
+
+  /* Stats */
+  int32_t count_tick_miss = 0;
+  uint32_t count_short = 0;
+  uint32_t count_timeout = 0;
+  uint32_t count_pulse = 0;
+  int32_t last_dump_tick = 0;
+
+  ed_set_current(2000);  // 2A
+
+  while (md_pos < md_steps) {
+    // ED (at most tens of cycles; < 200ns)
+    int16_t ig_time = -1;
+    switch (ed_state) {
+      case 0:  // DISCHARGE-REDAY
+        ed_unsafe_set_gate(true);
+        ed_state = 1;
+        ed_timer = 0;
+        break;
+      case 1:  // WAITING-IGNITION
+        if (ed_unsafe_get_detect()) {
+          ig_time = ed_timer;
+          if (ed_timer <= ED_IG_US_SHORT_THRESH) {
+            // short detected; turn off immediately and cooldown
+            ed_unsafe_set_gate(false);
+            ed_state =
+                3;  // Note: maybe better to use custom cooldown after short?
+            ed_timer = 0;
+            count_short++;
+          } else if (ed_timer >= ED_IG_US_MAX_WAIT) {
+            // too long; reset
+            ed_unsafe_set_gate(false);
+            ed_state = 0;
+            count_timeout++;
+          } else {
+            // normal discharge
+            ed_state = 2;
+            ed_timer = 0;
+          }
+        }
+        break;
+      case 2:  // DISCHARGING
+        if (ed_timer >= ed_pulse_dur_us) {
+          ed_unsafe_set_gate(false);
+          ed_state = 3;
+          ed_timer = 0;
+        }
+        break;
+      case 3:  // COOLDOWN
+        if (ed_timer >= ed_cooldown_us) {
+          ed_state = 0;
+        }
+        break;
+    }
+    ed_timer++;
+
+    // MD (< 350ns)
+    if (md_timer >= md_wait_us) {
+      md_step(md_ix, md_is_plus);
+      md_timer = 0;
+      md_pos++;
+    }
+
+    // Compute
+    // hopefully md_wait_time oscillates such that ig_time is kept around
+    // ED_IG_US_TARGET.
+    if (ig_time >= 0) {
+      if (ig_time < ED_IG_US_TARGET) {
+        md_wait_us = md_wait_us + 1;
+        if (md_wait_us >= MD_MAX_WAIT_US) {
+          md_wait_us = MD_MAX_WAIT_US;
+        }
+      } else {
+        md_wait_us = md_wait_us - 1;
+        if (md_wait_us < MD_MIN_WAIT_US) {
+          md_wait_us = MD_MIN_WAIT_US;
+        }
+      }
+    }
+
+    // wait until 1us passes.
+    while (true) {
+      int32_t new_tick = absolute_time_diff_us(t0, get_absolute_time());
+      if (new_tick > tick) {
+        if (new_tick > tick + 1) {
+          count_tick_miss++;  // can happen if processing takes more than 1us.
+        }
+        tick = new_tick;
+        break;
+      }
+    }
+
+    // Debug dump every 5sec.
+    // relatively safe to prolong cooldown period.
+    if (ed_state == 3 && tick > last_dump_tick + 5000000) {
+      print_time();
+      printf(
+          "drill: tick=%d step=%d wait=%d / #pulse=%d #short=%d #timeout=%d "
+          "#tmiss=%d\n",
+          tick, md_pos, md_wait_us, count_pulse, count_short, count_timeout,
+          count_tick_miss);
+      last_dump_tick = tick;
+    }
+  }
+
+  ed_unsafe_set_gate(false);  // turn off
+  print_time();
+  printf("drill: done\n");
+  printf(
+      "drill: tick=%d / #pulse=%d #short=%d #timeout=%d "
+      "#tmiss=%d\n",
+      tick, count_pulse, count_short, count_timeout, count_tick_miss);
+}
+
 void exec_command_edeexec(uint32_t duration_ms,
                           uint16_t pulse_dur_us,
                           uint16_t current_ma,
@@ -168,7 +355,7 @@ void exec_command_edeexec(uint32_t duration_ms,
   }
 
   while (absolute_time_diff_us(t0, get_absolute_time()) < duration_us) {
-    uint16_t ignition_delay_us = ed_single_pulse(pulse_dur_us);
+    uint16_t ignition_delay_us = ed_single_pulse(pulse_dur_us, 5000);
     if (ignition_delay_us == UINT16_MAX) {
       count_pulse_timeout++;
     } else {
@@ -197,8 +384,7 @@ void exec_command_edeexec(uint32_t duration_ms,
     printf("avg=%u, min=%u, max=%u\n",
            (uint32_t)(accum_ig_delay / count_pulse_success), min_ig_delay,
            max_ig_delay);
-    printf(
-        "histogram: 100 buckets, [0,1),...[99,5000). 100 count values:\n");
+    printf("histogram: 100 buckets, [0,1),...[99,5000). 100 count values:\n");
     for (int i = 0; i < NUM_BUCKETS; i++) {
       printf("%u,", hist_ig_delay[i]);
       if (i % 50 == 49) {
@@ -221,6 +407,21 @@ void exec_command_edeexec(uint32_t duration_ms,
 // Generic commands
 // status
 //   print status of all boards
+// move <board_ix> <distance>
+//   move by distance
+//   <board_ix>: 0, 1, 2
+//   <distance>: float, distance in mm
+// find <board_ix> <distance>
+//   move up to distance, or until electrode touches the work.
+//   uses hot electrode scan. work will be slightly damaged.
+//   Must be issued after `edon`.
+//   <board_ix>: 0, 1, 2
+//   <distance>: float, distance in mm
+// drill <board_ix> <distance>
+//   drill by distance. (note actual drill depth will be less, due to tool wear)
+//   Must be issued after `edon`.
+//   <board_ix>: 0, 1, 2
+//   <distance>: float, distance in mm
 //
 // MD commands
 // step <board_ix> <step> <wait>
@@ -383,6 +584,30 @@ bool parse_dir(parser_t* parser) {
   return is_plus;
 }
 
+float parse_float(parser_t* parser) {
+  if (!parser->success) {
+    return 0;
+  }
+
+  char* str = strtok(NULL, " ");
+  if (str == NULL) {
+    printf("arg%d missing: expecting float", parser->ix);
+    parser->success = false;
+    return 0;
+  }
+
+  char* end;
+  float res = strtof(str, &end);
+  if (str == end || *end != 0) {
+    printf("arg%d invalid float", parser->ix);
+    parser->success = false;
+    return 0;
+  }
+
+  parser->ix++;
+  return res;
+}
+
 /**
  * Tries to execute a single command. Errors will be printed to stdout.
  * @param buf command string, without newlines. will be modified during parsing.
@@ -401,6 +626,13 @@ void try_exec_command(char* buf) {
       return;
     }
     exec_command_step(md_ix, step, wait);
+  } else if (strcmp(command, "move") == 0) {
+    uint8_t md_ix = parse_int(&parser, 0, MD_NUM_BOARDS - 1);
+    float distance = parse_float(&parser);
+    if (!parser.success) {
+      return;
+    }
+    exec_command_step(md_ix, distance * MD_STEPS_PER_MM, 25);
   } else if (strcmp(command, "home") == 0) {
     uint8_t md_ix = parse_int(&parser, 0, MD_NUM_BOARDS - 1);
     bool dir_plus = parse_dir(&parser);
@@ -434,6 +666,20 @@ void try_exec_command(char* buf) {
     exec_command_edon();
   } else if (strcmp(command, "edoff") == 0) {
     exec_command_edoff();
+  } else if (strcmp(command, "find") == 0) {
+    uint8_t md_ix = parse_int(&parser, 0, MD_NUM_BOARDS - 1);
+    float distance = parse_float(&parser);
+    if (!parser.success) {
+      return;
+    }
+    exec_command_find(md_ix, distance);
+  } else if (strcmp(command, "drill") == 0) {
+    uint8_t md_ix = parse_int(&parser, 0, MD_NUM_BOARDS - 1);
+    float distance = parse_float(&parser);
+    if (!parser.success) {
+      return;
+    }
+    exec_command_drill(md_ix, distance);
   } else if (strcmp(command, "edexec") == 0) {
     uint32_t duration_ms = parse_int(&parser, 1, 1000000);
     uint16_t pulse_dur_us = parse_int(&parser, 1, 10000);

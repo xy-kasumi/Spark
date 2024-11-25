@@ -4,6 +4,8 @@
 #include <stdint.h>
 
 #define MD_NUM_BOARDS 3
+#define MD_STEPS_PER_MM ((float)(256.0 * 200.0))  // 256 microsteps, 1.8deg/step
+#define MD_MM_PER_STEP ((float)(1.0 / MD_STEPS_PER_MM))
 
 /** Denotes individual CTRL-MINI-MD board status.
  * All errors are irrecoverable (needs system reset).
@@ -35,10 +37,10 @@ void md_step(uint8_t md_index, bool plus);
  *
  * Note it won't return true if motor is disabled by protection like
  * overtemperature, short etc.
- * 
+ *
  * To make this work, tuning of COOLCONF register in md_init is necessary.
- * i.e. If stall is always detected, check SG_RESULT in DRV_STATUS. If it always 0,
- * decrease sensitivity (increase SGT) in COOLCONF.
+ * i.e. If stall is always detected, check SG_RESULT in DRV_STATUS. If it always
+ * 0, decrease sensitivity (increase SGT) in COOLCONF.
  */
 bool md_check_stall(uint8_t md_index);
 

@@ -157,12 +157,18 @@ void ed_set_current(uint16_t current_ma) {
   sleep_ms(1);  // wait for stabilize
 }
 
-uint16_t ed_single_pulse(uint16_t pulse_us) {
+void ed_unsafe_set_gate(bool on) {
+  if (mode != ED_DISCHARGE) {
+    return;
+  }
+
+  gpio_put(CTRL_ED_DCHG_GATE_PIN, on);
+}
+
+uint16_t ed_single_pulse(uint16_t pulse_us, uint16_t max_wait_us) {
   if (mode != ED_DISCHARGE) {
     return UINT16_MAX;
   }
-
-  const uint16_t MAX_WAIT_US = 5000;  // 5 ms
 
   gpio_put(CTRL_ED_DCHG_GATE_PIN, true);  // discharge ON
 
@@ -179,7 +185,7 @@ uint16_t ed_single_pulse(uint16_t pulse_us) {
       break;
     }
 
-    if (elapsed_us >= MAX_WAIT_US) {
+    if (elapsed_us >= max_wait_us) {
       // pulse didn't happen within timeout. Turn off and return.
       gpio_put(CTRL_ED_DCHG_GATE_PIN, false);  // discharge OFF
       return UINT16_MAX;
@@ -191,6 +197,13 @@ uint16_t ed_single_pulse(uint16_t pulse_us) {
   gpio_put(CTRL_ED_DCHG_GATE_PIN, false);  // discharge OFF
 
   return delay;
+}
+
+bool ed_unsafe_get_detect() {
+  if (mode != ED_DISCHARGE) {
+    return false;
+  }
+  return gpio_get(CTRL_ED_DCHG_DETECT);
 }
 
 void ed_test_sweep(uint32_t numsteps) {
