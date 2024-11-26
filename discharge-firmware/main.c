@@ -245,7 +245,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
 
   while (md_pos < md_steps) {
     // ED (at most tens of cycles; < 200ns)
-    int16_t ig_time = -1;
+    int16_t ig_time = -1; // 10000 means timeout
     switch (ed_state) {
       case 0:  // DISCHARGE-REDAY
         ed_unsafe_set_gate(true);
@@ -258,6 +258,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
           ed_unsafe_set_gate(false);
           ed_state = 0;
           successive_shorts = 0;
+          ig_time = 10000; // timeout
           count_timeout++;
         } else if (ed_unsafe_get_detect()) {
           ig_time = ed_timer;
