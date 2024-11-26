@@ -200,7 +200,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
       25;  // 0.78mm/sec (47mm/min ~ 83mm^3/min for D1.5 electrode drill)
   const uint32_t md_initial_wait_us =
       1e6 / (MD_INITIAL_FEED_RATE * MD_STEPS_PER_MM);
-  const uint32_t MD_RETRACT_DIST_STEPS = 1 * MD_STEPS_PER_MM;
+  const uint32_t MD_RETRACT_DIST_STEPS = 0.25 * MD_STEPS_PER_MM;
 
   /* MD component status */
   int32_t md_steps = abs((int32_t)(MD_STEPS_PER_MM * distance));
@@ -295,7 +295,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
     // MD (< 350ns)
     switch (md_state) {
       case 0:  // OK
-        if (successive_shorts >= 2) {
+        if (successive_shorts >= 5) {
           md_state = 1;
           md_retract_steps = 0;
           md_timer = 0;
