@@ -274,6 +274,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
             ed_state = 2;
             ed_timer = 0;
             successive_shorts = 0;
+            count_pulse++;
           }
         }
         break;
