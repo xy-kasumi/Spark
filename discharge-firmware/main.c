@@ -253,7 +253,13 @@ void exec_command_drill(uint8_t md_ix, float distance) {
         ed_timer = 0;
         break;
       case 1:  // WAITING-IGNITION
-        if (ed_unsafe_get_detect()) {
+        if (ed_timer >= ED_IG_US_MAX_WAIT) {
+          // too long; reset
+          ed_unsafe_set_gate(false);
+          ed_state = 0;
+          successive_shorts = 0;
+          count_timeout++;
+        } else if (ed_unsafe_get_detect()) {
           ig_time = ed_timer;
           if (ed_timer <= ED_IG_US_SHORT_THRESH) {
             // short detected; turn off immediately and cooldown
@@ -263,12 +269,6 @@ void exec_command_drill(uint8_t md_ix, float distance) {
             ed_timer = 0;
             successive_shorts++;
             count_short++;
-          } else if (ed_timer >= ED_IG_US_MAX_WAIT) {
-            // too long; reset
-            ed_unsafe_set_gate(false);
-            ed_state = 0;
-            successive_shorts = 0;
-            count_timeout++;
           } else {
             // normal discharge
             ed_state = 2;
