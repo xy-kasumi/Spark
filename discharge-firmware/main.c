@@ -151,9 +151,11 @@ void exec_command_find(uint8_t md_ix, float distance) {
   int32_t steps = abs((int32_t)(MD_STEPS_PER_MM * distance));
   bool is_plus = distance > 0;
 
+  ed_set_current(2000);
   ed_unsafe_set_gate(true);
   int32_t ix = 0;
   bool found = false;
+  absolute_time_t t_prev_step = get_absolute_time();
   while (ix < steps) {
     bool detect = ed_unsafe_get_detect();
     if (detect) {
@@ -161,9 +163,12 @@ void exec_command_find(uint8_t md_ix, float distance) {
       break;
     }
 
-    md_step(md_ix, is_plus);
-    sleep_us(WAIT_US);
-    ix++;
+    absolute_time_t t1 = get_absolute_time();
+    if (absolute_time_diff_us(t_prev_step, t1) >= WAIT_US) {
+      md_step(md_ix, is_plus);
+      ix++;
+      t_prev_step = t1;
+    }
   }
   ed_unsafe_set_gate(false);  // immediate turn off to avoid work damage
 
@@ -708,8 +713,9 @@ int main() {
 
   // init I/O
   pico_led_init();
+  ed_init();  // in r0, MD noise disrupts ED SENSE_CURR, thus detection of the
+              // ED board. Thus, ed must be initialized before MD.
   md_init();
-  ed_init();
 
   pico_led_set(true);  // I/O init complete
   print_time();
