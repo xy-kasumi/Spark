@@ -195,12 +195,12 @@ void exec_command_drill(uint8_t md_ix, float distance) {
   // MD constants
   const float MD_INITIAL_FEED_RATE = 0.05;  // mm/sec
   const uint16_t MD_MAX_WAIT_US =
-      2000;  // 0.01mm/sec (0.6mm/min ~ 1.0mm^3/min for D1.5 electrode drill)
+      5000;  // 0.01mm/sec (0.6mm/min ~ 1.0mm^3/min for D1.5 electrode drill)
   const uint32_t MD_MIN_WAIT_US =
       25;  // 0.78mm/sec (47mm/min ~ 83mm^3/min for D1.5 electrode drill)
   const uint32_t md_initial_wait_us =
       1e6 / (MD_INITIAL_FEED_RATE * MD_STEPS_PER_MM);
-  const uint32_t MD_RETRACT_DIST_STEPS = 0.25 * MD_STEPS_PER_MM;
+  const uint32_t MD_RETRACT_DIST_STEPS = 5e-3 * MD_STEPS_PER_MM;  // 5um
 
   /* MD component status */
   int32_t md_steps = abs((int32_t)(MD_STEPS_PER_MM * distance));
@@ -215,6 +215,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
   uint32_t md_wait_us = md_initial_wait_us;
   int32_t md_pos = 0;
   int32_t md_retract_steps;
+  int32_t md_retract_target;
   int32_t md_timer = 0;
 
   /* ED component status */
@@ -245,7 +246,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
 
   while (md_pos < md_steps) {
     // ED (at most tens of cycles; < 200ns)
-    int16_t ig_time = -1; // 10000 means timeout
+    int16_t ig_time = -1;  // 10000 means timeout
     switch (ed_state) {
       case 0:  // DISCHARGE-REDAY
         ed_unsafe_set_gate(true);
@@ -258,7 +259,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
           ed_unsafe_set_gate(false);
           ed_state = 0;
           successive_shorts = 0;
-          ig_time = 10000; // timeout
+          ig_time = 10000;  // timeout
           count_timeout++;
         } else if (ed_unsafe_get_detect()) {
           ig_time = ed_timer;
@@ -297,9 +298,10 @@ void exec_command_drill(uint8_t md_ix, float distance) {
     // MD (< 350ns)
     switch (md_state) {
       case 0:  // OK
-        if (successive_shorts >= 5) {
+        if (successive_shorts >= 10) {
           md_state = 1;
           md_retract_steps = 0;
+          md_retract_target = MD_RETRACT_DIST_STEPS;
           md_timer = 0;
           count_retract++;
         } else if (md_timer >= md_wait_us) {
@@ -309,7 +311,22 @@ void exec_command_drill(uint8_t md_ix, float distance) {
         }
         break;
       case 1:  // RETRACTING
-        if (md_retract_steps >= MD_RETRACT_DIST_STEPS) {
+
+        // exponential retract
+        // once condition is reached, target won't be reset until retract is complete.
+        if (successive_shorts >= 10000) {
+          // CONTINUED short; abort
+          ed_unsafe_set_gate(false);
+          print_time();
+          printf("drill: ABORTED due to continued 10000 shorts\n");
+          return;
+        } else if (successive_shorts >= 1000) {
+          md_retract_target = MD_RETRACT_DIST_STEPS * 100;
+        } else if (successive_shorts >= 100) {
+          md_retract_target = MD_RETRACT_DIST_STEPS * 10;
+        }
+
+        if (md_retract_steps >= md_retract_target) {
           md_state = 0;
           md_timer = 0;
         }
