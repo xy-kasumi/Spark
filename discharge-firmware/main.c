@@ -232,10 +232,11 @@ typedef struct {
   uint32_t max_successive_short;
 } drill_stats_t;
 
-static const uint16_t MD_MAX_WAIT_US =
-    5000;  // 0.01mm/sec (0.6mm/min ~ 1.0mm^3/min for D1.5 electrode drill)
-static const uint32_t MD_MIN_WAIT_US =
-    25;  // 0.78mm/sec (47mm/min ~ 83mm^3/min for D1.5 electrode drill)
+static const uint32_t MD_FEED_MAX_WAIT_US =
+    10000;  // 0.01mm/sec (0.6mm/min ~ 1.0mm^3/min for D1.5 electrode drill)
+static const uint32_t MD_FEED_MIN_WAIT_US =
+    4000;  // empirically found stable value
+static const uint32_t MD_MOVE_MIN_WAIT_US = 25;  // 0.78mm/sec
 static const uint16_t ED_IG_US_TARGET = 100;
 
 void reset_ig_delay(drill_stats_t* stats) {
@@ -410,9 +411,9 @@ void tick_ed_drill(ed_drill_t* ed, drill_stats_t* stats, uint16_t* ig_time) {
 }
 
 void drill_print_stats(int32_t tick,
-                      md_drill_t* md,
-                      ed_drill_t* ed,
-                      drill_stats_t* stats) {
+                       md_drill_t* md,
+                       ed_drill_t* ed,
+                       drill_stats_t* stats) {
   print_time();
   int32_t avg_ig = -1;
   int32_t min_ig = -1;
@@ -475,26 +476,26 @@ void exec_command_drill(uint8_t md_ix, float distance) {
     if (ig_time >= 0) {
       if (ig_time < ED_IG_US_TARGET) {
         md.wait_us = md.wait_us + 1;
-        if (md.wait_us >= MD_MAX_WAIT_US) {
-          md.wait_us = MD_MAX_WAIT_US;
+        if (md.wait_us >= MD_FEED_MAX_WAIT_US) {
+          md.wait_us = MD_FEED_MAX_WAIT_US;
         }
       } else {
         md.wait_us = md.wait_us - 1;
-        if (md.wait_us < MD_MIN_WAIT_US) {
-          md.wait_us = MD_MIN_WAIT_US;
+        if (md.wait_us < MD_FEED_MIN_WAIT_US) {
+          md.wait_us = MD_FEED_MIN_WAIT_US;
         }
       }
     }
 
     if (md.state == MD_DRILL_OK) {
       if (ed.successive_shorts >= 10) {
-        md_to_pullpush(&md, MD_RETRACT_DIST_STEPS, 0, MD_MIN_WAIT_US);
+        md_to_pullpush(&md, MD_RETRACT_DIST_STEPS, 0, MD_MOVE_MIN_WAIT_US);
         stats.n_retract++;
       }
     }
 
     if (pump_counter >= PUMP_INTERVAL && md.state == MD_DRILL_OK) {
-      md_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MD_MIN_WAIT_US);
+      md_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MD_MOVE_MIN_WAIT_US);
       pump_counter = 0;
     }
 
