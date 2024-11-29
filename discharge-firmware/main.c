@@ -183,7 +183,8 @@ void exec_command_find(uint8_t md_ix, float distance) {
 
 typedef enum {
   MD_DRILL_OK = 0,
-  MD_DRILL_RETRACTING = 1,
+  MD_DRILL_PULL = 1,
+  MD_DRILL_PUSH = 2,
 } md_drill_state_t;
 
 typedef struct {
@@ -194,8 +195,12 @@ typedef struct {
   md_drill_state_t state;
   int32_t pos;
   uint32_t wait_us;
-  int32_t retract_steps;
-  int32_t retract_target;
+
+  uint32_t pullpush_wait_us;
+  int32_t pullpush_curr_steps;
+  int32_t pull_target_steps;
+  int32_t push_target_steps;
+
   int32_t timer;
 } md_drill_t;
 
@@ -223,6 +228,8 @@ typedef struct {
   uint64_t cnt_ig_delay;
   uint16_t max_ig_delay;
   uint16_t min_ig_delay;
+
+  uint32_t max_successive_short;
 } drill_stats_t;
 
 static const uint16_t MD_MAX_WAIT_US =
@@ -231,19 +238,21 @@ static const uint32_t MD_MIN_WAIT_US =
     25;  // 0.78mm/sec (47mm/min ~ 83mm^3/min for D1.5 electrode drill)
 static const uint16_t ED_IG_US_TARGET = 100;
 
+void reset_ig_delay(drill_stats_t* stats) {
+  stats->accum_ig_delay = 0;
+  stats->cnt_ig_delay = 0;
+  stats->max_ig_delay = 0;
+  stats->min_ig_delay = UINT16_MAX;
+}
+
 void init_drill_stats(drill_stats_t* stats) {
   stats->n_tick_miss = 0;
   stats->n_short = 0;
   stats->n_pulse = 0;
   stats->n_retract = 0;
   stats->last_dump_tick = 0;
-}
-
-void reset_ig_delay(drill_stats_t* stats) {
-  stats->accum_ig_delay = 0;
-  stats->cnt_ig_delay = 0;
-  stats->max_ig_delay = 0;
-  stats->min_ig_delay = UINT16_MAX;
+  stats->max_successive_short = 0;
+  reset_ig_delay(stats);
 }
 
 void record_ig_delay(drill_stats_t* stats, uint16_t ig_delay) {
@@ -255,6 +264,18 @@ void record_ig_delay(drill_stats_t* stats, uint16_t ig_delay) {
   if (ig_delay < stats->min_ig_delay) {
     stats->min_ig_delay = ig_delay;
   }
+}
+
+/** Must be called when ed.state == MD_DRILL_OK. */
+void md_to_pullpush(md_drill_t* md,
+                    int32_t pull_steps,
+                    int32_t push_steps,
+                    uint32_t wait_us) {
+  md->state = MD_DRILL_PULL;
+  md->pullpush_curr_steps = 0;
+  md->pullpush_wait_us = wait_us;
+  md->pull_target_steps = pull_steps;
+  md->push_target_steps = push_steps;
 }
 
 void init_md_drill(md_drill_t* md, uint8_t md_ix, float distance) {
@@ -271,8 +292,6 @@ void init_md_drill(md_drill_t* md, uint8_t md_ix, float distance) {
   md->state = MD_DRILL_OK;
   md->wait_us = md_initial_wait_us;
   md->pos = 0;
-  md->retract_steps;
-  md->retract_target;
   md->timer = 0;
 }
 
@@ -285,16 +304,27 @@ void tick_md_drill(md_drill_t* md, drill_stats_t* stats) {
         md->pos++;
       }
       break;
-    case MD_DRILL_RETRACTING:
-      if (md->retract_steps >= md->retract_target) {
-        md->state = MD_DRILL_OK;
+    case MD_DRILL_PULL:
+      if (md->pullpush_curr_steps >= md->pull_target_steps) {
+        md->state = MD_DRILL_PUSH;
         md->timer = 0;
-      }
-      if (md->timer >= MD_MIN_WAIT_US) {
+        md->push_target_steps = 0;
+      } else if (md->timer >= md->pullpush_wait_us) {
         md_step(md->board_ix, !md->is_plus);
         md->timer = 0;
         md->pos--;
-        md->retract_steps++;
+        md->pullpush_curr_steps++;
+      }
+      break;
+    case MD_DRILL_PUSH:
+      if (md->pullpush_curr_steps >= md->push_target_steps) {
+        md->state = MD_DRILL_OK;
+        md->timer = 0;
+      } else if (md->timer >= md->pullpush_wait_us) {
+        md_step(md->board_ix, md->is_plus);
+        md->timer = 0;
+        md->pos++;
+        md->pullpush_curr_steps++;
       }
       break;
   }
@@ -341,6 +371,9 @@ void tick_ed_drill(ed_drill_t* ed, drill_stats_t* stats, uint16_t* ig_time) {
           ed->state = ED_DRILL_SHORT_COOLDOWN;
           ed->timer = 0;
           ed->successive_shorts++;
+          if (ed->successive_shorts > stats->max_successive_short) {
+            stats->max_successive_short = ed->successive_shorts;
+          }
           stats->n_short++;
         } else {
           // normal discharge
@@ -376,14 +409,44 @@ void tick_ed_drill(ed_drill_t* ed, drill_stats_t* stats, uint16_t* ig_time) {
   ed->timer++;
 }
 
+void drill_print_stats(int32_t tick,
+                      md_drill_t* md,
+                      ed_drill_t* ed,
+                      drill_stats_t* stats) {
+  print_time();
+  int32_t avg_ig = -1;
+  int32_t min_ig = -1;
+  int32_t max_ig = -1;
+  if (stats->cnt_ig_delay > 0) {
+    avg_ig = stats->accum_ig_delay / stats->cnt_ig_delay;
+    min_ig = stats->min_ig_delay;
+    max_ig = stats->max_ig_delay;
+  }
+  printf(
+      "drill: tick=%d step=%d wait=%d #pulse=%d #short=%d "
+      "#retract=%d / max_short=%d avg_ig=%d min_ig=%d max_ig\n",
+      tick, md->pos, md->wait_us, stats->n_pulse, stats->n_short,
+      stats->n_retract, stats->max_successive_short, avg_ig, min_ig, max_ig);
+
+  reset_ig_delay(stats);
+  stats->max_successive_short = 0;
+
+  stats->last_dump_tick = tick;
+}
+
 void exec_command_drill(uint8_t md_ix, float distance) {
   const uint32_t MD_RETRACT_DIST_STEPS = 5e-3 * MD_STEPS_PER_MM;  // 5um
 
   md_drill_t md;
   init_md_drill(&md, md_ix, distance);
 
+  uint32_t PUMP_STEPS = md.steps + (uint32_t)(1.5 * MD_STEPS_PER_MM);
+
   ed_drill_t ed;
   init_ed_drill(&ed);
+
+  const int32_t PUMP_INTERVAL = 5000000;  // 5s
+  int32_t pump_counter = 0;
 
   absolute_time_t t0 = get_absolute_time();
   int32_t tick = 0;
@@ -393,12 +456,19 @@ void exec_command_drill(uint8_t md_ix, float distance) {
 
   ed_set_current(2000);  // 2A
   while (md.pos < md.steps) {
-    // Tick
+    /* Exec */
     uint16_t ig_time;
     tick_ed_drill(&ed, &stats, &ig_time);  // < 200ns
     tick_md_drill(&md, &stats);            // < 350ns
 
-    // Compute
+    /* Compute */
+    if (ed.successive_shorts >= 1000) {
+      // CONTINUED short; abort
+      ed_unsafe_set_gate(false);
+      print_time();
+      printf("drill: ABORTED due to continued 10000 shorts\n");
+      return;
+    }
 
     // hopefully md_wait_time oscillates such that ig_time is kept around
     // ED_IG_US_TARGET.
@@ -418,40 +488,21 @@ void exec_command_drill(uint8_t md_ix, float distance) {
 
     if (md.state == MD_DRILL_OK) {
       if (ed.successive_shorts >= 10) {
-        md.state = MD_DRILL_RETRACTING;
-        md.retract_steps = 0;
-        md.retract_target = MD_RETRACT_DIST_STEPS;
-        md.timer = 0;
+        md_to_pullpush(&md, MD_RETRACT_DIST_STEPS, 0, MD_MIN_WAIT_US);
         stats.n_retract++;
       }
-    } else if (md.state == MD_DRILL_RETRACTING) {
-      // exponential retract
-      // once condition is reached, target won't be reset until retract is
-      // complete.
-      if (ed.successive_shorts >= 10000) {
-        // CONTINUED short; abort
-        ed_unsafe_set_gate(false);
-        print_time();
-        printf("drill: ABORTED due to continued 10000 shorts\n");
-        return;
-      } else if (ed.successive_shorts >= 1000) {
-        md.retract_target = MD_RETRACT_DIST_STEPS * 100;
-      } else if (ed.successive_shorts >= 100) {
-        md.retract_target = MD_RETRACT_DIST_STEPS * 10;
-      }
+    }
+
+    if (pump_counter >= PUMP_INTERVAL && md.state == MD_DRILL_OK) {
+      md_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MD_MIN_WAIT_US);
+      pump_counter = 0;
     }
 
     // Debug dump every 5sec.
     // relatively safe to prolong cooldown period.
     if (ed.state == ED_DRILL_COOLDOWN &&
         tick > stats.last_dump_tick + 5000000) {
-      print_time();
-      printf(
-          "drill: tick=%d step=%d wait=%d / #pulse=%d #short=%d "
-          "#retract=%d\n",
-          tick, md.pos, md.wait_us, stats.n_pulse, stats.n_short,
-          stats.n_retract);
-      stats.last_dump_tick = tick;
+      drill_print_stats(tick, &md, &ed, &stats);
     }
 
     // wait until 1us passes.
@@ -470,10 +521,8 @@ void exec_command_drill(uint8_t md_ix, float distance) {
   ed_unsafe_set_gate(false);  // turn off
   print_time();
   printf("drill: done\n");
-  printf(
-      "drill: tick=%d / #pulse=%d #short=%d "
-      "#tmiss=%d #retract=%d\n",
-      tick, stats.n_pulse, stats.n_short, stats.n_tick_miss, stats.n_retract);
+  drill_print_stats(tick, &md, &ed, &stats);
+  printf("drill: #tmiss=%d\n", stats.n_tick_miss);
 }
 
 void exec_command_edeexec(uint32_t duration_ms,
