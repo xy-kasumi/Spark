@@ -356,7 +356,7 @@ void init_ed_drill(ed_drill_t* ed) {
 void tick_ed_drill(ed_drill_t* ed, drill_stats_t* stats, uint16_t* ig_time) {
   const uint16_t ED_SHORT_COOLDOWN_US = 1000;
 
-  const uint16_t ED_IG_US_SHORT_THRESH = 5;
+  const uint16_t ED_IG_US_SHORT_THRESH = 3;
   const uint16_t ED_IG_US_MAX_WAIT = 500;
 
   *ig_time = -1;
@@ -498,6 +498,9 @@ void exec_command_drill(uint8_t md_ix, float distance) {
         md_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MD_MOVE_MIN_WAIT_US);
         pump_counter = 0;
       } else if (ed.successive_shorts >= 10) {
+        md_to_pullpush(&md, MD_RETRACT_DIST_STEPS * 10, 0, MD_MOVE_MIN_WAIT_US);
+        stats.n_retract++;
+      } else if (ed.successive_shorts >= 3) {
         md_to_pullpush(&md, MD_RETRACT_DIST_STEPS, 0, MD_MOVE_MIN_WAIT_US);
         stats.n_retract++;
       }
@@ -506,8 +509,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
 
     /* Debug dump every 1.0 sec. */
     // relatively safe to prolong cooldown period.
-    if ((ed.state == ED_DRILL_COOLDOWN ||
-         ed.state == ED_DRILL_SHORT_COOLDOWN) &&
+    if (ed.state != ED_DRILL_DISCHARGING &&
         tick > stats.last_dump_tick + 1000000) {
       drill_print_stats(tick, &md, &ed, &stats);
     }
