@@ -503,6 +503,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
       md_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MD_MOVE_MIN_WAIT_US);
       pump_counter = 0;
     }
+    pump_counter++;
 
     /* Debug dump every 1.0 sec. */
     // relatively safe to prolong cooldown period.
