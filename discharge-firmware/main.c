@@ -442,7 +442,7 @@ void drill_print_stats(int32_t tick,
 }
 
 void exec_command_drill(uint8_t md_ix, float distance) {
-  const uint32_t MD_RETRACT_DIST_STEPS = 50e-3 * MD_STEPS_PER_MM;  // 50um
+  const uint32_t MD_RETRACT_DIST_STEPS = 10e-3 * MD_STEPS_PER_MM;  // 10um
 
   md_drill_t md;
   init_md_drill(&md, md_ix, distance);
@@ -452,8 +452,8 @@ void exec_command_drill(uint8_t md_ix, float distance) {
   ed_drill_t ed;
   init_ed_drill(&ed);
 
-  const int32_t PUMP_INTERVAL = 10000000;  // 10s
-  int32_t pump_counter = 0;
+  const int32_t PUMP_PULSE_INTERVAL = 1000;
+  int32_t last_pump_pulse = 0;
 
   absolute_time_t t0 = get_absolute_time();
   int32_t tick = 0;
@@ -494,18 +494,14 @@ void exec_command_drill(uint8_t md_ix, float distance) {
     }
 
     if (md.state == MD_DRILL_OK) {
-      if (pump_counter >= PUMP_INTERVAL) {
+      if (stats.n_pulse >= last_pump_pulse + PUMP_PULSE_INTERVAL) {
         md_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MD_MOVE_MIN_WAIT_US);
-        pump_counter = 0;
-      } else if (ed.successive_shorts >= 10) {
-        md_to_pullpush(&md, MD_RETRACT_DIST_STEPS * 3, 0, MD_MOVE_MIN_WAIT_US);
-        stats.n_retract++;
-      } else if (ed.successive_shorts >= 3) {
+        last_pump_pulse = stats.n_pulse;
+      } else if (ed.successive_shorts >= 1) {
         md_to_pullpush(&md, MD_RETRACT_DIST_STEPS, 0, MD_MOVE_MIN_WAIT_US);
         stats.n_retract++;
       }
     }
-    pump_counter++;
 
     /* Debug dump every 1.0 sec. */
     // relatively safe to prolong cooldown period.
