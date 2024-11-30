@@ -43,6 +43,7 @@
         "*.inc": "cpp",
         "cstdint": "cpp",
         "string.h": "c",
-        "functional": "c"
+        "functional": "c",
+        "inttypes.h": "c"
     }
 }

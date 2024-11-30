@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -225,7 +226,7 @@ typedef struct {
   uint32_t n_short;
   uint32_t n_pulse;
   uint32_t n_retract;
-  int32_t last_dump_tick;
+  int64_t last_dump_tick;
 
   uint64_t accum_ig_delay;
   uint64_t cnt_ig_delay;
@@ -416,7 +417,7 @@ void tick_ed_drill(ed_drill_t* ed, drill_stats_t* stats, uint16_t* ig_time) {
   ed->timer++;
 }
 
-void drill_print_stats(int32_t tick,
+void drill_print_stats(int64_t tick,
                        md_drill_t* md,
                        ed_drill_t* ed,
                        drill_stats_t* stats) {
@@ -429,11 +430,11 @@ void drill_print_stats(int32_t tick,
     min_ig = stats->min_ig_delay;
     max_ig = stats->max_ig_delay;
   }
-  printf(
-      "drill: tick=%d step=%d wait=%d #pulse=%d #short=%d "
-      "#retract=%d / max_short=%d avg_ig=%d min_ig=%d max_ig=%d\n",
-      tick, md->pos, md->wait_us, stats->n_pulse, stats->n_short,
-      stats->n_retract, stats->max_successive_short, avg_ig, min_ig, max_ig);
+  printf("drill: tick=%" PRId64
+         " step=%d wait=%d #pulse=%d #short=%d "
+         "#retract=%d / max_short=%d avg_ig=%d min_ig=%d max_ig=%d\n",
+         tick, md->pos, md->wait_us, stats->n_pulse, stats->n_short,
+         stats->n_retract, stats->max_successive_short, avg_ig, min_ig, max_ig);
 
   reset_ig_delay(stats);
   stats->max_successive_short = 0;
@@ -456,7 +457,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
   int32_t last_pump_pulse = 0;
 
   absolute_time_t t0 = get_absolute_time();
-  int32_t tick = 0;
+  int64_t tick = 0;
 
   drill_stats_t stats;
   init_drill_stats(&stats);
@@ -516,7 +517,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
 
     // wait until 1us passes.
     while (true) {
-      int32_t new_tick = absolute_time_diff_us(t0, get_absolute_time());
+      int64_t new_tick = absolute_time_diff_us(t0, get_absolute_time());
       if (new_tick > tick) {
         if (new_tick > tick + 1) {
           stats.n_tick_miss++;  // when processing takes more than 1us.
