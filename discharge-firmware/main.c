@@ -497,9 +497,12 @@ void exec_command_drill(uint8_t md_ix, float distance) {
       if (stats.n_pulse >= last_pump_pulse + PUMP_PULSE_INTERVAL) {
         md_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MD_MOVE_MIN_WAIT_US);
         last_pump_pulse = stats.n_pulse;
-      } else if (ed.successive_shorts >= 1) {
+      } else if (ed.successive_shorts >= 5) {
+        md.wait_us = 2000;
         md_to_pullpush(&md, MD_RETRACT_DIST_STEPS, 0, MD_MOVE_MIN_WAIT_US);
         stats.n_retract++;
+      } else if (ed.successive_shorts >= 1) {
+        md.wait_us = 2000;
       }
     }
 
