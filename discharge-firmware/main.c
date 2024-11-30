@@ -473,7 +473,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
 
     // hopefully md_wait_time oscillates such that ig_time is kept around
     // ED_IG_US_TARGET.
-    if (ig_time >= 0) {
+    if (md.state == MD_DRILL_OK && ig_time >= 0) {
       if (ig_time < ED_IG_US_TARGET) {
         md.wait_us = md.wait_us + 1;
         if (md.wait_us >= MD_FEED_MAX_WAIT_US) {
@@ -499,10 +499,10 @@ void exec_command_drill(uint8_t md_ix, float distance) {
       pump_counter = 0;
     }
 
-    // Debug dump every 5sec.
+    /* Debug dump every 2.5sec. */
     // relatively safe to prolong cooldown period.
     if (ed.state == ED_DRILL_COOLDOWN &&
-        tick > stats.last_dump_tick + 5000000) {
+        tick > stats.last_dump_tick + 2500000) {
       drill_print_stats(tick, &md, &ed, &stats);
     }
 
