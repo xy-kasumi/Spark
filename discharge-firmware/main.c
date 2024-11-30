@@ -240,7 +240,7 @@ static const uint32_t MD_FEED_MAX_WAIT_US =
 static const uint32_t MD_FEED_MIN_WAIT_US =
     4000;  // empirically found stable value
 static const uint32_t MD_MOVE_MIN_WAIT_US = 25;  // 0.78mm/sec
-static const uint16_t ED_IG_US_TARGET = 100;
+static const uint16_t ED_IG_US_TARGET = 200;
 
 void reset_ig_delay(drill_stats_t* stats) {
   stats->accum_ig_delay = 0;
@@ -441,7 +441,7 @@ void drill_print_stats(int32_t tick,
 }
 
 void exec_command_drill(uint8_t md_ix, float distance) {
-  const uint32_t MD_RETRACT_DIST_STEPS = 5e-3 * MD_STEPS_PER_MM;  // 5um
+  const uint32_t MD_RETRACT_DIST_STEPS = 50e-3 * MD_STEPS_PER_MM;  // 50um
 
   md_drill_t md;
   init_md_drill(&md, md_ix, distance);
