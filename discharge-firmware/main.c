@@ -277,9 +277,10 @@ void md_to_pullpush(md_drill_t* md,
                     uint32_t wait_us) {
   md->state = MD_DRILL_PULL;
   md->pullpush_curr_steps = 0;
-  md->pullpush_wait_us = wait_us;
   md->pull_target_steps = pull_steps;
   md->push_target_steps = push_steps;
+  md->pullpush_wait_us = wait_us;
+  md->timer = 0;
 }
 
 void init_md_drill(md_drill_t* md, uint8_t md_ix, float distance) {
@@ -312,7 +313,7 @@ void tick_md_drill(md_drill_t* md, drill_stats_t* stats) {
       if (md->pullpush_curr_steps >= md->pull_target_steps) {
         md->state = MD_DRILL_PUSH;
         md->timer = 0;
-        md->push_target_steps = 0;
+        md->pullpush_curr_steps = 0;
       } else if (md->timer >= md->pullpush_wait_us) {
         md_step(md->board_ix, !md->is_plus);
         md->timer = 0;
@@ -493,21 +494,20 @@ void exec_command_drill(uint8_t md_ix, float distance) {
     }
 
     if (md.state == MD_DRILL_OK) {
-      if (ed.successive_shorts >= 10) {
+      if (pump_counter >= PUMP_INTERVAL) {
+        md_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MD_MOVE_MIN_WAIT_US);
+        pump_counter = 0;
+      } else if (ed.successive_shorts >= 10) {
         md_to_pullpush(&md, MD_RETRACT_DIST_STEPS, 0, MD_MOVE_MIN_WAIT_US);
         stats.n_retract++;
       }
-    }
-
-    if (pump_counter >= PUMP_INTERVAL && md.state == MD_DRILL_OK) {
-      md_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MD_MOVE_MIN_WAIT_US);
-      pump_counter = 0;
     }
     pump_counter++;
 
     /* Debug dump every 1.0 sec. */
     // relatively safe to prolong cooldown period.
-    if (ed.state == ED_DRILL_COOLDOWN &&
+    if ((ed.state == ED_DRILL_COOLDOWN ||
+         ed.state == ED_DRILL_SHORT_COOLDOWN) &&
         tick > stats.last_dump_tick + 1000000) {
       drill_print_stats(tick, &md, &ed, &stats);
     }
