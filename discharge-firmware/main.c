@@ -215,6 +215,9 @@ typedef struct {
   ed_drill_state_t state;
   int16_t successive_shorts;
   int32_t timer;
+
+  uint16_t pulse_dur_us;
+  uint16_t cooldown_us;
 } ed_drill_t;
 
 typedef struct {
@@ -333,8 +336,14 @@ void tick_md_drill(md_drill_t* md, drill_stats_t* stats) {
 }
 
 void init_ed_drill(ed_drill_t* ed) {
+  const uint16_t ed_duty_pct = 25;
+  const uint16_t ed_pulse_dur_us = 100;
+
   ed->state = ED_DRILL_WAITING_IGNITION;
   ed->successive_shorts = 0;
+
+  ed->pulse_dur_us = ed_pulse_dur_us;
+  ed->cooldown_us = (ed_pulse_dur_us * 100) / ed_duty_pct - ed_pulse_dur_us;
 }
 
 /**
@@ -344,11 +353,6 @@ void init_ed_drill(ed_drill_t* ed) {
  * timeout.
  */
 void tick_ed_drill(ed_drill_t* ed, drill_stats_t* stats, uint16_t* ig_time) {
-  const uint16_t ed_duty_pct = 25;
-  uint16_t ed_pulse_dur_us = 100;
-  uint16_t ed_cooldown_us =
-      (ed_pulse_dur_us * 100) / ed_duty_pct - ed_pulse_dur_us;
-
   const uint16_t ED_SHORT_COOLDOWN_US = 1000;
 
   const uint16_t ED_IG_US_SHORT_THRESH = 5;
@@ -368,7 +372,7 @@ void tick_ed_drill(ed_drill_t* ed, drill_stats_t* stats, uint16_t* ig_time) {
       } else if (ed_unsafe_get_detect()) {
         *ig_time = ed->timer;
         if (ed->timer <= ED_IG_US_SHORT_THRESH) {
-          // short detected; turn off immediately and cooldown
+          // short detected; immediately enter cooldown
           ed->state = ED_DRILL_SHORT_COOLDOWN;
           ed->timer = 0;
           ed->successive_shorts++;
@@ -388,22 +392,23 @@ void tick_ed_drill(ed_drill_t* ed, drill_stats_t* stats, uint16_t* ig_time) {
       break;
     case ED_DRILL_DISCHARGING:
       ed_unsafe_set_gate(true);
-      if (ed->timer >= ed_pulse_dur_us) {
-        ed_unsafe_set_gate(false);
+      if (ed->timer >= ed->pulse_dur_us) {
         ed->state = ED_DRILL_COOLDOWN;
         ed->timer = 0;
       }
       break;
     case ED_DRILL_COOLDOWN:
       ed_unsafe_set_gate(false);
-      if (ed->timer >= ed_cooldown_us) {
+      if (ed->timer >= ed->cooldown_us) {
         ed->state = ED_DRILL_WAITING_IGNITION;
+        ed->timer = 0;
       }
       break;
     case ED_DRILL_SHORT_COOLDOWN:
       ed_unsafe_set_gate(false);
       if (ed->timer >= ED_SHORT_COOLDOWN_US) {
         ed->state = ED_DRILL_WAITING_IGNITION;
+        ed->timer = 0;
       }
       break;
   }
@@ -425,7 +430,7 @@ void drill_print_stats(int32_t tick,
   }
   printf(
       "drill: tick=%d step=%d wait=%d #pulse=%d #short=%d "
-      "#retract=%d / max_short=%d avg_ig=%d min_ig=%d max_ig\n",
+      "#retract=%d / max_short=%d avg_ig=%d min_ig=%d max_ig=%d\n",
       tick, md->pos, md->wait_us, stats->n_pulse, stats->n_short,
       stats->n_retract, stats->max_successive_short, avg_ig, min_ig, max_ig);
 
@@ -499,10 +504,10 @@ void exec_command_drill(uint8_t md_ix, float distance) {
       pump_counter = 0;
     }
 
-    /* Debug dump every 2.5sec. */
+    /* Debug dump every 1.0 sec. */
     // relatively safe to prolong cooldown period.
     if (ed.state == ED_DRILL_COOLDOWN &&
-        tick > stats.last_dump_tick + 2500000) {
+        tick > stats.last_dump_tick + 1000000) {
       drill_print_stats(tick, &md, &ed, &stats);
     }
 
