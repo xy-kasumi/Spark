@@ -238,7 +238,7 @@ typedef struct {
 static const uint32_t MD_FEED_MAX_WAIT_US =
     10000;  // 0.01mm/sec (0.6mm/min ~ 1.0mm^3/min for D1.5 electrode drill)
 static const uint32_t MD_FEED_MIN_WAIT_US =
-    4000;  // empirically found stable value
+    2500;  // empirically found stable value
 static const uint32_t MD_MOVE_MIN_WAIT_US = 25;  // 0.78mm/sec
 static const uint16_t ED_IG_US_TARGET = 200;
 
@@ -447,12 +447,12 @@ void exec_command_drill(uint8_t md_ix, float distance) {
   md_drill_t md;
   init_md_drill(&md, md_ix, distance);
 
-  uint32_t PUMP_STEPS = md.steps + (uint32_t)(1.5 * MD_STEPS_PER_MM);
+  uint32_t PUMP_STEPS = md.steps + (uint32_t)(0.5 * MD_STEPS_PER_MM);
 
   ed_drill_t ed;
   init_ed_drill(&ed);
 
-  const int32_t PUMP_INTERVAL = 5000000;  // 5s
+  const int32_t PUMP_INTERVAL = 10000000;  // 10s
   int32_t pump_counter = 0;
 
   absolute_time_t t0 = get_absolute_time();
@@ -498,7 +498,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
         md_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MD_MOVE_MIN_WAIT_US);
         pump_counter = 0;
       } else if (ed.successive_shorts >= 10) {
-        md_to_pullpush(&md, MD_RETRACT_DIST_STEPS * 10, 0, MD_MOVE_MIN_WAIT_US);
+        md_to_pullpush(&md, MD_RETRACT_DIST_STEPS * 3, 0, MD_MOVE_MIN_WAIT_US);
         stats.n_retract++;
       } else if (ed.successive_shorts >= 3) {
         md_to_pullpush(&md, MD_RETRACT_DIST_STEPS, 0, MD_MOVE_MIN_WAIT_US);
