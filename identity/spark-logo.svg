@@ -1,0 +1,9 @@
+<svg viewBox="-100 -100 200 200" xmlns="http://www.w3.org/2000/svg">
+    <g fill="#00AEEF">
+        <path d="M 0 0 L 6.116 50 L -6.116 50 Z" transform="rotate(0)"/>
+        <path d="M 0 0 L 6.116 50 L -6.116 50 Z" transform="rotate(72)"/>
+        <path d="M 0 0 L 6.116 50 L -6.116 50 Z" transform="rotate(144)"/>
+        <path d="M 0 0 L 6.116 50 L -6.116 50 Z" transform="rotate(216)"/>
+        <path d="M 0 0 L 6.116 50 L -6.116 50 Z" transform="rotate(288)"/>
+    </g>
+</svg>
