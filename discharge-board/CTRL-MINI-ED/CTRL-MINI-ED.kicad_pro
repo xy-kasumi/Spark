@@ -655,7 +655,7 @@
       "filter_string": "",
       "group_symbols": true,
       "name": "",
-      "sort_asc": false,
+      "sort_asc": true,
       "sort_field": "Reference"
     },
     "connection_grid_size": 50.0,
@@ -709,6 +709,38 @@
     [
       "3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5",
       "ルート"
+    ],
+    [
+      "61d269a5-db7e-4708-be89-e9446bc418aa",
+      "Relay Half Bridge"
+    ],
+    [
+      "6c946658-61d5-4fe0-8cd3-b855580e1af0",
+      "Relay Half Bridge1"
+    ],
+    [
+      "701333a2-35b5-41e7-9f83-3a206a1cf781",
+      "Relay Half Bridge2"
+    ],
+    [
+      "dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f",
+      "Pulse Shaper"
+    ],
+    [
+      "8e7d2a38-9570-47b2-a3a0-f33e26444a39",
+      "Boost Converter 100V"
+    ],
+    [
+      "cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb",
+      "RP2040"
+    ],
+    [
+      "94d9cbf4-c449-4f44-a433-4ecc47b28bd4",
+      "Regulator 24V"
+    ],
+    [
+      "a9794609-42db-49f0-aeeb-4c313a94f296",
+      "Regulator 3.3V"
     ]
   ],
   "text_variables": {}
