@@ -2,8 +2,16 @@
 	(version 20231120)
 	(generator "eeschema")
 	(generator_version "8.0")
-	(uuid "1a190af0-ad97-4890-963d-c276067573f8")
+	(uuid "1e548909-b70c-43b8-a863-f329f470d99c")
 	(paper "A4")
+	(title_block
+		(title "CTRL-MINI-ED")
+		(date "2024-12-11")
+		(rev "2")
+		(company "Spark Project")
+		(comment 1 "Author: 夕月霞 (xyx)")
+		(comment 2 "Electric Discharge Machining board for CTRL-MINI")
+	)
 	(lib_symbols
 		(symbol "Amplifier_Operational:AD8603"
 			(pin_names
@@ -3086,8 +3094,9 @@
 		(uuid 236021b9-8337-4cd5-bcee-53d445041010)
 	)
 	(image
-		(at 185.42 173.99)
-		(uuid "6011fb1b-9eb3-46e4-bae5-996a4f32a348")
+		(at 276.86 173.99)
+		(scale 1.13867)
+		(uuid "98673f60-4db2-4c7a-934d-b1e6501f6f28")
 		(data "iVBORw0KGgoAAAANSUhEUgAAATsAAAEsCAYAAAC8DxTkAAAACXBIWXMAAHc0AAB3NAG21TCYAAAA"
 			"GXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAIABJREFUeJzt3XmcXFWZ//HPc6u6"
 			"SchStzoJCESICoRFWQRBFASdYQmEpKtDj4qKMjogjALDjICjTMANMsBPQcffyG9cRp1xZlq6mgCC"
@@ -3297,18 +3306,6 @@
 			(justify left)
 		)
 		(uuid "20574a98-1c3b-46ec-8660-3713c544cd74")
-	)
-	(text "Spark Project\nElectric Discharge Machining board for CTRL-MINI\nAuthor: 夕月霞"
-		(exclude_from_sim yes)
-		(at 193.294 169.672 0)
-		(effects
-			(font
-				(size 2 2)
-				(color 132 0 0 1)
-			)
-			(justify left top)
-		)
-		(uuid "507c2bac-be0b-4e3e-944f-b47e4780a0e2")
 	)
 	(text "fan-cooled\nheatsink"
 		(exclude_from_sim no)

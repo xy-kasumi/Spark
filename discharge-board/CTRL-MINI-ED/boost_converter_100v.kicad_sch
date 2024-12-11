@@ -2,8 +2,16 @@
 	(version 20231120)
 	(generator "eeschema")
 	(generator_version "8.0")
-	(uuid "bcf40b0c-3324-474f-8614-55601b4c1b30")
+	(uuid "f0d9b76e-6e7b-4506-852e-cedc3ccf06c6")
 	(paper "A4")
+	(title_block
+		(title "CTRL-MINI-ED")
+		(date "2024-12-11")
+		(rev "2")
+		(company "Spark Project")
+		(comment 1 "Author: 夕月霞 (xyx)")
+		(comment 2 "Electric Discharge Machining board for CTRL-MINI")
+	)
 	(lib_symbols
 		(symbol "Device:C"
 			(pin_numbers hide)
@@ -1831,8 +1839,9 @@
 		(uuid "fc5f4f88-f4c7-41ff-a0f8-de534bf864a4")
 	)
 	(image
-		(at 184.15 173.99)
-		(uuid "6d4c0976-c25b-4172-89a2-382c9aec3ad7")
+		(at 276.86 173.99)
+		(scale 1.13867)
+		(uuid "64ea10cd-e555-49ff-94bd-2b8af30c2e28")
 		(data "iVBORw0KGgoAAAANSUhEUgAAATsAAAEsCAYAAAC8DxTkAAAACXBIWXMAAHc0AAB3NAG21TCYAAAA"
 			"GXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAIABJREFUeJzt3XmcXFWZ//HPc6u6"
 			"SchStzoJCESICoRFWQRBFASdYQmEpKtDj4qKMjogjALDjICjTMANMsBPQcffyG9cRp1xZlq6mgCC"
@@ -2062,18 +2071,6 @@
 			)
 		)
 		(uuid "7f2d4de1-7de3-46f4-a169-38bdac8b983c")
-	)
-	(text "Spark Project\nElectric Discharge Machining board for CTRL-MINI\nAuthor: 夕月霞"
-		(exclude_from_sim yes)
-		(at 192.024 169.672 0)
-		(effects
-			(font
-				(size 2 2)
-				(color 132 0 0 1)
-			)
-			(justify left top)
-		)
-		(uuid "8786e896-81c3-42cc-a101-14459215fa5a")
 	)
 	(text "results in 100V ± 10V\nif 5% resistor is used\n"
 		(exclude_from_sim no)

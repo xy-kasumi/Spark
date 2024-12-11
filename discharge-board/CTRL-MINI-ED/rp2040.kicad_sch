@@ -2,8 +2,16 @@
 	(version 20231120)
 	(generator "eeschema")
 	(generator_version "8.0")
-	(uuid "4da359df-e32f-4022-8dc8-3f2085ded583")
+	(uuid "8585afd8-0c2d-498a-a837-f5bf18caa7cb")
 	(paper "A4")
+	(title_block
+		(title "CTRL-MINI-ED")
+		(date "2024-12-11")
+		(rev "2")
+		(company "Spark Project")
+		(comment 1 "Author: 夕月霞 (xyx)")
+		(comment 2 "Electric Discharge Machining board for CTRL-MINI")
+	)
 	(lib_symbols
 		(symbol "Device:C"
 			(pin_numbers hide)
@@ -3363,8 +3371,9 @@
 		(uuid "ffc1bc3f-974b-4225-9eb8-29ebfc59a187")
 	)
 	(image
-		(at 184.15 173.99)
-		(uuid "03a7e5aa-9f51-4893-a0be-71ae3977094f")
+		(at 276.86 173.99)
+		(scale 1.13867)
+		(uuid "22c96f58-ae1d-4eb1-9e5b-7a555e017a11")
 		(data "iVBORw0KGgoAAAANSUhEUgAAATsAAAEsCAYAAAC8DxTkAAAACXBIWXMAAHc0AAB3NAG21TCYAAAA"
 			"GXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAIABJREFUeJzt3XmcXFWZ//HPc6u6"
 			"SchStzoJCESICoRFWQRBFASdYQmEpKtDj4qKMjogjALDjICjTMANMsBPQcffyG9cRp1xZlq6mgCC"
@@ -3614,18 +3623,6 @@
 			)
 		)
 		(uuid "7641814d-ce3b-4939-bc89-31c08ad2d647")
-	)
-	(text "Spark Project\nElectric Discharge Machining board for CTRL-MINI\nAuthor: 夕月霞"
-		(exclude_from_sim yes)
-		(at 192.024 169.672 0)
-		(effects
-			(font
-				(size 2 2)
-				(color 132 0 0 1)
-			)
-			(justify left top)
-		)
-		(uuid "aa3acdac-233a-48ad-8858-bb0bd79e133c")
 	)
 	(text "PWM4"
 		(exclude_from_sim no)

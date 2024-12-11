@@ -2,8 +2,16 @@
 	(version 20231120)
 	(generator "eeschema")
 	(generator_version "8.0")
-	(uuid "6a193c22-7bcd-4a63-a08a-f4aba6f57bab")
+	(uuid "75dcda9f-b6e3-4f9c-a895-e52b9bf1c924")
 	(paper "A4")
+	(title_block
+		(title "CTRL-MINI-ED")
+		(date "2024-12-11")
+		(rev "2")
+		(company "Spark Project")
+		(comment 1 "Author: 夕月霞 (xyx)")
+		(comment 2 "Electric Discharge Machining board for CTRL-MINI")
+	)
 	(lib_symbols
 		(symbol "Device:C_Small"
 			(pin_numbers hide)
@@ -516,8 +524,9 @@
 		(uuid "eac816c6-709d-4ff1-8af6-fd544ce234f7")
 	)
 	(image
-		(at 184.15 173.99)
-		(uuid "9db43695-cd2b-47aa-87c7-d621f9434ce2")
+		(at 276.86 173.99)
+		(scale 1.13867)
+		(uuid "5c414d07-f1cc-4b86-9b45-4aedbcab6129")
 		(data "iVBORw0KGgoAAAANSUhEUgAAATsAAAEsCAYAAAC8DxTkAAAACXBIWXMAAHc0AAB3NAG21TCYAAAA"
 			"GXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAIABJREFUeJzt3XmcXFWZ//HPc6u6"
 			"SchStzoJCESICoRFWQRBFASdYQmEpKtDj4qKMjogjALDjICjTMANMsBPQcffyG9cRp1xZlq6mgCC"
@@ -705,18 +714,6 @@
 			"namOFyRzFTVkDylMdSzsTHVSCb1lTF47jEkoCztTraSGSlLrMgljYWeqk9wVVFLrMgljYWeqNc91"
 			"AeOY57oA0xws7Ey1krqCSmpdJmEs7Ey1khoqSa3LJMz/BzS5D5EH5SGfAAAAAElFTkSuQmCC"
 		)
-	)
-	(text "Spark Project\nElectric Discharge Machining board for CTRL-MINI\nAuthor: 夕月霞"
-		(exclude_from_sim yes)
-		(at 192.024 169.672 0)
-		(effects
-			(font
-				(size 2 2)
-				(color 132 0 0 1)
-			)
-			(justify left top)
-		)
-		(uuid "a5914b6a-0376-42d8-aa28-68591f7f7864")
 	)
 	(hierarchical_label "VIN"
 		(shape passive)

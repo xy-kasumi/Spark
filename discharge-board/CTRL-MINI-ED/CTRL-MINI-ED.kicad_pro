@@ -741,6 +741,14 @@
     [
       "a9794609-42db-49f0-aeeb-4c313a94f296",
       "Regulator 3.3V"
+    ],
+    [
+      "427c9eb0-5bf5-4b7b-8ffc-9f840385400e",
+      "Gate PWM Filter"
+    ],
+    [
+      "570e0384-7dea-4018-9e98-6872d1c9ffe7",
+      "Trigger PWM Comparator"
     ]
   ],
   "text_variables": {}
