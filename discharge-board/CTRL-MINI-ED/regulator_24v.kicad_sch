@@ -2,7 +2,7 @@
 	(version 20231120)
 	(generator "eeschema")
 	(generator_version "8.0")
-	(uuid "6edd7307-7141-4fd2-92f8-eb6c38c9e96b")
+	(uuid "2218dbb4-9d8b-49af-ad84-5d86a6f276ff")
 	(paper "A4")
 	(title_block
 		(title "CTRL-MINI-ED")
@@ -148,7 +148,7 @@
 				)
 			)
 		)
-		(symbol "Regulator_Linear:L78L24_SOT89"
+		(symbol "Regulator_Linear:L7824"
 			(pin_names
 				(offset 0.254)
 			)
@@ -163,8 +163,8 @@
 					)
 				)
 			)
-			(property "Value" "L78L24_SOT89"
-				(at -0.635 3.175 0)
+			(property "Value" "L7824"
+				(at 0 3.175 0)
 				(effects
 					(font
 						(size 1.27 1.27)
@@ -172,17 +172,18 @@
 					(justify left)
 				)
 			)
-			(property "Footprint" "Package_TO_SOT_SMD:SOT-89-3"
-				(at 0 5.08 0)
+			(property "Footprint" ""
+				(at 0.635 -3.81 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 						(italic yes)
 					)
+					(justify left)
 					(hide yes)
 				)
 			)
-			(property "Datasheet" "http://www.st.com/content/ccc/resource/technical/document/datasheet/15/55/e5/aa/23/5b/43/fd/CD00000446.pdf/files/CD00000446.pdf/jcr:content/translations/en.CD00000446.pdf"
+			(property "Datasheet" "http://www.st.com/content/ccc/resource/technical/document/datasheet/41/4f/b3/b0/12/d4/47/88/CD00000444.pdf/files/CD00000444.pdf/jcr:content/translations/en.CD00000444.pdf"
 				(at 0 -1.27 0)
 				(effects
 					(font
@@ -191,7 +192,7 @@
 					(hide yes)
 				)
 			)
-			(property "Description" "Positive 100mA 30V Linear Regulator, Fixed Output 24V, SOT-89"
+			(property "Description" "Positive 1.5A 40V Linear Regulator, Fixed Output 24V, TO-220/TO-263/TO-252"
 				(at 0 0 0)
 				(effects
 					(font
@@ -200,7 +201,7 @@
 					(hide yes)
 				)
 			)
-			(property "ki_keywords" "Voltage Regulator 100mA Positive"
+			(property "ki_keywords" "Voltage Regulator 1.5A Positive"
 				(at 0 0 0)
 				(effects
 					(font
@@ -209,7 +210,7 @@
 					(hide yes)
 				)
 			)
-			(property "ki_fp_filters" "SOT?89*"
+			(property "ki_fp_filters" "TO?252* TO?263* TO?220*"
 				(at 0 0 0)
 				(effects
 					(font
@@ -218,7 +219,7 @@
 					(hide yes)
 				)
 			)
-			(symbol "L78L24_SOT89_0_1"
+			(symbol "L7824_0_1"
 				(rectangle
 					(start -5.08 1.905)
 					(end 5.08 -5.08)
@@ -231,11 +232,11 @@
 					)
 				)
 			)
-			(symbol "L78L24_SOT89_1_1"
-				(pin power_out line
-					(at 7.62 0 180)
+			(symbol "L7824_1_1"
+				(pin power_in line
+					(at -7.62 0 0)
 					(length 2.54)
-					(name "OUT"
+					(name "IN"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -268,10 +269,10 @@
 						)
 					)
 				)
-				(pin power_in line
-					(at -7.62 0 0)
+				(pin power_out line
+					(at 7.62 0 180)
 					(length 2.54)
-					(name "IN"
+					(name "OUT"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -740,87 +741,6 @@
 		(uuid "5f951c7a-befa-49c1-bb14-88d24652f000")
 	)
 	(symbol
-		(lib_id "Regulator_Linear:L78L24_SOT89")
-		(at 71.12 50.8 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "26f04f62-8f81-4e16-97fd-c1bd3959c00b")
-		(property "Reference" "U7"
-			(at 71.12 44.45 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "L78L24_SOT89"
-			(at 71.12 46.99 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Package_TO_SOT_SMD:SOT-89-3"
-			(at 71.12 45.72 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-					(italic yes)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "http://www.st.com/content/ccc/resource/technical/document/datasheet/15/55/e5/aa/23/5b/43/fd/CD00000446.pdf/files/CD00000446.pdf/jcr:content/translations/en.CD00000446.pdf"
-			(at 71.12 52.07 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Positive 100mA 30V Linear Regulator, Fixed Output 24V, SOT-89"
-			(at 71.12 50.8 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "LCSC" "C130141"
-			(at 71.12 50.8 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "3"
-			(uuid "9135bb96-f9c9-495b-a399-67342979f1bc")
-		)
-		(pin "1"
-			(uuid "ddd416d9-c64c-4d41-a3dd-e25754aab2f0")
-		)
-		(pin "2"
-			(uuid "161b77fb-fd82-499b-8289-c9fd24ee73e8")
-		)
-		(instances
-			(project ""
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/94d9cbf4-c449-4f44-a433-4ecc47b28bd4"
-					(reference "U7")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Device:C_Small")
 		(at 83.82 57.15 0)
 		(unit 1)
@@ -829,7 +749,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "42ca77cf-51ba-4a7e-b0f7-1f922bdab596")
-		(property "Reference" "C38"
+		(property "Reference" "C35"
 			(at 86.106 56.134 0)
 			(effects
 				(font
@@ -919,7 +839,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/94d9cbf4-c449-4f44-a433-4ecc47b28bd4"
-					(reference "C38")
+					(reference "C35")
 					(unit 1)
 				)
 			)
@@ -934,7 +854,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "51ac8383-e4a5-4425-a4c0-912c692921e0")
-		(property "Reference" "C37"
+		(property "Reference" "C34"
 			(at 58.166 56.134 0)
 			(effects
 				(font
@@ -1024,7 +944,89 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/94d9cbf4-c449-4f44-a433-4ecc47b28bd4"
-					(reference "C37")
+					(reference "C34")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Regulator_Linear:L7824")
+		(at 71.12 50.8 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "a6ba72fe-e22e-4afc-a4f9-d3936b11b41e")
+		(property "Reference" "U6"
+			(at 71.12 44.45 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "L78M24"
+			(at 71.12 46.99 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Package_TO_SOT_SMD:TO-252-2"
+			(at 71.755 54.61 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+					(italic yes)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 71.12 52.07 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "500mA 24V output, 40V input"
+			(at 71.12 50.8 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C68270"
+			(at 71.12 50.8 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "3"
+			(uuid "33e2c605-d251-436c-97a1-f881278edb3c")
+		)
+		(pin "2"
+			(uuid "99cb89bf-7d6a-477b-9619-5db08c5839dd")
+		)
+		(pin "1"
+			(uuid "7def1137-8e86-4cc0-a2a9-f7bf6ceb373e")
+		)
+		(instances
+			(project ""
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/94d9cbf4-c449-4f44-a433-4ecc47b28bd4"
+					(reference "U6")
 					(unit 1)
 				)
 			)
@@ -1040,7 +1042,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "bd25dd0a-1c26-4fed-b9ab-66b0880032cb")
-		(property "Reference" "#PWR056"
+		(property "Reference" "#PWR050"
 			(at 71.12 69.85 0)
 			(effects
 				(font
@@ -1090,7 +1092,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/94d9cbf4-c449-4f44-a433-4ecc47b28bd4"
-					(reference "#PWR056")
+					(reference "#PWR050")
 					(unit 1)
 				)
 			)

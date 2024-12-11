@@ -893,7 +893,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "126e8dc2-f544-4f5b-9aa1-97b6abdedff5")
-		(property "Reference" "R8"
+		(property "Reference" "R32"
 			(at 64.77 46.736 0)
 			(effects
 				(font
@@ -981,7 +981,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/427c9eb0-5bf5-4b7b-8ffc-9f840385400e"
-					(reference "R8")
+					(reference "R32")
 					(unit 1)
 				)
 			)
@@ -996,7 +996,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "2813876c-a33a-4919-977d-e7f100641da1")
-		(property "Reference" "C1"
+		(property "Reference" "C38"
 			(at 78.74 57.912 0)
 			(effects
 				(font
@@ -1086,7 +1086,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/427c9eb0-5bf5-4b7b-8ffc-9f840385400e"
-					(reference "C1")
+					(reference "C38")
 					(unit 1)
 				)
 			)
@@ -1101,7 +1101,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "40032779-7d87-4706-8c53-13dfb907358f")
-		(property "Reference" "R34"
+		(property "Reference" "R33"
 			(at 65.532 61.214 0)
 			(effects
 				(font
@@ -1189,7 +1189,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/427c9eb0-5bf5-4b7b-8ffc-9f840385400e"
-					(reference "R34")
+					(reference "R33")
 					(unit 1)
 				)
 			)
@@ -1205,7 +1205,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "890fd197-57de-4830-bdf7-88256d56a60e")
-		(property "Reference" "L1"
+		(property "Reference" "L3"
 			(at 69.85 49.53 90)
 			(effects
 				(font
@@ -1293,7 +1293,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/427c9eb0-5bf5-4b7b-8ffc-9f840385400e"
-					(reference "L1")
+					(reference "L3")
 					(unit 1)
 				)
 			)
@@ -1308,7 +1308,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "9140a101-e32a-4282-af2d-13f49aa6bf90")
-		(property "Reference" "#PWR012"
+		(property "Reference" "#PWR052"
 			(at 62.23 71.12 0)
 			(effects
 				(font
@@ -1358,7 +1358,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/427c9eb0-5bf5-4b7b-8ffc-9f840385400e"
-					(reference "#PWR012")
+					(reference "#PWR052")
 					(unit 1)
 				)
 			)
@@ -1373,7 +1373,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "a2da0759-970e-43c4-aad3-18c386139833")
-		(property "Reference" "#PWR058"
+		(property "Reference" "#PWR053"
 			(at 76.2 71.12 0)
 			(effects
 				(font
@@ -1423,7 +1423,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/427c9eb0-5bf5-4b7b-8ffc-9f840385400e"
-					(reference "#PWR058")
+					(reference "#PWR053")
 					(unit 1)
 				)
 			)

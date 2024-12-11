@@ -1894,7 +1894,7 @@
 	)
 	(wire
 		(pts
-			(xy 140.97 137.16) (xy 149.86 137.16)
+			(xy 140.97 105.41) (xy 151.13 105.41)
 		)
 		(stroke
 			(width 0)
@@ -2054,7 +2054,7 @@
 	)
 	(wire
 		(pts
-			(xy 140.97 139.7) (xy 149.86 139.7)
+			(xy 140.97 107.95) (xy 151.13 107.95)
 		)
 		(stroke
 			(width 0)
@@ -2194,7 +2194,7 @@
 	)
 	(wire
 		(pts
-			(xy 140.97 143.51) (xy 149.86 143.51)
+			(xy 140.97 111.76) (xy 151.13 111.76)
 		)
 		(stroke
 			(width 0)
@@ -2224,7 +2224,7 @@
 	)
 	(wire
 		(pts
-			(xy 140.97 130.81) (xy 149.86 130.81)
+			(xy 140.97 99.06) (xy 151.13 99.06)
 		)
 		(stroke
 			(width 0)
@@ -2294,7 +2294,7 @@
 	)
 	(wire
 		(pts
-			(xy 140.97 146.05) (xy 149.86 146.05)
+			(xy 140.97 114.3) (xy 151.13 114.3)
 		)
 		(stroke
 			(width 0)
@@ -2664,7 +2664,7 @@
 	)
 	(wire
 		(pts
-			(xy 140.97 133.35) (xy 149.86 133.35)
+			(xy 140.97 101.6) (xy 151.13 101.6)
 		)
 		(stroke
 			(width 0)
@@ -2955,9 +2955,9 @@
 		)
 		(uuid "04e19cc2-11c5-40d0-995a-91cdea6f1ad2")
 	)
-	(text "to fan\nin pulse shaper\n\nXH Connector"
+	(text "to fan\nin pulse shaper\n\nXH Connector\n24V, 200mA-"
 		(exclude_from_sim no)
-		(at 205.74 36.322 0)
+		(at 205.994 35.052 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -2977,7 +2977,7 @@
 		)
 		(uuid "29dbcb85-9689-4fa9-90b5-5269206d109e")
 	)
-	(text "24V, 100mA"
+	(text "24V, 500mA"
 		(exclude_from_sim no)
 		(at 74.168 33.02 0)
 		(effects
@@ -3028,6 +3028,16 @@
 			(justify left)
 		)
 		(uuid "53fd4e1e-962b-4c99-8325-240f5eacc3c0")
+	)
+	(text "24V"
+		(exclude_from_sim no)
+		(at 199.644 26.162 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "69c42a77-a9ba-4e66-bdae-e0cb3389cdde")
 	)
 	(text "GND"
 		(exclude_from_sim no)
@@ -3182,7 +3192,7 @@
 		(uuid "288d200b-83e4-4697-9195-f5856fb45012")
 	)
 	(label "MUX_GH"
-		(at 149.86 143.51 180)
+		(at 151.13 111.76 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -3259,7 +3269,7 @@
 		(uuid "7baf0982-80d9-4238-af58-6808d2bc2e4a")
 	)
 	(label "MUX_WH"
-		(at 149.86 137.16 180)
+		(at 151.13 105.41 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -3281,7 +3291,7 @@
 		(uuid "8fd245b5-5261-40a4-a94d-84de9924e308")
 	)
 	(label "MUX_TL"
-		(at 149.86 133.35 180)
+		(at 151.13 101.6 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -3292,7 +3302,7 @@
 		(uuid "9017852a-c07c-42f9-a9c4-68dfe6a8b7ac")
 	)
 	(label "MUX_GL"
-		(at 149.86 146.05 180)
+		(at 151.13 114.3 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -3303,7 +3313,7 @@
 		(uuid "af54c4f7-7d0c-4968-ac3b-cb914ea463cc")
 	)
 	(label "MUX_WL"
-		(at 149.86 139.7 180)
+		(at 151.13 107.95 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -3314,7 +3324,7 @@
 		(uuid "b1d42950-7592-4747-96c5-c8a8e9f8204e")
 	)
 	(label "MUX_TH"
-		(at 149.86 130.81 180)
+		(at 151.13 99.06 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -3996,6 +4006,71 @@
 		)
 	)
 	(symbol
+		(lib_id "power:VDD")
+		(at 199.39 33.02 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "5d4920c7-f57b-42f7-82da-6975d3717dec")
+		(property "Reference" "#PWR01"
+			(at 199.39 36.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "VRELAY"
+			(at 199.39 28.702 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 199.39 33.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 199.39 33.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"VDD\""
+			(at 199.39 33.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "d1e0f223-2cc3-4739-ae48-1d202f493bf6")
+		)
+		(instances
+			(project "CTRL-MINI-ED"
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
+					(reference "#PWR01")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:VCC")
 		(at 81.28 50.8 0)
 		(unit 1)
@@ -4370,72 +4445,6 @@
 		)
 	)
 	(symbol
-		(lib_id "power:VCC")
-		(at 199.39 33.02 0)
-		(unit 1)
-		(exclude_from_sim yes)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "7010f4d8-8cc8-4e58-8827-355098f61cd1")
-		(property "Reference" "#PWR01"
-			(at 199.39 36.83 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "VCC"
-			(at 199.39 27.94 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 199.39 33.02 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 199.39 33.02 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"VCC\""
-			(at 199.39 33.02 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "f0153c0e-c693-4336-8358-2b05c056e89e")
-		)
-		(instances
-			(project "CTRL-MINI-ED"
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
-					(reference "#PWR01")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Connector:Screw_Terminal_01x02")
 		(at 267.97 96.52 0)
 		(unit 1)
@@ -4550,7 +4559,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "8116db8f-09ac-417a-aa91-d66dcc6a0785")
-		(property "Reference" "#PWR016"
+		(property "Reference" "#PWR012"
 			(at 35.56 121.92 0)
 			(effects
 				(font
@@ -4600,7 +4609,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
-					(reference "#PWR016")
+					(reference "#PWR012")
 					(unit 1)
 				)
 			)
@@ -4962,7 +4971,7 @@
 				)
 			)
 		)
-		(property "Value" "8A 50V"
+		(property "Value" "5A"
 			(at 48.26 41.656 90)
 			(effects
 				(font
@@ -4970,7 +4979,7 @@
 				)
 			)
 		)
-		(property "Footprint" "SparkAll:Bourns_Fuse_SF_6.1x2.6"
+		(property "Footprint" "Fuse:Fuse_Littelfuse-NANO2-451_453"
 			(at 48.26 46.228 90)
 			(effects
 				(font
@@ -4997,7 +5006,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C187552"
+		(property "LCSC" "C48467"
 			(at 48.26 44.45 0)
 			(effects
 				(font
@@ -6434,7 +6443,7 @@
 	)
 	(sheet
 		(at 87.63 46.99)
-		(size 53.34 101.6)
+		(size 53.34 82.55)
 		(fields_autoplaced yes)
 		(stroke
 			(width 0.1524)
@@ -6454,7 +6463,7 @@
 			)
 		)
 		(property "Sheetfile" "rp2040.kicad_sch"
-			(at 87.63 149.1746 0)
+			(at 87.63 130.1246 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6484,7 +6493,7 @@
 			(uuid "86fafdf5-ba20-4bdb-ab7f-330881cdc442")
 		)
 		(pin "MUX_WL" output
-			(at 140.97 139.7 0)
+			(at 140.97 107.95 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6504,7 +6513,7 @@
 			(uuid "41f7649e-ec32-46c1-98c9-ac196cb10811")
 		)
 		(pin "MUX_WH" output
-			(at 140.97 137.16 0)
+			(at 140.97 105.41 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6514,7 +6523,7 @@
 			(uuid "63e393d9-dd40-4fb9-8938-f4663ae84d59")
 		)
 		(pin "MUX_GL" output
-			(at 140.97 146.05 0)
+			(at 140.97 114.3 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6544,7 +6553,7 @@
 			(uuid "f8ff0c6f-036e-4130-98c7-696d2fa4cbca")
 		)
 		(pin "MUX_GH" output
-			(at 140.97 143.51 0)
+			(at 140.97 111.76 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6554,7 +6563,7 @@
 			(uuid "0e9394a5-7585-473c-a3ad-30d4f8287bca")
 		)
 		(pin "MUX_TH" output
-			(at 140.97 130.81 0)
+			(at 140.97 99.06 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6584,7 +6593,7 @@
 			(uuid "d91ce2f5-a317-4230-b74a-8e6200ef1ec9")
 		)
 		(pin "MUX_TL" output
-			(at 140.97 133.35 0)
+			(at 140.97 101.6 0)
 			(effects
 				(font
 					(size 1.27 1.27)

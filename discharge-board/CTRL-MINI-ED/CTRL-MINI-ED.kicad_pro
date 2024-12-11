@@ -440,8 +440,8 @@
       "no_connect_dangling": "warning",
       "pin_not_connected": "error",
       "pin_not_driven": "error",
-      "pin_to_pin": "warning",
-      "power_pin_not_driven": "error",
+      "pin_to_pin": "error",
+      "power_pin_not_driven": "warning",
       "similar_labels": "warning",
       "simulation_model_issue": "ignore",
       "unannotated": "error",
@@ -488,7 +488,7 @@
         "microvia_drill": 0.1,
         "name": "HV",
         "pcb_color": "rgba(0, 0, 0, 0.000)",
-        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgb(194, 0, 194)",
         "track_width": 1.2,
         "via_diameter": 0.6,
         "via_drill": 0.3,
@@ -505,7 +505,7 @@
         "microvia_drill": 0.1,
         "name": "PWR",
         "pcb_color": "rgba(0, 0, 0, 0.000)",
-        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgb(132, 0, 0)",
         "track_width": 1.0,
         "via_diameter": 0.6,
         "via_drill": 0.3,
@@ -519,20 +519,80 @@
     "netclass_assignments": null,
     "netclass_patterns": [
       {
-        "netclass": "HV",
-        "pattern": "D_E*"
+        "netclass": "PWR",
+        "pattern": "/Regulator 3.3V/VIN"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "VPWR"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "VRELAY"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "VDIGITAL"
       },
       {
         "netclass": "HV",
-        "pattern": "*J3*"
+        "pattern": "/Pulse Shaper/E+"
       },
       {
         "netclass": "HV",
-        "pattern": "*D1*"
+        "pattern": "/Pulse Shaper/E-"
       },
       {
         "netclass": "HV",
-        "pattern": "*D2*"
+        "pattern": "/Relay Half Bridge/VOUT"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/Relay Half Bridge1/VOUT"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/Relay Half Bridge2/VOUT"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "GND"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "+1V1"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/Relay Half Bridge/H_COIL-"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/Relay Half Bridge/L_COIL-"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/Pulse Shaper/Boost Converter 100V/VOUT"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/Pulse Shaper/Boost Converter 100V/LOUT"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/Pulse Shaper/Boost Converter 100V/VODIV"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/Pulse Shaper/CBANK"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/Pulse Shaper/QS"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/Pulse Shaper/+18V"
       }
     ]
   },
