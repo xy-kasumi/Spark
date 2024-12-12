@@ -1434,28 +1434,22 @@
 		(uuid "510d7c2a-2cd1-423c-8b0c-5d7967864be3")
 	)
 	(junction
+		(at 180.34 80.01)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "5f3dd4e1-a68c-4e68-aee6-89d1010e53c4")
+	)
+	(junction
 		(at 255.27 62.23)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "637f5747-59fc-4bba-b4d2-a21093729d26")
 	)
 	(junction
-		(at 251.46 80.01)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "6a3b32ca-1d62-4ca2-a422-808c2484a6fc")
-	)
-	(junction
 		(at 180.34 63.5)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "71406879-ba21-4a32-80ca-3143e6872efb")
-	)
-	(junction
-		(at 180.34 80.01)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "7163cdfe-5df6-4cce-a335-66490a60fd78")
 	)
 	(junction
 		(at 208.28 63.5)
@@ -1476,16 +1470,22 @@
 		(uuid "8870a304-6fa6-465e-bab1-554b622ea099")
 	)
 	(junction
-		(at 121.92 80.01)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "9d9f0014-1ee3-4327-9717-0c3d12146953")
-	)
-	(junction
 		(at 140.97 91.44)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "a75a5d5d-608e-425f-9e43-b4ddd24567b0")
+	)
+	(junction
+		(at 251.46 80.01)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "a77c6a47-09c2-4f26-a9c2-d374d4306c7b")
+	)
+	(junction
+		(at 121.92 80.01)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "ad03a26a-59be-4242-961a-91598fde13ea")
 	)
 	(junction
 		(at 144.78 59.69)
@@ -2531,7 +2531,7 @@
 			"AeOY57oA0xws7Ey1krqCSmpdJmEs7Ey1khoqSa3LJMz/BzS5D5EH5SGfAAAAAElFTkSuQmCC"
 		)
 	)
-	(text "VRELAY (24V) current draw max: 50mA"
+	(text "+12V current draw max: 100mA"
 		(exclude_from_sim no)
 		(at 60.96 42.164 0)
 		(effects
@@ -2714,6 +2714,71 @@
 			(justify left)
 		)
 		(uuid "ff338780-fe22-45a7-be18-72e1fae2303c")
+	)
+	(symbol
+		(lib_id "power:VDD")
+		(at 180.34 80.01 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "00c6e724-2d8d-4701-bd42-8bfc7add9a7a")
+		(property "Reference" "#PWR013"
+			(at 180.34 83.82 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "+12V"
+			(at 180.34 75.692 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 180.34 80.01 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 180.34 80.01 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"VDD\""
+			(at 180.34 80.01 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "916db0ac-31d6-4630-89b7-2194b3569249")
+		)
+		(instances
+			(project "CTRL-MINI-ED"
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/61d269a5-db7e-4708-be89-e9446bc418aa"
+					(reference "#PWR013")
+					(unit 1)
+				)
+			)
+		)
 	)
 	(symbol
 		(lib_id "Device:Q_NMOS_GSD")
@@ -2927,71 +2992,6 @@
 		)
 	)
 	(symbol
-		(lib_id "power:VDD")
-		(at 121.92 80.01 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "199fefe4-0a46-44fa-920f-6b4077c824eb")
-		(property "Reference" "#PWR013"
-			(at 121.92 83.82 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "VRELAY"
-			(at 121.92 76.708 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 121.92 80.01 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 121.92 80.01 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"VDD\""
-			(at 121.92 80.01 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "a909435f-4ac9-4538-8f6e-faf637fac397")
-		)
-		(instances
-			(project "CTRL-MINI-ED"
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/61d269a5-db7e-4708-be89-e9446bc418aa"
-					(reference "#PWR013")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Relay:G2RL-2")
 		(at 238.76 69.85 270)
 		(mirror x)
@@ -3010,7 +3010,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "G2RL-24"
+		(property "Value" "G2RL-24 DC12"
 			(at 235.458 52.832 90)
 			(effects
 				(font
@@ -3047,7 +3047,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C397256"
+		(property "LCSC" "C1524522"
 			(at 238.76 69.85 90)
 			(effects
 				(font
@@ -3084,71 +3084,6 @@
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/61d269a5-db7e-4708-be89-e9446bc418aa"
 					(reference "K3")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:VDD")
-		(at 180.34 80.01 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "24f6e322-3158-4cec-ab8b-02450cdffecf")
-		(property "Reference" "#PWR014"
-			(at 180.34 83.82 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "VRELAY"
-			(at 180.34 76.708 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 180.34 80.01 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 180.34 80.01 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"VDD\""
-			(at 180.34 80.01 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "1ba8a1d8-603a-4238-9f0a-378e4ea79e3c")
-		)
-		(instances
-			(project "CTRL-MINI-ED"
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/61d269a5-db7e-4708-be89-e9446bc418aa"
-					(reference "#PWR014")
 					(unit 1)
 				)
 			)
@@ -3703,71 +3638,6 @@
 		)
 	)
 	(symbol
-		(lib_id "power:VDD")
-		(at 251.46 80.01 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "7b1ff2c0-a52a-4baa-ad7f-53ea6c7e8dc0")
-		(property "Reference" "#PWR015"
-			(at 251.46 83.82 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "VRELAY"
-			(at 251.46 76.708 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 251.46 80.01 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 251.46 80.01 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"VDD\""
-			(at 251.46 80.01 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "ae8090a6-d8be-40be-857e-ec1f742c0fb0")
-		)
-		(instances
-			(project "CTRL-MINI-ED"
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/61d269a5-db7e-4708-be89-e9446bc418aa"
-					(reference "#PWR015")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Device:D_Schottky")
 		(at 167.64 87.63 180)
 		(unit 1)
@@ -3890,7 +3760,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "G2RL-24"
+		(property "Value" "G2RL-24 DC12"
 			(at 164.338 52.832 90)
 			(effects
 				(font
@@ -3927,7 +3797,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C397256"
+		(property "LCSC" "C1524522"
 			(at 167.64 69.85 90)
 			(effects
 				(font
@@ -4311,6 +4181,71 @@
 		)
 	)
 	(symbol
+		(lib_id "power:VDD")
+		(at 251.46 80.01 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "de057c95-7fcc-4749-8c4e-5950b6367828")
+		(property "Reference" "#PWR014"
+			(at 251.46 83.82 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "+12V"
+			(at 251.46 75.692 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 251.46 80.01 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 251.46 80.01 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"VDD\""
+			(at 251.46 80.01 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "cd4cdb9b-967d-4606-bb1c-b093979f1f6b")
+		)
+		(instances
+			(project "CTRL-MINI-ED"
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/61d269a5-db7e-4708-be89-e9446bc418aa"
+					(reference "#PWR014")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:R")
 		(at 212.09 96.52 180)
 		(unit 1)
@@ -4432,7 +4367,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "G2RL-24"
+		(property "Value" "G2RL-24 DC12"
 			(at 107.188 52.832 90)
 			(effects
 				(font
@@ -4469,7 +4404,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C397256"
+		(property "LCSC" "C1524522"
 			(at 110.49 69.85 90)
 			(effects
 				(font
@@ -4849,6 +4784,71 @@
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/61d269a5-db7e-4708-be89-e9446bc418aa"
 					(reference "#PWR017")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:VDD")
+		(at 121.92 80.01 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "f3c46fd7-74b0-4924-bc65-f8494ed1b947")
+		(property "Reference" "#PWR09"
+			(at 121.92 83.82 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "+12V"
+			(at 121.92 75.692 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 121.92 80.01 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 121.92 80.01 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"VDD\""
+			(at 121.92 80.01 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "ed835fec-c903-4ada-8a06-01b140f9c086")
+		)
+		(instances
+			(project "CTRL-MINI-ED"
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/61d269a5-db7e-4708-be89-e9446bc418aa"
+					(reference "#PWR09")
 					(unit 1)
 				)
 			)

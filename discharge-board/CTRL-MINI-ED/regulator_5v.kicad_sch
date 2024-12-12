@@ -148,7 +148,7 @@
 				)
 			)
 		)
-		(symbol "Regulator_Linear:BD33FC0FP"
+		(symbol "Regulator_Linear:BD50FC0FP"
 			(exclude_from_sim no)
 			(in_bom yes)
 			(on_board yes)
@@ -160,7 +160,7 @@
 					)
 				)
 			)
-			(property "Value" "BD33FC0FP"
+			(property "Value" "BD50FC0FP"
 				(at 0 5.08 0)
 				(effects
 					(font
@@ -186,7 +186,7 @@
 					(hide yes)
 				)
 			)
-			(property "Description" "1A, 3.3V LDO regulator with OVP & TSP, without enable, TO-252"
+			(property "Description" "1A, 5.0V LDO regulator with OVP & TSP, without enable, TO-252"
 				(at 0 0 0)
 				(effects
 					(font
@@ -213,7 +213,7 @@
 					(hide yes)
 				)
 			)
-			(symbol "BD33FC0FP_1_1"
+			(symbol "BD50FC0FP_1_1"
 				(rectangle
 					(start -5.08 -5.08)
 					(end 5.08 1.27)
@@ -708,6 +708,17 @@
 			"AeOY57oA0xws7Ey1krqCSmpdJmEs7Ey1khoqSa3LJMz/BzS5D5EH5SGfAAAAAElFTkSuQmCC"
 		)
 	)
+	(text "RATING\nInput: ~25V\nOutput: 5V, 1A\n"
+		(exclude_from_sim no)
+		(at 81.28 38.354 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "c3de1163-364b-447e-b0bb-e65da3f05b43")
+	)
 	(hierarchical_label "VIN"
 		(shape input)
 		(at 67.31 54.61 180)
@@ -787,11 +798,11 @@
 			)
 		)
 		(pin "1"
-			(uuid "1b43f45a-7afd-494f-be7d-2cb7bf9f4a93")
+			(uuid "54e67700-d339-400f-bc37-e7d2d59d9227")
 		)
 		(instances
 			(project "CTRL-MINI-ED"
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/a9794609-42db-49f0-aeeb-4c313a94f296"
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/4aad0038-914a-49e5-b2b1-142b86064ddf"
 					(reference "#PWR046")
 					(unit 1)
 				)
@@ -799,7 +810,7 @@
 		)
 	)
 	(symbol
-		(lib_id "Regulator_Linear:BD33FC0FP")
+		(lib_id "Regulator_Linear:BD50FC0FP")
 		(at 87.63 54.61 0)
 		(unit 1)
 		(exclude_from_sim no)
@@ -807,7 +818,7 @@
 		(on_board yes)
 		(dnp no)
 		(fields_autoplaced yes)
-		(uuid "947129a3-fd06-4dc9-b9c6-0cb12887b52c")
+		(uuid "b650526b-2cea-406c-a440-20412259d53f")
 		(property "Reference" "U7"
 			(at 87.63 48.26 0)
 			(effects
@@ -816,7 +827,7 @@
 				)
 			)
 		)
-		(property "Value" "BD33FC0FP"
+		(property "Value" "BD50FC0FP"
 			(at 87.63 50.8 0)
 			(effects
 				(font
@@ -842,7 +853,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "1A, 3.3V LDO regulator with OVP & TSP, without enable, TO-252"
+		(property "Description" "1A, 5.0V LDO regulator with OVP & TSP, without enable, TO-252"
 			(at 87.63 54.61 0)
 			(effects
 				(font
@@ -851,7 +862,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2846670"
+		(property "LCSC" "C920705"
 			(at 87.63 54.61 0)
 			(effects
 				(font
@@ -859,19 +870,19 @@
 				)
 				(hide yes)
 			)
-		)
-		(pin "2"
-			(uuid "c11c407c-6e9c-4d25-ac6e-70d205c67c97")
 		)
 		(pin "1"
-			(uuid "0d983e26-526c-44d7-b8ab-33f1be1dd1d6")
+			(uuid "581d141d-21ee-45fe-ae6c-e940837b6f94")
 		)
 		(pin "3"
-			(uuid "33dc0f30-428c-49da-a998-6cbe419d40b0")
+			(uuid "c7b99afc-4441-45c8-9507-dd98fab3b577")
+		)
+		(pin "2"
+			(uuid "ffee4fbf-3b56-4efb-b538-bc20428a0dcc")
 		)
 		(instances
 			(project ""
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/a9794609-42db-49f0-aeeb-4c313a94f296"
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/4aad0038-914a-49e5-b2b1-142b86064ddf"
 					(reference "U7")
 					(unit 1)
 				)
@@ -887,7 +898,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "f5400716-cfe2-43b5-a122-43906b0a179e")
-		(property "Reference" "C36"
+		(property "Reference" "C35"
 			(at 75.946 59.944 0)
 			(effects
 				(font
@@ -969,15 +980,15 @@
 			)
 		)
 		(pin "1"
-			(uuid "bf217371-93cb-4a2b-b318-82b638fd67b7")
+			(uuid "ca2ce687-9129-4645-a2ca-6072de741208")
 		)
 		(pin "2"
-			(uuid "2a545e26-533f-485e-8a18-3bc564732807")
+			(uuid "f98dce2f-0b3f-4a56-b967-51d001612349")
 		)
 		(instances
 			(project "CTRL-MINI-ED"
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/a9794609-42db-49f0-aeeb-4c313a94f296"
-					(reference "C36")
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/4aad0038-914a-49e5-b2b1-142b86064ddf"
+					(reference "C35")
 					(unit 1)
 				)
 			)
@@ -992,7 +1003,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "ff2aaa97-5a85-4f37-b570-e53fb9d4b3c4")
-		(property "Reference" "C37"
+		(property "Reference" "C36"
 			(at 102.616 59.944 0)
 			(effects
 				(font
@@ -1074,15 +1085,15 @@
 			)
 		)
 		(pin "1"
-			(uuid "3cb4a534-5491-486b-bd2c-145b075170ac")
+			(uuid "0d5b5646-eae6-43ec-b1b0-bae8804d56ca")
 		)
 		(pin "2"
-			(uuid "6c2824e0-cab8-46d3-861e-d0cdb2803719")
+			(uuid "3a274d7b-7fd5-4018-b3c8-b96d942c09df")
 		)
 		(instances
 			(project "CTRL-MINI-ED"
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/a9794609-42db-49f0-aeeb-4c313a94f296"
-					(reference "C37")
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/4aad0038-914a-49e5-b2b1-142b86064ddf"
+					(reference "C36")
 					(unit 1)
 				)
 			)

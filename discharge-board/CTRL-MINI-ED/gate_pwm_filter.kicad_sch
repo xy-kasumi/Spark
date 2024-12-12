@@ -1006,7 +1006,7 @@
 		(dnp no)
 		(uuid "126e8dc2-f544-4f5b-9aa1-97b6abdedff5")
 		(property "Reference" "R26"
-			(at 64.77 46.736 0)
+			(at 65.532 46.736 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1014,7 +1014,7 @@
 			)
 		)
 		(property "Value" "470"
-			(at 65.278 48.768 0)
+			(at 65.532 48.768 0)
 			(effects
 				(font
 					(size 1.27 1.27)

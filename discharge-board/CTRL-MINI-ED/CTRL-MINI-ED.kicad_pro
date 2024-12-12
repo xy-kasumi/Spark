@@ -649,6 +649,30 @@
       {
         "netclass": "PWR",
         "pattern": "/36VPREFUSE"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/Regulator 12V/VIN"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "+12V"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "+5V"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/Pico2/5VPROT"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/Pico2/+3V3"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "+3V3"
       }
     ]
   },
@@ -772,7 +796,7 @@
       "group_symbols": true,
       "name": "",
       "sort_asc": true,
-      "sort_field": "Reference"
+      "sort_field": "Value"
     },
     "connection_grid_size": 50.0,
     "drawing": {
@@ -831,6 +855,14 @@
       "Relay Mux"
     ],
     [
+      "8f99b4a2-42b7-4e26-9fcd-f54eed7d80b9",
+      "Regulator 12V"
+    ],
+    [
+      "4aad0038-914a-49e5-b2b1-142b86064ddf",
+      "Regulator 5V"
+    ],
+    [
       "dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f",
       "Pulse Shaper"
     ],
@@ -840,15 +872,7 @@
     ],
     [
       "cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb",
-      "RP2040"
-    ],
-    [
-      "94d9cbf4-c449-4f44-a433-4ecc47b28bd4",
-      "Regulator 24V"
-    ],
-    [
-      "a9794609-42db-49f0-aeeb-4c313a94f296",
-      "Regulator 3.3V"
+      "Pico2"
     ],
     [
       "427c9eb0-5bf5-4b7b-8ffc-9f840385400e",
