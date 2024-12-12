@@ -2,7 +2,7 @@
 	(version 20231120)
 	(generator "eeschema")
 	(generator_version "8.0")
-	(uuid "596fe2b5-d706-4c72-95b0-054942920476")
+	(uuid "8ea6603e-8831-4733-80c3-c39e13169594")
 	(paper "A4")
 	(title_block
 		(title "CTRL-MINI-ED")
@@ -182,6 +182,108 @@
 						)
 					)
 					(number "4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+		)
+		(symbol "Connector:TestPoint"
+			(pin_numbers hide)
+			(pin_names
+				(offset 0.762) hide)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "TP"
+				(at 0 6.858 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "TestPoint"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 5.08 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "~"
+				(at 5.08 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "test point"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "test point tp"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "Pin* Test*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "TestPoint_0_1"
+				(circle
+					(center 0 3.302)
+					(radius 0.762)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "TestPoint_1_1"
+				(pin passive line
+					(at 0 0 90)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -669,6 +771,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "3e710fc8-fdfa-46c1-b14c-1d1f2e75117f")
+	)
+	(junction
+		(at 101.6 48.26)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "cda96783-1641-4fce-92a5-90311b365838")
 	)
 	(wire
 		(pts
@@ -1175,7 +1283,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "2ab9ed18-8323-4f44-95cc-0ff94252f194")
-		(property "Reference" "#PWR057"
+		(property "Reference" "#PWR052"
 			(at 71.12 100.33 0)
 			(effects
 				(font
@@ -1225,7 +1333,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/570e0384-7dea-4018-9e98-6872d1c9ffe7"
-					(reference "#PWR057")
+					(reference "#PWR052")
 					(unit 1)
 				)
 			)
@@ -1240,7 +1348,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "51fc755d-37c6-4e5f-b70a-d0a45924f034")
-		(property "Reference" "#PWR054"
+		(property "Reference" "#PWR049"
 			(at 81.28 62.23 0)
 			(effects
 				(font
@@ -1290,7 +1398,74 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/570e0384-7dea-4018-9e98-6872d1c9ffe7"
-					(reference "#PWR054")
+					(reference "#PWR049")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector:TestPoint")
+		(at 101.6 48.26 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "69559e10-e4a8-4d1f-9689-aa44dfe6770b")
+		(property "Reference" "TP52"
+			(at 99.822 42.926 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "TestPoint"
+			(at 104.14 46.2279 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
+			(at 106.68 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 106.68 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "test point"
+			(at 101.6 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "61f5a425-701d-4cb4-bb2b-310986e2c3c2")
+		)
+		(instances
+			(project "CTRL-MINI-ED"
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/570e0384-7dea-4018-9e98-6872d1c9ffe7"
+					(reference "TP52")
 					(unit 1)
 				)
 			)
@@ -1421,7 +1596,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "9d3aed45-18d0-4d59-8d5b-c7f48ff341fa")
-		(property "Reference" "R34"
+		(property "Reference" "R28"
 			(at 73.914 44.196 90)
 			(effects
 				(font
@@ -1509,7 +1684,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/570e0384-7dea-4018-9e98-6872d1c9ffe7"
-					(reference "R34")
+					(reference "R28")
 					(unit 1)
 				)
 			)
@@ -1629,7 +1804,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "b024ab80-2430-42fd-a9a7-689da65f9b45")
-		(property "Reference" "#PWR058"
+		(property "Reference" "#PWR053"
 			(at 71.12 114.3 0)
 			(effects
 				(font
@@ -1679,7 +1854,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/570e0384-7dea-4018-9e98-6872d1c9ffe7"
-					(reference "#PWR058")
+					(reference "#PWR053")
 					(unit 1)
 				)
 			)
@@ -1694,7 +1869,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "c289fe15-9444-4f78-a737-3765f4472f99")
-		(property "Reference" "#PWR055"
+		(property "Reference" "#PWR050"
 			(at 95.25 64.77 0)
 			(effects
 				(font
@@ -1744,7 +1919,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/570e0384-7dea-4018-9e98-6872d1c9ffe7"
-					(reference "#PWR055")
+					(reference "#PWR050")
 					(unit 1)
 				)
 			)
@@ -1759,7 +1934,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "e404a9eb-66a8-4869-90f9-9d2b3ef20e51")
-		(property "Reference" "#PWR056"
+		(property "Reference" "#PWR051"
 			(at 95.25 88.9 0)
 			(effects
 				(font
@@ -1809,7 +1984,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/570e0384-7dea-4018-9e98-6872d1c9ffe7"
-					(reference "#PWR056")
+					(reference "#PWR051")
 					(unit 1)
 				)
 			)

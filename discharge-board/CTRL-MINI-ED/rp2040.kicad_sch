@@ -2,7 +2,7 @@
 	(version 20231120)
 	(generator "eeschema")
 	(generator_version "8.0")
-	(uuid "21d18a15-ce18-4c89-9716-9fef493c6cba")
+	(uuid "67defae7-2468-49a7-b3c0-727116bf089e")
 	(paper "A4")
 	(title_block
 		(title "CTRL-MINI-ED")
@@ -13,6 +13,211 @@
 		(comment 2 "Electric Discharge Machining board for CTRL-MINI")
 	)
 	(lib_symbols
+		(symbol "Connector:TestPoint"
+			(pin_numbers hide)
+			(pin_names
+				(offset 0.762) hide)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "TP"
+				(at 0 6.858 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "TestPoint"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 5.08 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "~"
+				(at 5.08 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "test point"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "test point tp"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "Pin* Test*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "TestPoint_0_1"
+				(circle
+					(center 0 3.302)
+					(radius 0.762)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "TestPoint_1_1"
+				(pin passive line
+					(at 0 0 90)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+		)
+		(symbol "Connector:TestPoint_Alt"
+			(pin_numbers hide)
+			(pin_names
+				(offset 0.762) hide)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "TP"
+				(at 0 6.858 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "TestPoint_Alt"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 5.08 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "~"
+				(at 5.08 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "test point (alternative shape)"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "test point tp"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "Pin* Test*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "TestPoint_Alt_0_1"
+				(polyline
+					(pts
+						(xy 0 2.54) (xy -0.762 3.302) (xy 0 4.064) (xy 0.762 3.302) (xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "TestPoint_Alt_1_1"
+				(pin passive line
+					(at 0 0 90)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+		)
 		(symbol "Device:C"
 			(pin_numbers hide)
 			(pin_names
@@ -507,6 +712,151 @@
 					(at 0 -3.81 90)
 					(length 1.27)
 					(name "~"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+		)
+		(symbol "Jumper:Jumper_2_Small_Bridged"
+			(pin_numbers hide)
+			(pin_names
+				(offset 0) hide)
+			(exclude_from_sim yes)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "JP"
+				(at 0 2.032 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "Jumper_2_Small_Bridged"
+				(at 0 -2.286 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "~"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "Jumper, 2-pole, small symbol, bridged"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "Jumper SPST"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "Jumper* TestPoint*2Pads* TestPoint*Bridge*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "Jumper_2_Small_Bridged_0_0"
+				(circle
+					(center -1.016 0)
+					(radius 0.254)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(circle
+					(center 1.016 0)
+					(radius 0.254)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "Jumper_2_Small_Bridged_0_1"
+				(arc
+					(start 0.762 0.254)
+					(mid 0 0.5696)
+					(end -0.762 0.254)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "Jumper_2_Small_Bridged_1_1"
+				(pin passive line
+					(at -2.54 0 0)
+					(length 1.27)
+					(name "A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 2.54 0 180)
+					(length 1.27)
+					(name "B"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -2151,6 +2501,12 @@
 		(uuid "8dd842c7-384a-4fa5-8a46-ebd2bcc744b2")
 	)
 	(junction
+		(at 34.29 99.06)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "9745a260-529c-4205-856b-4c3ebe59fbe7")
+	)
+	(junction
 		(at 41.91 69.85)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -2229,8 +2585,40 @@
 		(uuid "fc2fade4-34da-4dc8-bee7-e8567ce62aa7")
 	)
 	(no_connect
-		(at 165.1 54.61)
-		(uuid "22c0856b-6ee9-40c5-99ee-b9238425be5c")
+		(at 215.9 118.11)
+		(uuid "0a087543-792f-4c06-904a-ce32ece28ad8")
+	)
+	(no_connect
+		(at 215.9 82.55)
+		(uuid "24c44439-af10-479d-b98b-33785d309865")
+	)
+	(no_connect
+		(at 215.9 128.27)
+		(uuid "5b1ba32b-f125-4900-aa56-a9668bde3095")
+	)
+	(no_connect
+		(at 215.9 107.95)
+		(uuid "5e2793d4-35c2-4dae-a25c-c473d321eee3")
+	)
+	(no_connect
+		(at 215.9 130.81)
+		(uuid "634313d3-ecd1-4675-956c-93a8495fde1e")
+	)
+	(no_connect
+		(at 215.9 72.39)
+		(uuid "66cd29d2-d830-4940-a08f-05dfb36cf9a6")
+	)
+	(no_connect
+		(at 215.9 102.87)
+		(uuid "67fa6179-17c0-441f-a989-21be3dd93ec2")
+	)
+	(no_connect
+		(at 215.9 90.17)
+		(uuid "7d1c635b-1521-4c2e-b7b8-cd3f413a365b")
+	)
+	(no_connect
+		(at 215.9 113.03)
+		(uuid "a1891cd6-2edf-475e-ae48-7e7bf3916bb5")
 	)
 	(no_connect
 		(at 165.1 62.23)
@@ -2239,6 +2627,36 @@
 	(no_connect
 		(at 165.1 64.77)
 		(uuid "c7e2c409-4c41-43d2-8b03-e321e7445a29")
+	)
+	(no_connect
+		(at 215.9 87.63)
+		(uuid "cbab51e1-e50f-44ab-a0df-8332b91e7cec")
+	)
+	(no_connect
+		(at 215.9 92.71)
+		(uuid "d406db5f-bae6-4774-accb-c31b41eb2bee")
+	)
+	(no_connect
+		(at 215.9 85.09)
+		(uuid "db497a72-f7a5-4821-9300-a3efca32a896")
+	)
+	(no_connect
+		(at 215.9 97.79)
+		(uuid "e53ed4ea-a088-40e4-9f70-3be84bff38ca")
+	)
+	(no_connect
+		(at 215.9 100.33)
+		(uuid "eba09c6d-73ea-453a-9123-b5f6f4aa15cb")
+	)
+	(wire
+		(pts
+			(xy 215.9 80.01) (xy 224.79 80.01)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "008090bc-b63c-415d-a7ad-41325b481101")
 	)
 	(wire
 		(pts
@@ -2392,6 +2810,16 @@
 	)
 	(wire
 		(pts
+			(xy 215.9 69.85) (xy 224.79 69.85)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "249d892d-8c49-493e-bb93-27d92bdf9594")
+	)
+	(wire
+		(pts
 			(xy 76.2 69.85) (xy 76.2 71.12)
 		)
 		(stroke
@@ -2409,26 +2837,6 @@
 			(type default)
 		)
 		(uuid "258fe62a-232e-41c2-b72d-d009346bd444")
-	)
-	(wire
-		(pts
-			(xy 215.9 80.01) (xy 224.79 80.01)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "2cb0acce-141e-4ffb-8fe3-6fe4bb21daf0")
-	)
-	(wire
-		(pts
-			(xy 215.9 82.55) (xy 224.79 82.55)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "2e10c1c1-eabb-45fa-a6fd-52c5c468727f")
 	)
 	(wire
 		(pts
@@ -2472,7 +2880,7 @@
 	)
 	(wire
 		(pts
-			(xy 25.4 99.06) (xy 41.91 99.06)
+			(xy 25.4 99.06) (xy 34.29 99.06)
 		)
 		(stroke
 			(width 0)
@@ -2652,6 +3060,16 @@
 	)
 	(wire
 		(pts
+			(xy 215.9 95.25) (xy 223.52 95.25)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "67761469-359b-42e9-9f91-8d4b529a2e2f")
+	)
+	(wire
+		(pts
 			(xy 187.96 44.45) (xy 185.42 44.45)
 		)
 		(stroke
@@ -2749,16 +3167,6 @@
 			(type default)
 		)
 		(uuid "77a53169-62a6-42fc-a9eb-5f7ec6973576")
-	)
-	(wire
-		(pts
-			(xy 124.46 170.18) (xy 130.81 170.18)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "77c96d02-86df-4ac8-ac33-739bc8179eab")
 	)
 	(wire
 		(pts
@@ -2879,16 +3287,6 @@
 			(type default)
 		)
 		(uuid "84dc1715-beb5-4962-9b46-577c003531ff")
-	)
-	(wire
-		(pts
-			(xy 215.9 87.63) (xy 224.79 87.63)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "85216d6b-bce6-41e0-b17b-eb3ceb94cd3d")
 	)
 	(wire
 		(pts
@@ -3019,16 +3417,6 @@
 			(type default)
 		)
 		(uuid "9c0062a8-842b-4261-8f9a-140a94da29b6")
-	)
-	(wire
-		(pts
-			(xy 215.9 85.09) (xy 224.79 85.09)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "9d7b9079-50eb-44bb-b86f-8e2316fdf047")
 	)
 	(wire
 		(pts
@@ -3172,6 +3560,16 @@
 	)
 	(wire
 		(pts
+			(xy 163.83 54.61) (xy 165.1 54.61)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "be67c7f6-417c-4984-b2f5-92fb7110f07f")
+	)
+	(wire
+		(pts
 			(xy 185.42 44.45) (xy 185.42 46.99)
 		)
 		(stroke
@@ -3202,6 +3600,16 @@
 	)
 	(wire
 		(pts
+			(xy 34.29 99.06) (xy 41.91 99.06)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ca230422-dc2c-4f97-974f-f7ea89cbe7f9")
+	)
+	(wire
+		(pts
 			(xy 50.8 140.97) (xy 50.8 147.32)
 		)
 		(stroke
@@ -3222,6 +3630,16 @@
 	)
 	(wire
 		(pts
+			(xy 124.46 170.18) (xy 130.81 170.18)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d5881ebc-64e9-4507-a268-3b59af8ae5e1")
+	)
+	(wire
+		(pts
 			(xy 215.9 64.77) (xy 224.79 64.77)
 		)
 		(stroke
@@ -3229,6 +3647,16 @@
 			(type default)
 		)
 		(uuid "d89ca071-7c9b-4bae-8981-a948148aead9")
+	)
+	(wire
+		(pts
+			(xy 158.75 48.26) (xy 158.75 54.61)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "dfe22ac0-c1d4-4070-8330-1b08aef1e3d6")
 	)
 	(wire
 		(pts
@@ -3289,6 +3717,16 @@
 			(type default)
 		)
 		(uuid "e58f0261-9f61-4703-b2ef-0ecc6eb28c64")
+	)
+	(wire
+		(pts
+			(xy 215.9 125.73) (xy 223.52 125.73)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e5c1bf94-dcdf-4ea1-acb5-453aaf7c4775")
 	)
 	(wire
 		(pts
@@ -3810,18 +4248,6 @@
 		)
 		(uuid "caec4925-658f-47c9-b1be-0fbe430ea2d9")
 	)
-	(hierarchical_label "MUX_GH"
-		(shape output)
-		(at 224.79 85.09 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "2a727c6d-4e61-425b-b5e5-b481a8731630")
-	)
 	(hierarchical_label "TEMP_HS"
 		(shape input)
 		(at 226.06 123.19 0)
@@ -3834,18 +4260,6 @@
 		)
 		(uuid "39b58ee8-622c-480f-8f68-e224cc6b9b55")
 	)
-	(hierarchical_label "MUX_WL"
-		(shape output)
-		(at 224.79 82.55 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "3ada843f-b87d-49be-b54f-c1a2ed244280")
-	)
 	(hierarchical_label "CURR_THRESH_PWM"
 		(shape output)
 		(at 226.06 115.57 0)
@@ -3857,18 +4271,6 @@
 			(justify left)
 		)
 		(uuid "3c36b861-ac86-423a-abf2-e04ccc9df7cd")
-	)
-	(hierarchical_label "MUX_GL"
-		(shape output)
-		(at 224.79 87.63 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "42040cdf-ca9c-4134-aca0-7b57b18a0f60")
 	)
 	(hierarchical_label "I2C_SDA"
 		(shape bidirectional)
@@ -3942,6 +4344,18 @@
 		)
 		(uuid "7c775312-aa13-430e-b721-02c77d81beaa")
 	)
+	(hierarchical_label "MUX_EN"
+		(shape output)
+		(at 224.79 80.01 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "81619037-a5ea-48d7-a9a2-e428f2825796")
+	)
 	(hierarchical_label "CURR_GATE_PWM"
 		(shape output)
 		(at 226.06 110.49 0)
@@ -3966,19 +4380,7 @@
 		)
 		(uuid "82383242-df3a-4a5a-a5ac-3f8f29af488c")
 	)
-	(hierarchical_label "MUX_WH"
-		(shape output)
-		(at 224.79 80.01 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "89927f01-53c9-4c58-9f0f-f2fbd7522991")
-	)
-	(hierarchical_label "MUX_TH"
+	(hierarchical_label "MUX_POL"
 		(shape output)
 		(at 224.79 74.93 0)
 		(fields_autoplaced yes)
@@ -4014,7 +4416,7 @@
 		)
 		(uuid "b6a5c21b-2942-4294-8c71-443177dc9b12")
 	)
-	(hierarchical_label "MUX_TL"
+	(hierarchical_label "MUX_WG"
 		(shape output)
 		(at 224.79 77.47 0)
 		(fields_autoplaced yes)
@@ -4036,7 +4438,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "019d8af4-ba4d-4f0f-985d-6466f0b24a9e")
-		(property "Reference" "#PWR048"
+		(property "Reference" "#PWR043"
 			(at 50.8 182.88 0)
 			(effects
 				(font
@@ -4086,7 +4488,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR048")
+					(reference "#PWR043")
 					(unit 1)
 				)
 			)
@@ -4101,7 +4503,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "05aea18f-018c-476d-a381-21af046af133")
-		(property "Reference" "#PWR038"
+		(property "Reference" "#PWR033"
 			(at 25.4 101.6 0)
 			(effects
 				(font
@@ -4151,7 +4553,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR038")
+					(reference "#PWR033")
 					(unit 1)
 				)
 			)
@@ -4272,7 +4674,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "16afa629-e1ad-475c-a3e0-adbc196add4a")
-		(property "Reference" "#PWR040"
+		(property "Reference" "#PWR035"
 			(at 25.4 144.78 0)
 			(effects
 				(font
@@ -4322,7 +4724,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR040")
+					(reference "#PWR035")
 					(unit 1)
 				)
 			)
@@ -4443,7 +4845,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "2308b8a1-2d07-4fbd-86d5-50e8792f137b")
-		(property "Reference" "#PWR045"
+		(property "Reference" "#PWR040"
 			(at 106.68 167.64 0)
 			(effects
 				(font
@@ -4493,7 +4895,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR045")
+					(reference "#PWR040")
 					(unit 1)
 				)
 			)
@@ -4508,7 +4910,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "35928c07-6de6-4eb9-82a6-19c1f8a8881c")
-		(property "Reference" "#PWR034"
+		(property "Reference" "#PWR028"
 			(at 185.42 45.72 0)
 			(effects
 				(font
@@ -4558,7 +4960,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR034")
+					(reference "#PWR028")
 					(unit 1)
 				)
 			)
@@ -4836,6 +5238,73 @@
 		)
 	)
 	(symbol
+		(lib_id "Connector:TestPoint_Alt")
+		(at 223.52 125.73 270)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "42c9e1a3-52e0-44fc-b890-b41cb143e55c")
+		(property "Reference" "TP46"
+			(at 228.092 125.73 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "TestPoint_Alt"
+			(at 228.6 126.9999 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "TestPoint:TestPoint_Pad_2.0x2.0mm"
+			(at 223.52 130.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 223.52 130.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "test point (alternative shape)"
+			(at 223.52 125.73 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "52614412-c308-49a9-b1c6-01f3ea4ac967")
+		)
+		(instances
+			(project "CTRL-MINI-ED"
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
+					(reference "TP46")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:GND")
 		(at 25.4 110.49 0)
 		(unit 1)
@@ -4845,7 +5314,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "458b9386-0cb2-46d4-9d2f-e48152dfbe73")
-		(property "Reference" "#PWR039"
+		(property "Reference" "#PWR034"
 			(at 25.4 116.84 0)
 			(effects
 				(font
@@ -4895,7 +5364,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR039")
+					(reference "#PWR034")
 					(unit 1)
 				)
 			)
@@ -5119,7 +5588,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "4e196639-e492-4f16-8cef-441ef3254cfc")
-		(property "Reference" "#PWR042"
+		(property "Reference" "#PWR037"
 			(at 63.5 144.78 0)
 			(effects
 				(font
@@ -5169,7 +5638,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR042")
+					(reference "#PWR037")
 					(unit 1)
 				)
 			)
@@ -5393,7 +5862,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "5e747e97-a9c1-4329-9263-ab971bec1c1b")
-		(property "Reference" "#PWR049"
+		(property "Reference" "#PWR044"
 			(at 96.52 184.15 0)
 			(effects
 				(font
@@ -5443,7 +5912,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR049")
+					(reference "#PWR044")
 					(unit 1)
 				)
 			)
@@ -5458,7 +5927,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "6375749a-9117-43e3-bfb7-67c3f09e9a19")
-		(property "Reference" "R30"
+		(property "Reference" "R24"
 			(at 66.802 144.526 0)
 			(effects
 				(font
@@ -5546,7 +6015,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "R30")
+					(reference "R24")
 					(unit 1)
 				)
 			)
@@ -5668,7 +6137,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "6b88ba94-830e-4588-aabd-e0b626f1b075")
-		(property "Reference" "#PWR044"
+		(property "Reference" "#PWR039"
 			(at 190.5 151.13 0)
 			(effects
 				(font
@@ -5718,7 +6187,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR044")
+					(reference "#PWR039")
 					(unit 1)
 				)
 			)
@@ -5858,7 +6327,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "719c6a25-75b9-496e-a278-d855d635d312")
-		(property "Reference" "#PWR047"
+		(property "Reference" "#PWR042"
 			(at 25.4 182.88 0)
 			(effects
 				(font
@@ -5908,7 +6377,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR047")
+					(reference "#PWR042")
 					(unit 1)
 				)
 			)
@@ -6127,6 +6596,74 @@
 		)
 	)
 	(symbol
+		(lib_id "Jumper:Jumper_2_Small_Bridged")
+		(at 161.29 54.61 0)
+		(unit 1)
+		(exclude_from_sim yes)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "86e784e5-871e-4255-b6f9-ff991990f591")
+		(property "Reference" "JP5"
+			(at 161.29 52.324 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Jumper_2_Small_Bridged"
+			(at 161.29 52.07 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "Jumper:SolderJumper-2_P1.3mm_Bridged_RoundedPad1.0x1.5mm"
+			(at 161.29 54.61 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 161.29 54.61 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Jumper, 2-pole, small symbol, bridged"
+			(at 161.29 54.61 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "0fb97ac8-e089-41ac-84c7-79300e15cb71")
+		)
+		(pin "1"
+			(uuid "0d5ae89f-141b-4709-806d-5c5450668f0a")
+		)
+		(instances
+			(project ""
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
+					(reference "JP5")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:C")
 		(at 41.91 104.14 0)
 		(unit 1)
@@ -6233,6 +6770,73 @@
 		)
 	)
 	(symbol
+		(lib_id "Connector:TestPoint_Alt")
+		(at 224.79 69.85 270)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "95990140-eaca-4ec8-a0bc-f8c17a922c3a")
+		(property "Reference" "TP34"
+			(at 229.362 69.85 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "TestPoint_Alt"
+			(at 229.87 71.1199 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "TestPoint:TestPoint_Pad_2.0x2.0mm"
+			(at 224.79 74.93 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 224.79 74.93 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "test point (alternative shape)"
+			(at 224.79 69.85 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "e85098d4-e50a-4cd3-8bee-9aabcd2b7cad")
+		)
+		(instances
+			(project ""
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
+					(reference "TP34")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:VCC")
 		(at 200.66 41.91 0)
 		(unit 1)
@@ -6241,7 +6845,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "99ffe920-0a51-4842-ad18-457b155f725c")
-		(property "Reference" "#PWR035"
+		(property "Reference" "#PWR029"
 			(at 200.66 45.72 0)
 			(effects
 				(font
@@ -6291,7 +6895,72 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR035")
+					(reference "#PWR029")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:VCC")
+		(at 158.75 48.26 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "9d25e33c-f575-4ee8-b7d5-3b075c3f7140")
+		(property "Reference" "#PWR030"
+			(at 158.75 52.07 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "VDIGITAL"
+			(at 158.75 44.196 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 158.75 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 158.75 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"VCC\""
+			(at 158.75 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "0144a81a-b7e0-4593-bf75-0394d17bed7c")
+		)
+		(instances
+			(project "CTRL-MINI-ED"
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
+					(reference "#PWR030")
 					(unit 1)
 				)
 			)
@@ -6412,7 +7081,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "c76621a8-9b69-4029-8d22-c53f91447849")
-		(property "Reference" "R31"
+		(property "Reference" "R25"
 			(at 119.888 172.72 90)
 			(effects
 				(font
@@ -6500,7 +7169,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "R31")
+					(reference "R25")
 					(unit 1)
 				)
 			)
@@ -6516,7 +7185,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "c785aa3c-05d2-4bae-ba77-91a43cc02dd1")
-		(property "Reference" "#PWR037"
+		(property "Reference" "#PWR032"
 			(at 25.4 88.9 0)
 			(effects
 				(font
@@ -6566,7 +7235,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR037")
+					(reference "#PWR032")
 					(unit 1)
 				)
 			)
@@ -6673,6 +7342,73 @@
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
 					(reference "C24")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector:TestPoint")
+		(at 34.29 99.06 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "cdd70588-14cb-4c4e-816e-71d024e8e3a2")
+		(property "Reference" "TP42"
+			(at 35.306 95.758 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "TestPoint"
+			(at 36.83 97.0279 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
+			(at 39.37 99.06 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 39.37 99.06 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "test point"
+			(at 34.29 99.06 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "9ecba1e3-1549-435f-baa4-20dcd8d5d174")
+		)
+		(instances
+			(project "CTRL-MINI-ED"
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
+					(reference "TP42")
 					(unit 1)
 				)
 			)
@@ -6794,7 +7530,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "d80e7377-c925-43f0-b3cb-684e1ec3272e")
-		(property "Reference" "#PWR036"
+		(property "Reference" "#PWR031"
 			(at 25.4 71.12 0)
 			(effects
 				(font
@@ -6844,7 +7580,7 @@
 		(instances
 			(project ""
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR036")
+					(reference "#PWR031")
 					(unit 1)
 				)
 			)
@@ -6859,7 +7595,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "e138b353-cbc7-4e08-9519-861538676f5b")
-		(property "Reference" "#PWR041"
+		(property "Reference" "#PWR036"
 			(at 50.8 144.78 0)
 			(effects
 				(font
@@ -6909,7 +7645,74 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR041")
+					(reference "#PWR036")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector:TestPoint_Alt")
+		(at 223.52 95.25 270)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "e60ead46-974b-4537-b061-fdc22fb12e7a")
+		(property "Reference" "TP36"
+			(at 228.092 95.25 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "TestPoint_Alt"
+			(at 228.6 96.5199 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "TestPoint:TestPoint_Pad_2.0x2.0mm"
+			(at 223.52 100.33 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 223.52 100.33 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "test point (alternative shape)"
+			(at 223.52 95.25 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "52b41ce1-bf47-4fe6-ade0-ec4911b71a45")
+		)
+		(instances
+			(project "CTRL-MINI-ED"
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
+					(reference "TP36")
 					(unit 1)
 				)
 			)
@@ -6925,7 +7728,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "ea46100a-2233-4481-921f-e922f00a8e20")
-		(property "Reference" "#PWR043"
+		(property "Reference" "#PWR038"
 			(at 161.29 151.13 0)
 			(effects
 				(font
@@ -6975,7 +7778,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR043")
+					(reference "#PWR038")
 					(unit 1)
 				)
 			)
@@ -7096,7 +7899,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "f96468b8-d6fa-4fd5-8b2a-c0064ef09e96")
-		(property "Reference" "#PWR046"
+		(property "Reference" "#PWR041"
 			(at 119.38 167.64 0)
 			(effects
 				(font
@@ -7146,7 +7949,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
-					(reference "#PWR046")
+					(reference "#PWR041")
 					(unit 1)
 				)
 			)

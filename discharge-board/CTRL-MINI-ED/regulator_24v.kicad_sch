@@ -2,7 +2,7 @@
 	(version 20231120)
 	(generator "eeschema")
 	(generator_version "8.0")
-	(uuid "2218dbb4-9d8b-49af-ad84-5d86a6f276ff")
+	(uuid "10d2c8b5-aefc-4c61-b5d7-c6cfa5b155a2")
 	(paper "A4")
 	(title_block
 		(title "CTRL-MINI-ED")
@@ -1042,7 +1042,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "bd25dd0a-1c26-4fed-b9ab-66b0880032cb")
-		(property "Reference" "#PWR050"
+		(property "Reference" "#PWR045"
 			(at 71.12 69.85 0)
 			(effects
 				(font
@@ -1092,7 +1092,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/94d9cbf4-c449-4f44-a433-4ecc47b28bd4"
-					(reference "#PWR050")
+					(reference "#PWR045")
 					(unit 1)
 				)
 			)

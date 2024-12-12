@@ -742,7 +742,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "9043d5d0-7251-4cb0-a259-2fbce7bac044")
-		(property "Reference" "#PWR051"
+		(property "Reference" "#PWR046"
 			(at 87.63 73.66 0)
 			(effects
 				(font
@@ -792,7 +792,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/a9794609-42db-49f0-aeeb-4c313a94f296"
-					(reference "#PWR051")
+					(reference "#PWR046")
 					(unit 1)
 				)
 			)

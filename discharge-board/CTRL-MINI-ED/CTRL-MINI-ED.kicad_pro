@@ -593,6 +593,62 @@
       {
         "netclass": "PWR",
         "pattern": "/Pulse Shaper/+18V"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/Relay Half Bridge1/L_COIL-"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/Relay Half Bridge1/H_COIL-"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/Relay Mux/VOUT_0"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/Relay Mux/VOUT_1"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/Relay Mux/VOUT_COM"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/Relay Mux/VOUT_AUX"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/Relay Mux/P_COIL-"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/Relay Mux/S_COIL-"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/Relay Mux/V+_AUX"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/Relay Mux/E_COIL-"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/Relay Mux/V-_AUX"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/Relay Mux/V-"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/+36V"
+      },
+      {
+        "netclass": "PWR",
+        "pattern": "/36VPREFUSE"
       }
     ]
   },
@@ -772,15 +828,7 @@
     ],
     [
       "61d269a5-db7e-4708-be89-e9446bc418aa",
-      "Relay Half Bridge"
-    ],
-    [
-      "6c946658-61d5-4fe0-8cd3-b855580e1af0",
-      "Relay Half Bridge1"
-    ],
-    [
-      "701333a2-35b5-41e7-9f83-3a206a1cf781",
-      "Relay Half Bridge2"
+      "Relay Mux"
     ],
     [
       "dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f",
