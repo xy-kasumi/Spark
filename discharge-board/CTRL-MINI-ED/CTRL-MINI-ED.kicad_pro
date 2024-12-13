@@ -579,7 +579,7 @@
         "pattern": "/Pulse Shaper/Boost Converter 100V/LOUT"
       },
       {
-        "netclass": "HV",
+        "netclass": "Default",
         "pattern": "/Pulse Shaper/Boost Converter 100V/VODIV"
       },
       {
