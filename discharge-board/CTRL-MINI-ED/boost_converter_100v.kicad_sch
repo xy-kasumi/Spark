@@ -2,7 +2,7 @@
 	(version 20231120)
 	(generator "eeschema")
 	(generator_version "8.0")
-	(uuid "88fddab9-6c5c-496d-9251-1a12a9814ef4")
+	(uuid "b510b386-4b5c-4098-a9ff-157a2dc15c72")
 	(paper "A4")
 	(title_block
 		(title "CTRL-MINI-ED")
@@ -13,7 +13,7 @@
 		(comment 2 "Electric Discharge Machining board for CTRL-MINI")
 	)
 	(lib_symbols
-		(symbol "Connector:TestPoint"
+		(symbol "Connector:TestPoint_Small"
 			(pin_numbers hide)
 			(pin_names
 				(offset 0.762) hide)
@@ -21,15 +21,15 @@
 			(in_bom yes)
 			(on_board yes)
 			(property "Reference" "TP"
-				(at 0 6.858 0)
+				(at 0 3.81 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
 				)
 			)
-			(property "Value" "TestPoint"
-				(at 0 5.08 0)
+			(property "Value" "TestPoint_Small"
+				(at 0 2.032 0)
 				(effects
 					(font
 						(size 1.27 1.27)
@@ -81,10 +81,10 @@
 					(hide yes)
 				)
 			)
-			(symbol "TestPoint_0_1"
+			(symbol "TestPoint_Small_0_1"
 				(circle
-					(center 0 3.302)
-					(radius 0.762)
+					(center 0 0)
+					(radius 0.508)
 					(stroke
 						(width 0)
 						(type default)
@@ -94,10 +94,10 @@
 					)
 				)
 			)
-			(symbol "TestPoint_1_1"
+			(symbol "TestPoint_Small_1_1"
 				(pin passive line
 					(at 0 0 90)
-					(length 2.54)
+					(length 0)
 					(name "1"
 						(effects
 							(font
@@ -1310,6 +1310,12 @@
 		(uuid "1cf72adc-d560-4058-9573-386cf8f134ee")
 	)
 	(junction
+		(at 189.23 88.9)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "1d1576f2-a004-41b1-a47f-b2b671e7835a")
+	)
+	(junction
 		(at 195.58 68.58)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -1338,6 +1344,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "6ef57465-f1b4-4f49-a79e-d323a3f9597b")
+	)
+	(junction
+		(at 161.29 68.58)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "86d9f99a-0017-4b9e-877a-fdf07e6696cf")
 	)
 	(junction
 		(at 105.41 110.49)
@@ -1427,7 +1439,7 @@
 	)
 	(wire
 		(pts
-			(xy 185.42 88.9) (xy 195.58 88.9)
+			(xy 185.42 88.9) (xy 189.23 88.9)
 		)
 		(stroke
 			(width 0)
@@ -1477,7 +1489,17 @@
 	)
 	(wire
 		(pts
-			(xy 140.97 68.58) (xy 172.72 68.58)
+			(xy 189.23 88.9) (xy 195.58 88.9)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1fd21ce8-16f9-455a-8f6d-4684afc669e1")
+	)
+	(wire
+		(pts
+			(xy 140.97 68.58) (xy 161.29 68.58)
 		)
 		(stroke
 			(width 0)
@@ -1597,6 +1619,16 @@
 	)
 	(wire
 		(pts
+			(xy 208.28 68.58) (xy 215.9 68.58)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3fe4f2f9-76a5-418a-a2d4-6ebe9515b564")
+	)
+	(wire
+		(pts
 			(xy 91.44 101.6) (xy 91.44 110.49)
 		)
 		(stroke
@@ -1664,16 +1696,6 @@
 			(type default)
 		)
 		(uuid "52b846cb-5a9b-4668-872d-d3ed6d03bf99")
-	)
-	(wire
-		(pts
-			(xy 208.28 68.58) (xy 215.9 68.58)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "5880b470-28ff-4cb9-83a0-6552af8f0c86")
 	)
 	(wire
 		(pts
@@ -1824,6 +1846,16 @@
 			(type default)
 		)
 		(uuid "876b6661-4608-40b7-a057-df7002a62625")
+	)
+	(wire
+		(pts
+			(xy 161.29 68.58) (xy 172.72 68.58)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8a378253-27c4-4ce0-88f4-ae2610ccc541")
 	)
 	(wire
 		(pts
@@ -2402,11 +2434,11 @@
 		(uuid "3b7bb0ae-ffca-4ddf-94a0-0fbf893f5309")
 	)
 	(label "VODIV"
-		(at 187.96 88.9 0)
+		(at 191.77 88.9 0)
 		(fields_autoplaced yes)
 		(effects
 			(font
-				(size 1.27 1.27)
+				(size 0.6 0.6)
 			)
 			(justify left bottom)
 		)
@@ -2446,7 +2478,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "0361c4f3-37ea-4c1b-a228-e516db7c943a")
-		(property "Reference" "#PWR027"
+		(property "Reference" "#PWR029"
 			(at 139.7 121.92 0)
 			(effects
 				(font
@@ -2496,7 +2528,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "#PWR027")
+					(reference "#PWR029")
 					(unit 1)
 				)
 			)
@@ -2511,7 +2543,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "0a4023e5-8ef6-429e-915b-f0fee828c4ac")
-		(property "Reference" "C18"
+		(property "Reference" "C21"
 			(at 171.958 100.584 0)
 			(effects
 				(font
@@ -2601,7 +2633,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "C18")
+					(reference "C21")
 					(unit 1)
 				)
 			)
@@ -2712,73 +2744,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Connector:TestPoint")
-		(at 195.58 68.58 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "2d96de45-f37f-47f3-9544-9c3ac3935bd9")
-		(property "Reference" "TP32"
-			(at 193.548 63.5 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "TestPoint"
-			(at 198.12 66.5479 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
-			(at 200.66 68.58 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 200.66 68.58 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "test point"
-			(at 195.58 68.58 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "78e532d7-5897-4c52-960b-00cb87e93b2b")
-		)
-		(instances
-			(project "CTRL-MINI-ED"
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "TP32")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Device:C")
 		(at 76.2 86.36 0)
 		(unit 1)
@@ -2788,7 +2753,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "52997ed7-2130-4fb8-93c9-0a9adc638729")
-		(property "Reference" "C14"
+		(property "Reference" "C17"
 			(at 80.01 85.0899 0)
 			(effects
 				(font
@@ -2878,7 +2843,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "C14")
+					(reference "C17")
 					(unit 1)
 				)
 			)
@@ -2893,7 +2858,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "6066da76-d0b3-4e78-9ff2-e9393f60bd56")
-		(property "Reference" "JP3"
+		(property "Reference" "JP2"
 			(at 169.926 90.424 0)
 			(effects
 				(font
@@ -2946,7 +2911,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "JP3")
+					(reference "JP2")
 					(unit 1)
 				)
 			)
@@ -2961,7 +2926,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "68048859-b6e5-4322-8be5-cb7fa28182ab")
-		(property "Reference" "U3"
+		(property "Reference" "U4"
 			(at 138.938 103.124 0)
 			(effects
 				(font
@@ -3084,7 +3049,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "U3")
+					(reference "U4")
 					(unit 1)
 				)
 			)
@@ -3099,7 +3064,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "77b6e979-e038-4b12-8376-5b7d092d383f")
-		(property "Reference" "R22"
+		(property "Reference" "R21"
 			(at 201.168 99.314 0)
 			(effects
 				(font
@@ -3187,7 +3152,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "R22")
+					(reference "R21")
 					(unit 1)
 				)
 			)
@@ -3202,7 +3167,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "81554bbd-44a3-44ba-87b7-d2f4b5dcc181")
-		(property "Reference" "C17"
+		(property "Reference" "C20"
 			(at 94.488 96.52 0)
 			(effects
 				(font
@@ -3292,7 +3257,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "C17")
+					(reference "C20")
 					(unit 1)
 				)
 			)
@@ -3307,7 +3272,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "8cdad78f-51fd-4814-821f-f8327280ff0e")
-		(property "Reference" "C16"
+		(property "Reference" "C19"
 			(at 216.916 85.344 0)
 			(effects
 				(font
@@ -3398,7 +3363,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "C16")
+					(reference "C19")
 					(unit 1)
 				)
 			)
@@ -3413,7 +3378,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "8d42388a-1638-46ff-a6ae-1517c7c769a3")
-		(property "Reference" "R20"
+		(property "Reference" "R19"
 			(at 108.458 96.774 0)
 			(effects
 				(font
@@ -3501,23 +3466,23 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "R20")
+					(reference "R19")
 					(unit 1)
 				)
 			)
 		)
 	)
 	(symbol
-		(lib_id "Connector:TestPoint")
-		(at 172.72 68.58 0)
+		(lib_id "Connector:TestPoint_Small")
+		(at 161.29 68.58 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
 		(uuid "8f549a1d-5621-497a-819e-5f95bd6da72d")
-		(property "Reference" "TP31"
-			(at 170.688 63.5 0)
+		(property "Reference" "TP32"
+			(at 159.258 67.056 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3526,7 +3491,7 @@
 			)
 		)
 		(property "Value" "TestPoint"
-			(at 175.26 66.5479 0)
+			(at 163.83 66.5479 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3536,7 +3501,7 @@
 			)
 		)
 		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
-			(at 177.8 68.58 0)
+			(at 166.37 68.58 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3545,7 +3510,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 177.8 68.58 0)
+			(at 166.37 68.58 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3554,7 +3519,7 @@
 			)
 		)
 		(property "Description" "test point"
-			(at 172.72 68.58 0)
+			(at 161.29 68.58 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3568,7 +3533,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "TP31")
+					(reference "TP32")
 					(unit 1)
 				)
 			)
@@ -3584,7 +3549,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "91b2196b-4673-40a6-9048-a2b145601759")
-		(property "Reference" "C19"
+		(property "Reference" "C22"
 			(at 109.22 105.4099 0)
 			(effects
 				(font
@@ -3674,23 +3639,23 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "C19")
+					(reference "C22")
 					(unit 1)
 				)
 			)
 		)
 	)
 	(symbol
-		(lib_id "Connector:TestPoint")
-		(at 195.58 88.9 270)
+		(lib_id "Connector:TestPoint_Small")
+		(at 189.23 88.9 270)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
 		(uuid "9b939fc1-6ea7-4fb4-bafb-a6a658005815")
-		(property "Reference" "TP33"
-			(at 199.898 89.154 90)
+		(property "Reference" "TP34"
+			(at 187.198 90.932 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3699,7 +3664,7 @@
 			)
 		)
 		(property "Value" "TestPoint"
-			(at 197.6121 91.44 0)
+			(at 191.2621 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3709,7 +3674,7 @@
 			)
 		)
 		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
-			(at 195.58 93.98 0)
+			(at 189.23 93.98 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3718,7 +3683,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 195.58 93.98 0)
+			(at 189.23 93.98 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3727,7 +3692,7 @@
 			)
 		)
 		(property "Description" "test point"
-			(at 195.58 88.9 0)
+			(at 189.23 88.9 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3741,7 +3706,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "TP33")
+					(reference "TP34")
 					(unit 1)
 				)
 			)
@@ -3756,7 +3721,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "a1355a1d-fa89-4a27-b823-fb267a2197bb")
-		(property "Reference" "R23"
+		(property "Reference" "R22"
 			(at 163.83 102.362 0)
 			(effects
 				(font
@@ -3844,7 +3809,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "R23")
+					(reference "R22")
 					(unit 1)
 				)
 			)
@@ -3859,7 +3824,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "b134d257-2ec2-4815-8ee3-a570f7001591")
-		(property "Reference" "C15"
+		(property "Reference" "C18"
 			(at 209.042 85.598 0)
 			(effects
 				(font
@@ -3949,7 +3914,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "C15")
+					(reference "C18")
 					(unit 1)
 				)
 			)
@@ -3964,7 +3929,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "c47df1e4-3268-4fd5-bf7b-c65edd61be62")
-		(property "Reference" "JP4"
+		(property "Reference" "JP3"
 			(at 103.886 92.964 0)
 			(effects
 				(font
@@ -4017,7 +3982,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "JP4")
+					(reference "JP3")
 					(unit 1)
 				)
 			)
@@ -4135,7 +4100,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "f7ef6fc5-77c7-408e-a187-3aa7caaab25f")
-		(property "Reference" "R21"
+		(property "Reference" "R20"
 			(at 190.246 99.314 0)
 			(effects
 				(font
@@ -4223,7 +4188,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "R21")
+					(reference "R20")
 					(unit 1)
 				)
 			)
@@ -4238,7 +4203,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "f91639d1-a477-438d-ba36-90a7091b54d4")
-		(property "Reference" "R19"
+		(property "Reference" "R18"
 			(at 188.722 82.804 0)
 			(effects
 				(font
@@ -4326,7 +4291,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "R19")
+					(reference "R18")
 					(unit 1)
 				)
 			)

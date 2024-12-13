@@ -13,7 +13,7 @@
 		(comment 2 "Electric Discharge Machining board for CTRL-MINI")
 	)
 	(lib_symbols
-		(symbol "Connector:TestPoint"
+		(symbol "Connector:TestPoint_Small"
 			(pin_numbers hide)
 			(pin_names
 				(offset 0.762) hide)
@@ -21,15 +21,15 @@
 			(in_bom yes)
 			(on_board yes)
 			(property "Reference" "TP"
-				(at 0 6.858 0)
+				(at 0 3.81 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
 				)
 			)
-			(property "Value" "TestPoint"
-				(at 0 5.08 0)
+			(property "Value" "TestPoint_Small"
+				(at 0 2.032 0)
 				(effects
 					(font
 						(size 1.27 1.27)
@@ -81,10 +81,10 @@
 					(hide yes)
 				)
 			)
-			(symbol "TestPoint_0_1"
+			(symbol "TestPoint_Small_0_1"
 				(circle
-					(center 0 3.302)
-					(radius 0.762)
+					(center 0 0)
+					(radius 0.508)
 					(stroke
 						(width 0)
 						(type default)
@@ -94,10 +94,10 @@
 					)
 				)
 			)
-			(symbol "TestPoint_1_1"
+			(symbol "TestPoint_Small_1_1"
 				(pin passive line
 					(at 0 0 90)
-					(length 2.54)
+					(length 0)
 					(name "1"
 						(effects
 							(font
@@ -689,16 +689,6 @@
 	)
 	(wire
 		(pts
-			(xy 55.88 54.61) (xy 62.23 54.61)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "5e94e352-6052-48e8-ba45-e38eaa45c06d")
-	)
-	(wire
-		(pts
 			(xy 73.66 54.61) (xy 76.2 54.61)
 		)
 		(stroke
@@ -1005,7 +995,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "126e8dc2-f544-4f5b-9aa1-97b6abdedff5")
-		(property "Reference" "R26"
+		(property "Reference" "R25"
 			(at 65.532 46.736 0)
 			(effects
 				(font
@@ -1093,7 +1083,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/427c9eb0-5bf5-4b7b-8ffc-9f840385400e"
-					(reference "R26")
+					(reference "R25")
 					(unit 1)
 				)
 			)
@@ -1108,7 +1098,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "2813876c-a33a-4919-977d-e7f100641da1")
-		(property "Reference" "C38"
+		(property "Reference" "C23"
 			(at 78.74 57.912 0)
 			(effects
 				(font
@@ -1198,7 +1188,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/427c9eb0-5bf5-4b7b-8ffc-9f840385400e"
-					(reference "C38")
+					(reference "C23")
 					(unit 1)
 				)
 			)
@@ -1213,7 +1203,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "40032779-7d87-4706-8c53-13dfb907358f")
-		(property "Reference" "R27"
+		(property "Reference" "R26"
 			(at 65.532 61.214 0)
 			(effects
 				(font
@@ -1301,7 +1291,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/427c9eb0-5bf5-4b7b-8ffc-9f840385400e"
-					(reference "R27")
+					(reference "R26")
 					(unit 1)
 				)
 			)
@@ -1420,7 +1410,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "9140a101-e32a-4282-af2d-13f49aa6bf90")
-		(property "Reference" "#PWR047"
+		(property "Reference" "#PWR033"
 			(at 62.23 71.12 0)
 			(effects
 				(font
@@ -1470,23 +1460,23 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/427c9eb0-5bf5-4b7b-8ffc-9f840385400e"
-					(reference "#PWR047")
+					(reference "#PWR033")
 					(unit 1)
 				)
 			)
 		)
 	)
 	(symbol
-		(lib_id "Connector:TestPoint")
-		(at 55.88 54.61 0)
+		(lib_id "Connector:TestPoint_Small")
+		(at 62.23 54.61 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
 		(uuid "964030d5-f657-48f6-8e56-fc3229db86cb")
-		(property "Reference" "TP51"
-			(at 54.102 49.276 0)
+		(property "Reference" "TP35"
+			(at 56.134 54.61 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1495,7 +1485,7 @@
 			)
 		)
 		(property "Value" "TestPoint"
-			(at 58.42 52.5779 0)
+			(at 64.77 52.5779 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1505,7 +1495,7 @@
 			)
 		)
 		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
-			(at 60.96 54.61 0)
+			(at 67.31 54.61 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1514,7 +1504,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 60.96 54.61 0)
+			(at 67.31 54.61 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1523,7 +1513,7 @@
 			)
 		)
 		(property "Description" "test point"
-			(at 55.88 54.61 0)
+			(at 62.23 54.61 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1537,7 +1527,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/427c9eb0-5bf5-4b7b-8ffc-9f840385400e"
-					(reference "TP51")
+					(reference "TP35")
 					(unit 1)
 				)
 			)
@@ -1552,7 +1542,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "a2da0759-970e-43c4-aad3-18c386139833")
-		(property "Reference" "#PWR048"
+		(property "Reference" "#PWR034"
 			(at 76.2 71.12 0)
 			(effects
 				(font
@@ -1602,7 +1592,7 @@
 		(instances
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/427c9eb0-5bf5-4b7b-8ffc-9f840385400e"
-					(reference "#PWR048")
+					(reference "#PWR034")
 					(unit 1)
 				)
 			)
