@@ -3291,7 +3291,7 @@
 				(hide yes)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
 			(at 216.8652 91.44 0)
 			(effects
 				(font
@@ -3318,7 +3318,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2171284"
+		(property "LCSC" "C342865"
 			(at 215.9 87.63 0)
 			(effects
 				(font
@@ -3842,7 +3842,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
 			(at 209.2452 91.44 0)
 			(effects
 				(font
@@ -3869,7 +3869,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2171284"
+		(property "LCSC" "C342865"
 			(at 208.28 87.63 0)
 			(effects
 				(font

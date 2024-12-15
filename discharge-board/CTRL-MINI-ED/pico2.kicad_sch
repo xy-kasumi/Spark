@@ -5007,7 +5007,7 @@
 				)
 			)
 		)
-		(property "Value" "RPP-R"
+		(property "Value" ""
 			(at 138.684 66.802 0)
 			(effects
 				(font
@@ -5645,7 +5645,7 @@
 				)
 			)
 		)
-		(property "Value" "RPP-L"
+		(property "Value" ""
 			(at 125.222 67.056 0)
 			(effects
 				(font
