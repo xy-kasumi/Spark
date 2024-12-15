@@ -43827,7 +43827,7 @@
 		(start 68.453 55.626)
 		(end 75.184 58.547)
 		(stroke
-			(width 0.1)
+			(width 0.12)
 			(type default)
 		)
 		(fill none)
@@ -43838,7 +43838,7 @@
 		(start 143.764 71.0565)
 		(end 148.209 74.3585)
 		(stroke
-			(width 0.1)
+			(width 0.12)
 			(type default)
 		)
 		(fill none)
@@ -43859,7 +43859,7 @@
 		(start 64.77 55.626)
 		(end 68.453 58.547)
 		(stroke
-			(width 0.1)
+			(width 0.12)
 			(type default)
 		)
 		(fill none)
@@ -43880,7 +43880,7 @@
 		(start 141.605 71.0565)
 		(end 143.764 74.3585)
 		(stroke
-			(width 0.1)
+			(width 0.12)
 			(type default)
 		)
 		(fill none)
@@ -43921,7 +43921,7 @@
 		(start 81.8388 68.834)
 		(end 77.5208 68.834)
 		(stroke
-			(width 0.1)
+			(width 0.12)
 			(type default)
 		)
 		(layer "F.SilkS")
@@ -43961,7 +43961,7 @@
 		(start 88.2396 68.834)
 		(end 92.6084 68.834)
 		(stroke
-			(width 0.1)
+			(width 0.12)
 			(type default)
 		)
 		(layer "F.SilkS")
@@ -43981,7 +43981,7 @@
 		(start 81.8388 67.564)
 		(end 88.2396 69.7484)
 		(stroke
-			(width 0.1)
+			(width 0.12)
 			(type default)
 		)
 		(fill none)
