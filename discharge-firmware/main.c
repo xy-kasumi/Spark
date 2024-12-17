@@ -338,8 +338,8 @@ void tick_md_drill(md_drill_t* md, drill_stats_t* stats) {
 }
 
 void init_ed_drill(ed_drill_t* ed) {
-  const uint16_t ed_duty_pct = 25;
-  const uint16_t ed_pulse_dur_us = 100;
+  const uint16_t ed_duty_pct = 50;
+  const uint16_t ed_pulse_dur_us = 500;
 
   ed->state = ED_DRILL_WAITING_IGNITION;
   ed->successive_shorts = 0;
