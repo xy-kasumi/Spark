@@ -10,6 +10,11 @@
 #include "ed.h"
 #include "md.h"
 
+typedef struct {
+  uint32_t pulse_dur_us;
+  uint8_t duty_pct;
+} ctrl_config_t;
+
 void pico_led_init() {
   gpio_init(PICO_DEFAULT_LED_PIN);
   gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
@@ -34,7 +39,7 @@ void print_time() {
   printf("%d.%03d ", t_sec, t_ms);
 }
 
-void exec_command_status() {
+void exec_command_status(ctrl_config_t* config) {
   for (uint8_t i = 0; i < MD_NUM_BOARDS; i++) {
     md_board_status_t status = md_get_status(i);
 
@@ -58,6 +63,9 @@ void exec_command_status() {
   } else {
     printf("ED: NO_BOARD\n");
   }
+
+  printf("PARAM: pulse_dur_us=%u, duty=%u\n", config->pulse_dur_us,
+         config->duty_pct);
 }
 
 void exec_command_step(uint8_t md_ix, int step, uint32_t wait) {
@@ -337,15 +345,12 @@ void tick_md_drill(md_drill_t* md, drill_stats_t* stats) {
   md->timer++;
 }
 
-void init_ed_drill(ed_drill_t* ed) {
-  const uint16_t ed_duty_pct = 50;
-  const uint16_t ed_pulse_dur_us = 500;
-
+void init_ed_drill(ed_drill_t* ed, uint16_t pulse_dur_us, uint8_t duty_pct) {
   ed->state = ED_DRILL_WAITING_IGNITION;
   ed->successive_shorts = 0;
 
-  ed->pulse_dur_us = ed_pulse_dur_us;
-  ed->cooldown_us = (ed_pulse_dur_us * 100) / ed_duty_pct - ed_pulse_dur_us;
+  ed->pulse_dur_us = pulse_dur_us;
+  ed->cooldown_us = (pulse_dur_us * 100) / ((uint16_t)duty_pct) - pulse_dur_us;
 }
 
 /**
@@ -442,7 +447,7 @@ void drill_print_stats(int64_t tick,
   stats->last_dump_tick = tick;
 }
 
-void exec_command_drill(uint8_t md_ix, float distance) {
+void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
   const uint32_t MD_RETRACT_DIST_STEPS = 10e-3 * MD_STEPS_PER_MM;  // 10um
 
   md_drill_t md;
@@ -451,7 +456,7 @@ void exec_command_drill(uint8_t md_ix, float distance) {
   uint32_t PUMP_STEPS = md.steps + (uint32_t)(0.5 * MD_STEPS_PER_MM);
 
   ed_drill_t ed;
-  init_ed_drill(&ed);
+  init_ed_drill(&ed, config->pulse_dur_us, config->duty_pct);
 
   const int32_t PUMP_PULSE_INTERVAL = 10000;
   int32_t last_pump_pulse = 0;
@@ -538,10 +543,10 @@ void exec_command_drill(uint8_t md_ix, float distance) {
 void exec_command_edeexec(uint32_t duration_ms,
                           uint16_t pulse_dur_us,
                           uint16_t current_ma,
-                          uint8_t duty) {
+                          uint8_t duty_pct) {
   const uint32_t NUM_BUCKETS = 100;
 
-  uint32_t wait_time_us = ((uint32_t)pulse_dur_us) * 100 / duty;
+  uint32_t wait_time_us = ((uint32_t)pulse_dur_us) * 100 / duty_pct;
   uint32_t duration_us = duration_ms * 1000;
 
   ed_set_current(current_ma);
@@ -601,72 +606,15 @@ void exec_command_edeexec(uint32_t duration_ms,
   printf("ED: exec done\n");
 }
 
-// supported commands
-// ------------------
-// each line should contain single command
-// Ctrl-C or Ctrl-K during input
-//   cancel current command input
-//
-// Generic commands
-// status
-//   print status of all boards
-// move <board_ix> <distance>
-//   move by distance
-//   <board_ix>: 0, 1, 2
-//   <distance>: float, distance in mm
-// find <board_ix> <distance>
-//   move up to distance, or until electrode touches the work.
-//   uses hot electrode scan. work will be slightly damaged.
-//   Must be issued after `edon`.
-//   <board_ix>: 0, 1, 2
-//   <distance>: float, distance in mm
-// drill <board_ix> <distance>
-//   drill by distance. (note actual drill depth will be less, due to tool wear)
-//   Must be issued after `edon`.
-//   <board_ix>: 0, 1, 2
-//   <distance>: float, distance in mm
-//
-// MD commands
-// step <board_ix> <step> <wait>
-//   step one motor in one direction at constant speed
-//   <board_ix>: 0, 1, 2
-//   <step>: integer (-n or n), in microsteps
-//   <wait>: integer, wait(microsec) after each microstep
-// home <board_ix> <direction> <timeout_ms>
-//   move motor to home position (where it stalls)
-//   <board_ix>: 0, 1, 2
-//   <direction>: - or +
-//   <timeout_ms>: integer, timeout in milliseconds
-// regread <board_ix> <addr>
-//   read register from motor driver
-//   <board_ix>: 0, 1, 2
-//   <addr>: 00 to 7f (hexadecimal)
-// regwrite <board_ix> <addr> <data>
-//   write register to motor driver
-//   <board_ix>: 0, 1, 2
-//   <addr>: 00 to 7f (hexadecimal)
-//   <data>: 00000000 to ffffffff (hexadecimal)
-//
-// ED commands
-// edon
-//  switch ED to discharge mode
-// edoff
-//  switch ED to sense mode
-// edexec <duration_ms> <pulse_dur_us> <current_ma> <duty>
-//   <duration_ms>: duration of discharge in milliseconds
-//   <pulse_dur_us>: individual pulse duration in microseconds.
-//   <duty>: max duty ratio in percent (1 to 80).
-//   <current>: integer, current in mA (up to 2000)
-// edthot
-//  execute hot disconnect test (change to sense after this)
-//  WILL SHORTEN RELAY LIFE
-// edtsweep <numsteps>
-//  execute current sweep pulsing test
-//   <numsteps>: integer, number of steps
-// prox <timeout_ms>
-//  sense mode command
-//  dump proximity value periodically
-//   <timeout_ms>: integer, timeout in milliseconds
+void exec_command_edparam(uint32_t pulse_dur_us,
+                          uint8_t duty_pct,
+                          ctrl_config_t* config) {
+  config->pulse_dur_us = pulse_dur_us;
+  config->duty_pct = duty_pct;
+
+  print_time();
+  printf("New config: pulse_dur_us=%u, duty=%u%%\n", pulse_dur_us, duty_pct);
+}
 
 // Try to get line.
 // Does not include newline character in the buffer.
@@ -815,12 +763,12 @@ float parse_float(parser_t* parser) {
  * Tries to execute a single command. Errors will be printed to stdout.
  * @param buf command string, without newlines. will be modified during parsing.
  */
-void try_exec_command(char* buf) {
+void try_exec_command(char* buf, ctrl_config_t* config) {
   parser_t parser;
   char* command = parser_init(&parser, buf);
 
   if (strcmp(command, "status") == 0) {
-    exec_command_status();
+    exec_command_status(config);
   } else if (strcmp(command, "step") == 0) {
     uint8_t md_ix = parse_int(&parser, 0, MD_NUM_BOARDS - 1);
     int step = parse_int(&parser, -1000000, 1000000);
@@ -844,6 +792,13 @@ void try_exec_command(char* buf) {
       return;
     }
     exec_command_home(md_ix, dir_plus, timeout_ms);
+  } else if (strcmp(command, "edparam") == 0) {
+    uint16_t pulse_dur_us = parse_int(&parser, 5, 10000);
+    uint8_t duty_pct = parse_int(&parser, 1, 50);
+    if (!parser.success) {
+      return;
+    }
+    exec_command_edparam(pulse_dur_us, duty_pct, config);
   } else if (strcmp(command, "regread") == 0) {
     uint8_t md_ix = parse_int(&parser, 0, MD_NUM_BOARDS - 1);
     uint8_t addr = parse_hex(&parser, 0x7f);
@@ -882,16 +837,16 @@ void try_exec_command(char* buf) {
     if (!parser.success) {
       return;
     }
-    exec_command_drill(md_ix, distance);
+    exec_command_drill(md_ix, distance, config);
   } else if (strcmp(command, "edexec") == 0) {
     uint32_t duration_ms = parse_int(&parser, 1, 1000000);
     uint16_t pulse_dur_us = parse_int(&parser, 1, 10000);
     uint16_t current_ma = parse_int(&parser, 1, 2000);
-    uint8_t duty = parse_int(&parser, 0, 80);
+    uint8_t duty_pct = parse_int(&parser, 0, 80);
     if (!parser.success) {
       return;
     }
-    exec_command_edeexec(duration_ms, pulse_dur_us, current_ma, duty);
+    exec_command_edeexec(duration_ms, pulse_dur_us, current_ma, duty_pct);
   } else if (strcmp(command, "edthot") == 0) {
     ed_test_hot_disconnect();
   } else if (strcmp(command, "edtsweep") == 0) {
@@ -917,8 +872,15 @@ int main() {
 
   pico_led_set(true);  // I/O init complete
   print_time();
+
+  // init system config
+  ctrl_config_t config;
+  config.pulse_dur_us = 500;
+  config.duty_pct = 50;
+
+  // report init done
   printf("init OK\n");
-  exec_command_status();
+  exec_command_status(&config);
 
   // main command loop
   char buf[32];
@@ -933,6 +895,6 @@ int main() {
     }
     printf("processing command\n");
     pico_led_flash();
-    try_exec_command(buf);
+    try_exec_command(buf, &config);
   }
 }
