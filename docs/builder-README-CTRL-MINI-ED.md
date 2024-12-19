@@ -3,6 +3,26 @@
 This doc is for people who want to build, modify, test ED board.
 Current it's written for r1 (r0 didn't have any such doc).
 
+## Assembly
+
+You'll need the following
+* PCBA-ed board
+* heatsink
+* 12V fan (2pin, XH connector)
+* thermal sheet with electric isolation
+* isolating M3 screw
+* 220mΩ resistor & wire
+* NTC 100kΩ free-hanging thermistor
+
+Using these parts, you need to attach everything in one thermal block.
+
+The termistor should be secured especially firmly,
+because over-temperature protection depends on the thermistor reading.
+
+The diode and the transistor's back plate may or may not be High-V.
+Better to treat them as High-V, and apply isolation.
+That way touching heatsink won't electrocute you.
+
 
 ## Test procedures
 
@@ -74,5 +94,13 @@ I won't touch pulse current shaping any time soon.
 ## Real world measurements
 Measurement procedures during actual EDM.
 
+### _pulse
+Prepare CTRL-MINI-ED, host controller, work & tool in operation fluid.
 
-### _
+Trigger:
+  M_GATE
+  CURR_GATE
+  CURR_DETECT
+Current:
+Voltage:
+
