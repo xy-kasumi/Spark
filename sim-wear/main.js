@@ -621,7 +621,7 @@ class GpuKernels {
     }
 }
 
-const POINT_PER_MM = 2;
+const POINT_PER_MM = 4;
 
 class Simulator {
     constructor(shapeW, shapeT, transW, transT) {
@@ -748,8 +748,12 @@ class View3D {
     constructor(simulator) {
         this.simulator = simulator;
 
-        this.ewr = 50;
-        this.toolRot = 90;
+        this.ewr = 50; // %, electrode wear ratio
+        this.toolInitX = 0;
+        this.toolInitY = 0;
+        this.feedDir = 0; // deg; 0=Z-, 90=X+
+        this.toolRot = 10; // deg/mm; CCW
+        this.feedDist = 15; // mm
 
         this.init();
         this.setupGui();
@@ -826,16 +830,57 @@ class View3D {
 
         this.scene.add(this.solidWPoints);
         this.scene.add(this.solidTPoints);
+
+        // Prepare tool path visualization
+        this.toolPathMarkerPos = new THREE.Vector3(1.5 / 2, 0, -5);
+        this.updateToolPathVis(this.toolPathMarkerPos, this.feedDist);
     }
 
     setupGui() {
         const gui = new GUI();
+
+        const toolPathUpdated = () => {
+            this.simulator.transT = this.computeToolTrans(0);
+            this.updateToolPathVis(this.toolPathMarkerPos, this.feedDist);
+            this.updatePointsFromGPU();
+        };
         
-        gui.add(this, "toolRot", 0, 360, 1).name("Tool Rot (deg/mm)");
+        gui.add(this, "toolInitX", -15, 15, 0.1).name("Tool Init X (mm)").onChange(toolPathUpdated);
+        gui.add(this, "toolInitY", -15, 15, 0.1).name("Tool Init Y (mm)").onChange(toolPathUpdated);
+        gui.add(this, "feedDir", 0, 90, 1).name("Feed Dir (deg)").onChange(toolPathUpdated);
+        gui.add(this, "toolRot", 0, 360, 1).name("Tool Rot (deg/mm)").onChange(toolPathUpdated);
         gui.add(this, "ewr", 0, 500, 1).name("E. Wear Ratio (%)");
 
         gui.add(this, "runSingle");
         gui.add(this, "run");
+    }
+
+    computeToolTrans(feedDist) {
+        const pos = new THREE.Vector3(this.toolInitX, this.toolInitY, 6);
+        const rot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), feedDist * this.toolRot * Math.PI / 180);
+
+        const angle = this.feedDir * Math.PI / 180;
+        pos.add(new THREE.Vector3(feedDist * Math.sin(angle), 0, -feedDist * Math.cos(angle)));
+        return makeTrans(pos, rot);
+    }
+
+    updateToolPathVis(initLocPos, distance) {
+        const computeToolTrans = (t) => this.computeToolTrans(t * distance);
+        class ToolPathCurve extends THREE.Curve {
+            getPoint(t, optionalTarget = new THREE.Vector3()) {
+                return optionalTarget.copy(initLocPos).applyMatrix4(computeToolTrans(t));
+            }
+        }
+        const vis = new THREE.Mesh(
+            new THREE.TubeGeometry(new ToolPathCurve(), 1024, 0.1, 6),
+            new THREE.MeshBasicMaterial({color: "darkgray"}));
+        
+        if (this.toolPathVis) {
+            this.scene.remove(this.toolPathVis);
+        }
+        this.scene.add(vis);
+        this.toolPathVis = vis;
+        return vis;
     }
 
     runSingle() {
@@ -920,9 +965,9 @@ const makeTrans = (pos, rot) => {
 };
 
 const simulator = new Simulator(
-    new Shape("box", { size: new THREE.Vector3(20, 20, 10) }),
+    new Shape("box", { size: new THREE.Vector3(10, 10, 5) }),
     new Shape("cylinder", { diameter: 1.5, height: 10 }),
-    makeTrans(new THREE.Vector3(0, 0, -5), new THREE.Quaternion().identity()),
+    makeTrans(new THREE.Vector3(0, 0, -2.5), new THREE.Quaternion().identity()),
     makeTrans(new THREE.Vector3(0, 0, 6), new THREE.Quaternion().identity())
 );
 
