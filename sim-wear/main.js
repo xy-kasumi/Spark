@@ -621,7 +621,7 @@ class GpuKernels {
     }
 }
 
-const POINT_PER_MM = 4;
+const POINTS_PER_MM = 2;
 
 class Simulator {
     constructor(shapeW, shapeT, transW, transT) {
@@ -646,8 +646,8 @@ class Simulator {
         this.kernels = new GpuKernels(this.device);
 
         // Initialize solids
-        this.solidW = await this.kernels.initBox(this.shapeW.sizeLocal, POINT_PER_MM);
-        this.solidT = await this.kernels.initBox(this.shapeT.sizeLocal, POINT_PER_MM);
+        this.solidW = await this.kernels.initBox(this.shapeW.sizeLocal, POINTS_PER_MM);
+        this.solidT = await this.kernels.initBox(this.shapeT.sizeLocal, POINTS_PER_MM);
     }
 
     async getRenderingBufferW() {
@@ -755,6 +755,8 @@ class View3D {
         this.toolRot = 10; // deg/mm; CCW
         this.feedDist = 15; // mm
 
+        this.currentSimFeedDist = 0;
+
         this.init();
         this.setupGui();
     }
@@ -794,10 +796,10 @@ class View3D {
         // Add axes helper
         const axesHelper = new THREE.AxesHelper(8);
         this.scene.add(axesHelper);
-        axesHelper.position.z += 0.01; // increase visibility
+        axesHelper.position.set(-15, -15, 0);
 
         // Add grid
-        this.gridHelper = new THREE.GridHelper(100, 10);
+        this.gridHelper = new THREE.GridHelper(40, 4);
         this.scene.add(this.gridHelper);
         this.gridHelper.rotateX(Math.PI / 2);
 
@@ -853,6 +855,8 @@ class View3D {
 
         gui.add(this, "runSingle");
         gui.add(this, "run");
+        gui.add(this, "stop");
+        gui.add(this, "currentSimFeedDist").name("Current Feed (mm)").disable().listen();
     }
 
     computeToolTrans(feedDist) {
@@ -905,6 +909,38 @@ class View3D {
 
     run() {
         console.log("run");
+        this.stopSimulation = false;
+
+        // ewr = 0%: ratio = 0
+        // ewr = 100%: ratio = 0.5
+        const ewr = this.ewr / 100;
+        const ratio = ewr / (1 + ewr);
+
+        const simulateAsync = async () => {
+            this.currentSimFeedDist = 0;
+            while (this.currentSimFeedDist <= this.feedDist) {
+                this.simulator.transT = this.computeToolTrans(this.currentSimFeedDist);
+
+                const t0 = performance.now();
+                await simulator.removeClose(1 / POINTS_PER_MM, ratio);
+                const t1 = performance.now();
+                console.log("GPU-removeClose", t1 - t0, "ms");
+
+                await this.updatePointsFromGPU();
+
+                if (this.stopSimulation) {
+                    break;
+                }
+
+                this.currentSimFeedDist += 0.5 / POINTS_PER_MM;
+            }
+        };
+
+        simulateAsync(); // fire and forget
+    }
+
+    stop() {
+        this.stopSimulation = true;
     }
 
     onWindowResize() {
