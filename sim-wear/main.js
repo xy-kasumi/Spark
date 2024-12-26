@@ -271,7 +271,7 @@ class GpuKernels {
     // [in] psIn: array<vec4f>
     // [in] locToWorld: THREE.Matrix4
     // returns: array<vec4f> (same order & length as psIn)
-    applyTransform(psIn, locToWorld) {
+    async applyTransform(psIn, locToWorld) {
         const numPoints = psIn.size / 16;
         const psOut = this.device.createBuffer({
             label: "ps-out-at",
@@ -304,7 +304,6 @@ class GpuKernels {
         passEncoder.dispatchWorkgroups(Math.ceil(numPoints / 128));
         passEncoder.end();
         this.device.queue.submit([commandEncoder.finish()]);
-
         return psOut;
     }
     
@@ -621,7 +620,7 @@ class GpuKernels {
     }
 }
 
-const POINTS_PER_MM = 2.2;
+const POINTS_PER_MM = 3;
 
 class Simulator {
     constructor(shapeW, shapeT, transW, transT) {
@@ -678,7 +677,10 @@ class Simulator {
         return new Float32Array(stagingBuffer.getMappedRange(), 0, numActive * 4);
     }
 
-    // Remove points from W & T until the closest point pair pair is further than d.
+    // Remove points from W & T within distance d, with roughly following given removal ratio.
+    // d must be "small enough" (compared to point spacing). Otherwise, solid will fracture incorrectly.
+    //
+    // Was originally: remove points from W & T until the closest point pair pair is further than d.
     // [in] d: distance threshold
     // [in] ratio: ratio in [0, 1] (0: removal happens entirely in W. 1: removal happens entirely in T.)
     async removeClose(d, ratio) {
@@ -695,52 +697,76 @@ class Simulator {
         const wIndex = this.kernels.createGridIndex(pointsWWorld, this.solidW.numPoints, gridW);
         */
 
-        while (true) {
-            const t0 = performance.now();
-            const ptsWWorld = this.kernels.applyTransform(this.solidW, this.transW);
-            const ptsTWorld = this.kernels.applyTransform(this.solidT, this.transT);
+        const t0 = performance.now();
+        const ptsWWorld = await this.kernels.applyTransform(this.solidW, this.transW);
+        const ptsTWorld = await this.kernels.applyTransform(this.solidT, this.transT);
+        await this.device.queue.onSubmittedWorkDone();
+        const t1 = performance.now();
 
-            const wps = await this.kernels._readAllV4(ptsWWorld);
-            const tps = await this.kernels._readAllV4(ptsTWorld);
+        const wps = await this.kernels._readAllV4(ptsWWorld);
+        const tps = await this.kernels._readAllV4(ptsTWorld);
+        const t2 = performance.now();
 
-            const minPair = {ixW: null, ixT: null, d: 1e10};
+        const wp_cands = [];
+        for (let iw = 0; iw < wps.length; iw++) {
+            if (wps[iw].w < 0.5) {
+                continue;
+            }
+            const vw = new THREE.Vector3(wps[iw].x, wps[iw].y, wps[iw].z);
+            let minDist = 1e10;
+            for (let it = 0; it < tps.length; it++) {
+                if (tps[it].w < 0.5) {
+                    continue;
+                }
+                const vt = new THREE.Vector3(tps[it].x, tps[it].y, tps[it].z);
+                minDist = Math.min(minDist, vt.distanceTo(vw));
+            }
+            if (minDist < d) {
+                wp_cands.push({d: minDist, ix: iw});
+            }
+        }
+        const tp_cands = [];
+        for (let it = 0; it < tps.length; it++) {
+            if (tps[it].w < 0.5) {
+                continue;
+            }
+            const vt = new THREE.Vector3(tps[it].x, tps[it].y, tps[it].z);
+            let minDist = 1e10;
             for (let iw = 0; iw < wps.length; iw++) {
                 if (wps[iw].w < 0.5) {
                     continue;
                 }
                 const vw = new THREE.Vector3(wps[iw].x, wps[iw].y, wps[iw].z);
-                for (let it = 0; it < tps.length; it++) {
-                    if (tps[it].w < 0.5) {
-                        continue;
-                    }
-                    const vt = new THREE.Vector3(tps[it].x, tps[it].y, tps[it].z);
-
-                    const dist = vt.distanceTo(vw);
-                    if (dist < minPair.d) {
-                        minPair.d = dist;
-                        minPair.ixW = iw;
-                        minPair.ixT = it;
-                    }
-                }
+                minDist = Math.min(minDist, vw.distanceTo(vt));
             }
-            const t1 = performance.now();
-            console.log("CPU-min", t1 - t0, "ms");
-            //const minPair = this.kernels.findMinPair(pointsTWorld, this.solidT.numPoints, wIndex);
-            console.log("Min pair", minPair);
-            if (minPair.d > d) {
-                console.log("Too far, stopping");
-                break;
-            }
-
-            // Remove a point from W or T.
-            if (Math.random() > ratio) {
-                console.log("Removing W point");
-                this.kernels.markDead(this.solidW, minPair.ixW);
-            } else {
-                console.log("Removing T point");
-                this.kernels.markDead(this.solidT, minPair.ixT);
+            if (minDist < d) {
+                tp_cands.push({d: minDist, ix: it});
             }
         }
+        wp_cands.sort((a, b) => a.d - b.d);
+        tp_cands.sort((a, b) => a.d - b.d);
+
+        const maxRemove = Math.min(wp_cands.length, tp_cands.length);
+        if (maxRemove == 0) {
+            return;
+        }
+
+        const removeW = Math.floor(maxRemove * (1 - ratio));
+        const removeT = Math.floor(maxRemove * ratio);
+        console.log("Remove W", removeW, "T", removeT);
+        if (removeW == 0 && removeT == 0) {
+            return;
+        }
+
+        for (let i = 0; i < removeW; i++) {
+            this.kernels.markDead(this.solidW, wp_cands[i].ix);
+        }
+        for (let i = 0; i < removeT; i++) {
+            this.kernels.markDead(this.solidT, tp_cands[i].ix);
+        }
+
+        const t3 = performance.now();
+        console.log(`CPU-min: trans: ${t1 - t0}ms, read: ${t2 - t1}ms, find&remove: ${t3 - t2}ms`);
     }
 }
 
@@ -988,7 +1014,7 @@ class View3D {
                     break;
                 }
 
-                this.currentSimFeedDist += 0.5 / POINTS_PER_MM;
+                this.currentSimFeedDist += 0.5 / POINTS_PER_MM; // TODO: this won't work if tool is rotating super fast
             }
         };
 
@@ -1064,6 +1090,5 @@ const simulator = new Simulator(
 );
 
 await simulator.initGpu();
-await simulator.removeClose(0.5, 0.5); // TODO: remove later after debug is done
 
 const view = new View3D(simulator);
