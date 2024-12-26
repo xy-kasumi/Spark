@@ -349,19 +349,14 @@ class GpuKernels {
             usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
         });
 
-        {
-            const commandEncoder = this.device.createCommandEncoder();
-            commandEncoder.copyBufferToBuffer(ps, 0, temp0Min, 0, numPoints * 16);
-            commandEncoder.copyBufferToBuffer(ps, 0, temp0Max, 0, numPoints * 16);
-            this.device.queue.submit([commandEncoder.finish()]);
-        }
-        await this.device.queue.onSubmittedWorkDone();
+        const commandEncoder = this.device.createCommandEncoder();
+            
+        commandEncoder.copyBufferToBuffer(ps, 0, temp0Min, 0, numPoints * 16);
+        commandEncoder.copyBufferToBuffer(ps, 0, temp0Max, 0, numPoints * 16);
 
         let currentNumPoints = numPoints;
         let mode0to1 = true;
         while (currentNumPoints > 1) {
-            console.log("Reducing AABB", currentNumPoints);
-
             const bindGroup = this.device.createBindGroup({
                 layout: this.computeAABBPipeline.getBindGroupLayout(0),
                 entries: [
@@ -372,26 +367,23 @@ class GpuKernels {
                 ]
             });
 
-            const commandEncoder = this.device.createCommandEncoder();
             const passEncoder = commandEncoder.beginComputePass();
             passEncoder.setPipeline(this.computeAABBPipeline);
             passEncoder.setBindGroup(0, bindGroup);
             passEncoder.dispatchWorkgroups(Math.floor(currentNumPoints / 128) + 1);
             passEncoder.end();
-            this.device.queue.submit([commandEncoder.finish()]);
-            await this.device.queue.onSubmittedWorkDone();
 
             mode0to1 = !mode0to1;
             currentNumPoints = Math.floor(currentNumPoints / 128) + 1;
         }
 
-        const commandEncoder = this.device.createCommandEncoder();
         // store min to [0, 16), max to [16, 32) in readBuf
         commandEncoder.copyBufferToBuffer(mode0to1 ? temp0Min : temp1Min, 0, readBuf, 0, 16);
         commandEncoder.copyBufferToBuffer(mode0to1 ? temp0Max : temp1Max, 0, readBuf, 16, 16);
+
         this.device.queue.submit([commandEncoder.finish()]);
         await this.device.queue.onSubmittedWorkDone();
-
+        
         await readBuf.mapAsync(GPUMapMode.READ);
         const min = new Float32Array(readBuf.getMappedRange(0, 16));
         const max = new Float32Array(readBuf.getMappedRange(16, 16));
@@ -546,7 +538,7 @@ class GpuSolid {
         this.spec = spec;
 
         // compute num points & buffer structure.
-        const POINT_PER_MM = 3;
+        const POINT_PER_MM = 5;
         this.pointsPerAxis = spec.size.clone().multiplyScalar(POINT_PER_MM).floor();
         this.numPoints = this.pointsPerAxis.x * this.pointsPerAxis.y * this.pointsPerAxis.z;
         console.log(this.numPoints, this.pointsPerAxis);
@@ -626,7 +618,6 @@ class Simulator {
         const pointsTWorld = this.kernels.applyTransform(this.solidT.pointsBuffer, this.solidSpecT.locToWorld, this.solidT.numPoints);
 
         // We assume W is generally bigger than T. That's why we create for grid for W, instead of T.
-        console.log("Computing AABB");
         const t0 = performance.now();
         const aabbW = await this.kernels.computeAABB(this.solidW.pointsBuffer, this.solidW.numPoints);
         const t1 = performance.now();   
