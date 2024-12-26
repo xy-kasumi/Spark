@@ -11,12 +11,23 @@ const params = {
 };
 
 // Represents connected metal.
-// Typically used to represent or a tool or a work.
-class SolidSpec {
-    constructor(center, size, locToWorld = new THREE.Matrix4()) {
-        this.center = center;
-        this.size = size;
-        this.locToWorld = locToWorld;
+class Shape {
+    // Specify solid in world coordinates. shape is generated in local coordinates, then rotated, and then translated by offset.
+    // Shape is generally centered at the origin of local coordinates, and "special" axis pointing in Z.
+    // [in] shapeType: "box" | "cylinder"
+    // [in] shapeParams
+    //   shapeType == "box": { size: THREE.Vector3 }
+    //   shapeType == "cylinder": { diameter, height } (diamter: XY, height: Z length)
+    constructor(shapeType, shapeParams) {
+        this.shapeType = shapeType;
+        this.shapeParams = shapeParams;
+        if (shapeType === "box") {
+            this.sizeLocal = shapeParams.size;
+        } else if (shapeType === "cylinder") {
+            this.sizeLocal = new THREE.Vector3(shapeParams.diameter, shapeParams.diameter, shapeParams.height);
+        } else {
+            throw new Error(`Unknown shape type: ${shapeType}`);
+        }
     }
 }
 
@@ -91,15 +102,47 @@ class GpuKernels {
         }
     }
 
+    async _readLiveV3WithOrigIx(buf) {
+        const numVecs = buf.size / 16;
+        const tempBuffer = this.device.createBuffer({
+            size: numVecs * 16,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        });
+        await this.device.queue.onSubmittedWorkDone();
+        
+        const commandEncoder = this.device.createCommandEncoder();
+        commandEncoder.copyBufferToBuffer(buf, 0, tempBuffer, 0, numVecs * 16);
+        this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+
+        await tempBuffer.mapAsync(GPUMapMode.READ);
+        const view = new Float32Array(tempBuffer.getMappedRange(0, numVecs * 16));
+        const pts = [];
+        for (let i = 0; i < numVecs; i++) {
+            if (view[i * 4 + 3] < 0.5) {
+                continue;
+            }
+            pts.push({
+                p: new THREE.Vector3(
+                    view[i * 4 + 0],
+                    view[i * 4 + 1],
+                    view[i * 4 + 2]
+                ),
+                ix: i,
+            });
+        }
+        tempBuffer.unmap();
+        return pts;
+    }
+
     _compileInit() {
         const cs = this.device.createShaderModule({
             code: `
                 @group(0) @binding(0) var<storage, read_write> points: array<vec4f>;
                 
                 struct Params {
-                    center: vec4f,
-                    size: vec4f,
-                    pointsPerAxis: vec4u,
+                    size: vec4f, // xyz: min point coordinates, w: step
+                    dims: vec4u, // xyz: number of points in each axis, w: unused
                 }
                 @group(0) @binding(1) var<uniform> params: Params;
 
@@ -119,30 +162,19 @@ class GpuKernels {
                         return;
                     }
                     
-                    let z = index / (params.pointsPerAxis.x * params.pointsPerAxis.y);
-                    let y = (index % (params.pointsPerAxis.x * params.pointsPerAxis.y)) / params.pointsPerAxis.x;
-                    let x = index % params.pointsPerAxis.x;
+                    let z = index / (params.dims.x * params.dims.y);
+                    let y = (index % (params.dims.x * params.dims.y)) / params.dims.x;
+                    let x = index % params.dims.x;
 
-                    let pos_normalized = vec3f(
-                        f32(x) / f32(params.pointsPerAxis.x),
-                        f32(y) / f32(params.pointsPerAxis.y),
-                        f32(z) / f32(params.pointsPerAxis.z)
-                    );
+                    let noise = vec3f(
+                        rand01(u32(index), 0xca272690),
+                        rand01(u32(index), 0xb8100b94),
+                        rand01(u32(index), 0x13941583));
 
-                    var pos_local = pos_normalized * params.size.xyz - params.size.xyz/2.0 + params.center.xyz;
-                    let lattice_d = params.size.x / f32(params.pointsPerAxis.x);
-
-                    // add random noise to remove grid anisotropy
-                    pos_local +=
-                        (vec3f(
-                            rand01(u32(index), 0xca272690),
-                            rand01(u32(index), 0xb8100b94),
-                            rand01(u32(index), 0x13941583)
-                        ) - 0.5) * lattice_d;
-
-                    let pt_active = length(pos_local) < 5.0;
-
-                    points[index] = vec4f(pos_local, select(0.0, 1.0, pt_active));
+                    let pos_local = 
+                        params.size.xyz +
+                        (vec3f(f32(x), f32(y), f32(z)) + noise) * params.size.w;
+                    points[index] = vec4f(pos_local, 1);
                 }
             `
         });
@@ -160,31 +192,36 @@ class GpuKernels {
     }
 
     // Initialize point cloud.
-    // [out] psOut: array<vec4f>
-    // [in] center: THREE.Vector3
     // [in] size: THREE.Vector3
-    // [in] pointsPerAxis: THREE.Vector3
-    init(psOut, center, size, pointsPerAxis) {
+    // [in] pointsPerMm: number
+    // returns: buffer (vec4)
+    async initBox(size, pointsPerMm) {
+        const pointsPerAxis = size.clone().multiplyScalar(pointsPerMm).ceil();
+        const numPoints = pointsPerAxis.x * pointsPerAxis.y * pointsPerAxis.z;
+        const minPoint = size.clone().multiplyScalar(-0.5);
+
+        const pointsBuf = this.device.createBuffer({
+            size: numPoints * 16,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+        });
+
         const paramBuf = this.device.createBuffer({
-            size: 48, // 3 vec3f (12 bytes each) + 1 vec3u (12 bytes) = 48 bytes
+            size: 32,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             mappedAtCreation: true,
         });
-        new Float32Array(paramBuf.getMappedRange(0, 32)).set([
-            center.x, center.y, center.z, 0,
-            size.x, size.y, size.z, 0,
+        new Float32Array(paramBuf.getMappedRange(0, 16)).set([
+            minPoint.x, minPoint.y, minPoint.z, 1 / pointsPerMm,
         ]);
-        new Uint32Array(paramBuf.getMappedRange(32)).set([
+        new Uint32Array(paramBuf.getMappedRange(16, 16)).set([
             pointsPerAxis.x, pointsPerAxis.y, pointsPerAxis.z, 0,
         ]);
         paramBuf.unmap();
 
-        const numPoints = pointsPerAxis.x * pointsPerAxis.y * pointsPerAxis.z;
-
         const bindGroup = this.device.createBindGroup({
             layout: this.initPipeline.getBindGroupLayout(0),
             entries: [
-                { binding: 0, resource: { buffer: psOut } },
+                { binding: 0, resource: { buffer: pointsBuf } },
                 { binding: 1, resource: { buffer: paramBuf } },
             ]
         });
@@ -196,6 +233,9 @@ class GpuKernels {
         passEncoder.dispatchWorkgroups(Math.ceil(numPoints / 128));
         passEncoder.end();
         this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+
+        return pointsBuf;
     }
 
     _compileApplyTransform() {
@@ -213,8 +253,8 @@ class GpuKernels {
                     }
                     
                     let p = ps_in[index];
-                    let p_new = transform * p;
-                    ps_out[index] = vec4f(p_new.xyz, p.w);
+                    let p_new = (transform * vec4f(p.xyz, 1)).xyz;
+                    ps_out[index] = vec4f(p_new, p.w);
                 }
         `});
 
@@ -235,9 +275,9 @@ class GpuKernels {
     // Initialize point cloud. In psIn and return value, w is 1 if alive, 0 if dead.
     // [in] psIn: array<vec4f>
     // [in] locToWorld: THREE.Matrix4
-    // [in] numPoints: number
     // returns: array<vec4f> (same order & length as psIn)
-    applyTransform(psIn, locToWorld, numPoints) {
+    applyTransform(psIn, locToWorld) {
+        const numPoints = psIn.size / 16;
         const psOut = this.device.createBuffer({
             label: "ps-out-at",
             size: numPoints * 16,
@@ -249,7 +289,8 @@ class GpuKernels {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             mappedAtCreation: true,
         });
-        new Float32Array(matBuf.getMappedRange(0, 64)).set(locToWorld.clone().transpose().elements); // row-major to col-major
+        // col-major -> col-major (cf. https://threejs.org/docs/?q=Matrix#api/en/math/Matrix4.compose)
+        new Float32Array(matBuf.getMappedRange(0, 64)).set(locToWorld.elements);
         matBuf.unmap();
 
         const bindGroup = this.device.createBindGroup({
@@ -271,7 +312,6 @@ class GpuKernels {
 
         return psOut;
     }
-
     
     _compileComputeAABB() {
         const cs = this.device.createShaderModule({
@@ -370,11 +410,11 @@ class GpuKernels {
             const passEncoder = commandEncoder.beginComputePass();
             passEncoder.setPipeline(this.computeAABBPipeline);
             passEncoder.setBindGroup(0, bindGroup);
-            passEncoder.dispatchWorkgroups(Math.floor(currentNumPoints / 128) + 1);
+            passEncoder.dispatchWorkgroups(Math.ceil(currentNumPoints / 128));
             passEncoder.end();
 
             mode0to1 = !mode0to1;
-            currentNumPoints = Math.floor(currentNumPoints / 128) + 1;
+            currentNumPoints = Math.ceil(currentNumPoints / 128);
         }
 
         // store min to [0, 16), max to [16, 32) in readBuf
@@ -432,12 +472,17 @@ class GpuKernels {
         });
     }
 
-    // Gather active points from psIn and store them continuously from the beginning of psOut.
+    // Gather active points from psIn.
     // [in] psIn: array<vec4f>
-    // [out] psOut: array<vec4f>
-    // [in] numPoints: number
-    // returns: the number of active points
-    async gatherActive(psIn, psOut, numPoints) {
+    // returns: new buffer
+    async gatherActive(psIn) {
+        const numPoints = psIn.size / 16;
+
+        const tempBuf = this.device.createBuffer({
+            size: numPoints * 16,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+            label: "tempBuf",
+        });
         const countBuf = this.device.createBuffer({
             size: 4,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
@@ -453,7 +498,7 @@ class GpuKernels {
             layout: this.gatherActivePipeline.getBindGroupLayout(0),
             entries: [
                 { binding: 0, resource: { buffer: psIn } },
-                { binding: 1, resource: { buffer: psOut } },
+                { binding: 1, resource: { buffer: tempBuf } },
                 { binding: 2, resource: { buffer: countBuf } },
             ]
         });
@@ -473,7 +518,18 @@ class GpuKernels {
         const count = new Uint32Array(countBufReading.getMappedRange(0, 4))[0];
         countBufReading.unmap();
 
-        return count;
+        // copy to new smaller buffer
+        const resultBuffer = this.device.createBuffer({
+            size: count * 16,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+        });
+        {
+            const commandEncoder = this.device.createCommandEncoder();
+            commandEncoder.copyBufferToBuffer(tempBuf, 0, resultBuffer, 0, count * 16);
+            this.device.queue.submit([commandEncoder.finish()]);
+            await this.device.queue.onSubmittedWorkDone();
+        }
+        return resultBuffer;
     }
 
     _compileGrid() {
@@ -508,6 +564,24 @@ class GpuKernels {
 
                     entries[gid.x] = CellEntry(cell_ix, gid.x, 1u);
                 }
+
+                @compute @workgroup_size(128)
+                fn mapMin(@builtin(global_invocation_id) gid: vec3<u32>) {
+                    let p = psIn[gid.x];
+
+                    // find 3D cellIndex
+                    // loop 27 neighbor cell index
+                    // continue if cell does not exist (out of range)
+                    // if cell exist, lookup cell entry table (beginIx, endIx)
+                    // loop through beginIx, endIx
+                    // lookup point position, compute distance, compute local min
+                    // write local min to buffer
+                }
+
+                @compute @workgroup_size(128)
+                fn reduceMin() {
+                    // normal parallel reduction
+                }
             `
         });
         this.computeCellIxPipeline = this.device.createComputePipeline({
@@ -524,70 +598,43 @@ class GpuKernels {
         });
     }
 
-    computeCellIx(psIn, entries, grid) {
-
+    // Create a grid index.
+    // [in] psIn: array<vec4f>
+    // [in] numPoints: number of points in psIn
+    // [in] grid: {min: THREE.Vector3, unit: number cell size, dims: THREE.Vector3 number of cells per axis}
+    //    unit is also the max distance that can be queried by findMinPair.
+    // returns: some opaque object that can be passed to findMinPair
+    async createGridIndex(psIn, numPoints, grid) {
+        //const psIn = await this._readAllV4(psIn);
+        return {};
     }
 
-    
-}
-
-class GpuSolid {
-    // Initializes a rectangular solid with a given center, size, and transform.
-    constructor(kernels, spec) {
-        this.kernels = kernels;
-        this.spec = spec;
-
-        // compute num points & buffer structure.
-        const POINT_PER_MM = 5;
-        this.pointsPerAxis = spec.size.clone().multiplyScalar(POINT_PER_MM).floor();
-        this.numPoints = this.pointsPerAxis.x * this.pointsPerAxis.y * this.pointsPerAxis.z;
-        console.log(this.numPoints, this.pointsPerAxis);
-
-        // Allocate buffers.
-
-        // XYZ: position
-        // Z: 1 (active), 0 (inactive)
-        this.pointsBuffer = kernels.device.createBuffer({
-            size: this.numPoints * 4 * Float32Array.BYTES_PER_ELEMENT,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-        });
-
-        // XYZ: position, W: 1
-        this.stagingBuffer = kernels.device.createBuffer({
-            size: this.numPoints * 4 * Float32Array.BYTES_PER_ELEMENT,
-            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-            mappedAtCreation: true,
-        });
-
-        this.kernels.init(this.pointsBuffer, spec.center, spec.size, this.pointsPerAxis);
+    // Find the closest pair of points between qs and ps, if they're within "unit" given in createGridIndex.
+    // [in] ps: array<vec4f>
+    // [in] numPs: number of points in ps
+    // [in] qsIndex: opaque index created by createGridIndex
+    // returns: {pIx: number, qIx: number, dist: number} | null (if not found)
+    async findMinPair(ps, numPs, qsIndex) {
+        return {pIx: 0, qIx: 0, dist: 0};
     }
 
-    // Populates this.stagingBuffer with active points.
-    // returns: number of active points
-    async copyToStagingBuffer() {
-        const tempBuffer = this.kernels.device.createBuffer({
-            size: this.numPoints * 16,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-        });
-
-        const numActive = await this.kernels.gatherActive(this.pointsBuffer, tempBuffer, this.numPoints);
-
-        this.stagingBuffer.unmap();
-        {
-            const commandEncoder = this.kernels.device.createCommandEncoder();
-            commandEncoder.copyBufferToBuffer(tempBuffer, 0, this.stagingBuffer, 0, tempBuffer.size);
-            this.kernels.device.queue.submit([commandEncoder.finish()]);
-        }
-        await this.stagingBuffer.mapAsync(GPUMapMode.READ);
-
-        return numActive;
+    // Mark specified point as dead.
+    // [in] ps: array<vec4f>
+    // [in] ix: index of the point to mark as dead
+    async markDead(ps, ix) {
+        this.device.queue.writeBuffer(ps, 16 * ix, new Float32Array([0, 0, 0, 0]));
     }
 }
+
+const POINT_PER_MM = 2;
 
 class Simulator {
-    constructor(solidSpecW, solidSpecT) {
-        this.solidSpecW = solidSpecW;
-        this.solidSpecT = solidSpecT;
+    constructor(shapeW, shapeT, transW, transT) {
+        this.shapeW = shapeW;
+        this.shapeT = shapeT;
+        this.transW = transW;
+        this.transT = transT;
+
         this.device = null;
         this.solidW = null;
         this.solidT = null;
@@ -604,38 +651,82 @@ class Simulator {
         this.kernels = new GpuKernels(this.device);
 
         // Initialize solids
-        this.solidW = new GpuSolid(this.kernels, this.solidSpecW);
-        this.solidT = new GpuSolid(this.kernels, this.solidSpecT);
+        this.solidW = await this.kernels.initBox(this.shapeW.sizeLocal, POINT_PER_MM);
+        this.solidT = await this.kernels.initBox(this.shapeT.sizeLocal, POINT_PER_MM);
+    }
 
-        await this.device.queue.onSubmittedWorkDone();
+    async getRenderingBufferW() {
+        return await this._getRenderingBuffer(this.solidW, this.transW);
+    }
+
+    async getRenderingBufferT() {
+        return await this._getRenderingBuffer(this.solidT, this.transT);
+    }
+
+    // Extracts active points for rendering.
+    // returns: Float32Array of active points (backed by mapped GPU buffer)
+    async _getRenderingBuffer(pointsBuf, trans) {
+        const activePointsBuf = await this.kernels.gatherActive(pointsBuf);
+        const activeWorldPointsBuf = await this.kernels.applyTransform(activePointsBuf, trans);
+
+        const numActive = activeWorldPointsBuf.size / 16;
+        const stagingBuffer = this.kernels.device.createBuffer({
+            size: numActive * 16,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        });
+        const commandEncoder = this.kernels.device.createCommandEncoder();
+        commandEncoder.copyBufferToBuffer(activeWorldPointsBuf, 0, stagingBuffer, 0, stagingBuffer.size);
+        this.kernels.device.queue.submit([commandEncoder.finish()]);
+        await this.kernels.device.queue.onSubmittedWorkDone();
+        
+        await stagingBuffer.mapAsync(GPUMapMode.READ);
+        return new Float32Array(stagingBuffer.getMappedRange(), 0, numActive * 4);
     }
 
     // Remove points from W & T until the closest point pair pair is further than d.
     // [in] d: distance threshold
     // [in] ratio: ratio in [0, 1] (0: removal happens entirely in W. 1: removal happens entirely in T.)
     async removeClose(d, ratio) {
-        const pointsWWorld = this.kernels.applyTransform(this.solidW.pointsBuffer, this.solidSpecW.locToWorld, this.solidW.numPoints);
-        const pointsTWorld = this.kernels.applyTransform(this.solidT.pointsBuffer, this.solidSpecT.locToWorld, this.solidT.numPoints);
+        
 
         // We assume W is generally bigger than T. That's why we create for grid for W, instead of T.
-        const t0 = performance.now();
-        const aabbW = await this.kernels.computeAABB(this.solidW.pointsBuffer, this.solidW.numPoints);
-        const t1 = performance.now();   
-        console.log("AABB W", aabbW, "took", t1 - t0, "ms");
-        return;
+        /*
+        const aabbW = await this.kernels.computeAABB(pointsWWorld, this.solidW.numPoints);
+        console.log("AABB W", aabbW);
 
         const gridW = {
             min: aabbW.min,
             unit: d,
-            dims: aabbW.size.clone().divideScalar(d).floor().addScalar(1),
+            dims: aabbW.max.clone().sub(aabbW.min).divideScalar(d).floor().addScalar(1),
         };
-        const cellEntriesW = this.kernels.computeCellIx(pointsWWorld, gridW);
-        const cellsW = this.kernels.sortCellEntries(cellEntriesW);
+        const wIndex = this.kernels.createGridIndex(pointsWWorld, this.solidW.numPoints, gridW);
+        */
 
         while (true) {
-            const minPair = this.kernels.findMinPair(pointsTWorld, cellsW, d);
-            if (minPair.dist >= d) {
-                return;
+            const t0 = performance.now();
+            const pointsWWorld = this.kernels.applyTransform(this.solidW.pointsBuffer, this.shapeW.locToWorld, this.solidW.numPoints);
+            const pointsTWorld = this.kernels.applyTransform(this.solidT.pointsBuffer, this.solidSpecT.locToWorld, this.solidT.numPoints);
+
+            const wps = await this.kernels._readLiveV3WithOrigIx(pointsWWorld);
+            const tps = await this.kernels._readLiveV3WithOrigIx(pointsTWorld);
+
+            const minPair = {ixW: null, ixT: null, d: 1e10};
+            for (let i = 0; i < tps.length; i++) {
+                for (let j = 0; j < wps.length; j++) {
+                    const dist = tps[i].p.clone().sub(wps[j].p).length();
+                    if (dist < minPair.d) {
+                        minPair.d = dist;
+                        minPair.ixW = wps[j].ix;
+                        minPair.ixT = tps[i].ix;
+                    }
+                }
+            }
+            const t1 = performance.now();
+            console.log("CPU-min", t1 - t0, "ms");
+            //const minPair = this.kernels.findMinPair(pointsTWorld, this.solidT.numPoints, wIndex);
+            console.log("Min pair", minPair);
+            if (minPair.d > d) {
+                break;
             }
     
             // Remove a point from W or T.
@@ -644,6 +735,7 @@ class Simulator {
             } else {
                 this.kernels.markDead(this.solidT.pointsBuffer, minPair.ixT);
             }
+            return;
         }
     }
 }
@@ -651,6 +743,10 @@ class Simulator {
 class View3D {
     constructor(simulator) {
         this.simulator = simulator;
+
+        this.ewr = 0;
+        this.toolRot = 0;
+
         this.init();
         this.setupGui();
     }
@@ -730,6 +826,16 @@ class View3D {
 
     setupGui() {
         const gui = new GUI();
+        
+        gui.add(this, "toolRot", 0, 360, 1).name("Tool Rot (deg/mm)");
+        gui.add(this, "ewr", 0, 500, 1).name("E. Wear Ratio (%)");
+
+        gui.add(this, "run");
+    }
+
+    run() {
+        console.log("run");
+
     }
 
     onWindowResize() {
@@ -743,29 +849,23 @@ class View3D {
     }
 
     async updatePointsFromGPU() {
-        const numActiveW = await this.simulator.solidW.copyToStagingBuffer();
-        const numActiveT = await this.simulator.solidT.copyToStagingBuffer();
-        console.log(`W:${numActiveW} pts, T:${numActiveT} pts`);
-
-        const solidWData = new Float32Array(this.simulator.solidW.stagingBuffer.getMappedRange(), 0, numActiveW * 4);
-        const solidTData = new Float32Array(this.simulator.solidT.stagingBuffer.getMappedRange(), 0, numActiveT * 4);
-
-        console.log(solidWData, solidWData.length);
-        console.log(solidTData, solidTData.length);
+        const pointsW = await this.simulator.getRenderingBufferW();
+        const pointsT = await this.simulator.getRenderingBufferT();
+        console.log(`W:${pointsW.length / 4} pts, T:${pointsT.length / 4} pts`);
 
         const t0 = performance.now();
         const max = new THREE.Vector3(-1e10, -1e10, -1e10);
         const min = new THREE.Vector3(1e10, 1e10, 1e10);
-        for (let i = 0; i < numActiveW; i++) {
-            const p = new THREE.Vector3(solidWData[i * 4], solidWData[i * 4 + 1], solidWData[i * 4 + 2]);
+        for (let i = 0; i < pointsW.length / 4; i++) {
+            const p = new THREE.Vector3(pointsW[i * 4], pointsW[i * 4 + 1], pointsW[i * 4 + 2]);
             min.min(p);
             max.max(p);
         }
         const t1 = performance.now();
         console.log("CPU-AABB-W", min, max, "took", t1 - t0, "ms");
 
-        this.solidWPoints.geometry.setAttribute('position', new THREE.BufferAttribute(solidWData, 4));
-        this.solidTPoints.geometry.setAttribute('position', new THREE.BufferAttribute(solidTData, 4));
+        this.solidWPoints.geometry.setAttribute('position', new THREE.BufferAttribute(pointsW, 4));
+        this.solidTPoints.geometry.setAttribute('position', new THREE.BufferAttribute(pointsT, 4));
     }
 
     animate() {
@@ -791,21 +891,18 @@ class View3D {
 ////////////////////////////////////////////////////////////////////////////////
 // entry point
 
-const solidSpecW = new SolidSpec(
-    new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(10, 10, 10),
-    new THREE.Matrix4().identity()
+const makeTrans = (pos, rot) => {
+    return new THREE.Matrix4().compose(pos, rot, new THREE.Vector3(1, 1, 1));
+};
+
+const simulator = new Simulator(
+    new Shape("box", { size: new THREE.Vector3(20, 20, 10) }),
+    new Shape("cylinder", { diameter: 1.5, height: 10 }),
+    makeTrans(new THREE.Vector3(0, 0, -5), new THREE.Quaternion().identity()),
+    makeTrans(new THREE.Vector3(0, 0, 6), new THREE.Quaternion().identity())
 );
 
-const solidSpecT = new SolidSpec(
-    new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(3, 3, 10),
-    new THREE.Matrix4().identity().makeTranslation(5, -8, 0),
-);
-
-const simulator = new Simulator(solidSpecW, solidSpecT);
 await simulator.initGpu();
-await simulator.removeClose(0.5, 0.5);
-
+// await simulator.removeClose(0.5, 0.5);
 
 const view = new View3D(simulator);
