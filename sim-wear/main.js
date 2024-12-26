@@ -621,7 +621,7 @@ class GpuKernels {
     }
 }
 
-const POINTS_PER_MM = 2;
+const POINTS_PER_MM = 2.2;
 
 class Simulator {
     constructor(shapeW, shapeT, transW, transT) {
@@ -748,12 +748,17 @@ class View3D {
     constructor(simulator) {
         this.simulator = simulator;
 
+        // simulation control
         this.ewr = 50; // %, electrode wear ratio
         this.toolInitX = 0;
         this.toolInitY = 0;
         this.feedDir = 0; // deg; 0=Z-, 90=X+
         this.toolRot = 10; // deg/mm; CCW
         this.feedDist = 15; // mm
+
+        // visualization control
+        this.slice = false; // YZ plane
+        this.sliceX = 0; // mm
 
         this.currentSimFeedDist = 0;
 
@@ -766,10 +771,10 @@ class View3D {
         const height = window.innerHeight;
 
         const aspect = width / height;
-        this.camera = new THREE.OrthographicCamera(-50 * aspect, 50 * aspect, 50, -50, -500, 500);
-        this.camera.position.x = -15;
-        this.camera.position.y = -40;
-        this.camera.position.z = 20;
+        this.camera = new THREE.OrthographicCamera(-30 * aspect, 30 * aspect, 30, -30, -500, 500);
+        this.camera.position.x = -8;
+        this.camera.position.y = -20;
+        this.camera.position.z = 10;
         this.camera.up.set(0, 0, 1);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -809,16 +814,76 @@ class View3D {
         Object.assign(window, { scene: this.scene });
 
         // Add point cloud visualization
-        const pointsMaterialW = new THREE.PointsMaterial({
-            size: 2,
-            sizeAttenuation: true,
-            color: "blue"
+        const pointsMaterialPrototype = new THREE.ShaderMaterial({
+            uniforms: {
+                use_slice: {value: 0},
+                slice_x: {value: 0},
+                key_color: {value: new THREE.Color(0, 1, 1)},
+                point_size_mm: {value: 1 / POINTS_PER_MM},
+                view_height_px: {value: this.renderer.getSize(new THREE.Vector2()).y},
+            },
+            vertexShader: `
+                varying vec4 vert_col;
+                varying float slice_dist;
+
+                uniform float use_slice;
+                uniform float slice_x;
+                uniform vec3 key_color;
+                uniform float view_height_px;
+                uniform float point_size_mm;
+
+                void main() {
+                    slice_dist = abs(position.x - slice_x);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    float f = projectionMatrix[1][1];   // This is ~ 1/tan(fovy/2)
+
+                    float scale = 0.5 * view_height_px * f;
+                    float point_size = (scale * point_size_mm) / gl_Position.w;
+
+                    if (use_slice < 0.5) {
+                        // slice disabled; apply 3D stripe pattern.
+                        gl_PointSize = point_size * 1.5;
+                        vert_col = vec4(key_color, 1);
+
+                        float stripe_unit = 5.0;
+                        float stripe_contrast = 20.0;
+                        float stripe_x = smoothstep(0.0, 1.0, abs(fract(position.x / stripe_unit + 0.5) - 0.5) * stripe_contrast);
+                        float stripe_y = smoothstep(0.0, 1.0, abs(fract(position.y / stripe_unit + 0.5) - 0.5) * stripe_contrast);
+                        vert_col.xyz *= stripe_x * stripe_y;
+                    } else {
+                        // slice enabled; make points bigger if they are in the slice plane.
+                        float thresh = point_size_mm * 0.5;
+                        if (slice_dist < thresh) {
+                            gl_PointSize = point_size; //  * mix(1.0, 0.1, slice_dist / thresh);
+                            vert_col = vec4(key_color * mix(1.0, 0.5, slice_dist / thresh), 1);
+                        } else {
+                            gl_PointSize = point_size * 0.1;
+                            vert_col = vec4(key_color * 0.5, 1);
+                        }
+                    }
+                }
+            `,
+            fragmentShader: `
+                varying vec4 vert_col;
+                varying float slice_dist;
+                uniform float point_size_mm;
+
+                void main() {
+                    float radius = length(gl_PointCoord - 0.5);
+                    if (radius > 0.5) {
+                        discard;
+                        return;
+                    }
+
+                    gl_FragColor = vec4(vert_col.rgb, 1.0);
+                }
+            `,
         });
-        const pointsMaterialT = new THREE.PointsMaterial({
-            size: 2,
-            sizeAttenuation: true,
-            color: "red"
-        });
+
+        const pointsMaterialW = pointsMaterialPrototype.clone();
+        pointsMaterialW.uniforms.key_color.value = new THREE.Color(0, 0, 1);
+        const pointsMaterialT = pointsMaterialPrototype.clone();
+        pointsMaterialT.uniforms.key_color.value = new THREE.Color(1, 0, 0);
 
         // Create points geometry for each solid
         this.solidWPoints = new THREE.Points(
@@ -829,6 +894,9 @@ class View3D {
             new THREE.BufferGeometry(),
             pointsMaterialT
         );
+        // Disable frustum culling, as they have problems when camera is extremely close.
+        this.solidWPoints.frustumCulled = false;
+        this.solidTPoints.frustumCulled = false;
 
         this.scene.add(this.solidWPoints);
         this.scene.add(this.solidTPoints);
@@ -853,10 +921,18 @@ class View3D {
         gui.add(this, "toolRot", 0, 360, 1).name("Tool Rot (deg/mm)").onChange(toolPathUpdated);
         gui.add(this, "ewr", 0, 500, 1).name("E. Wear Ratio (%)");
 
-        gui.add(this, "runSingle");
         gui.add(this, "run");
         gui.add(this, "stop");
         gui.add(this, "currentSimFeedDist").name("Current Feed (mm)").disable().listen();
+
+        gui.add(this, "slice").name("Slice (YZ)").onChange(() => {
+            this.solidWPoints.material.uniforms.use_slice.value = this.slice ? 1 : 0;
+            this.solidTPoints.material.uniforms.use_slice.value = this.slice ? 1 : 0;
+        });
+        gui.add(this, "sliceX", -15, 15, 0.1).name("Slice Pos (mm)").onChange(() => {
+            this.solidWPoints.material.uniforms.slice_x.value = this.sliceX;
+            this.solidTPoints.material.uniforms.slice_x.value = this.sliceX;
+        });
     }
 
     computeToolTrans(feedDist) {
@@ -885,26 +961,6 @@ class View3D {
         this.scene.add(vis);
         this.toolPathVis = vis;
         return vis;
-    }
-
-    runSingle() {
-        console.log("runSingle");
-
-        // ewr = 0%: ratio = 0
-        // ewr = 100%: ratio = 0.5
-        const ewr = this.ewr / 100;
-        const ratio = ewr / (1 + ewr);
-
-        const updatePoints = async () => {
-            const t0 = performance.now();
-            await simulator.removeClose(1.5, ratio);
-            const t1 = performance.now();
-            console.log("GPU-removeClose", t1 - t0, "ms");
-
-            await this.updatePointsFromGPU();
-        };
-
-        updatePoints(); // fire and forget
     }
 
     run() {
