@@ -102,7 +102,7 @@ class GpuKernels {
         }
     }
 
-    async _readLiveV3WithOrigIx(buf) {
+    async _readAllV4(buf) {
         const numVecs = buf.size / 16;
         const tempBuffer = this.device.createBuffer({
             size: numVecs * 16,
@@ -119,17 +119,12 @@ class GpuKernels {
         const view = new Float32Array(tempBuffer.getMappedRange(0, numVecs * 16));
         const pts = [];
         for (let i = 0; i < numVecs; i++) {
-            if (view[i * 4 + 3] < 0.5) {
-                continue;
-            }
-            pts.push({
-                p: new THREE.Vector3(
-                    view[i * 4 + 0],
-                    view[i * 4 + 1],
-                    view[i * 4 + 2]
-                ),
-                ix: i,
-            });
+            pts.push(new THREE.Vector4(
+                view[i * 4 + 0],
+                view[i * 4 + 1],
+                view[i * 4 + 2],
+                view[i * 4 + 3]
+            ));
         }
         tempBuffer.unmap();
         return pts;
@@ -687,8 +682,6 @@ class Simulator {
     // [in] d: distance threshold
     // [in] ratio: ratio in [0, 1] (0: removal happens entirely in W. 1: removal happens entirely in T.)
     async removeClose(d, ratio) {
-        
-
         // We assume W is generally bigger than T. That's why we create for grid for W, instead of T.
         /*
         const aabbW = await this.kernels.computeAABB(pointsWWorld, this.solidW.numPoints);
@@ -704,20 +697,29 @@ class Simulator {
 
         while (true) {
             const t0 = performance.now();
-            const pointsWWorld = this.kernels.applyTransform(this.solidW.pointsBuffer, this.shapeW.locToWorld, this.solidW.numPoints);
-            const pointsTWorld = this.kernels.applyTransform(this.solidT.pointsBuffer, this.solidSpecT.locToWorld, this.solidT.numPoints);
+            const ptsWWorld = this.kernels.applyTransform(this.solidW, this.transW);
+            const ptsTWorld = this.kernels.applyTransform(this.solidT, this.transT);
 
-            const wps = await this.kernels._readLiveV3WithOrigIx(pointsWWorld);
-            const tps = await this.kernels._readLiveV3WithOrigIx(pointsTWorld);
+            const wps = await this.kernels._readAllV4(ptsWWorld);
+            const tps = await this.kernels._readAllV4(ptsTWorld);
 
             const minPair = {ixW: null, ixT: null, d: 1e10};
-            for (let i = 0; i < tps.length; i++) {
-                for (let j = 0; j < wps.length; j++) {
-                    const dist = tps[i].p.clone().sub(wps[j].p).length();
+            for (let iw = 0; iw < wps.length; iw++) {
+                if (wps[iw].w < 0.5) {
+                    continue;
+                }
+                const vw = new THREE.Vector3(wps[iw].x, wps[iw].y, wps[iw].z);
+                for (let it = 0; it < tps.length; it++) {
+                    if (tps[it].w < 0.5) {
+                        continue;
+                    }
+                    const vt = new THREE.Vector3(tps[it].x, tps[it].y, tps[it].z);
+
+                    const dist = vt.distanceTo(vw);
                     if (dist < minPair.d) {
                         minPair.d = dist;
-                        minPair.ixW = wps[j].ix;
-                        minPair.ixT = tps[i].ix;
+                        minPair.ixW = iw;
+                        minPair.ixT = it;
                     }
                 }
             }
@@ -726,16 +728,18 @@ class Simulator {
             //const minPair = this.kernels.findMinPair(pointsTWorld, this.solidT.numPoints, wIndex);
             console.log("Min pair", minPair);
             if (minPair.d > d) {
+                console.log("Too far, stopping");
                 break;
             }
-    
+
             // Remove a point from W or T.
             if (Math.random() > ratio) {
-                this.kernels.markDead(this.solidW.pointsBuffer, minPair.ixW);
+                console.log("Removing W point");
+                this.kernels.markDead(this.solidW, minPair.ixW);
             } else {
-                this.kernels.markDead(this.solidT.pointsBuffer, minPair.ixT);
+                console.log("Removing T point");
+                this.kernels.markDead(this.solidT, minPair.ixT);
             }
-            return;
         }
     }
 }
@@ -744,8 +748,8 @@ class View3D {
     constructor(simulator) {
         this.simulator = simulator;
 
-        this.ewr = 0;
-        this.toolRot = 0;
+        this.ewr = 50;
+        this.toolRot = 90;
 
         this.init();
         this.setupGui();
@@ -830,12 +834,32 @@ class View3D {
         gui.add(this, "toolRot", 0, 360, 1).name("Tool Rot (deg/mm)");
         gui.add(this, "ewr", 0, 500, 1).name("E. Wear Ratio (%)");
 
+        gui.add(this, "runSingle");
         gui.add(this, "run");
+    }
+
+    runSingle() {
+        console.log("runSingle");
+
+        // ewr = 0%: ratio = 0
+        // ewr = 100%: ratio = 0.5
+        const ewr = this.ewr / 100;
+        const ratio = ewr / (1 + ewr);
+
+        const updatePoints = async () => {
+            const t0 = performance.now();
+            await simulator.removeClose(1.5, ratio);
+            const t1 = performance.now();
+            console.log("GPU-removeClose", t1 - t0, "ms");
+
+            await this.updatePointsFromGPU();
+        };
+
+        updatePoints(); // fire and forget
     }
 
     run() {
         console.log("run");
-
     }
 
     onWindowResize() {
@@ -903,6 +927,6 @@ const simulator = new Simulator(
 );
 
 await simulator.initGpu();
-// await simulator.removeClose(0.5, 0.5);
+await simulator.removeClose(0.5, 0.5); // TODO: remove later after debug is done
 
 const view = new View3D(simulator);
