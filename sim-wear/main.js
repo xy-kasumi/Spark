@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RadixSortKernel} from 'radix-sort';
 
 // Units
 // distance: mm
@@ -34,11 +35,48 @@ class Shape {
 class GpuKernels {
     constructor(device) {
         this.device = device;
-        this._compileInit();
-        this._compileApplyTransform();
-        this._compileComputeAABB();
-        this._compileGatherActive();
-        this._compileGrid();
+        this.#compileInit();
+        this.#compileApplyTransform();
+        this.#compileComputeAABB();
+        this.#compileGatherActive();
+        this.#compileComputeCellIx();
+        this.#compileIndexGrouping();
+        this.#compileComputeMins();
+    }
+
+    // Create buffer for compute.
+    // Supports: read/write from shader, bulk-copy from/to other buffer, very slow write from CPU
+    // Does not support: bulk read to CPU
+    createBuffer(size) {
+        return this.device.createBuffer({
+            size: size,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+        });
+    }
+
+    // Create uniform buffer & initialize with initFn.
+    // [in] size: number, bytes
+    // initFn: (ptr: ArrayBuffer) -> (), ptr is passed in "mapped" state.
+    // return: GpuBuffer
+    createUniformBuffer(size, initFn) {
+        const buf = this.device.createBuffer({
+            size: size,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            mappedAtCreation: true,
+        });
+        initFn(buf.getMappedRange(0, size));
+        buf.unmap();
+        return buf;
+    }
+
+    // Create buffer for reading to cpu.
+    // Supports: bulk-copy from other buffer, bulk read from cpu.
+    // Does not support: shader read/write
+    createBufferForCpuRead(size) {
+        return this.device.createBuffer({
+            size: size,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        });
     }
 
     async _debugPrintBuffer(mark, buf) {
@@ -47,29 +85,19 @@ class GpuKernels {
 
         let usage = buf.usage;
         const usageStrs = [];
-        if (usage & GPUBufferUsage.MAP_READ) {
-            usageStrs.push("MAP_READ");
-            usage &= ~GPUBufferUsage.MAP_READ;
-        }
-        if (usage & GPUBufferUsage.MAP_WRITE) {
-            usageStrs.push("MAP_WRITE");
-            usage &= ~GPUBufferUsage.MAP_WRITE;
-        }
-        if (usage & GPUBufferUsage.COPY_DST) {
-            usageStrs.push("COPY_DST");
-            usage &= ~GPUBufferUsage.COPY_DST;
-        }
-        if (usage & GPUBufferUsage.COPY_SRC) {
-            usageStrs.push("COPY_SRC");
-            usage &= ~GPUBufferUsage.COPY_SRC;
-        }
-        if (usage & GPUBufferUsage.UNIFORM) {
-            usageStrs.push("UNIFORM");
-            usage &= ~GPUBufferUsage.UNIFORM;
-        }
-        if (usage & GPUBufferUsage.STORAGE) {
-            usageStrs.push("STORAGE");
-            usage &= ~GPUBufferUsage.STORAGE;
+        const usageFlags = [
+            [GPUBufferUsage.MAP_READ, "MAP_READ"],
+            [GPUBufferUsage.MAP_WRITE, "MAP_WRITE"], 
+            [GPUBufferUsage.COPY_DST, "COPY_DST"],
+            [GPUBufferUsage.COPY_SRC, "COPY_SRC"],
+            [GPUBufferUsage.UNIFORM, "UNIFORM"],
+            [GPUBufferUsage.STORAGE, "STORAGE"]
+        ];
+        for (const [flag, name] of usageFlags) {
+            if (usage & flag) {
+                usageStrs.push(name);
+                usage &= ~flag;
+            }
         }
         if (usage) {
             usageStrs.push(`${usage.toString(16)}`);
@@ -79,10 +107,7 @@ class GpuKernels {
         const dumpString = `${mark}:Buffer label=${buf.label} size=${buf.size} usage=${usageStrs.join("|")} map=${buf.mapState}`;
         if (buf.usage & GPUBufferUsage.COPY_SRC) {
             // copiable
-            const debugBuffer = this.device.createBuffer({
-                size: 128,
-                usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-            });
+            const debugBuffer = this.createBufferForCpuRead(size);
             await this.device.queue.onSubmittedWorkDone();
             
             const commandEncoder = this.device.createCommandEncoder();
@@ -104,10 +129,7 @@ class GpuKernels {
 
     async _readAllV4(buf) {
         const numVecs = buf.size / 16;
-        const tempBuffer = this.device.createBuffer({
-            size: numVecs * 16,
-            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-        });
+        const tempBuffer = this.createBufferForCpuRead(numVecs * 16);
         await this.device.queue.onSubmittedWorkDone();
         
         const commandEncoder = this.device.createCommandEncoder();
@@ -130,7 +152,7 @@ class GpuKernels {
         return pts;
     }
 
-    _compileInit() {
+    #compileInit() {
         const cs = this.device.createShaderModule({
             code: `
                 @group(0) @binding(0) var<storage, read_write> points: array<vec4f>;
@@ -195,23 +217,15 @@ class GpuKernels {
         const numPoints = pointsPerAxis.x * pointsPerAxis.y * pointsPerAxis.z;
         const minPoint = size.clone().multiplyScalar(-0.5);
 
-        const pointsBuf = this.device.createBuffer({
-            size: numPoints * 16,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+        const pointsBuf = this.createBuffer(numPoints * 16);
+        const paramBuf = this.createUniformBuffer(32, (ptr) => {
+            new Float32Array(ptr, 0, 4).set([
+                minPoint.x, minPoint.y, minPoint.z, 1 / pointsPerMm,
+            ]);
+            new Uint32Array(ptr, 16, 4).set([
+                pointsPerAxis.x, pointsPerAxis.y, pointsPerAxis.z, 0,
+            ]);
         });
-
-        const paramBuf = this.device.createBuffer({
-            size: 32,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            mappedAtCreation: true,
-        });
-        new Float32Array(paramBuf.getMappedRange(0, 16)).set([
-            minPoint.x, minPoint.y, minPoint.z, 1 / pointsPerMm,
-        ]);
-        new Uint32Array(paramBuf.getMappedRange(16, 16)).set([
-            pointsPerAxis.x, pointsPerAxis.y, pointsPerAxis.z, 0,
-        ]);
-        paramBuf.unmap();
 
         const bindGroup = this.device.createBindGroup({
             layout: this.initPipeline.getBindGroupLayout(0),
@@ -233,7 +247,7 @@ class GpuKernels {
         return pointsBuf;
     }
 
-    _compileApplyTransform() {
+    #compileApplyTransform() {
         const cs = this.device.createShaderModule({
             code: `
                 @group(0) @binding(0) var<storage, read_write> ps_in: array<vec4f>;
@@ -273,20 +287,12 @@ class GpuKernels {
     // returns: array<vec4f> (same order & length as psIn)
     async applyTransform(psIn, locToWorld) {
         const numPoints = psIn.size / 16;
-        const psOut = this.device.createBuffer({
-            label: "ps-out-at",
-            size: numPoints * 16,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-        });
+        const psOut = this.createBuffer(numPoints * 16);
 
-        const matBuf = this.device.createBuffer({
-            size: 64,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            mappedAtCreation: true,
+        const matBuf = this.createUniformBuffer(64, (ptr) => {
+            // col-major -> col-major (cf. https://threejs.org/docs/?q=Matrix#api/en/math/Matrix4.compose)
+            new Float32Array(ptr).set(locToWorld.elements);
         });
-        // col-major -> col-major (cf. https://threejs.org/docs/?q=Matrix#api/en/math/Matrix4.compose)
-        new Float32Array(matBuf.getMappedRange(0, 64)).set(locToWorld.elements);
-        matBuf.unmap();
 
         const bindGroup = this.device.createBindGroup({
             layout: this.applyTransformPipeline.getBindGroupLayout(0),
@@ -307,7 +313,7 @@ class GpuKernels {
         return psOut;
     }
     
-    _compileComputeAABB() {
+    #compileComputeAABB() {
         const cs = this.device.createShaderModule({
             code: `
                 const wg_size = 128u;
@@ -370,18 +376,15 @@ class GpuKernels {
 
     // Initialize point cloud. In psIn and return value, w is 1 if alive, 0 if dead.
     // [in] ps: array<vec4f>
-    // [in] numPoints: number
     // returns: {min: THREE.Vector3, max: THREE.Vector3}
-    async computeAABB(ps, numPoints) {
-        const temp0Min = this.device.createBuffer({label: "t0min", size: numPoints * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
-        const temp0Max = this.device.createBuffer({label: "t0max", size: numPoints * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
-        const temp1Min = this.device.createBuffer({label: "t1min", size: numPoints * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC});
-        const temp1Max = this.device.createBuffer({label: "t1max", size: numPoints * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC});
-        const readBuf = this.device.createBuffer({
-            label: "read",
-            size: 16 * 2, // min & max
-            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-        });
+    async computeAABB(ps) {
+        const numPoints = ps.size / 16;
+
+        const temp0Min = this.createBuffer(numPoints * 16);
+        const temp0Max = this.createBuffer(numPoints * 16);
+        const temp1Min = this.createBuffer(numPoints * 16);
+        const temp1Max = this.createBuffer(numPoints * 16);
+        const readBuf = this.createBufferForCpuRead(16 * 2);
 
         const commandEncoder = this.device.createCommandEncoder();
             
@@ -430,7 +433,7 @@ class GpuKernels {
         return aabb;
     }
 
-    _compileGatherActive() {
+    #compileGatherActive() {
         const cs = this.device.createShaderModule({
             code: `
                 @group(0) @binding(0) var<storage, read_write> psIn: array<vec4<f32>>;
@@ -472,21 +475,9 @@ class GpuKernels {
     async gatherActive(psIn) {
         const numPoints = psIn.size / 16;
 
-        const tempBuf = this.device.createBuffer({
-            size: numPoints * 16,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-            label: "tempBuf",
-        });
-        const countBuf = this.device.createBuffer({
-            size: 4,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-            label: "countBuf",
-        });
-        const countBufReading = this.device.createBuffer({
-            size: 4,
-            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-            label: "countBufReading",
-        });
+        const tempBuf = this.createBuffer(numPoints * 16);
+        const countBuf = this.createBuffer(4);
+        const countBufReading = this.createBufferForCpuRead(4);
 
         const bindGroup = this.device.createBindGroup({
             layout: this.gatherActivePipeline.getBindGroupLayout(0),
@@ -513,10 +504,7 @@ class GpuKernels {
         countBufReading.unmap();
 
         // copy to new smaller buffer
-        const resultBuffer = this.device.createBuffer({
-            size: count * 16,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-        });
+        const resultBuffer = this.createBuffer(count * 16);
         {
             const commandEncoder = this.device.createCommandEncoder();
             commandEncoder.copyBufferToBuffer(tempBuf, 0, resultBuffer, 0, count * 16);
@@ -526,55 +514,45 @@ class GpuKernels {
         return resultBuffer;
     }
 
-    _compileGrid() {
+    static #gridSnippet = `
+        struct AABBGrid {
+            min: vec4f,
+            dims: vec4u,
+            unit: f32,
+        }
+        
+        fn cell_ix3(p: vec3f, grid: AABBGrid) -> vec3u {
+            return vec3u(floor((p - grid.min.xyz) / grid.unit));
+        }
+
+        fn cell_3to1(cix3: vec3u, grid: AABBGrid) -> u32 {
+            return cix3.x + cix3.y * grid.dims.x + cix3.z * grid.dims.x * grid.dims.y;
+        }
+
+        fn cell_ix(p: vec3f, grid: AABBGrid) -> u32 {
+            let cix3 = cell_ix3(p, grid);
+            return cell_3to1(cix3, grid);
+        }
+    `;
+
+    #compileComputeCellIx() {
         const cs = this.device.createShaderModule({
             code: `
-                struct CellEntry {
-                    cellIx: u32,
-                    pointIx: u32,
-                    exists: u32, // 1 if exists, 0 if not
-                }
+                ${GpuKernels.#gridSnippet}
                 
-                struct AABBGrid {
-                    min: vec4f,
-                    size: vec4u,
-                    dist: f32,
-                }
-                
-                @group(0) @binding(0) var<storage, read_write> psIn: array<vec4<f32>>;
-                @group(0) @binding(1) var<storage, read_write> entries: array<CellEntry>;
-                @group(0) @binding(2) var<uniform> grid: AABBGrid;
+                @group(0) @binding(0) var<storage, read_write> ps_in: array<vec4<f32>>; // length = number of points
+                @group(0) @binding(1) var<storage, read_write> pixs_out: array<u32>; // length = number of points
+                @group(0) @binding(2) var<storage, read_write> cixs_out: array<u32>; // length = number of points
+                @group(0) @binding(3) var<uniform> grid: AABBGrid;
 
                 @compute @workgroup_size(128)
-                fn computeCellIx(@builtin(global_invocation_id) gid: vec3<u32>) {
-                    let p = psIn[gid.x];
-                    if (p.w < 0.5) {
-                        entries[gid.x] = CellEntry(0, 0, 0u);
-                        return; // non-existent
+                fn compute_cell_ix(@builtin(global_invocation_id) gid: vec3<u32>) {
+                    if (gid.x >= arrayLength(&ps_in)) {
+                        return;
                     }
-
-                    let ixs = vec3u(floor((p.xyz - grid.min.xyz) / grid.dist));
-                    let cell_ix = ixs.x + ixs.y * grid.size.x + ixs.z * grid.size.x * grid.size.y;
-
-                    entries[gid.x] = CellEntry(cell_ix, gid.x, 1u);
-                }
-
-                @compute @workgroup_size(128)
-                fn mapMin(@builtin(global_invocation_id) gid: vec3<u32>) {
-                    let p = psIn[gid.x];
-
-                    // find 3D cellIndex
-                    // loop 27 neighbor cell index
-                    // continue if cell does not exist (out of range)
-                    // if cell exist, lookup cell entry table (beginIx, endIx)
-                    // loop through beginIx, endIx
-                    // lookup point position, compute distance, compute local min
-                    // write local min to buffer
-                }
-
-                @compute @workgroup_size(128)
-                fn reduceMin() {
-                    // normal parallel reduction
+                    let p = ps_in[gid.x];
+                    pixs_out[gid.x] = gid.x;
+                    cixs_out[gid.x] = cell_ix(p.xyz, grid);
                 }
             `
         });
@@ -584,39 +562,208 @@ class GpuKernels {
                     entries: [
                         { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
                         { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
                     ]
                 })]
             }),
-            compute: { module: cs, entryPoint: "computeCellIx" },
+            compute: { module: cs, entryPoint: "compute_cell_ix" },
+        });
+    }
+
+    #compileComputeMins() {
+        const cs = this.device.createShaderModule({
+            code: `
+                ${GpuKernels.#gridSnippet}
+                
+                // input: P points
+                @group(0) @binding(0) var<storage, read_write> ps_in: array<vec4<f32>>; // length = number of P points, order = original P point order
+
+                // input: Q points & index
+                @group(0) @binding(1) var<storage, read_write> qs_in: array<vec4<f32>>; // length = number of Q points, order = original Q point order
+                @group(0) @binding(2) var<storage, read_write> qixs_in: array<u32>; // length = number of Q points, order = sorted cell entry
+                @group(0) @binding(3) var<storage, read_write> qcgs_begin_in: array<u32>; // length = number of Q cells
+                @group(0) @binding(4) var<storage, read_write> qcgs_end_in: array<u32>; // length = number of Q cells
+                @group(0) @binding(5) var<uniform> qgrid: AABBGrid;
+
+                // output
+                @group(0) @binding(6) var<storage, read_write> dists_out: array<u32>; // quantized distance (in 0.1 um; 16bit; truncated to < 6mm), length = number of P points
+
+                @compute @workgroup_size(128)
+                fn compute_mins(@builtin(global_invocation_id) gid: vec3<u32>) {
+                    if (gid.x >= arrayLength(&ps_in)) {
+                        return;
+                    }
+                    let p = ps_in[gid.x].xyz;
+
+                    // Search 27 neighbor cells and find nearest point in Q.
+                    var min_dist = 1e10;
+                    let qcix3 = vec3i(cell_ix3(p, qgrid));
+                    for (var dz = -1; dz <= 1; dz++) {
+                        for (var dy = -1; dy <= 1; dy++) {
+                            for (var dx = -1; dx <= 1; dx++) {
+                                let cix3 = qcix3 + vec3i(dx, dy, dz);
+                                if (any(cix3 < vec3i(0))) {
+                                    continue;
+                                }
+                                if (any(cix3 >= vec3i(qgrid.dims.xyz))) {
+                                    continue;
+                                }
+                                let cix = cell_3to1(vec3u(cix3), qgrid);
+                                let begin = qcgs_begin_in[cix];
+                                let end = qcgs_end_in[cix];
+                                if (begin == end) {
+                                    continue; // cell is empty
+                                }
+                                
+                                for (var q_ent_ix = begin; q_ent_ix < end; q_ent_ix++) {
+                                    let qix = qixs_in[q_ent_ix];
+                                    let d = distance(p.xyz, qs_in[qix].xyz);
+                                    min_dist = min(min_dist, d);
+                                }
+                            }
+                        }
+                    }
+                    
+                    let quantized_dist = min(u32(min_dist * 1e4), 0xffff); // truncated to 16bit for faster radix sort
+                    dists_out[gid.x] = quantized_dist;
+                }
+            `
+        });
+        this.computeMinsPipeline = this.device.createComputePipeline({
+            layout: this.device.createPipelineLayout({
+                bindGroupLayouts: [this.device.createBindGroupLayout({
+                    entries: [
+                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+                        { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                    ]
+                })]
+            }),
+            compute: { module: cs, entryPoint: "compute_mins" },
+        });
+    }
+
+    #compileIndexGrouping() {
+        const cs = this.device.createShaderModule({
+            code: `
+                @group(0) @binding(0) var<storage, read_write> cixs_in: array<u32>; // length = number of points
+                @group(0) @binding(1) var<storage, read_write> begin_out: array<u32>; // inclusive, length = number of cells
+                @group(0) @binding(2) var<storage, read_write> end_out: array<u32>; // exclusive, length = number of cells
+
+                @compute @workgroup_size(128)
+                fn clear_groups(@builtin(global_invocation_id) gid: vec3<u32>) {
+                    let ix = gid.x;
+                    if (ix >= arrayLength(&begin_out)) {
+                        return;
+                    }
+                    begin_out[ix] = 0;
+                    end_out[ix] = 0;
+                }
+
+                @compute @workgroup_size(128)
+                fn detect_groups(@builtin(global_invocation_id) gid: vec3<u32>) {
+                    let ix = gid.x;
+                    let n = arrayLength(&cixs_in);
+                    if (ix >= n) {
+                        return;
+                    }
+
+                    var cix_prev = 0xffffffffu;
+                    let cix_curr = cixs_in[ix];
+                    var cix_next = 0xffffffffu;
+                    if (ix > 0) {
+                        cix_prev = cixs_in[ix - 1];
+                    }
+                    if (ix < n - 1) {
+                        cix_next = cixs_in[ix + 1];
+                    }
+                    
+                    if (cix_prev != cix_curr) {
+                        begin_out[cix_curr] = ix;
+                    }
+                    if (cix_next != cix_curr) {
+                        end_out[cix_curr] = ix + 1;
+                    }
+                }
+            `
+        });
+        this.clearGroupsPipeline = this.device.createComputePipeline({
+            layout: this.device.createPipelineLayout({
+                bindGroupLayouts: [this.device.createBindGroupLayout({
+                    entries: [
+                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                    ]
+                })]
+            }),
+            compute: { module: cs, entryPoint: "clear_groups" },
+        });
+        this.detectGroupsPipeline = this.device.createComputePipeline({
+            layout: this.device.createPipelineLayout({
+                bindGroupLayouts: [this.device.createBindGroupLayout({
+                    entries: [
+                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                    ]
+                })]
+            }),
+            compute: { module: cs, entryPoint: "detect_groups" },
         });
     }
 
     // Create a grid index.
     // [in] psIn: array<vec4f>
-    // [in] numPoints: number of points in psIn
-    // [in] grid: {min: THREE.Vector3, unit: number cell size, dims: THREE.Vector3 number of cells per axis}
-    //    unit is also the max distance that can be queried by findMinPair.
-    // returns: some opaque object that can be passed to findMinPair
-    async createGridIndex(psIn, numPoints, grid) {
-        //const psIn = await this._readAllV4(psIn);
+    // [in] grid: {min: THREE.Vector3, max: THREE.Vector3, unit: number (cell size)}
+    //    unit is also the max distance that can be queried by getClosePoints.
+    // returns: some opaque object that can be passed to getClosePoints
+    async createGridIndex(psIn, grid) {
+        return {};
+
+        // this.computeCellIxPipeline
+        let pixs_buf, cixs_buf;
+
+        const radixSort = new RadixSortKernel({
+            device: this.device,
+            keys: cixs_buf,
+            values: pixs_buf,
+        });
+        // exec radixSort (keys=)
+
+        // exec clearGroups
+        // exec detectGroups
+
         return {};
     }
 
     // Find the closest pair of points between qs and ps, if they're within "unit" given in createGridIndex.
+    // Limited to max 1024 points.
     // [in] ps: array<vec4f>
-    // [in] numPs: number of points in ps
     // [in] qsIndex: opaque index created by createGridIndex
-    // returns: {pIx: number, qIx: number, dist: number} | null (if not found)
-    async findMinPair(ps, numPs, qsIndex) {
-        return {pIx: 0, qIx: 0, dist: 0};
+    // returns: [{ix: number, d: number}] (closest first)
+    async getClosePoints(ps, qsIndex) {
+        const MAX_READ_NUM = 1024;
+
+        // exec computeMins (ps, qsIndex)
+        // create pix_buf (increasing order)
+        // exec radixSort (keys=dists, values=pix_buf)
+        // read first MAX_READ_NUM, both dists & pix_buf
+
+        return [];
     }
 
     // Mark specified point as dead.
     // [in] ps: array<vec4f>
-    // [in] ix: index of the point to mark as dead
-    async markDead(ps, ix) {
-        this.device.queue.writeBuffer(ps, 16 * ix, new Float32Array([0, 0, 0, 0]));
+    // [in] ixs: indices of the points to mark as dead
+    async markDead(ps, ixs) {
+        ixs.forEach(ix => {
+            this.device.queue.writeBuffer(ps, 16 * ix, new Float32Array([0, 0, 0, 0]));
+        });
     }
 }
 
@@ -664,10 +811,7 @@ class Simulator {
         const activeWorldPointsBuf = await this.kernels.applyTransform(activePointsBuf, trans);
 
         const numActive = activeWorldPointsBuf.size / 16;
-        const stagingBuffer = this.kernels.device.createBuffer({
-            size: numActive * 16,
-            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-        });
+        const stagingBuffer = this.kernels.createBufferForCpuRead(numActive * 16);
         const commandEncoder = this.kernels.device.createCommandEncoder();
         commandEncoder.copyBufferToBuffer(activeWorldPointsBuf, 0, stagingBuffer, 0, stagingBuffer.size);
         this.kernels.device.queue.submit([commandEncoder.finish()]);
@@ -684,34 +828,38 @@ class Simulator {
     // [in] d: distance threshold
     // [in] ratio: ratio in [0, 1] (0: removal happens entirely in W. 1: removal happens entirely in T.)
     async removeClose(d, ratio) {
-        // We assume W is generally bigger than T. That's why we create for grid for W, instead of T.
-        /*
-        const aabbW = await this.kernels.computeAABB(pointsWWorld, this.solidW.numPoints);
-        console.log("AABB W", aabbW);
+        let t0; // for performance logging
 
-        const gridW = {
-            min: aabbW.min,
-            unit: d,
-            dims: aabbW.max.clone().sub(aabbW.min).divideScalar(d).floor().addScalar(1),
-        };
-        const wIndex = this.kernels.createGridIndex(pointsWWorld, this.solidW.numPoints, gridW);
-        */
-
-        const t0 = performance.now();
+        t0 = performance.now();
+        this.solidW = await this.kernels.gatherActive(this.solidW);
+        this.solidT = await this.kernels.gatherActive(this.solidT);
+        console.log(`RC: gather ${performance.now() - t0} ms`);
+        
+        t0 = performance.now();
         const ptsWWorld = await this.kernels.applyTransform(this.solidW, this.transW);
         const ptsTWorld = await this.kernels.applyTransform(this.solidT, this.transT);
         await this.device.queue.onSubmittedWorkDone();
-        const t1 = performance.now();
+        console.log(`RC: transform ${performance.now() - t0} ms`);
 
+        const aabbW = await this.kernels.computeAABB(ptsWWorld);
+        const aabbT = await this.kernels.computeAABB(ptsTWorld);
+        console.log("AABB W", aabbW, "T", aabbT);
+
+        const indexW = await this.kernels.createGridIndex(ptsWWorld, {min: aabbW.min, max: aabbW.max, unit: d});
+        const indexT = await this.kernels.createGridIndex(ptsTWorld, {min: aabbT.min, max: aabbT.max, unit: d});
+        //const closeW = await this.kernels.getClosePoints(ptsWWorld, indexT);
+        //const closeT = await this.kernels.getClosePoints(ptsTWorld, indexW);
+        
+
+
+        t0 = performance.now();
         const wps = await this.kernels._readAllV4(ptsWWorld);
         const tps = await this.kernels._readAllV4(ptsTWorld);
-        const t2 = performance.now();
+        console.log(`RC: read ${performance.now() - t0} ms`);
 
+        t0 = performance.now();
         const wp_cands = [];
         for (let iw = 0; iw < wps.length; iw++) {
-            if (wps[iw].w < 0.5) {
-                continue;
-            }
             const vw = new THREE.Vector3(wps[iw].x, wps[iw].y, wps[iw].z);
             let minDist = 1e10;
             for (let it = 0; it < tps.length; it++) {
@@ -727,15 +875,9 @@ class Simulator {
         }
         const tp_cands = [];
         for (let it = 0; it < tps.length; it++) {
-            if (tps[it].w < 0.5) {
-                continue;
-            }
             const vt = new THREE.Vector3(tps[it].x, tps[it].y, tps[it].z);
             let minDist = 1e10;
             for (let iw = 0; iw < wps.length; iw++) {
-                if (wps[iw].w < 0.5) {
-                    continue;
-                }
                 const vw = new THREE.Vector3(wps[iw].x, wps[iw].y, wps[iw].z);
                 minDist = Math.min(minDist, vw.distanceTo(vt));
             }
@@ -747,26 +889,16 @@ class Simulator {
         tp_cands.sort((a, b) => a.d - b.d);
 
         const maxRemove = Math.min(wp_cands.length, tp_cands.length);
-        if (maxRemove == 0) {
-            return;
-        }
-
         const removeW = Math.floor(maxRemove * (1 - ratio));
         const removeT = Math.floor(maxRemove * ratio);
         console.log("Remove W", removeW, "T", removeT);
         if (removeW == 0 && removeT == 0) {
             return;
         }
+        this.kernels.markDead(this.solidW, wp_cands.slice(0, removeW).map(c => c.ix));
+        this.kernels.markDead(this.solidT, tp_cands.slice(0, removeT).map(c => c.ix));
 
-        for (let i = 0; i < removeW; i++) {
-            this.kernels.markDead(this.solidW, wp_cands[i].ix);
-        }
-        for (let i = 0; i < removeT; i++) {
-            this.kernels.markDead(this.solidT, tp_cands[i].ix);
-        }
-
-        const t3 = performance.now();
-        console.log(`CPU-min: trans: ${t1 - t0}ms, read: ${t2 - t1}ms, find&remove: ${t3 - t2}ms`);
+        console.log(`RC: find/remove ${performance.now() - t0} ms`);
     }
 }
 
@@ -999,6 +1131,7 @@ class View3D {
         const ratio = ewr / (1 + ewr);
 
         const simulateAsync = async () => {
+            const t0 = performance.now();
             this.currentSimFeedDist = 0;
             while (this.currentSimFeedDist <= this.feedDist) {
                 this.simulator.transT = this.computeToolTrans(this.currentSimFeedDist);
@@ -1016,6 +1149,8 @@ class View3D {
 
                 this.currentSimFeedDist += 0.5 / POINTS_PER_MM; // TODO: this won't work if tool is rotating super fast
             }
+            const t1 = performance.now();
+            console.log(`Simulate: ${t1 - t0} ms`);
         };
 
         simulateAsync(); // fire and forget

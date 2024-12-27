@@ -7,10 +7,7 @@
     <title>Wear Sim</title>
     <style>
         body {
-            margin :0
-        }
-        #info {
-            background-color: rgba(0, 0, 0, 0.75);
+            margin: 0
         }
 
         .lil-gui .gui-stats {
@@ -22,15 +19,16 @@
 
 <body>
     <div id="container"></div>
-    
+
     <script type="importmap">
-		{
-			"imports": {
-				"three": "./three.module.min.js",
-				"three/addons/": "./three-addons/"
-			}
-		}
-	</script>
+        {
+            "imports": {
+                "three": "./three.module.min.js",
+                "three/addons/": "./three-addons/",
+                "radix-sort": "./radix-sort-esm.js"
+            }
+        }
+    </script>
     <script type="module" src="main.js"></script>
 </body>
 
