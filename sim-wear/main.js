@@ -7,10 +7,6 @@ import { RadixSortKernel} from 'radix-sort';
 // distance: mm
 // time: sec
 
-// Extended parameters for simulation
-const params = {
-};
-
 // Represents connected metal.
 class Shape {
     // Specify solid in world coordinates. shape is generated in local coordinates, then rotated, and then translated by offset.
@@ -43,6 +39,7 @@ class GpuKernels {
         this.#compileIndexGrouping();
         this.#compileComputeMins();
         this.#compileRadixPadding();
+        this.#compileComputeNormal();
     }
 
     // Create buffer for compute.
@@ -271,7 +268,7 @@ class GpuKernels {
                     let noise = vec3f(
                         rand01(u32(index), 0xca272690),
                         rand01(u32(index), 0xb8100b94),
-                        rand01(u32(index), 0x13941583));
+                        rand01(u32(index), 0x13941583)) * 0.5;
 
                     let pos_local = 
                         params.size.xyz +
@@ -548,6 +545,88 @@ class GpuKernels {
         );
     }
 
+    #compileComputeNormal() {
+        this.computeNormalPipeline = this.#createPipeline("compute_normal", ["storage", "storage", "storage", "storage", "uniform", "storage"], `
+            ${GpuKernels.#gridSnippet}
+            
+            // input: P points
+            @group(0) @binding(0) var<storage, read_write> ps_in: array<vec4<f32>>; // length = number of P points, order = original P point order
+            @group(0) @binding(1) var<storage, read_write> ixs_in: array<u32>; // length = number of P points, order = sorted cell entry
+            @group(0) @binding(2) var<storage, read_write> cgs_begin_in: array<u32>; // length = number of P cells
+            @group(0) @binding(3) var<storage, read_write> cgs_end_in: array<u32>; // length = number of P cells
+            @group(0) @binding(4) var<uniform> grid: AABBGrid;
+
+            // output
+            @group(0) @binding(5) var<storage, read_write> normals: array<vec4<f32>>; // xyz: normal (0 if inside), w: unused
+
+            @compute @workgroup_size(128)
+            fn compute_normal(@builtin(global_invocation_id) gid: vec3<u32>) {
+                if (gid.x >= arrayLength(&ps_in)) {
+                    return;
+                }
+                let p = ps_in[gid.x].xyz;
+
+                // Accumulate points within sphere of radius d (center p), by searching 27 neighbors.
+                var accum = vec3f();
+                var n = 0;
+
+                let cix3 = vec3i(cell_ix3(p, grid));
+                for (var dz = -1; dz <= 1; dz++) {
+                    for (var dy = -1; dy <= 1; dy++) {
+                        for (var dx = -1; dx <= 1; dx++) {
+                            let cix3 = cix3 + vec3i(dx, dy, dz);
+                            if (any(cix3 < vec3i(0))) {
+                                continue;
+                            }
+                            if (any(cix3 >= vec3i(grid.dims.xyz))) {
+                                continue;
+                            }
+                            let cix = cell_3to1(vec3u(cix3), grid);
+                            let begin = cgs_begin_in[cix];
+                            let end = cgs_end_in[cix];
+                            if (begin == end) {
+                                continue; // cell is empty
+                            }
+                            
+                            for (var q_ent_ix = begin; q_ent_ix < end; q_ent_ix++) {
+                                let qix = ixs_in[q_ent_ix];
+                                let q = ps_in[qix].xyz;
+                                let dist = distance(p.xyz, q);
+                                // to remove anistropy, reject points outside a sphere.
+                                if (dist > grid.min_unit.w) {
+                                    continue;
+                                }
+                                // also remove query point itself
+                                if (qix == gid.x) {
+                                    continue;
+                                }
+                                // accumulate (Welford's online algorithm)
+                                n += 1;
+                                accum += q;
+                            }
+                        }
+                    }
+                }
+                if (n < 1) {
+                    // weird situation; no neighbors found
+                    normals[gid.x] = vec4f(0.0);
+                    return;
+                }
+                let mean = accum * (1.0 / f32(n));
+
+                let normal = (p.xyz - mean.xyz) / grid.min_unit.w;
+                let len = length(normal);
+                // heuristic: if mean point is too close, assume p is inside the volume.
+                if (len < 0.2) {
+                    normals[gid.x] = vec4f(0.0);
+                } else {
+                    normals[gid.x] = vec4f(normalize(normal), 0.0);
+                }
+            }
+        `
+    );
+    }
+
     #compileComputeMins() {
         this.computeMinsPipeline = this.#createPipeline("compute_mins", ["storage", "storage", "storage", "storage", "storage", "uniform", "storage"],  `
                 ${GpuKernels.#gridSnippet}
@@ -677,7 +756,7 @@ class GpuKernels {
     // [in] psIn: array<vec4f>
     // [in] grid: {min: THREE.Vector3, max: THREE.Vector3, unit: number (cell size)}
     //    unit is also the max distance that can be queried by getClosePoints.
-    // returns: some opaque object that can be passed to getClosePoints
+    // returns: some opaque object that can be passed to getClosePoints, and getNormals
     async createGridIndex(psIn, grid) {
         // flow: compute cell ix -> sort by cell ix (keeps ix mapping table to pixsBuf) -> create cell begin/end table (beginBuf/endBuf)
 
@@ -791,6 +870,19 @@ class GpuKernels {
         return result;
     }
 
+    // Get normals for points in psIndex.
+    // [in] psIndex: opaque object created by createGridIndex
+    // returns: array<vec4f> normal buf (w=1 is valid normal, 0 if inside volume)
+    async getNormals(psIndex) {
+        const numPoints = psIndex.pointsBuf.size / 16;
+        const normalsBuf = this.createBuffer(numPoints * 16);
+        const commandEncoder = this.device.createCommandEncoder();
+        this.#dispatchKernel(commandEncoder, this.computeNormalPipeline, [psIndex.pointsBuf, psIndex.pixsBuf, psIndex.beginBuf, psIndex.endBuf, psIndex.gridBuf, normalsBuf], numPoints);
+        this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+        return normalsBuf;
+    }
+
     // Mark specified point as dead.
     // [in] ps: array<vec4f>
     // [in] ixs: indices of the points to mark as dead
@@ -839,20 +931,33 @@ class Simulator {
     }
 
     // Extracts active points for rendering.
-    // returns: Float32Array of active points (backed by mapped GPU buffer)
+    // returns: {pos: Float32Array (V4), normal: Float32Array (V4)} of active points (backed by mapped GPU buffer)
     async _getRenderingBuffer(pointsBuf, trans) {
+        const RECON_RADIUS = 2 / POINTS_PER_MM;
+
         const activePointsBuf = await this.kernels.gatherActive(pointsBuf);
         const activeWorldPointsBuf = await this.kernels.applyTransform(activePointsBuf, trans);
 
+        const aabb = await this.kernels.computeAABB(activeWorldPointsBuf);
+        const index = await this.kernels.createGridIndex(activeWorldPointsBuf, {min: aabb.min, max: aabb.max, unit: RECON_RADIUS});
+        const normals = await this.kernels.getNormals(index);
+
         const numActive = activeWorldPointsBuf.size / 16;
-        const stagingBuffer = this.kernels.createBufferForCpuRead(numActive * 16);
+        const posStagingBuf = this.kernels.createBufferForCpuRead(numActive * 16);
+        const normalStagingBuf = this.kernels.createBufferForCpuRead(numActive * 16);
+
         const commandEncoder = this.kernels.device.createCommandEncoder();
-        commandEncoder.copyBufferToBuffer(activeWorldPointsBuf, 0, stagingBuffer, 0, stagingBuffer.size);
+        commandEncoder.copyBufferToBuffer(activeWorldPointsBuf, 0, posStagingBuf, 0, numActive * 16);
+        commandEncoder.copyBufferToBuffer(normals, 0, normalStagingBuf, 0, numActive * 16);
         this.kernels.device.queue.submit([commandEncoder.finish()]);
         await this.kernels.device.queue.onSubmittedWorkDone();
         
-        await stagingBuffer.mapAsync(GPUMapMode.READ);
-        return new Float32Array(stagingBuffer.getMappedRange(), 0, numActive * 4);
+        await posStagingBuf.mapAsync(GPUMapMode.READ);
+        await normalStagingBuf.mapAsync(GPUMapMode.READ);
+        return {
+            pos: new Float32Array(posStagingBuf.getMappedRange(), 0, numActive * 4),
+            normal: new Float32Array(normalStagingBuf.getMappedRange(), 0, numActive * 4)
+        };
     }
 
     // Remove points from W & T within distance d, with roughly following given removal ratio.
@@ -974,7 +1079,7 @@ class View3D {
             uniforms: {
                 use_slice: {value: 0},
                 slice_x: {value: 0},
-                key_color: {value: new THREE.Color(0, 1, 1)},
+                key_color: {value: new THREE.Color(0.8, 0.8, 0.8)},
                 point_size_mm: {value: 1 / POINTS_PER_MM},
                 view_height_px: {value: this.renderer.getSize(new THREE.Vector2()).y},
             },
@@ -996,25 +1101,31 @@ class View3D {
                     float scale = 0.5 * view_height_px * f;
                     float point_size = (scale * point_size_mm) / gl_Position.w;
 
-                    if (use_slice < 0.5) {
-                        // slice disabled; apply 3D stripe pattern.
-                        gl_PointSize = point_size * 1.5;
-                        vert_col = vec4(key_color, 1);
+                    gl_PointSize = point_size * 1.5;
+                    bool is_surface = length(normal) > 0.5;
 
-                        float stripe_unit = 5.0;
-                        float stripe_contrast = 20.0;
-                        float stripe_x = smoothstep(0.0, 1.0, abs(fract(position.x / stripe_unit + 0.5) - 0.5) * stripe_contrast);
-                        float stripe_y = smoothstep(0.0, 1.0, abs(fract(position.y / stripe_unit + 0.5) - 0.5) * stripe_contrast);
-                        vert_col.xyz *= stripe_x * stripe_y;
+                    if (is_surface) {
+                        vec3 light1 = normalize(vec3(-1.0, 0.0, 1.0));
+                        vec3 light2 = normalize(vec3(-0.5, -0.5, 0.2));
+                        
+                        vec3 color1 = vec3(1.0, 0.9, 0.8) * max(dot(normal, light1), 0.0);
+                        vec3 color2 = vec3(0.2, 0.3, 0.5) * max(dot(normal, light2), 0.0);
+                        vec3 k = 0.2 + color1 * 0.6 + color2 * 0.3; // 0.2 + 0.8 * diffuse; // ambient + diffuse
+
+                        vert_col.xyz = k * key_color.xyz;
+                        vert_col.w = 1.0;
                     } else {
-                        // slice enabled; make points bigger if they are in the slice plane.
-                        float thresh = point_size_mm * 0.5;
-                        if (slice_dist < thresh) {
-                            gl_PointSize = point_size; //  * mix(1.0, 0.1, slice_dist / thresh);
-                            vert_col = vec4(key_color * mix(1.0, 0.5, slice_dist / thresh), 1);
-                        } else {
-                            gl_PointSize = point_size * 0.1;
-                            vert_col = vec4(key_color * 0.5, 1);
+                        vert_col.xyz = 0.1 * key_color.xyz;
+                        vert_col.w = 1.0;
+                    }
+
+                    if (use_slice > 0.5) {
+                        float thresh = point_size_mm * 0.75;
+                        if (slice_dist > thresh) {
+                            vert_col.w = 0.0; // discard in frag shader
+                        }
+                        if (!is_surface) {
+                            gl_PointSize *= 0.1;
                         }
                     }
                 }
@@ -1030,6 +1141,10 @@ class View3D {
                         discard;
                         return;
                     }
+                    if (vert_col.w < 0.5) {
+                        discard;
+                        return;
+                    }
 
                     gl_FragColor = vec4(vert_col.rgb, 1.0);
                 }
@@ -1037,9 +1152,9 @@ class View3D {
         });
 
         const pointsMaterialW = pointsMaterialPrototype.clone();
-        pointsMaterialW.uniforms.key_color.value = new THREE.Color(0, 0, 1);
+        pointsMaterialW.uniforms.key_color.value = new THREE.Color(0.7, 0.7, 1.0);
         const pointsMaterialT = pointsMaterialPrototype.clone();
-        pointsMaterialT.uniforms.key_color.value = new THREE.Color(1, 0, 0);
+        pointsMaterialT.uniforms.key_color.value = new THREE.Color(1.0, 0.7, 0.7);
 
         // Create points geometry for each solid
         this.solidWPoints = new THREE.Points(
@@ -1171,7 +1286,7 @@ class View3D {
     async updatePointsFromGPU() {
         const pointsW = await this.simulator.getRenderingBufferW();
         const pointsT = await this.simulator.getRenderingBufferT();
-        console.log(`Showing W:${pointsW.length / 4} pts, T:${pointsT.length / 4} pts`);
+        console.log(`Showing W:${pointsW.pos.length / 4} pts, T:${pointsT.pos.length / 4} pts`);
 
         /*
         const t0 = performance.now();
@@ -1186,8 +1301,10 @@ class View3D {
         console.log("CPU-AABB-W", min, max, "took", t1 - t0, "ms");
         */
 
-        this.solidWPoints.geometry.setAttribute('position', new THREE.BufferAttribute(pointsW, 4));
-        this.solidTPoints.geometry.setAttribute('position', new THREE.BufferAttribute(pointsT, 4));
+        this.solidWPoints.geometry.setAttribute('position', new THREE.BufferAttribute(pointsW.pos, 4));
+        this.solidWPoints.geometry.setAttribute('normal', new THREE.BufferAttribute(pointsW.normal, 4));
+        this.solidTPoints.geometry.setAttribute('position', new THREE.BufferAttribute(pointsT.pos, 4));
+        this.solidTPoints.geometry.setAttribute('normal', new THREE.BufferAttribute(pointsT.normal, 4));
     }
 
     animate() {
