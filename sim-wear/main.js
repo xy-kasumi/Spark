@@ -57,7 +57,7 @@ class GpuKernels {
     // Create uniform buffer & initialize with initFn.
     // [in] size: number, bytes
     // initFn: (ptr: ArrayBuffer) -> (), ptr is passed in "mapped" state.
-    // return: GpuBuffer
+    // return: GpuBuffer (no longer mapped, directly usable)
     createUniformBuffer(size, initFn) {
         const buf = this.device.createBuffer({
             size: size,
@@ -79,7 +79,46 @@ class GpuKernels {
         });
     }
 
-    async _debugPrintBuffer(mark, buf) {
+    // Create a single pipeline.
+    // [in] entryPoint: string, entry point name
+    // [in] bindings: array of string, "storage" | "uniform"
+    // [in] shaderCode: string, WGSL code
+    #createPipeline(entryPoint, bindings, shaderCode) {
+        const shaderModule = this.device.createShaderModule({ code: shaderCode });
+
+        const bindGroupLayout = this.device.createBindGroupLayout({
+            entries: bindings.map((type, i) => ({
+                binding: i,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: { type }
+            })),
+        });
+
+        return this.device.createComputePipeline({
+            layout: this.device.createPipelineLayout({bindGroupLayouts: [bindGroupLayout]}),
+            compute: { module: shaderModule, entryPoint }
+        });
+    }
+
+    // Dispatch kernel.
+    // [in] commandEncoder: GPUCommandEncoder
+    // [in] pipeline: GPUComputePipeline
+    // [in] args: array of GPUBuffer. Will be assigned to binding 0, 1, 2, ... automatically.
+    // [in] numThreads: number of total threads (wanted kernel execs)
+    #dispatchKernel(commandEncoder, pipeline, args, numThreads) {
+        const bindGroup = this.device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: args.map((buf, i) => ({ binding: i, resource: { buffer: buf } }))
+        });
+
+        const passEncoder = commandEncoder.beginComputePass();
+        passEncoder.setPipeline(pipeline);
+        passEncoder.setBindGroup(0, bindGroup);
+        passEncoder.dispatchWorkgroups(Math.ceil(numThreads / 128));
+        passEncoder.end();
+    }
+
+    async debugPrintBuffer(mark, buf) {
         const SIZE_LIMIT = 128;
         const size = Math.min(buf.size, SIZE_LIMIT);
 
@@ -153,8 +192,7 @@ class GpuKernels {
     }
 
     #compileInit() {
-        const cs = this.device.createShaderModule({
-            code: `
+        this.initPipeline = this.#createPipeline("init", ["storage", "uniform"], `
                 @group(0) @binding(0) var<storage, read_write> points: array<vec4f>;
                 
                 struct Params {
@@ -194,18 +232,7 @@ class GpuKernels {
                     points[index] = vec4f(pos_local, 1);
                 }
             `
-        });
-        this.initPipeline = this.device.createComputePipeline({
-            layout: this.device.createPipelineLayout({
-                bindGroupLayouts: [this.device.createBindGroupLayout({
-                    entries: [
-                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
-                    ]
-                })]
-            }),
-            compute: { module: cs, entryPoint: "init" }
-        });
+        );
     }
 
     // Initialize point cloud.
@@ -227,20 +254,8 @@ class GpuKernels {
             ]);
         });
 
-        const bindGroup = this.device.createBindGroup({
-            layout: this.initPipeline.getBindGroupLayout(0),
-            entries: [
-                { binding: 0, resource: { buffer: pointsBuf } },
-                { binding: 1, resource: { buffer: paramBuf } },
-            ]
-        });
-
         const commandEncoder = this.device.createCommandEncoder();
-        const passEncoder = commandEncoder.beginComputePass();
-        passEncoder.setPipeline(this.initPipeline);
-        passEncoder.setBindGroup(0, bindGroup);
-        passEncoder.dispatchWorkgroups(Math.ceil(numPoints / 128));
-        passEncoder.end();
+        this.#dispatchKernel(commandEncoder, this.initPipeline, [pointsBuf, paramBuf], numPoints);
         this.device.queue.submit([commandEncoder.finish()]);
         await this.device.queue.onSubmittedWorkDone();
 
@@ -248,8 +263,7 @@ class GpuKernels {
     }
 
     #compileApplyTransform() {
-        const cs = this.device.createShaderModule({
-            code: `
+        this.applyTransformPipeline = this.#createPipeline("apply_transform", ["storage", "storage", "uniform"], `
                 @group(0) @binding(0) var<storage, read_write> ps_in: array<vec4f>;
                 @group(0) @binding(1) var<storage, read_write> ps_out: array<vec4f>;
                 @group(0) @binding(2) var<uniform> transform: mat4x4f;
@@ -265,20 +279,8 @@ class GpuKernels {
                     let p_new = (transform * vec4f(p.xyz, 1)).xyz;
                     ps_out[index] = vec4f(p_new, p.w);
                 }
-        `});
-
-        this.applyTransformPipeline = this.device.createComputePipeline({
-            layout: this.device.createPipelineLayout({
-                bindGroupLayouts: [this.device.createBindGroupLayout({
-                    entries: [
-                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
-                    ]
-                })]
-            }),
-            compute: { module: cs, entryPoint: "apply_transform" }
-        });
+            `
+        );
     }
 
     // Initialize point cloud. In psIn and return value, w is 1 if alive, 0 if dead.
@@ -294,28 +296,14 @@ class GpuKernels {
             new Float32Array(ptr).set(locToWorld.elements);
         });
 
-        const bindGroup = this.device.createBindGroup({
-            layout: this.applyTransformPipeline.getBindGroupLayout(0),
-            entries: [
-                { binding: 0, resource: { buffer: psIn } },
-                { binding: 1, resource: { buffer: psOut } },
-                { binding: 2, resource: { buffer: matBuf } },
-            ]
-        });
-
         const commandEncoder = this.device.createCommandEncoder();
-        const passEncoder = commandEncoder.beginComputePass();
-        passEncoder.setPipeline(this.applyTransformPipeline);
-        passEncoder.setBindGroup(0, bindGroup);
-        passEncoder.dispatchWorkgroups(Math.ceil(numPoints / 128));
-        passEncoder.end();
+        this.#dispatchKernel(commandEncoder, this.applyTransformPipeline, [psIn, psOut, matBuf], numPoints);
         this.device.queue.submit([commandEncoder.finish()]);
         return psOut;
     }
     
     #compileComputeAABB() {
-        const cs = this.device.createShaderModule({
-            code: `
+        this.computeAABBPipeline = this.#createPipeline("reduce_aabb", ["storage", "storage", "storage", "storage"], `
                 const wg_size = 128u;
                 var<workgroup> wg_buffer_min: array<vec4f, wg_size>;
                 var<workgroup> wg_buffer_max: array<vec4f, wg_size>;
@@ -357,21 +345,8 @@ class GpuKernels {
                         ps_out_max[ix_group] = vec4(wg_buffer_max[0].xyz, 1);
                     }
                 }
-        `});
-
-        this.computeAABBPipeline = this.device.createComputePipeline({
-            layout: this.device.createPipelineLayout({
-                bindGroupLayouts: [this.device.createBindGroupLayout({
-                    entries: [
-                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                    ]
-                })]
-            }),
-            compute: { module: cs, entryPoint: "reduce_aabb" }
-        });
+            `
+        );
     }
 
     // Initialize point cloud. In psIn and return value, w is 1 if alive, 0 if dead.
@@ -394,21 +369,17 @@ class GpuKernels {
         let currentNumPoints = numPoints;
         let mode0to1 = true;
         while (currentNumPoints > 1) {
-            const bindGroup = this.device.createBindGroup({
-                layout: this.computeAABBPipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: mode0to1 ? temp0Min : temp1Min } },
-                    { binding: 1, resource: { buffer: mode0to1 ? temp0Max : temp1Max } },
-                    { binding: 2, resource: { buffer: mode0to1 ? temp1Min : temp0Min } },
-                    { binding: 3, resource: { buffer: mode0to1 ? temp1Max : temp0Max } },
-                ]
-            });
-
-            const passEncoder = commandEncoder.beginComputePass();
-            passEncoder.setPipeline(this.computeAABBPipeline);
-            passEncoder.setBindGroup(0, bindGroup);
-            passEncoder.dispatchWorkgroups(Math.ceil(currentNumPoints / 128));
-            passEncoder.end();
+            this.#dispatchKernel(
+                commandEncoder,
+                this.computeAABBPipeline,
+                [
+                    mode0to1 ? temp0Min : temp1Min,
+                    mode0to1 ? temp0Max : temp1Max, 
+                    mode0to1 ? temp1Min : temp0Min,
+                    mode0to1 ? temp1Max : temp0Max
+                ],
+                currentNumPoints
+            );
 
             mode0to1 = !mode0to1;
             currentNumPoints = Math.ceil(currentNumPoints / 128);
@@ -434,14 +405,13 @@ class GpuKernels {
     }
 
     #compileGatherActive() {
-        const cs = this.device.createShaderModule({
-            code: `
+        this.gatherActivePipeline = this.#createPipeline("gather_active", ["storage", "storage", "storage"], `
                 @group(0) @binding(0) var<storage, read_write> psIn: array<vec4<f32>>;
                 @group(0) @binding(1) var<storage, read_write> psOut: array<vec4<f32>>;
                 @group(0) @binding(2) var<storage, read_write> counter: atomic<u32>;
 
                 @compute @workgroup_size(128)
-                fn gatherActive(@builtin(global_invocation_id) gid: vec3<u32>) {
+                fn gather_active(@builtin(global_invocation_id) gid: vec3<u32>) {
                     let i = gid.x;
                     if (i >= arrayLength(&psIn)) {
                         return;
@@ -454,19 +424,7 @@ class GpuKernels {
                     }
                 }
             `
-        });
-        this.gatherActivePipeline = this.device.createComputePipeline({
-            layout: this.device.createPipelineLayout({
-                bindGroupLayouts: [this.device.createBindGroupLayout({
-                    entries: [
-                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                    ]
-                })]
-            }),
-            compute: { module: cs, entryPoint: "gatherActive" },
-        });
+        );
     }
 
     // Gather active points from psIn.
@@ -479,23 +437,10 @@ class GpuKernels {
         const countBuf = this.createBuffer(4);
         const countBufReading = this.createBufferForCpuRead(4);
 
-        const bindGroup = this.device.createBindGroup({
-            layout: this.gatherActivePipeline.getBindGroupLayout(0),
-            entries: [
-                { binding: 0, resource: { buffer: psIn } },
-                { binding: 1, resource: { buffer: tempBuf } },
-                { binding: 2, resource: { buffer: countBuf } },
-            ]
-        });
-
         this.device.queue.writeBuffer(countBuf, 0, new Uint32Array([0]));
 
         const commandEncoder = this.device.createCommandEncoder();
-        const passEncoder = commandEncoder.beginComputePass();
-        passEncoder.setPipeline(this.gatherActivePipeline);
-        passEncoder.setBindGroup(0, bindGroup);
-        passEncoder.dispatchWorkgroups(Math.ceil(numPoints / 128));
-        passEncoder.end();
+        this.#dispatchKernel(commandEncoder, this.gatherActivePipeline, [psIn, tempBuf, countBuf], numPoints);
         commandEncoder.copyBufferToBuffer(countBuf, 0, countBufReading, 0, 4);
         this.device.queue.submit([commandEncoder.finish()]);
 
@@ -536,8 +481,7 @@ class GpuKernels {
     `;
 
     #compileComputeCellIx() {
-        const cs = this.device.createShaderModule({
-            code: `
+        this.computeCellIxPipeline = this.#createPipeline("compute_cell_ix", ["storage", "storage", "storage", "uniform"], `
                 ${GpuKernels.#gridSnippet}
                 
                 @group(0) @binding(0) var<storage, read_write> ps_in: array<vec4<f32>>; // length = number of points
@@ -555,25 +499,11 @@ class GpuKernels {
                     cixs_out[gid.x] = cell_ix(p.xyz, grid);
                 }
             `
-        });
-        this.computeCellIxPipeline = this.device.createComputePipeline({
-            layout: this.device.createPipelineLayout({
-                bindGroupLayouts: [this.device.createBindGroupLayout({
-                    entries: [
-                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
-                    ]
-                })]
-            }),
-            compute: { module: cs, entryPoint: "compute_cell_ix" },
-        });
+        );
     }
 
     #compileComputeMins() {
-        const cs = this.device.createShaderModule({
-            code: `
+        this.computeMinsPipeline = this.#createPipeline("compute_mins", ["storage", "storage", "storage", "storage", "storage", "uniform", "storage"],  `
                 ${GpuKernels.#gridSnippet}
                 
                 // input: P points
@@ -629,31 +559,13 @@ class GpuKernels {
                     dists_out[gid.x] = quantized_dist;
                 }
             `
-        });
-        this.computeMinsPipeline = this.device.createComputePipeline({
-            layout: this.device.createPipelineLayout({
-                bindGroupLayouts: [this.device.createBindGroupLayout({
-                    entries: [
-                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
-                        { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                    ]
-                })]
-            }),
-            compute: { module: cs, entryPoint: "compute_mins" },
-        });
+        );
     }
 
     #compileIndexGrouping() {
-        const cs = this.device.createShaderModule({
-            code: `
-                @group(0) @binding(0) var<storage, read_write> cixs_in: array<u32>; // length = number of points
-                @group(0) @binding(1) var<storage, read_write> begin_out: array<u32>; // inclusive, length = number of cells
-                @group(0) @binding(2) var<storage, read_write> end_out: array<u32>; // exclusive, length = number of cells
+        this.clearGroupsPipeline = this.#createPipeline("clear_groups", ["storage", "storage"], `
+                @group(0) @binding(0) var<storage, read_write> begin_out: array<u32>; // inclusive, length = number of cells
+                @group(0) @binding(1) var<storage, read_write> end_out: array<u32>; // exclusive, length = number of cells
 
                 @compute @workgroup_size(128)
                 fn clear_groups(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -664,6 +576,13 @@ class GpuKernels {
                     begin_out[ix] = 0;
                     end_out[ix] = 0;
                 }
+            `
+        );
+
+        this.detectGroupsPipeline = this.#createPipeline("detect_groups", ["storage", "storage", "storage"], `
+                @group(0) @binding(0) var<storage, read_write> cixs_in: array<u32>; // length = number of points
+                @group(0) @binding(1) var<storage, read_write> begin_out: array<u32>; // inclusive, length = number of cells
+                @group(0) @binding(2) var<storage, read_write> end_out: array<u32>; // exclusive, length = number of cells
 
                 @compute @workgroup_size(128)
                 fn detect_groups(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -691,30 +610,7 @@ class GpuKernels {
                     }
                 }
             `
-        });
-        this.clearGroupsPipeline = this.device.createComputePipeline({
-            layout: this.device.createPipelineLayout({
-                bindGroupLayouts: [this.device.createBindGroupLayout({
-                    entries: [
-                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                    ]
-                })]
-            }),
-            compute: { module: cs, entryPoint: "clear_groups" },
-        });
-        this.detectGroupsPipeline = this.device.createComputePipeline({
-            layout: this.device.createPipelineLayout({
-                bindGroupLayouts: [this.device.createBindGroupLayout({
-                    entries: [
-                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-                    ]
-                })]
-            }),
-            compute: { module: cs, entryPoint: "detect_groups" },
-        });
+        );
     }
 
     // Create a grid index.
