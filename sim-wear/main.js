@@ -801,7 +801,7 @@ class GpuKernels {
     }
 }
 
-const POINTS_PER_MM = 3;
+const POINTS_PER_MM = 10;
 
 class Simulator {
     constructor(shapeW, shapeT, transW, transT) {
@@ -884,16 +884,10 @@ class Simulator {
         const closeT = await this.kernels.getClosePoints(ptsTWorld, indexW);
         console.log(`  RC: indexing/gpu-find ${performance.now() - t0} ms`);
 
-        t0 = performance.now();
-        const wps = await this.kernels._readAllV4(ptsWWorld);
-        const tps = await this.kernels._readAllV4(ptsTWorld);
-        console.log(`  RC: read ${performance.now() - t0} ms`);
-
         const maxRemove = Math.min(closeW.length, closeT.length);
         const removeW = Math.floor(maxRemove * (1 - ratio));
         const removeT = Math.floor(maxRemove * ratio);
         console.log("  RC/Remove W", removeW, "T", removeT);
-        console.log(`  RC: find ${performance.now() - t0} ms`);
 
         if (removeW == 0 && removeT == 0) {
             return;
