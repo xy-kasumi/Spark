@@ -461,13 +461,12 @@ class GpuKernels {
 
     static #gridSnippet = `
         struct AABBGrid {
-            min: vec4f,
+            min_unit: vec4f, // xyz: min coordinate, w: cell unit size
             dims: vec4u,
-            unit: f32,
         }
         
         fn cell_ix3(p: vec3f, grid: AABBGrid) -> vec3u {
-            return vec3u(floor((p - grid.min.xyz) / grid.unit));
+            return vec3u(floor((p - grid.min_unit.xyz) / grid.min_unit.w));
         }
 
         fn cell_3to1(cix3: vec3u, grid: AABBGrid) -> u32 {
@@ -560,6 +559,20 @@ class GpuKernels {
                 }
             `
         );
+
+        this.populateIxsPipeline = this.#createPipeline("populate_ixs", ["storage"], `
+                @group(0) @binding(0) var<storage, read_write> ixs_out: array<u32>;
+
+                @compute @workgroup_size(128)
+                fn populate_ixs(@builtin(global_invocation_id) gid: vec3<u32>) {
+                    let ix = gid.x;
+                    if (ix >= arrayLength(&ixs_out)) {
+                        return;
+                    }
+                    ixs_out[ix] = ix;
+                }
+            `
+        );
     }
 
     #compileIndexGrouping() {
@@ -619,22 +632,54 @@ class GpuKernels {
     //    unit is also the max distance that can be queried by getClosePoints.
     // returns: some opaque object that can be passed to getClosePoints
     async createGridIndex(psIn, grid) {
-        return {};
+        // flow: compute cell ix -> sort by cell ix (keeps ix mapping table to pixsBuf) -> create cell begin/end table (beginBuf/endBuf)
 
-        // this.computeCellIxPipeline
-        let pixs_buf, cixs_buf;
+        const numPoints = psIn.size / 16;
+        const dims = grid.max.clone().sub(grid.min).divideScalar(grid.unit).floor().addScalar(1);
+        const numCells = dims.x * dims.y * dims.z;
 
+        const commandEncoder = this.device.createCommandEncoder();
+
+        const pixsBuf = this.createBuffer(numPoints * 4);
+        const cixsBuf = this.createBuffer(numPoints * 4);
+        const gridBuf = this.createUniformBuffer(32, ptr => {
+            new Float32Array(ptr, 0, 4).set([grid.min.x, grid.min.y, grid.min.z, grid.unit]);
+            new Uint32Array(ptr, 16, 4).set([dims.x, dims.y, dims.z, 0]);
+        });
+        this.#dispatchKernel(commandEncoder, this.computeCellIxPipeline, [psIn, pixsBuf, cixsBuf, gridBuf], numPoints);
+
+        let t0 = performance.now();
         const radixSort = new RadixSortKernel({
             device: this.device,
-            keys: cixs_buf,
-            values: pixs_buf,
+            keys: cixsBuf,
+            values: pixsBuf,
+            count: numPoints,
         });
-        // exec radixSort (keys=)
+        console.log(`    kernels: radix sort init ${performance.now() - t0} ms`);
 
-        // exec clearGroups
-        // exec detectGroups
+        {
+            const pass = commandEncoder.beginComputePass();
+            radixSort.dispatch(pass);
+            pass.end();
+        }
 
-        return {};
+        const beginBuf = this.createBuffer(numCells * 4);
+        const endBuf = this.createBuffer(numCells * 4);
+        this.#dispatchKernel(commandEncoder, this.clearGroupsPipeline, [beginBuf, endBuf], numCells);
+        this.#dispatchKernel(commandEncoder, this.detectGroupsPipeline, [cixsBuf, beginBuf, endBuf], numPoints);
+
+        this.device.queue.submit([commandEncoder.finish()]);
+
+        await this.device.queue.onSubmittedWorkDone();
+        return {
+            unit: grid.unit,
+            gridBuf: gridBuf,
+            dims: dims,
+            pointsBuf: psIn,
+            pixsBuf: pixsBuf,
+            beginBuf: beginBuf,
+            endBuf: endBuf,
+        };
     }
 
     // Find the closest pair of points between qs and ps, if they're within "unit" given in createGridIndex.
@@ -643,14 +688,70 @@ class GpuKernels {
     // [in] qsIndex: opaque index created by createGridIndex
     // returns: [{ix: number, d: number}] (closest first)
     async getClosePoints(ps, qsIndex) {
+        // flow: compute min for points in P -> sort by distance (keep ix mapping table) -> read first MAX_READ_NUM entries
+
+        const numPointsP = ps.size / 16;
         const MAX_READ_NUM = 1024;
 
-        // exec computeMins (ps, qsIndex)
-        // create pix_buf (increasing order)
-        // exec radixSort (keys=dists, values=pix_buf)
-        // read first MAX_READ_NUM, both dists & pix_buf
+        const commandEncoder = this.device.createCommandEncoder();
 
-        return [];
+        const distsBuf = this.createBuffer(numPointsP * 4);
+
+        // ps_in: array<vec4<f32>>; // length = number of P points, order = original P point order
+        // qs_in: array<vec4<f32>>; // length = number of Q points, order = original Q point order
+        // qixs_in: array<u32>; // length = number of Q points, order = sorted cell entry
+        // qcgs_begin_in: array<u32>; // length = number of Q cells
+        // qcgs_end_in: array<u32>; // length = number of Q cells
+        // qgrid: AABBGrid;
+        // dists_out: array<u32>; // quantized distance (in 0.1 um; 16bit; truncated to < 6mm), length = number of P points
+        this.#dispatchKernel(commandEncoder, this.computeMinsPipeline,
+            [ps, qsIndex.pointsBuf, qsIndex.pixsBuf, qsIndex.beginBuf, qsIndex.endBuf, qsIndex.gridBuf, distsBuf],
+            numPointsP);
+        
+        const pixsBuf = this.createBuffer(numPointsP * 4);
+        this.#dispatchKernel(commandEncoder, this.populateIxsPipeline, [pixsBuf], numPointsP);
+
+        {
+            const radixSort = new RadixSortKernel({
+                device: this.device,
+                keys: distsBuf,
+                values: pixsBuf,
+                count: numPointsP,
+                bit_count: 16,
+            });
+            const pass = commandEncoder.beginComputePass();
+            radixSort.dispatch(pass);
+            pass.end();
+        }
+
+        const readNum = Math.min(MAX_READ_NUM, numPointsP);
+
+        const readDistBuf = this.createBufferForCpuRead(readNum * 4);
+        const readPixsBuf = this.createBufferForCpuRead(readNum * 4);
+        commandEncoder.copyBufferToBuffer(distsBuf, 0, readDistBuf, 0, readNum * 4);
+        commandEncoder.copyBufferToBuffer(pixsBuf, 0, readPixsBuf, 0, readNum * 4);
+        this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+
+        await readDistBuf.mapAsync(GPUMapMode.READ);
+        await readPixsBuf.mapAsync(GPUMapMode.READ);
+        const distCpuBuf = new Uint32Array(readNum);
+        const pixsCpuBuf = new Uint32Array(readNum);
+        distCpuBuf.set(new Uint32Array(readDistBuf.getMappedRange(0, readNum * 4)));
+        pixsCpuBuf.set(new Uint32Array(readPixsBuf.getMappedRange(0, readNum * 4)));
+        readDistBuf.unmap();
+        readPixsBuf.unmap();
+
+        const result = [];
+        for (let i = 0; i < readNum; i++) {
+            const dInt = distCpuBuf[i];
+            const d = dInt * 0.1e-3; // convert to mm
+            if (d >= qsIndex.unit) {
+                break;
+            }
+            result.push({ix: pixsCpuBuf[i], d});
+        }
+        return result;
     }
 
     // Mark specified point as dead.
@@ -729,29 +830,34 @@ class Simulator {
         t0 = performance.now();
         this.solidW = await this.kernels.gatherActive(this.solidW);
         this.solidT = await this.kernels.gatherActive(this.solidT);
-        console.log(`RC: gather ${performance.now() - t0} ms`);
+        console.log(`  RC: gather ${performance.now() - t0} ms`);
         
         t0 = performance.now();
         const ptsWWorld = await this.kernels.applyTransform(this.solidW, this.transW);
         const ptsTWorld = await this.kernels.applyTransform(this.solidT, this.transT);
         await this.device.queue.onSubmittedWorkDone();
-        console.log(`RC: transform ${performance.now() - t0} ms`);
+        console.log(`  RC: transform ${performance.now() - t0} ms`);
 
+        t0 = performance.now();
         const aabbW = await this.kernels.computeAABB(ptsWWorld);
         const aabbT = await this.kernels.computeAABB(ptsTWorld);
-        console.log("AABB W", aabbW, "T", aabbT);
+        // console.log("AABB W", aabbW, "T", aabbT);
 
         const indexW = await this.kernels.createGridIndex(ptsWWorld, {min: aabbW.min, max: aabbW.max, unit: d});
         const indexT = await this.kernels.createGridIndex(ptsTWorld, {min: aabbT.min, max: aabbT.max, unit: d});
-        //const closeW = await this.kernels.getClosePoints(ptsWWorld, indexT);
-        //const closeT = await this.kernels.getClosePoints(ptsTWorld, indexW);
+        const closeW = await this.kernels.getClosePoints(ptsWWorld, indexT);
+        const closeT = await this.kernels.getClosePoints(ptsTWorld, indexW);
+        console.log("  closeW", closeW);
+        console.log("  closeT", closeT);
+
+        console.log(`  RC: indexing/gpu-find ${performance.now() - t0} ms`);
         
 
 
         t0 = performance.now();
         const wps = await this.kernels._readAllV4(ptsWWorld);
         const tps = await this.kernels._readAllV4(ptsTWorld);
-        console.log(`RC: read ${performance.now() - t0} ms`);
+        console.log(`  RC: read ${performance.now() - t0} ms`);
 
         t0 = performance.now();
         const wp_cands = [];
@@ -783,18 +889,23 @@ class Simulator {
         }
         wp_cands.sort((a, b) => a.d - b.d);
         tp_cands.sort((a, b) => a.d - b.d);
+        console.log("  closeW/CPU", wp_cands);
+        console.log("  closeT/CPU", tp_cands);
 
         const maxRemove = Math.min(wp_cands.length, tp_cands.length);
         const removeW = Math.floor(maxRemove * (1 - ratio));
         const removeT = Math.floor(maxRemove * ratio);
-        console.log("Remove W", removeW, "T", removeT);
+        console.log("  RC/Remove W", removeW, "T", removeT);
+        console.log(`  RC: find ${performance.now() - t0} ms`);
+
         if (removeW == 0 && removeT == 0) {
             return;
         }
+
+        t0 = performance.now();
         this.kernels.markDead(this.solidW, wp_cands.slice(0, removeW).map(c => c.ix));
         this.kernels.markDead(this.solidT, tp_cands.slice(0, removeT).map(c => c.ix));
-
-        console.log(`RC: find/remove ${performance.now() - t0} ms`);
+        console.log(`  RC: remove ${performance.now() - t0} ms`);
     }
 }
 
@@ -1018,7 +1129,6 @@ class View3D {
     }
 
     run() {
-        console.log("run");
         this.stopSimulation = false;
 
         // ewr = 0%: ratio = 0
@@ -1027,6 +1137,7 @@ class View3D {
         const ratio = ewr / (1 + ewr);
 
         const simulateAsync = async () => {
+            console.log("simulation start");
             const t0 = performance.now();
             this.currentSimFeedDist = 0;
             while (this.currentSimFeedDist <= this.feedDist) {
@@ -1069,8 +1180,9 @@ class View3D {
     async updatePointsFromGPU() {
         const pointsW = await this.simulator.getRenderingBufferW();
         const pointsT = await this.simulator.getRenderingBufferT();
-        console.log(`W:${pointsW.length / 4} pts, T:${pointsT.length / 4} pts`);
+        console.log(`Showing W:${pointsW.length / 4} pts, T:${pointsT.length / 4} pts`);
 
+        /*
         const t0 = performance.now();
         const max = new THREE.Vector3(-1e10, -1e10, -1e10);
         const min = new THREE.Vector3(1e10, 1e10, 1e10);
@@ -1081,6 +1193,7 @@ class View3D {
         }
         const t1 = performance.now();
         console.log("CPU-AABB-W", min, max, "took", t1 - t0, "ms");
+        */
 
         this.solidWPoints.geometry.setAttribute('position', new THREE.BufferAttribute(pointsW, 4));
         this.solidTPoints.geometry.setAttribute('position', new THREE.BufferAttribute(pointsT, 4));
