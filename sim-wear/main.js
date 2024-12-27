@@ -42,6 +42,7 @@ class GpuKernels {
         this.#compileComputeCellIx();
         this.#compileIndexGrouping();
         this.#compileComputeMins();
+        this.#compileRadixPadding();
     }
 
     // Create buffer for compute.
@@ -116,6 +117,52 @@ class GpuKernels {
         passEncoder.setBindGroup(0, bindGroup);
         passEncoder.dispatchWorkgroups(Math.ceil(numThreads / 128));
         passEncoder.end();
+    }
+
+    #compileRadixPadding() {
+        this.padForRadixSortPipeline = this.#createPipeline("pad_for_radix_sort", ["storage"], `
+                @group(0) @binding(0) var<storage, read_write> arr_out: array<u32>;
+
+                @compute @workgroup_size(128)
+                fn pad_for_radix_sort(@builtin(global_invocation_id) gid: vec3<u32>) {
+                    let ix = gid.x;
+                    if (ix >= arrayLength(&arr_out)) {
+                        return;
+                    }
+                    arr_out[ix] = 0xffffffff;
+                }
+            `
+        );
+    }
+
+    // Gets (or rebuild) Radix sort kernel and usable buffers.
+    // Returned buffers are guaranteed to be large enough to hold count elements.
+    // Caller MUST NOT use 0xffffffff as keys, as they're internally used as padding.
+    // Caller MUST copy the result to other buffers before calling this method again.
+    //
+    // Kernel recompiles iff count is bigger than previous ones.
+    //
+    // [in] count: number, number of elements
+    // returns {keysBuf (u32 buf), valuesBuf (u32 buf), kernel: RadixSortKernel}
+    #prepareCachedRadixSortKernel(count, commandEncoder) {
+        if (!this.cachedRadixSortSize || this.cachedRadixSortSize < count) {
+            // rebuild
+            const keysBuf = this.createBuffer(count * 4);
+            const valuesBuf = this.createBuffer(count * 4);
+            const kernel = new RadixSortKernel({
+                device: this.device,
+                keys: keysBuf,
+                values: valuesBuf,
+                count: count,
+            });
+            this.cachedRadixSortSize = count;
+            this.cachedRadixSort = { keysBuf, valuesBuf, kernel };
+        }
+
+        // Pad key buffer. (So that these unused elements will go to the end of the array)
+        this.#dispatchKernel(commandEncoder, this.padForRadixSortPipeline, [this.cachedRadixSort.keysBuf], this.cachedRadixSortSize);
+        
+        return this.cachedRadixSort;
     }
 
     async debugPrintBuffer(mark, buf) {
@@ -648,20 +695,14 @@ class GpuKernels {
         });
         this.#dispatchKernel(commandEncoder, this.computeCellIxPipeline, [psIn, pixsBuf, cixsBuf, gridBuf], numPoints);
 
-        let t0 = performance.now();
-        const radixSort = new RadixSortKernel({
-            device: this.device,
-            keys: cixsBuf,
-            values: pixsBuf,
-            count: numPoints,
-        });
-        console.log(`    kernels: radix sort init ${performance.now() - t0} ms`);
-
-        {
-            const pass = commandEncoder.beginComputePass();
-            radixSort.dispatch(pass);
-            pass.end();
-        }
+        const radixSort = this.#prepareCachedRadixSortKernel(numPoints, commandEncoder);
+        commandEncoder.copyBufferToBuffer(cixsBuf, 0, radixSort.keysBuf, 0, numPoints * 4);
+        commandEncoder.copyBufferToBuffer(pixsBuf, 0, radixSort.valuesBuf, 0, numPoints * 4);
+        const pass = commandEncoder.beginComputePass();
+        radixSort.kernel.dispatch(pass);
+        pass.end();
+        commandEncoder.copyBufferToBuffer(radixSort.keysBuf, 0, cixsBuf, 0, numPoints * 4);
+        commandEncoder.copyBufferToBuffer(radixSort.valuesBuf, 0, pixsBuf, 0, numPoints * 4);
 
         const beginBuf = this.createBuffer(numCells * 4);
         const endBuf = this.createBuffer(numCells * 4);
@@ -711,18 +752,14 @@ class GpuKernels {
         const pixsBuf = this.createBuffer(numPointsP * 4);
         this.#dispatchKernel(commandEncoder, this.populateIxsPipeline, [pixsBuf], numPointsP);
 
-        {
-            const radixSort = new RadixSortKernel({
-                device: this.device,
-                keys: distsBuf,
-                values: pixsBuf,
-                count: numPointsP,
-                bit_count: 16,
-            });
-            const pass = commandEncoder.beginComputePass();
-            radixSort.dispatch(pass);
-            pass.end();
-        }
+        const radixSort = this.#prepareCachedRadixSortKernel(numPointsP, commandEncoder);
+        commandEncoder.copyBufferToBuffer(distsBuf, 0, radixSort.keysBuf, 0, numPointsP * 4);
+        commandEncoder.copyBufferToBuffer(pixsBuf, 0, radixSort.valuesBuf, 0, numPointsP * 4);
+        const pass = commandEncoder.beginComputePass();
+        radixSort.kernel.dispatch(pass);
+        pass.end();
+        commandEncoder.copyBufferToBuffer(radixSort.keysBuf, 0, distsBuf, 0, numPointsP * 4);
+        commandEncoder.copyBufferToBuffer(radixSort.valuesBuf, 0, pixsBuf, 0, numPointsP * 4);
 
         const readNum = Math.min(MAX_READ_NUM, numPointsP);
 
@@ -841,58 +878,18 @@ class Simulator {
         t0 = performance.now();
         const aabbW = await this.kernels.computeAABB(ptsWWorld);
         const aabbT = await this.kernels.computeAABB(ptsTWorld);
-        // console.log("AABB W", aabbW, "T", aabbT);
-
         const indexW = await this.kernels.createGridIndex(ptsWWorld, {min: aabbW.min, max: aabbW.max, unit: d});
         const indexT = await this.kernels.createGridIndex(ptsTWorld, {min: aabbT.min, max: aabbT.max, unit: d});
         const closeW = await this.kernels.getClosePoints(ptsWWorld, indexT);
         const closeT = await this.kernels.getClosePoints(ptsTWorld, indexW);
-        console.log("  closeW", closeW);
-        console.log("  closeT", closeT);
-
         console.log(`  RC: indexing/gpu-find ${performance.now() - t0} ms`);
-        
-
 
         t0 = performance.now();
         const wps = await this.kernels._readAllV4(ptsWWorld);
         const tps = await this.kernels._readAllV4(ptsTWorld);
         console.log(`  RC: read ${performance.now() - t0} ms`);
 
-        t0 = performance.now();
-        const wp_cands = [];
-        for (let iw = 0; iw < wps.length; iw++) {
-            const vw = new THREE.Vector3(wps[iw].x, wps[iw].y, wps[iw].z);
-            let minDist = 1e10;
-            for (let it = 0; it < tps.length; it++) {
-                if (tps[it].w < 0.5) {
-                    continue;
-                }
-                const vt = new THREE.Vector3(tps[it].x, tps[it].y, tps[it].z);
-                minDist = Math.min(minDist, vt.distanceTo(vw));
-            }
-            if (minDist < d) {
-                wp_cands.push({d: minDist, ix: iw});
-            }
-        }
-        const tp_cands = [];
-        for (let it = 0; it < tps.length; it++) {
-            const vt = new THREE.Vector3(tps[it].x, tps[it].y, tps[it].z);
-            let minDist = 1e10;
-            for (let iw = 0; iw < wps.length; iw++) {
-                const vw = new THREE.Vector3(wps[iw].x, wps[iw].y, wps[iw].z);
-                minDist = Math.min(minDist, vw.distanceTo(vt));
-            }
-            if (minDist < d) {
-                tp_cands.push({d: minDist, ix: it});
-            }
-        }
-        wp_cands.sort((a, b) => a.d - b.d);
-        tp_cands.sort((a, b) => a.d - b.d);
-        console.log("  closeW/CPU", wp_cands);
-        console.log("  closeT/CPU", tp_cands);
-
-        const maxRemove = Math.min(wp_cands.length, tp_cands.length);
+        const maxRemove = Math.min(closeW.length, closeT.length);
         const removeW = Math.floor(maxRemove * (1 - ratio));
         const removeT = Math.floor(maxRemove * ratio);
         console.log("  RC/Remove W", removeW, "T", removeT);
@@ -903,8 +900,8 @@ class Simulator {
         }
 
         t0 = performance.now();
-        this.kernels.markDead(this.solidW, wp_cands.slice(0, removeW).map(c => c.ix));
-        this.kernels.markDead(this.solidT, tp_cands.slice(0, removeT).map(c => c.ix));
+        this.kernels.markDead(this.solidW, closeW.slice(0, removeW).map(c => c.ix));
+        this.kernels.markDead(this.solidT, closeT.slice(0, removeT).map(c => c.ix));
         console.log(`  RC: remove ${performance.now() - t0} ms`);
     }
 }
