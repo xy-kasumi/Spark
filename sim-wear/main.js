@@ -32,6 +32,7 @@ class GpuKernels {
     constructor(device) {
         this.device = device;
         this.#compileInit();
+        this.#compileApplyCylinder();
         this.#compileApplyTransform();
         this.#compileComputeAABB();
         this.#compileGatherActive();
@@ -304,6 +305,45 @@ class GpuKernels {
         await this.device.queue.onSubmittedWorkDone();
 
         return pointsBuf;
+    }
+
+    #compileApplyCylinder() {
+        this.applyCylinderPipeline = this.#createPipeline("apply_cylinder", ["storage", "storage", "uniform"], `
+                @group(0) @binding(0) var<storage, read_write> ps_in: array<vec4f>;
+                @group(0) @binding(1) var<storage, read_write> ps_out: array<vec4f>;
+                @group(0) @binding(2) var<uniform> diameter: f32;
+
+                @compute @workgroup_size(128)
+                fn apply_cylinder(@builtin(global_invocation_id) gid: vec3u) {
+                    let index = gid.x;
+                    if (index >= arrayLength(&ps_in)) {
+                        return;
+                    }
+
+                    let p = ps_in[index];
+                    let p_radius = length(p.xy);
+                    ps_out[index] = vec4(p.xyz, select(0.0, 1.0, p_radius <= diameter * 0.5 && p.w > 0.5));
+                }
+            `
+        );
+    }
+
+    // Only keep points inside the cylinder (Z=main axis)
+    // [in] psIn: array<vec4f>
+    // [in] diameter: number
+    // returns: array<vec4f> (same order & length as psIn, w is updated)
+    async applyCylinder(psIn, diameter) {
+        const numPoints = psIn.size / 16;
+        const psOut = this.createBuffer(numPoints * 16);
+
+        const paramBuf = this.createUniformBuffer(4, (ptr) => {
+            new Float32Array(ptr).set([diameter]);
+        });
+
+        const commandEncoder = this.device.createCommandEncoder();
+        this.#dispatchKernel(commandEncoder, this.applyCylinderPipeline, [psIn, psOut, paramBuf], numPoints);
+        this.device.queue.submit([commandEncoder.finish()]);
+        return psOut;
     }
 
     #compileApplyTransform() {
@@ -920,6 +960,7 @@ class Simulator {
         // Initialize solids
         this.solidW = await this.kernels.initBox(this.shapeW.sizeLocal, POINTS_PER_MM);
         this.solidT = await this.kernels.initBox(this.shapeT.sizeLocal, POINTS_PER_MM);
+        this.solidT = await this.kernels.applyCylinder(this.solidT, 1.5);
     }
 
     async getRenderingBufferW() {
@@ -1008,6 +1049,9 @@ class Simulator {
 class View3D {
     constructor(simulator) {
         this.simulator = simulator;
+
+        // tool control
+        this.toolShape = "cylinder";
 
         // simulation control
         this.ewr = 50; // %, electrode wear ratio
@@ -1179,6 +1223,14 @@ class View3D {
 
     setupGui() {
         const gui = new GUI();
+
+        gui.add(this, "toolShape", ["cylinder", "square"]).name("Tool Shape").onChange(async () => {
+            this.simulator.solidT = await this.simulator.kernels.initBox(this.simulator.shapeT.sizeLocal, POINTS_PER_MM);
+            if (this.toolShape == "cylinder") {
+                this.simulator.solidT = await this.simulator.kernels.applyCylinder(this.simulator.solidT, 1.5);
+            }
+            this.updatePointsFromGPU();
+        });
 
         const toolPathUpdated = () => {
             this.simulator.transT = this.computeToolTrans(0);
