@@ -75,183 +75,6 @@ export class VoxelGrid {
     /////
     // boolean ops
 
-    /**
-     * Project existence of [iz+1, numZ) layers to layer iz.
-     * Keep layers below intact.
-     */
-    projectZDown(toIz) {
-        for (let iy = 0; iy < this.numY; iy++) {
-            for (let ix = 0; ix < this.numX; ix++) {
-                let accum = false;
-                for (let iz = toIz + 1; iz < this.numZ; iz++) {
-                    if (this.get(ix, iy, iz) > 0) {
-                        accum = true;
-                        break;
-                    }
-                }
-
-                this.set(ix, iy, toIz, accum ? 255 : 0);
-            }
-        }
-        return this;
-    }
-
-    projectYDown(toIy) {
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let ix = 0; ix < this.numX; ix++) {
-                let accum = false;
-                for (let iy = toIy + 1; iy < this.numY; iy++) {
-                    if (this.get(ix, iy, iz) > 0) {
-                        accum = true;
-                        break;
-                    }
-                }
-                this.set(ix, toIy, iz, accum ? 255 : 0);
-            }
-        }
-        return this;
-    }
-
-    projectXDown(toIx) {
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let iy = 0; iy < this.numY; iy++) {
-                let accum = false;
-                for (let ix = toIx + 1; ix < this.numX; ix++) {
-                    if (this.get(ix, iy, iz) > 0) {
-                        accum = true;
-                        break;
-                    }
-                }
-                this.set(toIx, iy, iz, accum ? 255 : 0);
-            }
-        }
-        return this;
-    }
-
-    projectYUp(toIy) {
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let ix = 0; ix < this.numX; ix++) {
-                let accum = false;
-                for (let iy = toIy - 1; iy >= 0; iy--) {
-                    if (this.get(ix, iy, iz) > 0) {
-                        accum = true;
-                        break;
-                    }
-                }
-                this.set(ix, toIy, iz, accum ? 255 : 0);
-            }
-        }
-        return this;
-    }
-
-    projectXUp(toIx) {
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let iy = 0; iy < this.numY; iy++) {
-                let accum = false;
-                for (let ix = toIx - 1; ix >= 0; ix--) {
-                    if (this.get(ix, iy, iz) > 0) {
-                        accum = true;
-                        break;
-                    }
-                }
-                this.set(toIx, iy, iz, accum ? 255 : 0);
-            }
-        }
-        return this;
-    }
-
-    convolveXY() {
-        const buffer = new Uint8Array(this.numX * this.numY);
-        for (let iz = 0; iz < this.numZ; iz++) {
-            buffer.set(this.data.subarray(iz * this.numX * this.numY, (iz + 1) * this.numX * this.numY));
-
-            for (let iy = 0; iy < this.numY; iy++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    let accum = false;
-                    for (let dy = -1; dy <= 1; dy++) {
-                        for (let dx = -1; dx <= 1; dx++) {
-                            const nx = ix + dx;
-                            const ny = iy + dy;
-                            if (nx < 0 || nx >= this.numX || ny < 0 || ny >= this.numY) {
-                                continue;
-                            }
-                            if (buffer[nx + ny * this.numX] > 0) {
-                                accum = true;
-                                break;
-                            }
-                        }
-                    }
-                    this.set(ix, iy, iz, accum ? 255 : 0);
-                }
-            }
-        }
-        return this;
-    }
-
-    convolveXZ() {
-        const buffer = new Uint8Array(this.numX * this.numZ);
-        for (let iy = 0; iy < this.numY; iy++) {
-            for (let iz = 0; iz < this.numZ; iz++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    buffer[ix + iz * this.numX] = this.get(ix, iy, iz);
-                }
-            }
-
-            for (let iz = 0; iz < this.numZ; iz++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    let accum = false;
-                    for (let dz = -1; dz <= 1; dz++) {
-                        for (let dx = -1; dx <= 1; dx++) {
-                            const nx = ix + dx;
-                            const nz = iz + dz;
-                            if (nx < 0 || nx >= this.numX || nz < 0 || nz >= this.numZ) {
-                                continue;
-                            }
-                            if (buffer[nx + nz * this.numX] > 0) {
-                                accum = true;
-                                break;
-                            }
-                        }
-                    }
-                    this.set(ix, iy, iz, accum ? 255 : 0);
-                }
-            }
-        }
-        return this;
-    }
-
-    convolveYZ() {
-        const buffer = new Uint8Array(this.numY * this.numZ);
-        for (let ix = 0; ix < this.numX; ix++) {
-            for (let iz = 0; iz < this.numZ; iz++) {
-                for (let iy = 0; iy < this.numY; iy++) {
-                    buffer[iy + iz * this.numY] = this.get(ix, iy, iz);
-                }
-            }
-
-            for (let iz = 0; iz < this.numZ; iz++) {
-                for (let iy = 0; iy < this.numY; iy++) {
-                    let accum = false;
-                    for (let dz = -1; dz <= 1; dz++) {
-                        for (let dy = -1; dy <= 1; dy++) {
-                            const ny = iy + dy;
-                            const nz = iz + dz;
-                            if (ny < 0 || ny >= this.numY || nz < 0 || nz >= this.numZ) {
-                                continue;
-                            }
-                            if (buffer[ny + nz * this.numY] > 0) {
-                                accum = true;
-                                break;
-                            }
-                        }
-                    }
-                    this.set(ix, iy, iz, accum ? 255 : 0);
-                }
-            }
-        }
-        return this;
-    }
-
     not() {
         for (let i = 0; i < this.data.length; i++) {
             this.data[i] = this.data[i] > 0 ? 0 : 255;
@@ -303,6 +126,69 @@ export class VoxelGrid {
     }
 }
 
+export class Octree {
+    constructor(vg) {
+        this.vg = vg;
+        this.root = this.build(0, 0, 0, 0, this.vg.numX);
+    }
+
+    build(depth, xofs, yofs, zofs, cellSize) {
+        if (cellSize === 1) {
+            const val = this.vg.get(xofs, yofs, zofs);
+            return {
+                lv: depth,
+                occupied: val === 255,
+            };
+        }
+
+        const childCellSize = cellSize / 2;
+        const children = [];
+        let numOccupied = 0;
+        let hasPartialChild = false;
+        for (let i = 0; i < 8; i++) {
+            const k = this.#decode3(i);
+            const child = this.build(depth + 1, xofs + k.x * childCellSize, yofs + k.y * childCellSize, zofs + k.z * childCellSize, childCellSize);
+            children.push(child);
+            if (child.children) {
+                hasPartialChild = true;
+            } else {
+                numOccupied += child.occupied ? 1 : 0;
+            }
+        }
+        if (hasPartialChild || (1 <= numOccupied && numOccupied <= 7)) {
+            return {
+                lv: depth,
+                children: children,
+            };
+        } else {
+            return {
+                lv: depth,
+                occupied: numOccupied === 8,
+            }
+        }
+    }
+
+    countCells(target = this.root) {
+        if (target.children) {
+            return target.children.map(c => this.countCells(c)).reduce((a, b) => a + b, 0);
+        } else {
+            return 1;
+        }
+    }
+
+    #encode3(x, y, z) {
+        return z << 2 | y << 1 | x;
+    }
+
+    #decode3(code) {
+        return {
+            x: code & 1,
+            y: (code >> 1) & 1,
+            z: (code >> 2) & 1,
+        };
+    }
+};
+
 
 
 
@@ -318,84 +204,6 @@ const isectLine2 = (p, q, y) => {
     return p.clone().lerp(q, t);
 };
 
-// Removes layer-by-layer in Z+ -> Z- direction.
-// Modifies workVg.
-// returns: mill vg: VoxelGrid (255: voxel to mill, from Z top to bottom)
-export const millLayersZDown = (workVg, targVg) => {
-    const wantToMillVg = workVg.clone().sub(targVg);
-    const millVg = workVg.clone().fill(0);
-
-    for (let iz = workVg.numZ - 1; iz >= 0; iz--) {
-        // millable = want-to-mill && !blocked
-        const blockedVg = workVg.clone().projectZDown(iz); // .convolveXY();
-        const millLayer = blockedVg.not().and(wantToMillVg).filterZ(iz);
-
-        millVg.or(millLayer);
-        workVg.sub(millLayer);
-    }
-    return millVg;
-};
-
-export const millLayersYDown = (workVg, targVg) => {
-    const wantToMillVg = workVg.clone().sub(targVg);
-    const millVg = workVg.clone().fill(0);
-
-    for (let iy = workVg.numY - 1; iy >= 0; iy--) {
-        // millable = want-to-mill && !blocked
-        const blockedVg = workVg.clone().projectYDown(iy); //.convolveXZ();
-        const millLayer = blockedVg.not().and(wantToMillVg).filterY(iy);
-
-        millVg.or(millLayer);
-        workVg.sub(millLayer);
-    }
-    return millVg;
-};
-
-export const millLayersYUp = (workVg, targVg) => {
-    const wantToMillVg = workVg.clone().sub(targVg);
-    const millVg = workVg.clone().fill(0);
-
-    for (let iy = 0; iy < workVg.numY; iy++) {
-        // millable = want-to-mill && !blocked
-        const blockedVg = workVg.clone().projectYUp(iy); //.convolveXZ();
-        const millLayer = blockedVg.not().and(wantToMillVg).filterY(iy);
-
-        millVg.or(millLayer);
-        workVg.sub(millLayer);
-    }
-    return millVg;
-};
-
-export const millLayersXDown = (workVg, targVg) => {
-    const wantToMillVg = workVg.clone().sub(targVg).not().convolveYZ().not();
-    const millVg = workVg.clone().fill(0);
-
-    for (let ix = workVg.numX - 1; ix >= 0; ix--) {
-        // millable = want-to-mill && !blocked
-        const blockedVg = workVg.clone().projectXDown(ix); // .convolveYZ();
-        const millLayer = blockedVg.not().and(wantToMillVg).filterX(ix);
-        millLayer.convolveYZ();
-
-        millVg.or(millLayer);
-        workVg.sub(millLayer);
-    }
-    return millVg;
-};
-
-export const millLayersXUp = (workVg, targVg) => {
-    const wantToMillVg = workVg.clone().sub(targVg);
-    const millVg = workVg.clone().fill(0);
-
-    for (let ix = 0; ix < workVg.numX; ix++) {
-        // millable = want-to-mill && !blocked
-        const blockedVg = workVg.clone().projectXUp(ix); // .convolveYZ();
-        const millLayer = blockedVg.not().and(wantToMillVg).filterX(ix);
-
-        millVg.or(millLayer);
-        workVg.sub(millLayer);
-    }
-    return millVg;
-};
 
 export const initVG = (surf, resMm) => {
     const MARGIN_MM = 1;
@@ -414,7 +222,14 @@ export const initVG = (surf, resMm) => {
     aabbMax.addScalar(MARGIN_MM);
     const numV = aabbMax.clone().sub(aabbMin).divideScalar(resMm).ceil();
     console.log("VG size", numV);
-    return new VoxelGrid(aabbMin, resMm, numV.x, numV.y, numV.z);
+
+    // To prepare for octree, get larger, cube grid with power of 2.
+    const maxDim = Math.max(numV.x, numV.y, numV.z);
+    const pow2Dim = Math.pow(2, Math.ceil(Math.log2(maxDim)));
+    console.log("VG size/2^", pow2Dim);
+    
+    const gridMin = aabbMin.clone().add(aabbMax).divideScalar(2).subScalar(pow2Dim * resMm / 2);
+    return new VoxelGrid(gridMin, resMm, pow2Dim, pow2Dim, pow2Dim);
 };
 
 export const diceSurf = (surf, vg) => {
@@ -436,15 +251,23 @@ export const diceSurf = (surf, vg) => {
 
                 const sliceX = vg.ofs.x + (ix + 0.5) * vg.res;
 
-                if (bnds[0] <= sliceX) {
+                // this loop is necessary for not breaking when handling smaller-than-cell features.
+                let isInsideEvenOnce = !isOutside;
+                while (bnds[0] <= sliceX) {
                     isOutside = !isOutside;
+                    if (!isOutside) {
+                        isInsideEvenOnce = true;
+                    }
                     bnds.shift();
                 }
-                vg.set(ix, iy, iz, isOutside ? 0 : 255);
+
+                vg.set(ix, iy, iz, isInsideEvenOnce ? 255 : 0);
             }
         }
     }
     console.log(`dicing done; volume: ${vg.volume()} mm^3 (${vg.count()} voxels)`);
+    const oct = new Octree(vg);
+    console.log(`octree done cells=${oct.countCells()}, #ratio=${oct.countCells() / vg.count()}`, oct);
     return vg;
 };
 

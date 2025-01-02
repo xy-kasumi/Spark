@@ -5,7 +5,6 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
     initVG, diceSurf, sliceSurfByPlane, sliceContourByLine,
-    millLayersZDown, millLayersYDown, millLayersXDown, millLayersYUp, millLayersXUp
 } from './geom.js';
 
 
@@ -47,32 +46,6 @@ const diceLineAndVisualize = (surf, lineY, lineZ) => {
 };
 
 
-const loadStl = (fname) => {
-    const loader = new STLLoader();
-    loader.load(
-        `models/${fname}.stl`,
-        (geometry) => {
-            dicer.objSurf = convGeomToSurf(geometry);
-
-            const material = new THREE.MeshPhysicalMaterial({
-                color: 0xb2ffc8,
-                metalness: 0.1,
-                roughness: 0.8,
-                transparent: true,
-                opacity: 0.1,
-            });
-
-            const mesh = new THREE.Mesh(geometry, material)
-            view.updateVis("obj", [mesh]);
-        },
-        (xhr) => {
-            console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
-        },
-        (error) => {
-            console.log(error);
-        }
-    );
-};
 
 const generateBlankGeom = () => {
     const blankRadius = 10;
@@ -127,8 +100,8 @@ const createBndsVis = (bnds) => {
 };
 
 // returns: THREE.Object3D
-const createVgVis = (vg) => {
-    const cubeGeom = new THREE.BoxGeometry(dicer.resMm * 0.9, dicer.resMm * 0.9, dicer.resMm * 0.9);
+const createVgVis = (vg, resMm) => {
+    const cubeGeom = new THREE.BoxGeometry(resMm * 0.9, resMm * 0.9, resMm * 0.9);
 
     const num = vg.count();
     const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial(), num);
@@ -162,28 +135,44 @@ const generateBlank = () => {
 };
 
 const generateTool = () => {
-    // 0.5mm nozzle & 0.7mm end
-    const needleExtRadius = 0.5 / 2;
+    const toolOrigin = new THREE.Object3D();
+
+    const baseRadius = 10;
+    const baseHeight = 10;
+
+    const needleExtRadius = 1.5 / 2;
     const needleLength = 25;
-    const ballRadius = 0.7 / 2;
+
+    const toolBase = new THREE.Mesh(
+        new THREE.CylinderGeometry(baseRadius, baseRadius, baseHeight, 32, 1),
+        new THREE.MeshPhysicalMaterial({ color: 0xe0e0e0, metalness: 0.2, roughness: 0.8 }));
+    toolBase.position.y = -baseHeight / 2;
+    toolOrigin.add(toolBase);
 
     const needle = new THREE.Mesh(
         new THREE.CylinderGeometry(needleExtRadius, needleExtRadius, needleLength, 32, 1),
         new THREE.MeshPhysicalMaterial({ color: 0xf0f0f0, metalness: 0.9, roughness: 0.3 }));
     needle.position.y = needleLength / 2;
 
-    const ball = new THREE.Mesh(
-        new THREE.SphereGeometry(ballRadius, 10, 10),
-        new THREE.MeshPhysicalMaterial({ color: "red", metalness: 0.9, roughness: 0.7 }));
-    needle.add(ball);
-    ball.position.y = needleLength / 2;
+    toolOrigin.add(needle);
+    toolOrigin.rotateOnAxis(new THREE.Vector3(0, 0, 1), Math.PI / 2);
+    toolOrigin.position.x = needleLength + 10;
 
-    return needle;
+    return toolOrigin;
 };
 
 
 ////////////////////////////////////////////////////////////////////////////////
 // 3D view
+
+const Model = {
+    GT2_PULLEY: "GT2_pulley",
+    HELICAL_GEAR: "helical_gear",
+    HELICAL_GEAR_STANDING: "helical_gear_standing",
+    DICE_TOWER: "dice_tower",
+    BENCHY: "benchy_25p",
+    BOLT_M3: "M3x10",
+};
 
 /**
  * Scene is in mm unit. Right-handed, Z+ up.
@@ -198,6 +187,87 @@ class View3D {
 
         const blank = generateBlank();
         this.scene.add(blank);
+        this.model = Model.GT2_PULLEY;
+        this.resMm = 0.25;
+        this.lineZ = 1;
+        this.lineY = 0;
+        this.showTarget = false;
+        this.showWork = false;
+        this.objSurf = null;
+        this.millVgs = [];
+        this.millStep = 0;
+        this.toolX = 0;
+        this.toolY = 0;
+        this.toolZ = 0;
+
+
+        this.initGui();
+    }
+
+    initGui() {
+        const view = this;                
+        const loadStl = (fname) => {
+            const loader = new STLLoader();
+            loader.load(
+                `models/${fname}.stl`,
+                (geometry) => {
+                    view.objSurf = convGeomToSurf(geometry);
+
+                    const material = new THREE.MeshPhysicalMaterial({
+                        color: 0xb2ffc8,
+                        metalness: 0.1,
+                        roughness: 0.8,
+                        transparent: true,
+                        opacity: 0.1,
+                    });
+
+                    const mesh = new THREE.Mesh(geometry, material)
+                    view.updateVis("obj", [mesh]);
+                },
+                (xhr) => {
+                    console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
+                },
+                (error) => {
+                    console.log(error);
+                }
+            );
+        };
+
+        const gui = new GUI();
+        gui.add(this, 'model', Model).onChange((model) => {
+            this.updateVis("vg-targ", []);
+            this.updateVis("vg-work", []);
+            this.updateVis("misc", []);
+    
+            loadStl(model);
+        });
+        gui.add(this, "resMm", [1e-3, 5e-2, 1e-2, 1e-1, 0.25, 0.5, 1]);
+        gui.add(this, "showTarget").onChange(v => {
+            this.setVisVisibility("vg-targ", v);
+        }).listen();
+        gui.add(this, "showWork").onChange(v => {
+            this.setVisVisibility("vg-work", v);
+        }).listen();
+        gui.add(this, "dice");
+    
+        const sd = gui.addFolder("Slice Debug");
+        sd.add(this, "lineZ", -10, 50).step(0.1);
+        sd.add(this, "lineY", -50, 50).step(0.1);
+        sd.add(this, "diceLine");
+    
+        const sim = gui.addFolder("Tool Sim");
+        sim.add(this, "millStep", 0, 10).step(1).onChange(step => {
+            if (0 <= step && step < this.millVgs.length) {
+                this.updateVis("mill", [createVgVis(this.millVgs[step], this.resMm)]);
+            } else {
+                this.updateVis("mill", []);
+            }
+        });
+        sim.add(this, "toolX", -50, 50).step(0.1).onChange(v => this.tool.position.x = v);
+        sim.add(this, "toolY", -50, 50).step(0.1).onChange(v => this.tool.position.y = v);
+        sim.add(this, "toolZ", 0, 100).step(0.1).onChange(v => this.tool.position.z = v);
+    
+        loadStl(this.model);
     }
 
     init() {
@@ -206,10 +276,10 @@ class View3D {
 
         const aspect = width / height;
         this.camera = new THREE.OrthographicCamera(-25 * aspect, 25 * aspect, 25, -25, 0.1, 150);
-        this.camera.position.x = -15;
-        this.camera.position.y = -40;
+        this.camera.position.x = 15;
+        this.camera.position.y = 40;
         this.camera.position.z = 20;
-        this.camera.up.set(0, 0, 1);
+        this.camera.up.set(1, 0, 0);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setPixelRatio(window.devicePixelRatio);
@@ -258,6 +328,34 @@ class View3D {
         Object.assign(window, { scene: this.scene });
     }
 
+    dice() {
+        const surfBlank = convGeomToSurf(generateBlankGeom());
+
+        const workVg = initVG(surfBlank, this.resMm);
+        const targVg = workVg.clone();
+        diceSurf(surfBlank, workVg);
+        diceSurf(this.objSurf, targVg);
+
+        this.millVgs = [];
+        //this.millVgs.push(millLayersZDown(workVg, targVg));
+        //this.millVgs.push(millLayersYDown(workVg, targVg));
+        //this.millVgs.push(millLayersXDown(workVg, targVg));
+        //this.millVgs.push(millLayersYUp(workVg, targVg));
+        //this.millVgs.push(millLayersXUp(workVg, targVg));
+        //console.log(`milling done; ${this.millVgs.length} steps emitted`);
+
+        view.updateVis("vg-targ", [createVgVis(targVg, this.resMm)]);
+        this.showTarget = true;
+
+        view.updateVis("vg-work", [createVgVis(workVg, this.resMm)]);
+        view.setVisVisibility("vg-work", false);
+    }
+
+    diceLine() {
+        const sf = convGeomToSurf(generateBlankGeom());
+        diceLineAndVisualize(this.objSurf, this.lineY, this.lineZ);
+    }
+
     updateVis(group, vs) {
         if (this.visGroups[group]) {
             this.visGroups[group].forEach(v => this.scene.remove(v));
@@ -289,97 +387,8 @@ class View3D {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// GUI
-
-const Model = {
-    HELICAL_GEAR: "helical_gear",
-    HELICAL_GEAR_STANDING: "helical_gear_standing",
-    DICE_TOWER: "dice_tower",
-    BENCHY: "benchy_25p",
-    BOLT_M3: "M3x10"
-};
-
-const dicer = {
-    model: Model.HELICAL_GEAR,
-    resMm: 0.25,
-    lineZ: 1,
-    lineY: 0,
-    showTarget: false,
-    showWork: false,
-    objSurf: null,
-    millVgs: [],
-    dice: () => {
-        const surfBlank = convGeomToSurf(generateBlankGeom());
-
-        const workVg = initVG(surfBlank, dicer.resMm);
-        const targVg = workVg.clone();
-        diceSurf(surfBlank, workVg);
-        diceSurf(dicer.objSurf, targVg);
-
-        dicer.millVgs = [];
-        //dicer.millVgs.push(millLayersZDown(workVg, targVg));
-        //dicer.millVgs.push(millLayersYDown(workVg, targVg));
-        dicer.millVgs.push(millLayersXDown(workVg, targVg));
-        //dicer.millVgs.push(millLayersYUp(workVg, targVg));
-        //dicer.millVgs.push(millLayersXUp(workVg, targVg));
-        console.log(`milling done; ${dicer.millVgs.length} steps emitted`);
-
-        view.updateVis("vg-targ", [createVgVis(targVg)]);
-        dicer.showTarget = true;
-
-        view.updateVis("vg-work", [createVgVis(workVg)]);
-        view.setVisVisibility("vg-work", false);
-    },
-    diceLine: () => {
-        const sf = convGeomToSurf(generateBlankGeom());
-        diceLineAndVisualize(dicer.objSurf, dicer.lineY, dicer.lineZ);
-    },
-    millStep: 0,
-    toolX: 0,
-    toolY: 0,
-    toolZ: 0,
-};
-
-function initGui(view) {
-    const gui = new GUI();
-    gui.add(dicer, 'model', Model).onChange((model) => {
-        view.updateVis("vg-targ", []);
-        view.updateVis("vg-work", []);
-        view.updateVis("misc", []);
-
-        loadStl(model);
-    });
-    gui.add(dicer, "resMm", [1e-3, 1e-2, 1e-1, 0.25, 0.5, 1]);
-    gui.add(dicer, "showTarget").onChange(v => {
-        view.setVisVisibility("vg-targ", v);
-    }).listen();
-    gui.add(dicer, "showWork").onChange(v => {
-        view.setVisVisibility("vg-work", v);
-    }).listen();
-    gui.add(dicer, "dice");
-
-    const sd = gui.addFolder("Slice Debug");
-    sd.add(dicer, "lineZ", -10, 50).step(0.1);
-    sd.add(dicer, "lineY", -50, 50).step(0.1);
-    sd.add(dicer, "diceLine");
-
-    const sim = gui.addFolder("Tool Sim");
-    sim.add(dicer, "millStep", 0, 10).step(1).onChange(step => {
-        if (0 <= step && step < dicer.millVgs.length) {
-            view.updateVis("mill", [createVgVis(dicer.millVgs[step])]);
-        } else {
-            view.updateVis("mill", []);
-        }
-    });
-    sim.add(dicer, "toolX", -50, 50).step(0.1).onChange(v => view.tool.position.x = v);
-    sim.add(dicer, "toolY", -50, 50).step(0.1).onChange(v => view.tool.position.y = v);
-    sim.add(dicer, "toolZ", 0, 100).step(0.1).onChange(v => view.tool.position.z = v);
-
-    loadStl(dicer.model);
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 // entry point
+
 const view = new View3D();
-initGui(view);
