@@ -1057,6 +1057,7 @@ class View3D {
         this.ewr = 50; // %, electrode wear ratio
         this.toolInitX = 0;
         this.toolInitY = 0;
+        this.toolInitZ = 1;
         this.feedDir = 0; // deg; 0=Z-, 90=X+
         this.toolRot = 10; // deg/mm; CCW
         this.feedDist = 15; // mm
@@ -1225,10 +1226,7 @@ class View3D {
         const gui = new GUI();
 
         gui.add(this, "toolShape", ["cylinder", "square"]).name("Tool Shape").onChange(async () => {
-            this.simulator.solidT = await this.simulator.kernels.initBox(this.simulator.shapeT.sizeLocal, POINTS_PER_MM);
-            if (this.toolShape == "cylinder") {
-                this.simulator.solidT = await this.simulator.kernels.applyCylinder(this.simulator.solidT, 1.5);
-            }
+            await this.#regenerateTool();
             this.updatePointsFromGPU();
         });
 
@@ -1240,12 +1238,14 @@ class View3D {
         
         gui.add(this, "toolInitX", -15, 15, 0.1).name("Tool Init X (mm)").onChange(toolPathUpdated);
         gui.add(this, "toolInitY", -15, 15, 0.1).name("Tool Init Y (mm)").onChange(toolPathUpdated);
+        gui.add(this, "toolInitZ", -5, 5, 0.1).name("Tool Init Z (mm)").onChange(toolPathUpdated);
         gui.add(this, "feedDir", 0, 90, 1).name("Feed Dir (deg)").onChange(toolPathUpdated);
         gui.add(this, "toolRot", 0, 360, 1).name("Tool Rot (deg/mm)").onChange(toolPathUpdated);
         gui.add(this, "ewr", 0, 500, 1).name("E. Wear Ratio (%)");
 
         gui.add(this, "run");
         gui.add(this, "stop");
+        gui.add(this, "reset");
         gui.add(this, "currentSimFeedDist").name("Current Feed (mm)").disable().listen();
 
         gui.add(this, "slice").name("Slice (YZ)").onChange(() => {
@@ -1259,7 +1259,7 @@ class View3D {
     }
 
     computeToolTrans(feedDist) {
-        const pos = new THREE.Vector3(this.toolInitX, this.toolInitY, 6);
+        const pos = new THREE.Vector3(this.toolInitX, this.toolInitY, 5 + this.toolInitZ);
         const rot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), feedDist * this.toolRot * Math.PI / 180);
 
         const angle = this.feedDir * Math.PI / 180;
@@ -1323,6 +1323,30 @@ class View3D {
 
     stop() {
         this.stopSimulation = true;
+    }
+
+    reset() {
+        this.stopSimulation = true;
+        this.currentSimFeedDist = 0;
+
+        const regen = async () => {
+            this.simulator.transT = this.computeToolTrans(0);
+            await this.#regenerateTool();
+            await this.#regenerateWork();
+            this.updatePointsFromGPU();
+        };
+        regen(); // fire and forget
+    }
+
+    async #regenerateTool() {
+        this.simulator.solidT = await this.simulator.kernels.initBox(this.simulator.shapeT.sizeLocal, POINTS_PER_MM);
+        if (this.toolShape == "cylinder") {
+            this.simulator.solidT = await this.simulator.kernels.applyCylinder(this.simulator.solidT, 1.5);
+        }
+    }
+
+    async #regenerateWork() {
+        this.simulator.solidW = await this.simulator.kernels.initBox(this.simulator.shapeW.sizeLocal, POINTS_PER_MM);
     }
 
     onWindowResize() {
