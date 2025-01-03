@@ -48,8 +48,8 @@ const diceLineAndVisualize = (surf, lineY, lineZ) => {
 
 
 const generateBlankGeom = () => {
-    const blankRadius = 10;
-    const blankHeight = 25;
+    const blankRadius = 7.5;
+    const blankHeight = 15;
     const geom = new THREE.CylinderGeometry(blankRadius, blankRadius, blankHeight, 64, 1);
     const transf = new THREE.Matrix4().compose(
         new THREE.Vector3(0, 0, blankHeight / 2),
@@ -218,7 +218,7 @@ class View3D {
                         metalness: 0.1,
                         roughness: 0.8,
                         transparent: true,
-                        opacity: 0.1,
+                        opacity: 0.8,
                     });
 
                     const mesh = new THREE.Mesh(geometry, material)
@@ -251,8 +251,8 @@ class View3D {
         gui.add(this, "dice");
     
         const sd = gui.addFolder("Slice Debug");
-        sd.add(this, "lineZ", -10, 50).step(0.1);
-        sd.add(this, "lineY", -50, 50).step(0.1);
+        sd.add(this, "lineZ", -10, 50); // .step(0.01);
+        sd.add(this, "lineY", -50, 50);
         sd.add(this, "diceLine");
     
         const sim = gui.addFolder("Tool Sim");
@@ -328,12 +328,89 @@ class View3D {
         Object.assign(window, { scene: this.scene });
     }
 
+    genPass() {
+        // preparation:
+        // voxelize the work and target into 3-state (empty, partial, full) VG, at 0.25mm resolution
+        //   incorporate work's uncertainty into the cell value (as partial)
+        //
+        // initialize planner
+        //
+        // loop:
+        //   if the current state meeds end condition ("good enough" or "too much time"), end planning
+        //   planner generates pass candidates
+        //   pass candidates are evluated
+        //   pick the best pass, and commit it (best = make most progress in given time)
+        //
+        // planner
+        //   have bunch of heuristics to generate pass candidates and control tolerance schedule
+        //   
+        // --
+        // cf. good general rule
+        //   1. to each work voxel, assign distance from targe surface
+        //   2a. each voxel has distance cost + "switching cost" (from whatever current state of the tool shape & pos)
+        //   2b. pick lowest overall cost voxel
+        //   2c. loop until all work is removed
+        //
+        //   this is nice framework, but tiny difference in cost function can greatly change the generated path,
+        //   making it fun but less understandable for users. also, this cannot accomodate EWR variance and non-linear phenomena.
+        //   Thus should only be used as very general heuristic & localized with in pass,
+        //   not as the middle thing.
+
+        // prep
+        const resMm = 0.25;
+        const surfBlank = convGeomToSurf(generateBlankGeom());
+
+        const workVg = initVG(surfBlank, resMm);
+        const targVg = workVg.clone();
+        diceSurf(surfBlank, workVg);
+        diceSurf(this.objSurf, targVg);
+
+        const planner = {};
+
+        const candidateNormals = [
+            new THREE.Vector3(1, 0, 0),
+            new THREE.Vector3(0, 1, 0),
+            new THREE.Vector3(-1, 0, 0),
+            new THREE.Vector3(0, -1, 0),
+            new THREE.Vector3(0, 0, 1),
+        ];
+
+        const normal = candidateNormals[0];
+
+        // "surface" x canditateNormal
+        // compute accessible area from shape x tool base
+        //
+        // reproject to 0.25mm grid of normal dir as local-Z.
+        // compute "access grid"
+        //   convolve tool radius in local XY-direction
+        //   apply projecting-or in Z- direction
+        //   now this grid's empty cells shows accessible locations to start milling from
+        // pick the shallowed layer that contains voxels to be removed
+        // compute the accesssible voxel in the surface, using zig-zag pattern
+        // compute actual path (pre g-code)
+        //
+        // apply the removal to the work vg (how?)
+
+
+
+        const pass = {
+            dia: 1.5,
+            tolerance: 0.375,
+            access: [],
+            target: [],
+            normal: null,
+        };
+        console.log("pass candidates", pass);
+    }
+
     dice() {
         const surfBlank = convGeomToSurf(generateBlankGeom());
 
         const workVg = initVG(surfBlank, this.resMm);
         const targVg = workVg.clone();
+        console.log("diceSurf");
         diceSurf(surfBlank, workVg);
+        console.log("diceTarg");
         diceSurf(this.objSurf, targVg);
 
         this.millVgs = [];
@@ -353,7 +430,7 @@ class View3D {
 
     diceLine() {
         const sf = convGeomToSurf(generateBlankGeom());
-        diceLineAndVisualize(this.objSurf, this.lineY, this.lineZ);
+        diceLineAndVisualize(sf, this.lineY, this.lineZ);
     }
 
     updateVis(group, vs) {

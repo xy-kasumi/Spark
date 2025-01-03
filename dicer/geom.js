@@ -232,36 +232,75 @@ export const initVG = (surf, resMm) => {
     return new VoxelGrid(gridMin, resMm, pow2Dim, pow2Dim, pow2Dim);
 };
 
+// [in] q: query point
+// [in] xs: segment set [x0, x1], [x2, x3], ... (x0 < x1 < x2 < x3 < ...) even number of elements.
+// [out] true if q is inside
+const isValueInside = (q, xs) => {
+    if (xs.length % 2 !== 0) {
+        throw "Corrupt segment set"; // TODO: may need to handle gracefully.
+    }
+
+    for (let i = 0; i < xs.length; i += 2) {
+        const x0 = xs[i];
+        const x1 = xs[i + 1];
+        if (q < x0) {
+            return false;
+        }
+        if (q < x1) {
+            return true;
+        }
+    }
+    return false;
+};
+
+// TODO: this logic still missses tiny features like a screw lead. Need to sample many and reduce later.
+// 0.5mm grid is obviously not enough to capture M1 screw lead mountains.
 export const diceSurf = (surf, vg) => {
     console.log("dicing...");
     for (let iz = 0; iz < vg.numZ; iz++) {
         const sliceZ = vg.ofs.z + (iz + 0.5) * vg.res;
-        const cont = sliceSurfByPlane(surf, sliceZ);
+        const sliceZ0 = vg.ofs.z + iz * vg.res;
+        const sliceZ1 = vg.ofs.z + (iz + 1) * vg.res;
+
+        //const cont = sliceSurfByPlane(surf, sliceZ);
+        const contZ0 = sliceSurfByPlane(surf, sliceZ0);
+        const contZ1 = sliceSurfByPlane(surf, sliceZ1);
 
         for (let iy = 0; iy < vg.numY; iy++) {
             const sliceY = vg.ofs.y + (iy + 0.5) * vg.res;
-            const bnds = sliceContourByLine(cont, sliceY);
+            const sliceY0 = vg.ofs.y + iy * vg.res;
+            const sliceY1 = vg.ofs.y + (iy + 1) * vg.res;
 
-            let isOutside = true;
+            //const bnds = sliceContourByLine(cont, sliceY);
+            const bnds00 = sliceContourByLine(contZ0, sliceY0);
+            const bnds01 = sliceContourByLine(contZ1, sliceY0);
+            const bnds10 = sliceContourByLine(contZ0, sliceY1);
+            //console.log(`Z1=${sliceZ1}, Y1=${sliceY1}`);
+            const bnds11 = sliceContourByLine(contZ1, sliceY1);
+
             for (let ix = 0; ix < vg.numX; ix++) {
-                if (bnds.length === 0) {
-                    vg.set(ix, iy, iz, 0);
-                    continue;
-                }
-
                 const sliceX = vg.ofs.x + (ix + 0.5) * vg.res;
+                const sliceX0 = vg.ofs.x + ix * vg.res;
+                const sliceX1 = vg.ofs.x + (ix + 1) * vg.res;
 
-                // this loop is necessary for not breaking when handling smaller-than-cell features.
-                let isInsideEvenOnce = !isOutside;
-                while (bnds[0] <= sliceX) {
-                    isOutside = !isOutside;
-                    if (!isOutside) {
-                        isInsideEvenOnce = true;
-                    }
-                    bnds.shift();
+                let numInside = 0;
+                numInside += isValueInside(sliceX0, bnds00) ? 1 : 0;
+                numInside += isValueInside(sliceX0, bnds01) ? 1 : 0;
+                numInside += isValueInside(sliceX0, bnds10) ? 1 : 0;
+                numInside += isValueInside(sliceX0, bnds11) ? 1 : 0;
+                numInside += isValueInside(sliceX1, bnds00) ? 1 : 0;
+                numInside += isValueInside(sliceX1, bnds01) ? 1 : 0;
+                numInside += isValueInside(sliceX1, bnds10) ? 1 : 0;
+                numInside += isValueInside(sliceX1, bnds11) ? 1 : 0;
+
+                //const isInside = isValueInside(sliceX, bnds);
+                let cellV = 0;
+                if (numInside === 8) {
+                    cellV = 255;
+                } else if (numInside > 0) {
+                    cellV = 128;
                 }
-
-                vg.set(ix, iy, iz, isInsideEvenOnce ? 255 : 0);
+                vg.set(ix, iy, iz, cellV);
             }
         }
     }
@@ -310,7 +349,10 @@ export const sliceContourByLine = (contEdges, sliceY) => {
                 bndsClean.push(b.x);
             }
             if (insideness < 0) {
-                console.error("Corrupt surface data (hole)");
+                // BUG: This cause false-positive, when a tangenting line intersects surface of a cylindrical mesh.
+                // But looks like OK to ignore it for now. Need rigorous testing & numerical stability before prod.
+                // temporarily disabled.
+                //console.error("Corrupt surface data (hole)"); 
             }
         }
     });
