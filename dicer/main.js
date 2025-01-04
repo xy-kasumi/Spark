@@ -48,12 +48,12 @@ const convGeomToSurf = (geom) => {
 
 
 // returns: THREE.BufferGeometry
-const generateBlankGeom = () => {
-    const blankRadius = 7.5;
-    const blankHeight = 15;
-    const geom = new THREE.CylinderGeometry(blankRadius, blankRadius, blankHeight, 64, 1);
+const generateStockGeom = () => {
+    const stockRadius = 7.5;
+    const stockHeight = 15;
+    const geom = new THREE.CylinderGeometry(stockRadius, stockRadius, stockHeight, 64, 1);
     const transf = new THREE.Matrix4().compose(
-        new THREE.Vector3(0, 0, blankHeight / 2),
+        new THREE.Vector3(0, 0, stockHeight / 2),
         new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2),
         new THREE.Vector3(1, 1, 1));
     geom.applyMatrix4(transf);
@@ -118,11 +118,11 @@ const createPathVis = (path) => {
 
 
 // returns: THREE.Object3D
-const generateBlank = () => {
-    const blank = new THREE.Mesh(
-        generateBlankGeom(),
+const generateStock = () => {
+    const stock = new THREE.Mesh(
+        generateStockGeom(),
         new THREE.MeshLambertMaterial({ color: "blue", wireframe: true, transparent: true, opacity: 0.05 }));
-    return blank;
+    return stock;
 };
 
 
@@ -208,19 +208,19 @@ class View3D {
         this.tool = generateTool();
         this.scene.add(this.tool);
 
-        const blank = generateBlank();
-        this.objBlank = blank;
-        this.scene.add(blank);
+        const stock = generateStock();
+        this.objStock = stock;
+        this.scene.add(stock);
         this.model = Model.GT2_PULLEY;
-        this.showInitWorkMesh = true;
+        this.showStockMesh = true;
         this.showTargetMesh = true;
 
         this.resMm = 0.5;
         this.lineZ = 1;
         this.lineY = 0;
-        this.showTarget = false;
         this.showWork = false;
-        this.objSurf = null;
+        this.showTarget = false;
+        this.targetSurf = null;
         this.millVgs = [];
         this.millStep = 0;
         this.toolX = 0;
@@ -246,7 +246,7 @@ class View3D {
                 (geometry) => {
                     // To avoid parts going out of work by numerical error, slightly offset the part geometry.
                     translateGeom(geometry, new THREE.Vector3(0, 0, 0.5));
-                    this.objSurf = convGeomToSurf(geometry);
+                    this.targetSurf = convGeomToSurf(geometry);
 
                     const material = new THREE.MeshPhysicalMaterial({
                         color: 0xb2ffc8,
@@ -257,7 +257,7 @@ class View3D {
                     });
 
                     const mesh = new THREE.Mesh(geometry, material)
-                    this.updateVis("obj", [mesh]);
+                    this.updateVis("target", [mesh]);
                 },
                 (xhr) => {
                     console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
@@ -276,37 +276,37 @@ class View3D {
     
             loadStl(model);
         });
-        gui.add(this, "showInitWorkMesh").onChange(v => {
-            this.objBlank.visible = v;
+        gui.add(this, "showStockMesh").onChange(v => {
+            this.objStock.visible = v;
         }).listen();
         gui.add(this, "showTargetMesh").onChange(v => {
-            this.setVisVisibility("obj", v);
+            this.setVisVisibility("target", v);
         }).listen();
 
         gui.add(this, "resMm", [1e-3, 5e-2, 1e-2, 1e-1, 0.25, 0.5, 1]);
     
-        gui.add(this, "resetPlan");
+        gui.add(this, "initPlan");
         gui.add(this, "genNextSweep");
-        gui.add(this, "numSweeps").disable();
-        gui.add(this, "showingSweep", 0, this.numSweeps).step(1);
-        gui.add(this, "showTarget").onChange(v => {
-            this.setVisVisibility("vg-targ", v);
-        }).listen();
-        gui.add(this, "showWork").onChange(v => {
-            this.setVisVisibility("vg-work", v);
-        }).listen();
-        gui.add(this, "showGenAccess").onChange(v => {
-            this.setVisVisibility("vg-gen-access", v);
-        }).listen();
-        gui.add(this, "showGenSlice").onChange(v => {
-            this.setVisVisibility("vg-gen-slice", v);
-        }).listen();
-        gui.add(this, "showGenRemoval").onChange(v => {
-            this.setVisVisibility("vg-gen-removal", v);
-        }).listen();
-        gui.add(this, "showGenPath").onChange(v => {
-            this.setVisVisibility("vg-gen-path", v);
-        }).listen();
+        gui.add(this, "numSweeps").disable().listen();
+        gui.add(this, "showingSweep", 0, this.numSweeps).step(1).listen();
+        gui.add(this, "showTarget")
+            .onChange(_ => this.setVisVisibility("vg-targ", this.showTarget))
+            .listen();
+        gui.add(this, "showWork")
+            .onChange(_ => this.setVisVisibility("vg-work", this.showWork))
+            .listen();
+        gui.add(this, "showGenAccess")
+            .onChange(_ => this.setVisVisibility("vg-gen-access", this.showGenAccess))
+            .listen();
+        gui.add(this, "showGenSlice")
+            .onChange(_ => this.setVisVisibility("vg-gen-slice", this.showGenSlice))
+            .listen();
+        gui.add(this, "showGenRemoval")
+            .onChange(_ => this.setVisVisibility("vg-gen-removal", this.showGenRemoval))
+            .listen();
+        gui.add(this, "showGenPath")
+            .onChange(_ => this.setVisVisibility("vg-gen-path", this.showGenPath))
+            .listen();
     
         loadStl(this.model);
     }
@@ -369,11 +369,22 @@ class View3D {
         Object.assign(window, { scene: this.scene });
     }
 
-    resetPlan() {
+    initPlan() {
         this.numSweeps = 0;
         this.showingSweep = 0;
 
+        this.stockSurf = convGeomToSurf(generateStockGeom());
+        this.workVg = initVGForPoints(this.stockSurf, this.resMm);
+        this.targVg = this.workVg.clone();
+        diceSurf(this.stockSurf, this.workVg);
+        diceSurf(this.targetSurf, this.targVg);
+        console.log("stock is large enough", checkIsSubset(this.targVg, this.workVg));
 
+        this.planPath = [];
+
+        this.updateVis("vg-work", [createVgVis(this.workVg)], this.showWork);
+        this.updateVis("vg-targ", [createVgVis(this.targVg)], this.showTarget);
+        this.updateVis("vg-gen-path", [createPathVis(this.planPath)], this.showGenPath);
     }
 
     genNextSweep() {
@@ -385,12 +396,12 @@ class View3D {
         //
         // loop:
         //   if the current state meeds end condition ("good enough" or "too much time"), end planning
-        //   planner generates pass candidates
-        //   pass candidates are evluated
-        //   pick the best pass, and commit it (best = make most progress in given time)
+        //   planner generates sweep candidates
+        //   sweep candidates are evluated
+        //   pick the best sweep, and commit it (best = make most progress in given time)
         //
         // planner
-        //   have bunch of heuristics to generate pass candidates and control tolerance schedule
+        //   have bunch of heuristics to generate sweep candidates and control tolerance schedule
         //   
         // --
         // cf. good general rule
@@ -404,19 +415,6 @@ class View3D {
         //   Thus should only be used as very general heuristic & localized with in pass,
         //   not as the middle thing.
 
-        // prep
-        const resMm = 0.5;
-        const surfBlank = convGeomToSurf(generateBlankGeom());
-
-        const workVg = initVGForPoints(surfBlank, resMm);
-        const targVg = workVg.clone();
-        diceSurf(surfBlank, workVg);
-        diceSurf(this.objSurf, targVg);
-
-        console.log("achievable", checkIsSubset(targVg, workVg));
-
-        const planner = {};
-
         const candidateNormals = [
             new THREE.Vector3(1, 0, 0),
             new THREE.Vector3(0, 1, 0),
@@ -425,152 +423,141 @@ class View3D {
             new THREE.Vector3(0, 0, 1),
         ];
 
-        let path = [];
+        // "surface" x canditateNormal
+        // compute accessible area from shape x tool base
+        //
+        // reproject to 0.25mm grid of normal dir as local-Z.
+        // compute "access grid"
+        //   convolve tool radius in local XY-direction
+        //   apply projecting-or in Z- direction
+        //   now this grid's empty cells shows accessible locations to start milling from
+        // pick the shallowed layer that contains voxels to be removed
+        // compute the accesssible voxel in the surface, using zig-zag pattern
+        // compute actual path (pre g-code)
+        //
+        // apply the removal to the work vg (how?)
 
-        for (let i = 0; i < 10; i++) {
-            // "surface" x canditateNormal
-            // compute accessible area from shape x tool base
-            //
-            // reproject to 0.25mm grid of normal dir as local-Z.
-            // compute "access grid"
-            //   convolve tool radius in local XY-direction
-            //   apply projecting-or in Z- direction
-            //   now this grid's empty cells shows accessible locations to start milling from
-            // pick the shallowed layer that contains voxels to be removed
-            // compute the accesssible voxel in the surface, using zig-zag pattern
-            // compute actual path (pre g-code)
-            //
-            // apply the removal to the work vg (how?)
+        const diffVg = this.workVg.clone().sub(this.targVg.clone().saturateFill());
+        if (diffVg.count() === 0) {
+            console.log("done!");
+            return;
+        }
 
-            const diffVg = workVg.clone().sub(targVg.clone().saturateFill());
-            if (diffVg.count() === 0) {
-                console.log("done!");
-                break;
+        // Prepare new (rotated) VG for projecting the work.
+        // [in] normal THREE.Vector3, world coords. Local Z+ will point normal.
+        // returns: VoxelGrid, empty voxel grid
+        const initReprojGrid = (normal, res) => {
+            // orthogonalize, with given Z-basis.
+            const basisZ = normal;
+            let basisY;
+            const b0 = new THREE.Vector3(1, 0, 0);
+            const b1 = new THREE.Vector3(0, 1, 0);
+            if (b0.clone().cross(basisZ).length() > 0.3) {
+                basisY = b0.clone().cross(basisZ).normalize();
+            } else {
+                basisY = b1.clone().cross(basisZ).normalize();
             }
+            const basisX = basisY.clone().cross(basisZ).normalize();
 
-            // Prepare new (rotated) VG for projecting the work.
-            // [in] normal THREE.Vector3, world coords. Local Z+ will point normal.
-            // returns: VoxelGrid, empty voxel grid
-            const initReprojGrid = (normal, res) => {
-                // orthogonalize, with given Z-basis.
-                const basisZ = normal;
-                let basisY;
-                const b0 = new THREE.Vector3(1, 0, 0);
-                const b1 = new THREE.Vector3(0, 1, 0);
-                if (b0.clone().cross(basisZ).length() > 0.3) {
-                    basisY = b0.clone().cross(basisZ).normalize();
-                } else {
-                    basisY = b1.clone().cross(basisZ).normalize();
-                }
-                const basisX = basisY.clone().cross(basisZ).normalize();
+            // init new grid
+            const lToWMat3 = new THREE.Matrix3(
+                basisX.x, basisY.x, basisZ.x,
+                basisX.y, basisY.y, basisZ.y,
+                basisX.z, basisY.z, basisZ.z,
+            );
 
-                // init new grid
-                const lToWMat3 = new THREE.Matrix3(
-                    basisX.x, basisY.x, basisZ.x,
-                    basisX.y, basisY.y, basisZ.y,
-                    basisX.z, basisY.z, basisZ.z,
-                );
+            const lToWQ = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().setFromMatrix3(lToWMat3));
+            const workMin = this.workVg.ofs.clone();
+            const workMax = new THREE.Vector3(this.workVg.numX, this.workVg.numY, this.workVg.numZ).multiplyScalar(this.workVg.res).add(workMin);
+            
+            const wToLMtx = new THREE.Matrix4().compose(
+                new THREE.Vector3(0, 0, 0),
+                lToWQ.clone().invert(),
+                new THREE.Vector3(1, 1, 1));
+            const aabbLoc = transformAABB(workMin, workMax, wToLMtx);
+            console.log("aabb", workMin, workMax, "->", aabbLoc.min, aabbLoc.max);
 
-                const lToWQ = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().setFromMatrix3(lToWMat3));
-                const workMin = workVg.ofs.clone();
-                const workMax = new THREE.Vector3(workVg.numX, workVg.numY, workVg.numZ).multiplyScalar(workVg.res).add(workMin);
-                
-                const wToLMtx = new THREE.Matrix4().compose(
-                    new THREE.Vector3(0, 0, 0),
-                    lToWQ.clone().invert(),
-                    new THREE.Vector3(1, 1, 1));
-                const aabbLoc = transformAABB(workMin, workMax, wToLMtx);
-                console.log("aabb", workMin, workMax, "->", aabbLoc.min, aabbLoc.max);
+            return initVG(aabbLoc, res, lToWQ, false, 5);
+        };
 
-                return initVG(aabbLoc, res, lToWQ, false, 5);
-            };
+        const accesGridRes = this.resMm;
+        const normal = candidateNormals[0]; // new THREE.Vector3(1, 1, 1).normalize(); //  candidateNormals[0];
 
-            const accesGridRes = resMm;
-            const normal = candidateNormals[0]; // new THREE.Vector3(1, 1, 1).normalize(); //  candidateNormals[0];
+        const passAccess = initReprojGrid(normal, accesGridRes);
+        const passDiff = passAccess.clone();
+        const passRemoval = passAccess.clone();
+        resampleVG(passAccess, this.workVg);
+        passAccess.extendByRadiusXY(1.5 / 2);
+        passAccess.scanZMaxDesc();
+        console.log(passAccess);
+        this.updateVis("vg-gen-access", [createVgVis(passAccess)], this.showGenAccess);
 
-            const passAccess = initReprojGrid(normal, accesGridRes);
-            const passDiff = passAccess.clone();
-            const passRemoval = passAccess.clone();
-            resampleVG(passAccess, workVg);
-            passAccess.extendByRadiusXY(1.5 / 2);
-            passAccess.scanZMaxDesc();
-            console.log(passAccess);
-            this.updateVis("vg-gen-access", [createVgVis(passAccess)], this.showGenAccess);
+        //this.updateVis("vg-gen", [createVgVis(accessGrid)]);
+        resampleVG(passDiff, diffVg);
+        const passMaxZ = passDiff.findMaxNonZeroZ();
+        console.log("passMaxZ", passMaxZ);
 
-            //this.updateVis("vg-gen", [createVgVis(accessGrid)]);
-            resampleVG(passDiff, diffVg);
-            const passMaxZ = passDiff.findMaxNonZeroZ();
-            console.log("passMaxZ", passMaxZ);
+        // prepare 2D-scan at Z= passMaxZ.
+        passDiff.filterZ(passMaxZ);
 
-            // prepare 2D-scan at Z= passMaxZ.
-            passDiff.filterZ(passMaxZ);
-
-            let minScore = 1e100;
-            let minPt = null;
-            for (let iy = 0; iy < passDiff.numY; iy++) {
-                for (let ix = 0; ix < passDiff.numX; ix++) {
-                    const v = passDiff.get(ix, iy, passMaxZ);
-                    if (v > 0) {
-                        const score = ix + iy;
-                        if (score < minScore) {
-                            minScore = score;
-                            minPt = new THREE.Vector2(ix, iy);
-                        }
+        let minScore = 1e100;
+        let minPt = null;
+        for (let iy = 0; iy < passDiff.numY; iy++) {
+            for (let ix = 0; ix < passDiff.numX; ix++) {
+                const v = passDiff.get(ix, iy, passMaxZ);
+                if (v > 0) {
+                    const score = ix + iy;
+                    if (score < minScore) {
+                        minScore = score;
+                        minPt = new THREE.Vector2(ix, iy);
                     }
                 }
             }
-            console.log("minPt", minPt);
-            // TODO: VERY FRAGILE
-            const access = passAccess.get(minPt.x, minPt.y, passMaxZ + 1); // check previous layer's access
-            const accessOk = access === 0;
-            console.log("accessOk", accessOk);
-            
-            // generate zig-zag
-            let dirR = true; // true: right, false: left
-            let currIx = minPt.x;
-            let currIy = minPt.y;
-            while (true) {
-                passRemoval.set(currIx, currIy, passMaxZ, 255);
-                path.push(passDiff.centerOf(currIx, currIy, passMaxZ));
-
-                const nextIx = currIx + (dirR ? 1 : -1);
-                const next = passDiff.get(nextIx, currIy, passMaxZ);
-                const up = passDiff.get(currIx, currIy + 1, passMaxZ);
-
-                if (next === 0 && up === 0) {
-                    break;
-                }
-                if (next !== 0) {
-                    currIx = nextIx;
-                } else {
-                    dirR = !dirR;
-                    currIy++;
-                }
-                // TODO: tool wear handling
-            }
-
-            this.updateVis("vg-gen-slice", [createVgVis(passDiff)], this.showGenSlice);
-
-            this.updateVis("vg-gen-path", [createPathVis(path)], this.showGenPath);
-
-            const deltaWork = workVg.clone();
-            deltaWork.fill(0);
-            passRemoval.extendByRadiusXY(1.5 / 2);
-            resampleVG(deltaWork, passRemoval);
-            this.updateVis("vg-gen-removal", [createVgVis(deltaWork)], this.showGenRemoval);
-
-            workVg.sub(deltaWork);
-            this.updateVis("vg-work", [createVgVis(workVg)], this.showWork);
         }
+        console.log("minPt", minPt);
+        // TODO: VERY FRAGILE
+        const access = passAccess.get(minPt.x, minPt.y, passMaxZ + 1); // check previous layer's access
+        const accessOk = access === 0;
+        console.log("accessOk", accessOk);
+        
+        // generate zig-zag
+        let dirR = true; // true: right, false: left
+        let currIx = minPt.x;
+        let currIy = minPt.y;
+        while (true) {
+            passRemoval.set(currIx, currIy, passMaxZ, 255);
+            this.planPath.push(passDiff.centerOf(currIx, currIy, passMaxZ));
 
-        const pass = {
-            dia: 1.5,
-            tolerance: 0.375,
-            access: [],
-            target: [],
-            normal: null,
-        };
-        console.log("pass candidates", pass, path);
+            const nextIx = currIx + (dirR ? 1 : -1);
+            const next = passDiff.get(nextIx, currIy, passMaxZ);
+            const up = passDiff.get(currIx, currIy + 1, passMaxZ);
+
+            if (next === 0 && up === 0) {
+                break;
+            }
+            if (next !== 0) {
+                currIx = nextIx;
+            } else {
+                dirR = !dirR;
+                currIy++;
+            }
+            // TODO: tool wear handling
+        }
+        this.numSweeps++;
+        this.showingSweep++;
+
+        this.updateVis("vg-gen-slice", [createVgVis(passDiff)], this.showGenSlice);
+
+        this.updateVis("vg-gen-path", [createPathVis(this.planPath)], this.showGenPath);
+
+        const deltaWork = this.workVg.clone();
+        deltaWork.fill(0);
+        passRemoval.extendByRadiusXY(1.5 / 2);
+        resampleVG(deltaWork, passRemoval);
+        this.updateVis("vg-gen-removal", [createVgVis(deltaWork)], this.showGenRemoval);
+
+        this.workVg.sub(deltaWork);
+        this.updateVis("vg-work", [createVgVis(this.workVg)], this.showWork);
     }
 
     updateVis(group, vs, visible = true) {
