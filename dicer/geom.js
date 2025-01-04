@@ -2,25 +2,55 @@
  * Pure geometry processing.
  * Use of three.js in this module is limited to primitives (Vectors, Matrices).
  */
-import { Vector2, Vector3 } from 'three';
+import { Vector2, Vector3, Quaternion, Matrix4 } from 'three';
 
+// voxel-local coordinate
 // voxel at (ix, iy, iz):
-// * occupies volume: [ofs + i * res, ofs + (i + 1) * res)
-// * has center: ofs + (i + 0.5) * res
+// * occupies volume: [i * res, (i + 1) * res)
+// * has center: (i + 0.5) * res
+//
+// loc_world = rot * loc_vx + ofs
 export class VoxelGrid {
-    constructor(ofs, res, numX, numY, numZ) {
-        this.ofs = ofs;
+    // [in] res: voxel resolution
+    // [in] numX, numY, numZ: grid dimensions
+    // [in] ofs: voxel grid offset (local to world)
+    // [in] rot: voxel grid rotation (local to world)
+    constructor(res, numX, numY, numZ, ofs = new Vector3(), rot = new Quaternion().identity()) {
         this.res = res;
         this.numX = numX;
         this.numY = numY;
         this.numZ = numZ;
         this.data = new Uint8Array(numX * numY * numZ);
+        this.ofs = ofs.clone();
+        this.rot = rot.clone();
+        this.lToW = new Matrix4().compose(ofs, rot, new Vector3(1, 1, 1));
+        this.wToL = this.lToW.clone().invert();
+    }
+
+    isAxisAligned() {
+        return this.rot.equals(new Quaternion().identity());
     }
 
     clone() {
-        const vg = new VoxelGrid(this.ofs.clone(), this.res, this.numX, this.numY, this.numZ);
+        const vg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs.clone(), this.rot.clone());
         vg.data.set(this.data);
         return vg;
+    }
+
+    saturateFill() {
+        for (let i = 0; i < this.data.length; i++) {
+            const v = this.data[i];
+            this.data[i] = v > 0 ? 255 : 0;
+        }
+        return this;
+    }
+
+    saturateEmpty() {
+        for (let i = 0; i < this.data.length; i++) {
+            const v = this.data[i];
+            this.data[i] = v < 255 ? 0 : 255;
+        }
+        return this;
     }
 
     sub(other) {
@@ -37,11 +67,75 @@ export class VoxelGrid {
         return this;
     }
 
+    greaterOrEqual(other) {
+        for (let i = 0; i < this.data.length; i++) {
+            this.data[i] = (this.data[i] >= other.data[i]) ? 255 : 0;
+        }
+        return this;
+    }
+
     multiplyScalar(s) {
         for (let i = 0; i < this.data.length; i++) {
             this.data[i] = Math.round(this.data[i] * s);
         }
         return this;
+    }
+
+    extendByRadiusXY(r) {
+        const rN = r / this.res;
+        const ref = this.clone();
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    let accum = 0;
+                    const rNc = Math.ceil(rN);
+                    for (let dy = -rNc; dy <= rNc; dy++) {
+                        const cy = iy + dy;
+                        if (cy < 0 || cy >= this.numY) continue;
+                        
+                        for (let dx = -rNc; dx <= rNc; dx++) {
+                            const cx = ix + dx;
+                            if (cx < 0 || cx >= this.numX) continue;
+
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            if (dist <= rN) {
+                                const v = ref.get(cx, cy, iz);
+                                accum = Math.max(accum, v);
+                            }
+                        }
+                    }
+                    this.set(ix, iy, iz, accum);
+                }
+            }
+        }
+        return this;
+    }
+
+    // return: number | null, max iz that has any non-zero cell.
+    findMaxNonZeroZ() {
+        for (let iz = this.numZ - 1; iz >= 0; iz--) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    if (this.get(ix, iy, iz) > 0) {
+                        return iz;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    // Scan towards Z- direction, keeping max value in the column.
+    scanZMaxDesc() {
+        for (let iy = 0; iy < this.numY; iy++) {
+            for (let ix = 0; ix < this.numX; ix++) {
+                let maxZ = 0;
+                for (let iz = this.numZ - 1; iz >= 0; iz--) {
+                    maxZ = Math.max(maxZ, this.get(ix, iy, iz));
+                    this.set(ix, iy, iz, maxZ);
+                }
+            }
+        }
     }
     
     /** Keep specified Z-layer, set 0 to all others. */
@@ -121,10 +215,48 @@ export class VoxelGrid {
         return cnt;
     }
 
+    //////
+    // spatial op
+
     volume() {
         return this.count() * this.res * this.res * this.res;
     }
+
+    centerOf(ix, iy, iz) {
+        return new Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res).applyMatrix4(this.lToW);
+    }
+
+    getNearest(p) {
+        const ix = p.clone().applyMatrix4(this.wToL).multiplyScalar(1 / this.res).floor();
+        if (ix.x < 0 || ix.x >= this.numX) {
+            return 0;
+        }
+        if (ix.y < 0 || ix.y >= this.numY) {
+            return 0;
+        }
+        if (ix.z < 0 || ix.z >= this.numZ) {
+            return 0;
+        }
+        return this.get(ix.x, ix.y, ix.z);
+    }
 }
+
+// Sample from ref into vg, using tri-state voxel.
+// [out] vg: VoxelGrid
+// [in] ref: VoxelGrid
+// returns: VoxelGrid vg
+export const resampleVG = (vg, ref) => {
+    for (let iz = 0; iz < vg.numZ; iz++) {
+        for (let iy = 0; iy < vg.numY; iy++) {
+            for (let ix = 0; ix < vg.numX; ix++) {
+                const p = vg.centerOf(ix, iy, iz);
+                vg.set(ix, iy, iz, ref.getNearest(p));
+            }
+        }
+    }
+    return vg;
+};
+
 
 export class Octree {
     constructor(vg) {
@@ -190,13 +322,12 @@ export class Octree {
 };
 
 
-
-
 const isectLine = (p, q, z) => {
     const d = q.z - p.z;
     const t = (d === 0) ? 0.5 : (z - p.z) / d;
     return p.clone().lerp(q, t);
 };
+
 
 const isectLine2 = (p, q, y) => {
     const d = q.y - p.y;
@@ -204,33 +335,56 @@ const isectLine2 = (p, q, y) => {
     return p.clone().lerp(q, t);
 };
 
-
-export const initVG = (surf, resMm) => {
-    const MARGIN_MM = 1;
-
-    // compute AABB
-    const aabbMin = new Vector3(surf[0], surf[1], surf[2]);
-    const aabbMax = new Vector3(surf[0], surf[1], surf[2]);
-    for (let i = 1; i < surf.length / 3; i++) {
-        const v = new Vector3(surf[3 * i + 0], surf[3 * i + 1], surf[3 * i + 2]);
-        aabbMin.min(v);
-        aabbMax.max(v);
+// Computes AABB for bunch of points.
+// [in] pts: [x0, y0, z0, x1, y1, z1, ...]
+// returns: {min: Vector3, max: Vector3}
+export const computeAABB = (pts) => {
+    const min = new Vector3(Infinity, Infinity, Infinity);
+    const max = new Vector3(-Infinity, -Infinity, -Infinity);
+    for (let i = 0; i < pts.length; i += 3) {
+        const v = new Vector3(pts[i + 0], pts[i + 1], pts[i + 2]);
+        min.min(v);
+        max.max(v);
     }
-    console.log("AABB", aabbMin, aabbMax);
-
-    aabbMin.subScalar(MARGIN_MM);
-    aabbMax.addScalar(MARGIN_MM);
-    const numV = aabbMax.clone().sub(aabbMin).divideScalar(resMm).ceil();
-    console.log("VG size", numV);
-
-    // To prepare for octree, get larger, cube grid with power of 2.
-    const maxDim = Math.max(numV.x, numV.y, numV.z);
-    const pow2Dim = Math.pow(2, Math.ceil(Math.log2(maxDim)));
-    console.log("VG size/2^", pow2Dim);
-    
-    const gridMin = aabbMin.clone().add(aabbMax).divideScalar(2).subScalar(pow2Dim * resMm / 2);
-    return new VoxelGrid(gridMin, resMm, pow2Dim, pow2Dim, pow2Dim);
+    return { min, max };
 };
+
+
+// Initialize voxel grid for storing points.
+// [in] pts: [x0, y0, z0, x1, y1, z1, ...]
+// returns: VoxelGrid
+export const initVGForPoints = (pts, resMm) => {
+    const MARGIN_MM = 1;
+    const aabb = computeAABB(pts);
+    return initVG(aabb, resMm, new Quaternion().identity(), true, MARGIN_MM);
+};
+
+// Initialize voxel grid for storing AABB.
+// [in] aabbL: {min: Vector3, max: Vector3}, in local coordinates
+// [in] res: voxel resolution
+// [in] rotLToW: rotation from local to world, corresponding to aabbL
+// [in] powerOfTwoCube: if true, use power of 2 & same dims for grid.
+// [in] margin: margin, min distance between AABB & grid cells.
+// returns: VoxelGrid
+export const initVG = (aabbL, res, rotLToW = new Quaternion().identity(), powerOfTwoCube = false, margin = 1) => {
+    const min = aabbL.min.clone();
+    const max = aabbL.max.clone();
+    const center = min.clone().add(max).divideScalar(2);
+    min.subScalar(margin);
+    max.addScalar(margin);
+
+    const numV = max.clone().sub(min).divideScalar(res).ceil();
+    if (powerOfTwoCube) {
+        const maxDim = Math.max(numV.x, numV.y, numV.z);
+        const pow2Dim = Math.pow(2, Math.ceil(Math.log2(maxDim)));
+        numV.set(pow2Dim, pow2Dim, pow2Dim);
+    }
+
+    const gridMinL = center.clone().sub(numV.clone().multiplyScalar(res / 2));
+    const gridMinW = gridMinL.clone().applyQuaternion(rotLToW);
+    return new VoxelGrid(res, numV.x, numV.y, numV.z, gridMinW, rotLToW);
+};
+
 
 // [in] q: query point
 // [in] xs: segment set [x0, x1], [x2, x3], ... (x0 < x1 < x2 < x3 < ...) even number of elements.
@@ -253,9 +407,14 @@ const isValueInside = (q, xs) => {
     return false;
 };
 
+
 // TODO: this logic still missses tiny features like a screw lead. Need to sample many and reduce later.
 // 0.5mm grid is obviously not enough to capture M1 screw lead mountains.
 export const diceSurf = (surf, vg) => {
+    if (!vg.isAxisAligned()) {
+        throw "diceSurf only supports axis-aligned VG";
+    }
+
     console.log("dicing...");
     for (let iz = 0; iz < vg.numZ; iz++) {
         const sliceZ = vg.ofs.z + (iz + 0.5) * vg.res;
@@ -309,6 +468,7 @@ export const diceSurf = (surf, vg) => {
     console.log(`octree done cells=${oct.countCells()}, #ratio=${oct.countCells() / vg.count()}`, oct);
     return vg;
 };
+
 
 // contEdges: [x0, y0, x1, y1, ...]
 // returns: seg set [x0, x1, x2, ...]

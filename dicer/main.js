@@ -4,10 +4,27 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
-    initVG, diceSurf, sliceSurfByPlane, sliceContourByLine,
+    initVG, initVGForPoints, diceSurf, sliceSurfByPlane, sliceContourByLine,
+    resampleVG,
 } from './geom.js';
 
 
+// Apply translation to geometry in-place.
+// [in]: THREE.BufferGeometry
+// [in]: THREE.Vector3
+const translateGeom = (geom, trans) => {
+    const pos = geom.getAttribute("position").array;
+    for (let i = 0; i < pos.length; i += 3) {
+        pos[i + 0] += trans.x;
+        pos[i + 1] += trans.y;
+        pos[i + 2] += trans.z;
+    }
+};
+
+
+// Get "triangle soup" representation from a geometry.
+// [in]: THREE.BufferGeometry
+// returns: TypedArray
 const convGeomToSurf = (geom) => {
     if (geom.index === null) {
         return geom.getAttribute("position").array;
@@ -29,24 +46,8 @@ const convGeomToSurf = (geom) => {
     }
 };
 
-const diceLineAndVisualize = (surf, lineY, lineZ) => {
-    // slice specific (Y, Z) line.
-    const cont = sliceSurfByPlane(surf, lineZ);
-    const bnds = sliceContourByLine(cont, lineY);
 
-    // visualize
-    const visContour = createContourVis(cont);
-    visContour.position.z = lineZ;
-
-    const visBnd = createBndsVis(bnds);
-    visBnd.position.y = lineY;
-    visBnd.position.z = lineZ;
-
-    view.updateVis("misc", [visContour, visBnd]);
-};
-
-
-
+// returns: THREE.BufferGeometry
 const generateBlankGeom = () => {
     const blankRadius = 7.5;
     const blankHeight = 15;
@@ -60,7 +61,8 @@ const generateBlankGeom = () => {
 };
 
 
-
+// Visualize 2D edges in a plane (at Z=0).
+// [in] edges array of number, x0, y0, x1, y1, ... represeting edges (p0, p1), (p2, p3), ...
 // returns: THREE.Object3D
 const createContourVis = (edges) => {
     const geom = new THREE.BufferGeometry();
@@ -80,6 +82,9 @@ const createContourVis = (edges) => {
     return objEdges;
 };
 
+
+// Visualize line segments in a single line (at Y=Z=0).
+// [in] bnds array of number, x0, x1, x1, x2, ... represeting segments [x0, x1], [x1, x2], ...
 // returns: THREE.Object3D
 const createBndsVis = (bnds) => {
     const geom = new THREE.BufferGeometry();
@@ -99,9 +104,11 @@ const createBndsVis = (bnds) => {
     return objEdges;
 };
 
+
+// [in]: VoxelGrid
 // returns: THREE.Object3D
-const createVgVis = (vg, resMm) => {
-    const cubeGeom = new THREE.BoxGeometry(resMm * 0.9, resMm * 0.9, resMm * 0.9);
+const createVgVis = (vg) => {
+    const cubeGeom = new THREE.BoxGeometry(vg.res * 0.9, vg.res * 0.9, vg.res * 0.9);
 
     const num = vg.count();
     const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial(), num);
@@ -116,7 +123,7 @@ const createVgVis = (vg, resMm) => {
 
                 const mtx = new THREE.Matrix4();
                 mtx.compose(
-                    new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res).add(vg.ofs),
+                    new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res),
                     new THREE.Quaternion(),
                     new THREE.Vector3(1, 1, 1).multiplyScalar(v / 255));
                 mesh.setMatrixAt(instanceIx, mtx);
@@ -124,9 +131,36 @@ const createVgVis = (vg, resMm) => {
             }
         }
     }
-    return mesh;
+
+    const meshContainer = new THREE.Object3D();
+    meshContainer.add(mesh);
+    meshContainer.quaternion.copy(vg.rot);
+    meshContainer.position.copy(vg.ofs);
+
+    const axesHelper = new THREE.AxesHelper();
+    axesHelper.scale.set(vg.res * vg.numX, vg.res * vg.numY, vg.res * vg.numZ);
+    mesh.add(axesHelper);
+    
+    return meshContainer;
 };
 
+// [in] array of THREE.Vector3, path
+// returns: THREE.Object3D
+const createPathVis = (path) => {
+    const vs = new Float32Array(path.length * 3);
+    for (let i = 0; i < path.length; i++) {
+        vs[3 * i + 0] = path[i].x;
+        vs[3 * i + 1] = path[i].y;
+        vs[3 * i + 2] = path[i].z;
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(vs, 3));
+    const mat = new THREE.LineBasicMaterial({ color: 0x808080 });
+    return new THREE.Line(geom, mat);
+};
+
+
+// returns: THREE.Object3D
 const generateBlank = () => {
     const blank = new THREE.Mesh(
         generateBlankGeom(),
@@ -134,6 +168,8 @@ const generateBlank = () => {
     return blank;
 };
 
+
+// returns: THREE.Object3D
 const generateTool = () => {
     const toolOrigin = new THREE.Object3D();
 
@@ -174,6 +210,36 @@ const Model = {
     BOLT_M3: "M3x10",
 };
 
+
+// Check if a is equal or subset of b.
+// [in]: a VoxelGrid
+// [in]: b VoxelGrid
+// [out]: boolean
+const checkIsSubset = (a, b) => {
+    const c = b.clone().greaterOrEqual(a);
+    return c.count() === c.numX * c.numY * c.numZ;
+}
+
+// Apply transformation to AABB, and return the transformed AABB.
+// [in] min, max THREE.Vector3 in coordinates A.
+// [in] mtx THREE.Matrix4 transforms (A -> B)
+// returns: {min: THREE.Vector3, max: THREE.Vector3} in coordinates B.
+const transformAABB = (min, max, mtx) => {
+    const minB = new THREE.Vector3(1e100, 1e100, 1e100);
+    const maxB = new THREE.Vector3(-1e100, -1e100, -1e100);
+    for (let i = 0; i < 8; i++) {
+        const cubeVertex = new THREE.Vector3(
+            (i & 1) ? min.x : max.x,
+            (i & 2) ? min.y : max.y,
+            (i & 4) ? min.z : max.z,
+        ).applyMatrix4(mtx);
+        minB.min(cubeVertex);
+        maxB.max(cubeVertex);
+    }
+    return { min: minB, max: maxB };
+};
+
+
 /**
  * Scene is in mm unit. Right-handed, Z+ up.
  */
@@ -186,8 +252,12 @@ class View3D {
         this.scene.add(this.tool);
 
         const blank = generateBlank();
+        this.objBlank = blank;
         this.scene.add(blank);
         this.model = Model.GT2_PULLEY;
+        this.showInitWorkMesh = true;
+        this.showTargetMesh = true;
+
         this.resMm = 0.25;
         this.lineZ = 1;
         this.lineY = 0;
@@ -200,6 +270,10 @@ class View3D {
         this.toolY = 0;
         this.toolZ = 0;
 
+        this.showGenAccess = true;
+        this.showGenSlice = true;
+        this.showGenPath = true;
+
 
         this.initGui();
     }
@@ -211,7 +285,9 @@ class View3D {
             loader.load(
                 `models/${fname}.stl`,
                 (geometry) => {
-                    view.objSurf = convGeomToSurf(geometry);
+                    // To avoid parts going out of work by numerical error, slightly offset the part geometry.
+                    translateGeom(geometry, new THREE.Vector3(0, 0, 0.5));
+                    this.objSurf = convGeomToSurf(geometry);
 
                     const material = new THREE.MeshPhysicalMaterial({
                         color: 0xb2ffc8,
@@ -222,7 +298,7 @@ class View3D {
                     });
 
                     const mesh = new THREE.Mesh(geometry, material)
-                    view.updateVis("obj", [mesh]);
+                    this.updateVis("obj", [mesh]);
                 },
                 (xhr) => {
                     console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
@@ -241,6 +317,13 @@ class View3D {
     
             loadStl(model);
         });
+        gui.add(this, "showInitWorkMesh").onChange(v => {
+            this.objBlank.visible = v;
+        }).listen();
+        gui.add(this, "showTargetMesh").onChange(v => {
+            this.setVisVisibility("obj", v);
+        }).listen();
+
         gui.add(this, "resMm", [1e-3, 5e-2, 1e-2, 1e-1, 0.25, 0.5, 1]);
         gui.add(this, "showTarget").onChange(v => {
             this.setVisVisibility("vg-targ", v);
@@ -258,7 +341,7 @@ class View3D {
         const sim = gui.addFolder("Tool Sim");
         sim.add(this, "millStep", 0, 10).step(1).onChange(step => {
             if (0 <= step && step < this.millVgs.length) {
-                this.updateVis("mill", [createVgVis(this.millVgs[step], this.resMm)]);
+                this.updateVis("mill", [createVgVis(this.millVgs[step])]);
             } else {
                 this.updateVis("mill", []);
             }
@@ -266,6 +349,17 @@ class View3D {
         sim.add(this, "toolX", -50, 50).step(0.1).onChange(v => this.tool.position.x = v);
         sim.add(this, "toolY", -50, 50).step(0.1).onChange(v => this.tool.position.y = v);
         sim.add(this, "toolZ", 0, 100).step(0.1).onChange(v => this.tool.position.z = v);
+
+        gui.add(this, "genPass");
+        gui.add(this, "showGenAccess").onChange(v => {
+            this.setVisVisibility("vg-gen-access", v);
+        }).listen();
+        gui.add(this, "showGenSlice").onChange(v => {
+            this.setVisVisibility("vg-gen-slice", v);
+        }).listen();
+        gui.add(this, "showGenPath").onChange(v => {
+            this.setVisVisibility("vg-gen-path", v);
+        }).listen();
     
         loadStl(this.model);
     }
@@ -360,10 +454,14 @@ class View3D {
         const resMm = 0.25;
         const surfBlank = convGeomToSurf(generateBlankGeom());
 
-        const workVg = initVG(surfBlank, resMm);
+        const workVg = initVGForPoints(surfBlank, resMm);
         const targVg = workVg.clone();
         diceSurf(surfBlank, workVg);
         diceSurf(this.objSurf, targVg);
+
+        console.log("achievable", checkIsSubset(targVg, workVg));
+
+
 
         const planner = {};
 
@@ -375,7 +473,7 @@ class View3D {
             new THREE.Vector3(0, 0, 1),
         ];
 
-        const normal = candidateNormals[0];
+        
 
         // "surface" x canditateNormal
         // compute accessible area from shape x tool base
@@ -391,6 +489,103 @@ class View3D {
         //
         // apply the removal to the work vg (how?)
 
+        const diffVg = workVg.clone().sub(targVg.clone().saturateFill());
+
+        // Prepare new (rotated) VG for projecting the work.
+        // [in] normal THREE.Vector3, world coords. Local Z+ will point normal.
+        // returns: VoxelGrid, empty voxel grid
+        const initReprojGrid = (normal, res) => {
+            // orthogonalize, with given Z-basis.
+            const basisZ = normal;
+            let basisY;
+            const b0 = new THREE.Vector3(1, 0, 0);
+            const b1 = new THREE.Vector3(0, 1, 0);
+            if (b0.clone().cross(basisZ).length() > 0.5) {
+                basisY = b0.clone().cross(basisZ).normalize();
+            } else {
+                basisY = b1.clone().cross(basisZ).normalize();
+            }
+            const basisX = basisZ.clone().cross(basisY).normalize();
+
+            // init new grid
+            const lToWMat3 = new THREE.Matrix3(
+                basisX.x, basisX.y, basisX.z,
+                basisY.x, basisY.y, basisY.z,
+                basisZ.x, basisZ.y, basisZ.z,
+            );
+            const lToWQ = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().setFromMatrix3(lToWMat3));
+            const workMin = workVg.ofs.clone();
+            const workMax = new THREE.Vector3(workVg.numX, workVg.numY, workVg.numZ).multiplyScalar(workVg.res).add(workMin);
+            
+            const wToLMtx = new THREE.Matrix4().compose(
+                new THREE.Vector3(0, 0, 0),
+                lToWQ.clone().invert(),
+                new THREE.Vector3(1, 1, 1));
+            const aabbLoc = transformAABB(workMin, workMax, wToLMtx);
+            console.log("aabb", workMin, workMax, "->", aabbLoc.min, aabbLoc.max);
+
+            return initVG(aabbLoc, res, lToWQ, false, 5);
+        };
+
+        const accesGridRes = 0.25;
+        const normal = candidateNormals[0];
+
+        const passAccess = initReprojGrid(normal, accesGridRes);
+        const passDiff = passAccess.clone();
+        resampleVG(passAccess, workVg);
+        passAccess.extendByRadiusXY(1.5);
+        passAccess.scanZMaxDesc();
+        console.log(passAccess);
+        this.updateVis("vg-gen-access", [createVgVis(passAccess)]);
+
+        //this.updateVis("vg-gen", [createVgVis(accessGrid)]);
+        resampleVG(passDiff, diffVg);
+        const passMaxZ = passDiff.findMaxNonZeroZ();
+        console.log("passMaxZ", passMaxZ);
+
+        // prepare 2D-scan at Z= passMaxZ.
+        passDiff.filterZ(passMaxZ);
+
+        let minScore = 1e100;
+        let minPt = null;
+        for (let iy = 0; iy < passDiff.numY; iy++) {
+            for (let ix = 0; ix < passDiff.numX; ix++) {
+                const v = passDiff.get(ix, iy, passMaxZ);
+                if (v > 0) {
+                    const score = ix + iy;
+                    if (score < minScore) {
+                        minScore = score;
+                        minPt = new THREE.Vector2(ix, iy);
+                    }
+                }
+            }
+        }
+        console.log("minPt", minPt);
+        // TODO: VERY FRAGILE
+        const access = passAccess.get(minPt.x, minPt.y, passMaxZ + 1); // check previous layer's access
+        const accessOk = access === 0;
+        
+        // generate zig-zag
+        let mode = "to-r";
+        let currIx = minPt.x;
+        let currIy = minPt.y;
+        let path = [];
+        while (true) {
+            if (passDiff.get(currIx, currIy, passMaxZ) === 0) {
+                break;
+            }
+            path.push(passDiff.centerOf(currIx, currIy, passMaxZ));
+            currIx++;
+            // TODO: tool wear handling
+            // TODO: Y up, "zag"
+        }
+        console.log("path", path);
+
+        this.updateVis("vg-gen-slice", [createVgVis(passDiff)]);
+
+        // TODO: write back to workVg.
+
+        this.updateVis("vg-gen-path", [createPathVis(path)]);
 
 
         const pass = {
@@ -406,7 +601,7 @@ class View3D {
     dice() {
         const surfBlank = convGeomToSurf(generateBlankGeom());
 
-        const workVg = initVG(surfBlank, this.resMm);
+        const workVg = initVGForPoints(surfBlank, this.resMm);
         const targVg = workVg.clone();
         console.log("diceSurf");
         diceSurf(surfBlank, workVg);
@@ -414,23 +609,29 @@ class View3D {
         diceSurf(this.objSurf, targVg);
 
         this.millVgs = [];
-        //this.millVgs.push(millLayersZDown(workVg, targVg));
-        //this.millVgs.push(millLayersYDown(workVg, targVg));
-        //this.millVgs.push(millLayersXDown(workVg, targVg));
-        //this.millVgs.push(millLayersYUp(workVg, targVg));
-        //this.millVgs.push(millLayersXUp(workVg, targVg));
-        //console.log(`milling done; ${this.millVgs.length} steps emitted`);
 
-        view.updateVis("vg-targ", [createVgVis(targVg, this.resMm)]);
+        this.updateVis("vg-targ", [createVgVis(targVg)]);
         this.showTarget = true;
 
-        view.updateVis("vg-work", [createVgVis(workVg, this.resMm)]);
-        view.setVisVisibility("vg-work", false);
+        this.updateVis("vg-work", [createVgVis(workVg)]);
+        this.setVisVisibility("vg-work", false);
     }
 
     diceLine() {
         const sf = convGeomToSurf(generateBlankGeom());
-        diceLineAndVisualize(sf, this.lineY, this.lineZ);
+        // slice specific (Y, Z) line.
+        const cont = sliceSurfByPlane(sf, this.lineZ);
+        const bnds = sliceContourByLine(cont, this.lineY);
+        
+        // visualize
+        const visContour = createContourVis(cont);
+        visContour.position.z = this.lineZ;
+        
+        const visBnd = createBndsVis(bnds);
+        visBnd.position.y = this.lineY;
+        visBnd.position.z = this.lineZ;
+        
+        this.updateVis("misc", [visContour, visBnd]);
     }
 
     updateVis(group, vs) {
