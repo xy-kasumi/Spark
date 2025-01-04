@@ -61,50 +61,6 @@ const generateBlankGeom = () => {
 };
 
 
-// Visualize 2D edges in a plane (at Z=0).
-// [in] edges array of number, x0, y0, x1, y1, ... represeting edges (p0, p1), (p2, p3), ...
-// returns: THREE.Object3D
-const createContourVis = (edges) => {
-    const geom = new THREE.BufferGeometry();
-    const vertices = new Float32Array(edges.length / 2 * 3);
-    for (let i = 0; i < edges.length / 2; i++) {
-        vertices[3 * i + 0] = edges[2 * i + 0];
-        vertices[3 * i + 1] = edges[2 * i + 1];
-        vertices[3 * i + 2] = 0;
-    }
-    geom.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-
-    const matEdges = new THREE.LineBasicMaterial({ color: 0x8080a0 });
-    const objEdges = new THREE.LineSegments(geom, matEdges);
-    const objPoints = new THREE.Points(geom, new THREE.PointsMaterial({ color: 0x8080f0, size: 3 }));
-    objEdges.add(objPoints);
-
-    return objEdges;
-};
-
-
-// Visualize line segments in a single line (at Y=Z=0).
-// [in] bnds array of number, x0, x1, x1, x2, ... represeting segments [x0, x1], [x1, x2], ...
-// returns: THREE.Object3D
-const createBndsVis = (bnds) => {
-    const geom = new THREE.BufferGeometry();
-    const vertices = new Float32Array(bnds.length * 3);
-    for (let i = 0; i < bnds.length; i++) {
-        vertices[3 * i + 0] = bnds[i];
-        vertices[3 * i + 1] = 0;
-        vertices[3 * i + 2] = 0;
-    }
-    geom.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-
-    const matEdges = new THREE.LineBasicMaterial({ color: 0x80a080 });
-    const objEdges = new THREE.LineSegments(geom, matEdges);
-    const objPoints = new THREE.Points(geom, new THREE.PointsMaterial({ color: 0x80f080, size: 3 }));
-    objEdges.add(objPoints);
-
-    return objEdges;
-};
-
-
 // [in]: VoxelGrid
 // returns: THREE.Object3D
 const createVgVis = (vg) => {
@@ -143,6 +99,7 @@ const createVgVis = (vg) => {
     
     return meshContainer;
 };
+
 
 // [in] array of THREE.Vector3, path
 // returns: THREE.Object3D
@@ -281,7 +238,7 @@ class View3D {
     }
 
     initGui() {
-        const view = this;                
+        const view = this;
         const loadStl = (fname) => {
             const loader = new STLLoader();
             loader.load(
@@ -327,35 +284,17 @@ class View3D {
         }).listen();
 
         gui.add(this, "resMm", [1e-3, 5e-2, 1e-2, 1e-1, 0.25, 0.5, 1]);
+    
+        gui.add(this, "resetPlan");
+        gui.add(this, "genNextSweep");
+        gui.add(this, "numSweeps").disable();
+        gui.add(this, "showingSweep", 0, this.numSweeps).step(1);
         gui.add(this, "showTarget").onChange(v => {
             this.setVisVisibility("vg-targ", v);
         }).listen();
         gui.add(this, "showWork").onChange(v => {
             this.setVisVisibility("vg-work", v);
         }).listen();
-        gui.add(this, "dice");
-    
-        const sd = gui.addFolder("Slice Debug");
-        sd.add(this, "lineZ", -10, 50); // .step(0.01);
-        sd.add(this, "lineY", -50, 50);
-        sd.add(this, "diceLine");
-    
-        const sim = gui.addFolder("Tool Sim");
-        sim.add(this, "millStep", 0, 10).step(1).onChange(step => {
-            if (0 <= step && step < this.millVgs.length) {
-                this.updateVis("mill", [createVgVis(this.millVgs[step])]);
-            } else {
-                this.updateVis("mill", []);
-            }
-        });
-        sim.add(this, "toolX", -50, 50).step(0.1).onChange(v => this.tool.position.x = v);
-        sim.add(this, "toolY", -50, 50).step(0.1).onChange(v => this.tool.position.y = v);
-        sim.add(this, "toolZ", 0, 100).step(0.1).onChange(v => this.tool.position.z = v);
-
-        gui.add(this, "resetPlan");
-        gui.add(this, "genNextSweep");
-        gui.add(this, "numSweeps").disable();
-        gui.add(this, "showingSweep", 0, this.numSweeps).step(1);
         gui.add(this, "showGenAccess").onChange(v => {
             this.setVisVisibility("vg-gen-access", v);
         }).listen();
@@ -632,42 +571,6 @@ class View3D {
             normal: null,
         };
         console.log("pass candidates", pass, path);
-    }
-
-    dice() {
-        const surfBlank = convGeomToSurf(generateBlankGeom());
-
-        const workVg = initVGForPoints(surfBlank, this.resMm);
-        const targVg = workVg.clone();
-        console.log("diceSurf");
-        diceSurf(surfBlank, workVg);
-        console.log("diceTarg");
-        diceSurf(this.objSurf, targVg);
-
-        this.millVgs = [];
-
-        this.updateVis("vg-targ", [createVgVis(targVg)]);
-        this.showTarget = true;
-
-        this.updateVis("vg-work", [createVgVis(workVg)]);
-        this.setVisVisibility("vg-work", false);
-    }
-
-    diceLine() {
-        const sf = convGeomToSurf(generateBlankGeom());
-        // slice specific (Y, Z) line.
-        const cont = sliceSurfByPlane(sf, this.lineZ);
-        const bnds = sliceContourByLine(cont, this.lineY);
-        
-        // visualize
-        const visContour = createContourVis(cont);
-        visContour.position.z = this.lineZ;
-        
-        const visBnd = createBndsVis(bnds);
-        visBnd.position.y = this.lineY;
-        visBnd.position.z = this.lineZ;
-        
-        this.updateVis("misc", [visContour, visBnd]);
     }
 
     updateVis(group, vs, visible = true) {
