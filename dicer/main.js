@@ -218,7 +218,7 @@ class View3D {
         this.resMm = 0.5;
         this.lineZ = 1;
         this.lineY = 0;
-        this.showWork = false;
+        this.showWork = true;
         this.showTarget = false;
         this.targetSurf = null;
         this.millVgs = [];
@@ -229,9 +229,9 @@ class View3D {
 
         this.numSweeps = 0;
         this.showingSweep = 0;
-        this.showGenAccess = true;
-        this.showGenSlice = true;
-        this.showGenRemoval = true;
+        this.showGenAccess = false;
+        this.showGenSlice = false;
+        this.showGenRemoval = false;
         this.showGenPath = true;
 
         this.initGui();
@@ -287,6 +287,7 @@ class View3D {
     
         gui.add(this, "initPlan");
         gui.add(this, "genNextSweep");
+        gui.add(this, "genNextSweep10");
         gui.add(this, "numSweeps").disable().listen();
         gui.add(this, "showingSweep", 0, this.numSweeps).step(1).listen();
         gui.add(this, "showTarget")
@@ -385,6 +386,12 @@ class View3D {
         this.updateVis("vg-work", [createVgVis(this.workVg)], this.showWork);
         this.updateVis("vg-targ", [createVgVis(this.targVg)], this.showTarget);
         this.updateVis("vg-gen-path", [createPathVis(this.planPath)], this.showGenPath);
+    }
+
+    genNextSweep10() {
+        for (let i = 0; i < 10; i++) {
+            this.genNextSweep();
+        }
     }
 
     genNextSweep() {
@@ -518,24 +525,35 @@ class View3D {
         // TODO: VERY FRAGILE
         const access = passAccess.get(minPt.x, minPt.y, passMaxZ + 1); // check previous layer's access
         const accessOk = access === 0;
+        if (!accessOk) {
+            console.log("access not ok");
+            return;
+        }
         console.log("accessOk", accessOk);
         
         // generate zig-zag
         let dirR = true; // true: right, false: left
         let currIx = minPt.x;
         let currIy = minPt.y;
+        let added = 0;
         while (true) {
             passRemoval.set(currIx, currIy, passMaxZ, 255);
+
             this.planPath.push(passDiff.centerOf(currIx, currIy, passMaxZ));
+            added++;
 
             const nextIx = currIx + (dirR ? 1 : -1);
-            const next = passDiff.get(nextIx, currIy, passMaxZ);
-            const up = passDiff.get(currIx, currIy + 1, passMaxZ);
+            const nextNeeded = passDiff.get(nextIx, currIy, passMaxZ) > 0;
+            const upNeeded = passDiff.get(currIx, currIy + 1, passMaxZ) > 0;
+            const nextAccess = passAccess.get(nextIx, currIy, passMaxZ + 1) === 0;
+            const upAccess = passAccess.get(currIx, currIy + 1, passMaxZ + 1) === 0;
+            const upOk = upNeeded && upAccess;
+            const nextOk = nextNeeded && nextAccess;
 
-            if (next === 0 && up === 0) {
+            if (!nextOk && !upOk) {
                 break;
             }
-            if (next !== 0) {
+            if (nextOk) {
                 currIx = nextIx;
             } else {
                 dirR = !dirR;
@@ -543,6 +561,7 @@ class View3D {
             }
             // TODO: tool wear handling
         }
+        console.log("path added", added);
         this.numSweeps++;
         this.showingSweep++;
 
