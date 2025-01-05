@@ -382,6 +382,9 @@ class View3D {
         console.log("stock is large enough", checkIsSubset(this.targVg, this.workVg));
 
         this.planPath = [];
+        this.planner = {
+            normalIndex: 0,
+        };
 
         this.updateVis("vg-work", [createVgVis(this.workVg)], this.showWork);
         this.updateVis("vg-targ", [createVgVis(this.targVg)], this.showTarget);
@@ -395,33 +398,6 @@ class View3D {
     }
 
     genNextSweep() {
-        // preparation:
-        // voxelize the work and target into 3-state (empty, partial, full) VG, at 0.25mm resolution
-        //   incorporate work's uncertainty into the cell value (as partial)
-        //
-        // initialize planner
-        //
-        // loop:
-        //   if the current state meeds end condition ("good enough" or "too much time"), end planning
-        //   planner generates sweep candidates
-        //   sweep candidates are evluated
-        //   pick the best sweep, and commit it (best = make most progress in given time)
-        //
-        // planner
-        //   have bunch of heuristics to generate sweep candidates and control tolerance schedule
-        //   
-        // --
-        // cf. good general rule
-        //   1. to each work voxel, assign distance from targe surface
-        //   2a. each voxel has distance cost + "switching cost" (from whatever current state of the tool shape & pos)
-        //   2b. pick lowest overall cost voxel
-        //   2c. loop until all work is removed
-        //
-        //   this is nice framework, but tiny difference in cost function can greatly change the generated path,
-        //   making it fun but less understandable for users. also, this cannot accomodate EWR variance and non-linear phenomena.
-        //   Thus should only be used as very general heuristic & localized with in pass,
-        //   not as the middle thing.
-
         const candidateNormals = [
             new THREE.Vector3(1, 0, 0),
             new THREE.Vector3(0, 1, 0),
@@ -487,95 +463,119 @@ class View3D {
             return initVG(aabbLoc, res, lToWQ, false, 5);
         };
 
-        const accesGridRes = this.resMm;
-        const normal = candidateNormals[0]; // new THREE.Vector3(1, 1, 1).normalize(); //  candidateNormals[0];
+        // [in] normal THREE.Vector3, world coords.
+        // returns: {path: array<Vector3>, deltaWork: VG, vis: {target: VG, blocked: VG}} | null (if impossible)
+        const genPlanarSweep = (normal) => {
+            const accesGridRes = this.resMm;
+            
+            const sweepBlocked = initReprojGrid(normal, accesGridRes);
+            const sweepTarget = sweepBlocked.clone();
+            const sweepRemoved = sweepBlocked.clone();
+            resampleVG(sweepBlocked, this.workVg);
+            sweepBlocked.extendByRadiusXY(1.5 / 2);
+            sweepBlocked.scanZMaxDesc();
+            console.log(sweepBlocked);
+            this.updateVis("vg-gen-access", [createVgVis(sweepBlocked)], this.showGenAccess);
 
-        const passAccess = initReprojGrid(normal, accesGridRes);
-        const passDiff = passAccess.clone();
-        const passRemoval = passAccess.clone();
-        resampleVG(passAccess, this.workVg);
-        passAccess.extendByRadiusXY(1.5 / 2);
-        passAccess.scanZMaxDesc();
-        console.log(passAccess);
-        this.updateVis("vg-gen-access", [createVgVis(passAccess)], this.showGenAccess);
+            //this.updateVis("vg-gen", [createVgVis(accessGrid)]);
+            resampleVG(sweepTarget, diffVg);
+            const passMaxZ = sweepTarget.findMaxNonZeroZ();
+            console.log("passMaxZ", passMaxZ);
 
-        //this.updateVis("vg-gen", [createVgVis(accessGrid)]);
-        resampleVG(passDiff, diffVg);
-        const passMaxZ = passDiff.findMaxNonZeroZ();
-        console.log("passMaxZ", passMaxZ);
+            // prepare 2D-scan at Z= passMaxZ.
+            sweepTarget.filterZ(passMaxZ);
 
-        // prepare 2D-scan at Z= passMaxZ.
-        passDiff.filterZ(passMaxZ);
-
-        let minScore = 1e100;
-        let minPt = null;
-        for (let iy = 0; iy < passDiff.numY; iy++) {
-            for (let ix = 0; ix < passDiff.numX; ix++) {
-                const v = passDiff.get(ix, iy, passMaxZ);
-                if (v > 0) {
-                    const score = ix + iy;
-                    if (score < minScore) {
-                        minScore = score;
-                        minPt = new THREE.Vector2(ix, iy);
+            let minScore = 1e100;
+            let minPt = null;
+            for (let iy = 0; iy < sweepTarget.numY; iy++) {
+                for (let ix = 0; ix < sweepTarget.numX; ix++) {
+                    const v = sweepTarget.get(ix, iy, passMaxZ);
+                    if (v > 0) {
+                        const score = ix + iy;
+                        if (score < minScore) {
+                            minScore = score;
+                            minPt = new THREE.Vector2(ix, iy);
+                        }
                     }
                 }
             }
-        }
-        console.log("minPt", minPt);
-        // TODO: VERY FRAGILE
-        const access = passAccess.get(minPt.x, minPt.y, passMaxZ + 1); // check previous layer's access
-        const accessOk = access === 0;
-        if (!accessOk) {
-            console.log("access not ok");
-            return;
-        }
-        console.log("accessOk", accessOk);
-        
-        // generate zig-zag
-        let dirR = true; // true: right, false: left
-        let currIx = minPt.x;
-        let currIy = minPt.y;
-        let added = 0;
-        while (true) {
-            passRemoval.set(currIx, currIy, passMaxZ, 255);
+            console.log("minPt", minPt);
+            // TODO: VERY FRAGILE
+            const access = sweepBlocked.get(minPt.x, minPt.y, passMaxZ + 1); // check previous layer's access
+            const accessOk = access === 0;
+            if (!accessOk) {
+                return null;
+            }
+            
+            // generate zig-zag
+            let dirR = true; // true: right, false: left
+            let currIx = minPt.x;
+            let currIy = minPt.y;
+            const sweepPath = [];
+            while (true) {
+                sweepRemoved.set(currIx, currIy, passMaxZ, 255);
 
-            this.planPath.push(passDiff.centerOf(currIx, currIy, passMaxZ));
-            added++;
+                sweepPath.push(sweepTarget.centerOf(currIx, currIy, passMaxZ));
 
-            const nextIx = currIx + (dirR ? 1 : -1);
-            const nextNeeded = passDiff.get(nextIx, currIy, passMaxZ) > 0;
-            const upNeeded = passDiff.get(currIx, currIy + 1, passMaxZ) > 0;
-            const nextAccess = passAccess.get(nextIx, currIy, passMaxZ + 1) === 0;
-            const upAccess = passAccess.get(currIx, currIy + 1, passMaxZ + 1) === 0;
-            const upOk = upNeeded && upAccess;
-            const nextOk = nextNeeded && nextAccess;
+                const nextIx = currIx + (dirR ? 1 : -1);
+                const nextNeeded = sweepTarget.get(nextIx, currIy, passMaxZ) > 0;
+                const upNeeded = sweepTarget.get(currIx, currIy + 1, passMaxZ) > 0;
+                const nextAccess = sweepBlocked.get(nextIx, currIy, passMaxZ + 1) === 0;
+                const upAccess = sweepBlocked.get(currIx, currIy + 1, passMaxZ + 1) === 0;
+                const upOk = upNeeded && upAccess;
+                const nextOk = nextNeeded && nextAccess;
 
-            if (!nextOk && !upOk) {
+                if (!nextOk && !upOk) {
+                    break;
+                }
+                if (nextOk) {
+                    currIx = nextIx;
+                } else {
+                    dirR = !dirR;
+                    currIy++;
+                }
+                // TODO: tool wear handling
+            }
+
+            const deltaWork = this.workVg.clone();
+            deltaWork.fill(0);
+            sweepRemoved.extendByRadiusXY(1.5 / 2);
+            resampleVG(deltaWork, sweepRemoved);
+
+            return {
+                path: sweepPath,
+                deltaWork: deltaWork,
+                vis: {
+                    target: sweepTarget,
+                    removed: sweepRemoved,
+                }
+            };
+        };
+
+        let sweep = null;
+        for (let i = 0; i < candidateNormals.length; i++) {
+            sweep = genPlanarSweep(candidateNormals[this.planner.normalIndex]);
+            if (sweep) {
                 break;
             }
-            if (nextOk) {
-                currIx = nextIx;
-            } else {
-                dirR = !dirR;
-                currIy++;
-            }
-            // TODO: tool wear handling
+            this.planner.normalIndex = (this.planner.normalIndex + 1) % candidateNormals.length;
         }
-        console.log("path added", added);
+        if (sweep === null) {
+            console.log("possible sweep exhausted");
+            return;
+        }
+
+        console.log("commiting sweep", sweep);
+
+        this.planPath.push(...sweep.path);
+        this.workVg.sub(sweep.deltaWork);
         this.numSweeps++;
         this.showingSweep++;
 
-        this.updateVis("vg-gen-slice", [createVgVis(passDiff)], this.showGenSlice);
+        this.updateVis("vg-gen-slice", [createVgVis(sweep.vis.target)], this.showGenSlice);
+        this.updateVis("vg-gen-removal", [createVgVis(sweep.vis.removed)], this.showGenRemoval);
 
         this.updateVis("vg-gen-path", [createPathVis(this.planPath)], this.showGenPath);
-
-        const deltaWork = this.workVg.clone();
-        deltaWork.fill(0);
-        passRemoval.extendByRadiusXY(1.5 / 2);
-        resampleVG(deltaWork, passRemoval);
-        this.updateVis("vg-gen-removal", [createVgVis(deltaWork)], this.showGenRemoval);
-
-        this.workVg.sub(deltaWork);
         this.updateVis("vg-work", [createVgVis(this.workVg)], this.showWork);
     }
 
