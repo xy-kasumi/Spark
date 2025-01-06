@@ -3,11 +3,15 @@ import Stats from 'three/addons/libs/stats.module.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import {
     initVG, initVGForPoints, diceSurf, sliceSurfByPlane, sliceContourByLine,
     resampleVG,
 } from './geom.js';
 
+const fontLoader = new FontLoader();
+let font = null;
 
 // Apply translation to geometry in-place.
 // [in]: THREE.BufferGeometry
@@ -61,9 +65,10 @@ const generateStockGeom = () => {
 };
 
 
-// [in]: VoxelGrid
+// [in] VoxelGrid
+// [in] label optional string to display on the voxel grid
 // returns: THREE.Object3D
-const createVgVis = (vg) => {
+const createVgVis = (vg, label = "") => {
     const cubeGeom = new THREE.BoxGeometry(vg.res * 0.9, vg.res * 0.9, vg.res * 0.9);
 
     const num = vg.count();
@@ -96,6 +101,17 @@ const createVgVis = (vg) => {
     const axesHelper = new THREE.AxesHelper();
     axesHelper.scale.set(vg.res * vg.numX, vg.res * vg.numY, vg.res * vg.numZ);
     mesh.add(axesHelper);
+
+    if (label !== "") {
+        console.log(font);
+        const textGeom = new TextGeometry(label, {
+            font,
+            size: 2,
+            depth: 0.1,
+         });
+        const textMesh = new THREE.Mesh(textGeom, new THREE.MeshBasicMaterial({ color: "#222222" }));
+        meshContainer.add(textMesh);
+    }
     
     return meshContainer;
 };
@@ -106,9 +122,9 @@ const createVgVis = (vg) => {
 const createPathVis = (path) => {
     const vs = new Float32Array(path.length * 3);
     for (let i = 0; i < path.length; i++) {
-        vs[3 * i + 0] = path[i].x;
-        vs[3 * i + 1] = path[i].y;
-        vs[3 * i + 2] = path[i].z;
+        vs[3 * i + 0] = path[i].pos.x;
+        vs[3 * i + 1] = path[i].pos.y;
+        vs[3 * i + 2] = path[i].pos.z;
     }
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(vs, 3));
@@ -227,14 +243,36 @@ class View3D {
         this.toolY = 0;
         this.toolZ = 0;
 
+        this.coordSystem = "work";
+        this.updateCoordSystemLabel();
         this.numSweeps = 0;
         this.showingSweep = 0;
-        this.showGenAccess = false;
-        this.showGenSlice = false;
-        this.showGenRemoval = false;
-        this.showGenPath = true;
+        this.removedVol = 0;
+        this.showSweepAccess = false;
+        this.showSweepSlice = false;
+        this.showSweepRemoval = false;
+        this.showPlanPath = true;
 
         this.initGui();
+    }
+
+    updateCoordSystemLabel() {
+        const coord = new THREE.Object3D();
+
+        const axesHelper = new THREE.AxesHelper(8);
+        coord.add(axesHelper);
+        axesHelper.position.set(-19, -19, 0);
+
+        const textGeom = new TextGeometry(this.coordSystem, {
+            font,
+            size: 2,
+            depth: 0.1,
+        });
+        const textMesh = new THREE.Mesh(textGeom, new THREE.MeshBasicMaterial({ color: "#222222" }));
+        textMesh.position.set(-19, -19, 0);
+        coord.add(textMesh);
+
+        this.updateVis("coord-label", [coord]);
     }
 
     initGui() {
@@ -270,8 +308,8 @@ class View3D {
 
         const gui = new GUI();
         gui.add(this, 'model', Model).onChange((model) => {
-            this.updateVis("vg-targ", []);
-            this.updateVis("vg-work", []);
+            this.updateVis("targ-vg", []);
+            this.updateVis("work-vg", []);
             this.updateVis("misc", []);
     
             loadStl(model);
@@ -289,24 +327,26 @@ class View3D {
         gui.add(this, "genNextSweep");
         gui.add(this, "genNextSweep10");
         gui.add(this, "numSweeps").disable().listen();
+        gui.add(this, "removedVol").name("Removed Vol (㎣)").disable().listen();
         gui.add(this, "showingSweep", 0, this.numSweeps).step(1).listen();
+        gui.add(this, "coordSystem", ["work", "machine"]).onChange(_ => this.updateCoordSystemLabel());
         gui.add(this, "showTarget")
-            .onChange(_ => this.setVisVisibility("vg-targ", this.showTarget))
+            .onChange(_ => this.setVisVisibility("targ-vg", this.showTarget))
             .listen();
         gui.add(this, "showWork")
-            .onChange(_ => this.setVisVisibility("vg-work", this.showWork))
+            .onChange(_ => this.setVisVisibility("work-vg", this.showWork))
             .listen();
-        gui.add(this, "showGenAccess")
-            .onChange(_ => this.setVisVisibility("vg-gen-access", this.showGenAccess))
+        gui.add(this, "showSweepAccess")
+            .onChange(_ => this.setVisVisibility("sweep-access-vg", this.showSweepAccess))
             .listen();
-        gui.add(this, "showGenSlice")
-            .onChange(_ => this.setVisVisibility("vg-gen-slice", this.showGenSlice))
+        gui.add(this, "showSweepSlice")
+            .onChange(_ => this.setVisVisibility("sweep-slice-vg", this.showSweepSlice))
             .listen();
-        gui.add(this, "showGenRemoval")
-            .onChange(_ => this.setVisVisibility("vg-gen-removal", this.showGenRemoval))
+        gui.add(this, "showSweepRemoval")
+            .onChange(_ => this.setVisVisibility("sweep-removal-vg", this.showSweepRemoval))
             .listen();
-        gui.add(this, "showGenPath")
-            .onChange(_ => this.setVisVisibility("vg-gen-path", this.showGenPath))
+        gui.add(this, "showPlanPath")
+            .onChange(_ => this.setVisVisibility("plan-path-vg", this.showPlanPath))
             .listen();
     
         loadStl(this.model);
@@ -343,28 +383,17 @@ class View3D {
         const hemiLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 1);
         this.scene.add(hemiLight);
 
-
         const gridHelperBottom = new THREE.GridHelper(40, 4);
-        const gridHelperTop = new THREE.GridHelper(40, 1);
         this.scene.add(gridHelperBottom);
-        this.scene.add(gridHelperTop);
         gridHelperBottom.rotateX(Math.PI / 2);
-        gridHelperTop.rotateX(Math.PI / 2);
-        gridHelperTop.position.z = 40;
-
-        const axesHelper = new THREE.AxesHelper(8);
-        this.scene.add(axesHelper);
-        axesHelper.position.set(-19, -19, 0);
 
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-
 
         this.stats = new Stats();
         container.appendChild(this.stats.dom);
 
         const guiStatsEl = document.createElement('div');
         guiStatsEl.classList.add('gui-stats');
-
 
         window.addEventListener('resize', () => this.onWindowResize());
         Object.assign(window, { scene: this.scene });
@@ -386,18 +415,26 @@ class View3D {
             normalIndex: 0,
         };
 
-        this.updateVis("vg-work", [createVgVis(this.workVg)], this.showWork);
-        this.updateVis("vg-targ", [createVgVis(this.targVg)], this.showTarget);
-        this.updateVis("vg-gen-path", [createPathVis(this.planPath)], this.showGenPath);
+        this.updateVis("work-vg", [createVgVis(this.workVg)], this.showWork);
+        this.updateVis("targ-vg", [createVgVis(this.targVg)], this.showTarget);
+        this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
     }
 
     genNextSweep10() {
         for (let i = 0; i < 10; i++) {
-            this.genNextSweep();
+            const committed = this.genNextSweep();
+            if (!committed) {
+                break;
+            }
         }
     }
 
+    // returns: true if sweep is committed, false if not
     genNextSweep() {
+        if (this.workVg === undefined) {
+            this.initPlan();
+        }
+
         const candidateNormals = [
             new THREE.Vector3(1, 0, 0),
             new THREE.Vector3(0, 1, 0),
@@ -423,7 +460,7 @@ class View3D {
         const diffVg = this.workVg.clone().sub(this.targVg.clone().saturateFill());
         if (diffVg.count() === 0) {
             console.log("done!");
-            return;
+            return false;
         }
 
         // Prepare new (rotated) VG for projecting the work.
@@ -458,7 +495,6 @@ class View3D {
                 lToWQ.clone().invert(),
                 new THREE.Vector3(1, 1, 1));
             const aabbLoc = transformAABB(workMin, workMax, wToLMtx);
-            console.log("aabb", workMin, workMax, "->", aabbLoc.min, aabbLoc.max);
 
             return initVG(aabbLoc, res, lToWQ, false, 5);
         };
@@ -474,13 +510,9 @@ class View3D {
             resampleVG(sweepBlocked, this.workVg);
             sweepBlocked.extendByRadiusXY(1.5 / 2);
             sweepBlocked.scanZMaxDesc();
-            console.log(sweepBlocked);
-            this.updateVis("vg-gen-access", [createVgVis(sweepBlocked)], this.showGenAccess);
 
-            //this.updateVis("vg-gen", [createVgVis(accessGrid)]);
             resampleVG(sweepTarget, diffVg);
             const passMaxZ = sweepTarget.findMaxNonZeroZ();
-            console.log("passMaxZ", passMaxZ);
 
             // prepare 2D-scan at Z= passMaxZ.
             sweepTarget.filterZ(passMaxZ);
@@ -499,23 +531,21 @@ class View3D {
                     }
                 }
             }
-            console.log("minPt", minPt);
             // TODO: VERY FRAGILE
-            const access = sweepBlocked.get(minPt.x, minPt.y, passMaxZ + 1); // check previous layer's access
+            const access = sweepBlocked.get(minPt.x, minPt.y, passMaxZ + 1);  // check previous layer's access
             const accessOk = access === 0;
             if (!accessOk) {
                 return null;
             }
             
             // generate zig-zag
+            let isFirstInLine = true;
             let dirR = true; // true: right, false: left
             let currIx = minPt.x;
             let currIy = minPt.y;
             const sweepPath = [];
             while (true) {
                 sweepRemoved.set(currIx, currIy, passMaxZ, 255);
-
-                sweepPath.push(sweepTarget.centerOf(currIx, currIy, passMaxZ));
 
                 const nextIx = currIx + (dirR ? 1 : -1);
                 const nextNeeded = sweepTarget.get(nextIx, currIy, passMaxZ) > 0;
@@ -525,12 +555,26 @@ class View3D {
                 const upOk = upNeeded && upAccess;
                 const nextOk = nextNeeded && nextAccess;
 
+                const pathPt = {
+                    normal: normal,
+                    pos: sweepTarget.centerOf(currIx, currIy, passMaxZ),
+                };
+
+                if (isFirstInLine) {
+                    sweepPath.push(pathPt);
+                    isFirstInLine = false;
+                }
+
                 if (!nextOk && !upOk) {
+                    sweepPath.push(pathPt);
                     break;
                 }
                 if (nextOk) {
+                    // don't write to path here
                     currIx = nextIx;
                 } else {
+                    sweepPath.push(pathPt);
+                    isFirstInLine = true;
                     dirR = !dirR;
                     currIy++;
                 }
@@ -562,21 +606,39 @@ class View3D {
         }
         if (sweep === null) {
             console.log("possible sweep exhausted");
-            return;
+            return false;
         }
 
-        console.log("commiting sweep", sweep);
+        console.log(`commiting sweep ${this.numSweeps}`, sweep);
 
         this.planPath.push(...sweep.path);
+        const volBeforeSweep = this.workVg.volume();
         this.workVg.sub(sweep.deltaWork);
+        const volAfterSweep = this.workVg.volume();
+        this.removedVol += volBeforeSweep - volAfterSweep;
         this.numSweeps++;
         this.showingSweep++;
 
-        this.updateVis("vg-gen-slice", [createVgVis(sweep.vis.target)], this.showGenSlice);
-        this.updateVis("vg-gen-removal", [createVgVis(sweep.vis.removed)], this.showGenRemoval);
+        this.dumpGcode();
 
-        this.updateVis("vg-gen-path", [createPathVis(this.planPath)], this.showGenPath);
-        this.updateVis("vg-work", [createVgVis(this.workVg)], this.showWork);
+        this.updateVis("sweep-slice-vg", [createVgVis(sweep.vis.target, "sweep-slice")], this.showSweepSlice);
+        this.updateVis("sweep-removal-vg", [createVgVis(sweep.vis.removed, "sweep-removal")], this.showSweepRemoval);
+
+        this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
+        this.updateVis("work-vg", [createVgVis(this.workVg, "work-vg")], this.showWork);
+
+        return true;
+    }
+
+    dumpGcode() {
+        const gcode = [];
+        for (let i = 0; i < this.planPath.length; i++) {
+            const pt = this.planPath[i];
+            const tipPos = pt.pos;
+            gcode.push(`G1 X${tipPos.x} Y${tipPos.y} Z${tipPos.z}`);
+        }
+
+        console.log("GCODE", gcode.join("\n"));
     }
 
     updateVis(group, vs, visible = true) {
@@ -617,4 +679,17 @@ class View3D {
 ////////////////////////////////////////////////////////////////////////////////
 // entry point
 
-const view = new View3D();
+
+const loadFont = async () => {
+    return new Promise((resolve) => {
+        fontLoader.load("./Source Sans 3_Regular.json", (f) => {
+            font = f;
+            resolve();
+        });
+    });
+};
+
+(async () => {
+    await loadFont();
+    const view = new View3D();
+})();
