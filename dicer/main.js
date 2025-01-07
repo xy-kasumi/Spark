@@ -119,16 +119,35 @@ const createVgVis = (vg, label = "") => {
 // [in] array of THREE.Vector3, path
 // returns: THREE.Object3D
 const createPathVis = (path) => {
-    const vs = new Float32Array(path.length * 3);
+    const vs = [];
     for (let i = 0; i < path.length; i++) {
-        vs[3 * i + 0] = path[i].pos.x;
-        vs[3 * i + 1] = path[i].pos.y;
-        vs[3 * i + 2] = path[i].pos.z;
+        const pt = path[i];
+        if (pt.type === "remove") {
+            vs.push(pt.tipPos.x, pt.tipPos.y, pt.tipPos.z);
+        }
     }
+
+    const pathVis = new THREE.Object3D();
+
+    // add remove path vis
     const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(vs, 3));
+    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vs), 3));
     const mat = new THREE.LineBasicMaterial({ color: 0x808080 });
-    return new THREE.Line(geom, mat);
+    pathVis.add(new THREE.Line(geom, mat));
+
+    // add refresh path vis
+    const sphGeom = new THREE.SphereGeometry(0.15);
+    const sphMat = new THREE.MeshBasicMaterial({ color: 0x606060 });
+    for (let i = 0; i < path.length; i++) {
+        const pt = path[i];
+        if (pt.type === "refresh") {
+            const sph = new THREE.Mesh(sphGeom, sphMat);
+            sph.position.copy(pt.tipPos);
+            pathVis.add(sph);
+        }
+    }
+
+    return pathVis;
 };
 
 // orange-teal-purple color palette for ABC axes.
@@ -220,14 +239,13 @@ const generateStock = () => {
 
 
 // returns: THREE.Object3D
-const generateTool = () => {
+const generateTool = (toolLength) => {
     const toolOrigin = new THREE.Object3D();
 
     const baseRadius = 10;
     const baseHeight = 10;
 
     const needleExtRadius = 1.5 / 2;
-    const needleLength = 25;
 
     const toolBase = new THREE.Mesh(
         new THREE.CylinderGeometry(baseRadius, baseRadius, baseHeight, 32, 1),
@@ -236,13 +254,13 @@ const generateTool = () => {
     toolOrigin.add(toolBase);
 
     const needle = new THREE.Mesh(
-        new THREE.CylinderGeometry(needleExtRadius, needleExtRadius, needleLength, 32, 1),
+        new THREE.CylinderGeometry(needleExtRadius, needleExtRadius, toolLength, 32, 1),
         new THREE.MeshPhysicalMaterial({ color: 0xf0f0f0, metalness: 0.9, roughness: 0.3 }));
-    needle.position.y = needleLength / 2;
+    needle.position.y = toolLength / 2;
 
     toolOrigin.add(needle);
     toolOrigin.setRotationFromEuler(new THREE.Euler(0, -Math.PI / 2, Math.PI / 2)); // 2nd elem: B rot -pi/2, 3rd elem: fixed
-    toolOrigin.position.x = needleLength + 10;
+    toolOrigin.position.x = toolLength + 10;
 
     const aAxisHelper = createRotationAxisHelper(new THREE.Vector3(0, 1, 0), 2, axisColorA);
     toolOrigin.add(aAxisHelper);
@@ -353,8 +371,12 @@ class View3D {
         cAxisHelper.position.copy(this.workOffset);
         this.machineVis.add(cAxisHelper);
 
+        // configuration
+        this.ewrMax = 0.3;
+
         // machine-state setup
         this.toolLength = 25;
+        this.toolDiameter = 1.5;
         this.workCRot = 0;
         this.toolARot = 0;
         this.toolBRot = 0;
@@ -379,6 +401,7 @@ class View3D {
         this.numSweeps = 0;
         this.showingSweep = 0;
         this.removedVol = 0;
+        this.toolIx = 0;
         this.showSweepAccess = false;
         this.showSweepSlice = false;
         this.showSweepRemoval = false;
@@ -389,6 +412,11 @@ class View3D {
 
     // Update positions of objects, assuming world coords is what is set by this.viewMode.
     updateVisTransforms() {
+        // regen tool; TODO: more efficient way
+        this.machineCoord.remove(this.tool);
+        this.tool = generateTool(this.toolLength);
+        this.machineCoord.add(this.tool);
+
         this.machineVis.visible = this.viewMode === "machine";
         this.tool.visible = this.viewMode === "machine";
 
@@ -407,43 +435,12 @@ class View3D {
     }
 
     initGui() {
-        const view = this;
-        const loadStl = (fname) => {
-            const loader = new STLLoader();
-            loader.load(
-                `models/${fname}.stl`,
-                (geometry) => {
-                    // To avoid parts going out of work by numerical error, slightly offset the part geometry.
-                    translateGeom(geometry, new THREE.Vector3(0, 0, 0.5));
-                    this.targetSurf = convGeomToSurf(geometry);
-
-                    const material = new THREE.MeshPhysicalMaterial({
-                        color: 0xb2ffc8,
-                        metalness: 0.1,
-                        roughness: 0.8,
-                        transparent: true,
-                        opacity: 0.8,
-                    });
-
-                    const mesh = new THREE.Mesh(geometry, material)
-                    this.updateVis("target", [mesh]);
-                },
-                (xhr) => {
-                    console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
-                },
-                (error) => {
-                    console.log(error);
-                }
-            );
-        };
-
         const gui = new GUI();
         gui.add(this, 'model', Model).onChange((model) => {
             this.updateVis("targ-vg", []);
             this.updateVis("work-vg", []);
             this.updateVis("misc", []);
-    
-            loadStl(model);
+            this.loadStl(model);
         });
         gui.add(this, "showStockMesh").onChange(v => {
             this.objStock.visible = v;
@@ -459,7 +456,8 @@ class View3D {
         gui.add(this, "genNextSweep10");
         gui.add(this, "numSweeps").disable().listen();
         gui.add(this, "removedVol").name("Removed Vol (㎣)").disable().listen();
-        gui.add(this, "showingSweep", 0, this.numSweeps).step(1).listen();
+        gui.add(this, "toolIx").disable().listen();
+        // gui.add(this, "showingSweep", 0, this.numSweeps).step(1).listen();
         gui.add(this, "viewMode", ["work", "machine"]).onChange(_ => this.updateVisTransforms());
         gui.add(this, "showTarget")
             .onChange(_ => this.setVisVisibility("targ-vg", this.showTarget))
@@ -482,7 +480,7 @@ class View3D {
         
         gui.add(this, "dumpGcode");
     
-        loadStl(this.model);
+        this.loadStl(this.model);
     }
 
     init() {
@@ -528,9 +526,40 @@ class View3D {
         Object.assign(window, { scene: this.scene });
     }
 
+    loadStl(fname) {
+        const loader = new STLLoader();
+        loader.load(
+            `models/${fname}.stl`,
+            (geometry) => {
+                // To avoid parts going out of work by numerical error, slightly offset the part geometry.
+                translateGeom(geometry, new THREE.Vector3(0, 0, 0.5));
+                this.targetSurf = convGeomToSurf(geometry);
+
+                const material = new THREE.MeshPhysicalMaterial({
+                    color: 0xb2ffc8,
+                    metalness: 0.1,
+                    roughness: 0.8,
+                    transparent: true,
+                    opacity: 0.8,
+                });
+
+                const mesh = new THREE.Mesh(geometry, material)
+                this.updateVis("target", [mesh]);
+            },
+            (xhr) => {
+                console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
+            },
+            (error) => {
+                console.log(error);
+            }
+        );
+    }
+
     initPlan() {
         this.numSweeps = 0;
         this.showingSweep = 0;
+        this.removedVol = 0;
+        this.toolIx = 0;
 
         this.stockSurf = convGeomToSurf(generateStockGeom());
         this.workVg = initVGForPoints(this.stockSurf, this.resMm);
@@ -565,7 +594,6 @@ class View3D {
         }
 
         const candidateNormals = [
-            
             new THREE.Vector3(1, 0, 0),
             new THREE.Vector3(0, 1, 0),
             new THREE.Vector3(-1, 0, 0),
@@ -630,7 +658,13 @@ class View3D {
         };
 
         // [in] normal THREE.Vector3, world coords.
-        // returns: {path: array<Vector3>, deltaWork: VG, vis: {target: VG, blocked: VG}} | null (if impossible)
+        // returns: {
+        //   path: array<Vector3>,
+        //   deltaWork: VG,
+        //   toolLength: number,
+        //   toolIx: number,
+        //   vis: {target: VG, blocked: VG}
+        // } | null (if impossible)
         const genPlanarSweep = (normal) => {
             const accesGridRes = this.resMm;
             
@@ -667,15 +701,43 @@ class View3D {
             if (!accessOk) {
                 return null;
             }
+
+            // in planar sweep, tool is eroded from the side.
+            const feedCrossSectionArea = this.resMm * this.resMm; // feed width x feed depth; feed must be < toolDiameter/2
+            const maxWidthLoss = this.resMm * 0.5;
+            const tipRefreshDist = (this.toolDiameter * Math.PI * maxWidthLoss * this.resMm / this.ewrMax) / feedCrossSectionArea;
             
             // generate zig-zag
             let isFirstInLine = true;
             let dirR = true; // true: right, false: left
             let currIx = minPt.x;
             let currIy = minPt.y;
+            let distSinceRefresh = 0;
+            let toolLength = this.toolLength;
+            let toolIx = this.toolIx;
             const sweepPath = [];
             while (true) {
                 sweepRemoved.set(currIx, currIy, passMaxZ, 255);
+                const tipPos = sweepTarget.centerOf(currIx, currIy, passMaxZ);
+                distSinceRefresh += this.resMm;
+
+                if (distSinceRefresh > tipRefreshDist) {
+                    // TODO: gen refresh path somewhere
+                    // TODO: gen safe return path (revert to previous row)
+                    sweepPath.push({
+                        group: `sweep-${this.numSweeps}`,
+                        type: "refresh",
+                        tipPos: tipPos,
+                    });
+
+                    toolLength -= this.resMm; // = feed depth
+                    distSinceRefresh = 0;
+                    if (toolLength < 5) {
+                        console.log("tool magically renewed");
+                        toolIx++;
+                        toolLength = 25;
+                    }
+                }
 
                 const nextIx = currIx + (dirR ? 1 : -1);
                 const nextNeeded = sweepTarget.get(nextIx, currIy, passMaxZ) > 0;
@@ -686,9 +748,11 @@ class View3D {
                 const nextOk = nextNeeded && nextAccess;
 
                 const pathPt = {
-                    normal: normal,
-                    pos: sweepTarget.centerOf(currIx, currIy, passMaxZ),
                     group: `sweep-${this.numSweeps}`,
+                    type: "remove",
+                    tipNormal: normal,
+                    tipPos: tipPos,
+                    axisValues: this.solveIk(tipPos, normal, toolLength),
                 };
 
                 if (isFirstInLine) {
@@ -709,7 +773,6 @@ class View3D {
                     dirR = !dirR;
                     currIy++;
                 }
-                // TODO: tool wear handling
             }
 
             const deltaWork = this.workVg.clone();
@@ -720,6 +783,8 @@ class View3D {
             return {
                 path: sweepPath,
                 deltaWork: deltaWork,
+                toolIx: toolIx,
+                toolLength: toolLength,
                 vis: {
                     target: sweepTarget,
                     removed: sweepRemoved,
@@ -743,6 +808,8 @@ class View3D {
         console.log(`commiting sweep ${this.numSweeps}`, sweep);
 
         this.planPath.push(...sweep.path);
+        this.toolIx = sweep.toolIx;
+        this.toolLength = sweep.toolLength;
         const volBeforeSweep = this.workVg.volume();
         this.workVg.sub(sweep.deltaWork);
         const volAfterSweep = this.workVg.volume();
@@ -757,7 +824,22 @@ class View3D {
         this.updateVis("work-vg", [createVgVis(this.workVg, "work-vg")], this.showWork);
 
         const lastPt = this.planPath[this.planPath.length - 1];
+        this.toolX = lastPt.axisValues.x;
+        this.toolY = lastPt.axisValues.y;
+        this.toolZ = lastPt.axisValues.z;
+        this.toolBRot = lastPt.axisValues.b;
+        this.workCRot = lastPt.axisValues.c;
 
+        this.updateVisTransforms();
+
+        return true;
+    }
+
+    // Computes tool base & work table pos from tip target.
+    //
+    // [in] tipPos, tipNormal, world/machine coords
+    // [out] {x, y, z, b, c} machine instructions for moving work table & tool base.
+    solveIk(tipPos, tipNormal, toolLength) {
         // Order of determination ("IK")
         // 1. Determine B,C axis
         // 2. Determine X,Y,Z axis
@@ -766,34 +848,35 @@ class View3D {
 
         const EPS_ANGLE = 1e-3 / 180 * Math.PI; // 1/1000 degree
 
-        const n = lastPt.normal.clone();
+        const n = tipNormal.clone();
         if (n.z < 0) {
             console.error("Impossible tool normal; path will be invalid", n);
         }
 
         n.z = 0;
         const bAngle = Math.asin(n.length());
-        this.toolBRot = bAngle;
+        let cAngle = 0;
         if (bAngle < EPS_ANGLE) {
             // Pure Z+. Prefer neutral work rot.
-            this.workCRot = 0;
+            cAngle = 0;
         } else {
-            this.workCRot = -Math.atan2(n.y, n.x);
+            cAngle = -Math.atan2(n.y, n.x);
         }
         
-        const tipPosMachineCoord = lastPt.pos.clone();
-        tipPosMachineCoord.applyAxisAngle(new THREE.Vector3(0, 0, 1), this.workCRot);
+        const tipPosMachineCoord = tipPos.clone();
+        tipPosMachineCoord.applyAxisAngle(new THREE.Vector3(0, 0, 1), cAngle);
         tipPosMachineCoord.add(this.workOffset);
 
-        const offsetBaseToTip = new THREE.Vector3(-Math.sin(bAngle), 0, -Math.cos(bAngle)).multiplyScalar(this.toolLength);
+        const offsetBaseToTip = new THREE.Vector3(-Math.sin(bAngle), 0, -Math.cos(bAngle)).multiplyScalar(toolLength);
         tipPosMachineCoord.sub(offsetBaseToTip);
 
-        this.toolX = tipPosMachineCoord.x
-        this.toolY = tipPosMachineCoord.y;
-        this.toolZ = tipPosMachineCoord.z;
-        this.updateVisTransforms();
-
-        return true;
+        return {
+            x: tipPosMachineCoord.x,
+            y: tipPosMachineCoord.y,
+            z: tipPosMachineCoord.z,
+            b: bAngle,
+            c: cAngle,
+        };
     }
 
     dumpGcode() {
@@ -805,8 +888,14 @@ class View3D {
                 gcode.push(`; ${pt.group}`);
                 prevGroup = pt.group;
             }
-            const tipPos = pt.pos;
-            gcode.push(`G1 X${tipPos.x} Y${tipPos.y} Z${tipPos.z} B${this.toolBRot * 180 / Math.PI} C${this.workCRot * 180 / Math.PI}`);
+
+            if (pt.type === "remove") {
+                const vals = pt.axisValues;
+                gcode.push(`G1 X${vals.x} Y${vals.y} Z${vals.z} B${vals.b * 180 / Math.PI} C${vals.c * 180 / Math.PI}`);
+            } else if (pt.type === "refresh") {
+                // TODO: do what??
+                gcode.push("; TODO refresh tool");
+            }
         }
 
         console.log(gcode.join("\n"));
