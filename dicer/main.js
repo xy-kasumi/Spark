@@ -132,6 +132,65 @@ const createPathVis = (path) => {
     return new THREE.Line(geom, mat);
 };
 
+// orange-teal-purple color palette for ABC axes.
+const axisColorA = new THREE.Color(0xe67e22);
+const axisColorB = new THREE.Color(0x1abc9c);
+const axisColorC = new THREE.Color(0x9b59b6);
+
+// Creates ring+axis rotational axis visualizer.
+// [in] axis THREE.Vector3. rotates around this axis in CCW.
+// [in] size number feature size. typically ring radius.
+// [in] color THREE.Color
+// returns: THREE.Object3D
+const createRotationAxisHelper = (axis, size = 1, color = axisColorA) => {
+    const NUM_RING_PTS = 32;
+
+    // Generate as Z+ axis, scale=1 and rotate & re-scale later.
+    const buffer = new THREE.BufferGeometry();
+    const pts = [];
+
+    // add axis
+    pts.push(0, 0, -1);
+    pts.push(0, 0, 1);
+
+    // add ring
+    for (let i = 0; i < NUM_RING_PTS; i++) {
+        const angle0 = 2 * Math.PI * i / NUM_RING_PTS;
+        const angle1 = 2 * Math.PI * (i + 1) / NUM_RING_PTS;
+        pts.push(Math.cos(angle0), Math.sin(angle0), 0);
+        pts.push(Math.cos(angle1), Math.sin(angle1), 0);
+    }
+
+    buffer.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
+
+    // scale & rotate
+    const localHelper = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color }));
+    const helper = new THREE.Object3D();
+    helper.add(localHelper);
+    helper.scale.set(size, size, size);
+
+    // create orthonormal basis for rotation.
+    const basisZ = axis.normalize();
+    let basisY;
+    const b0 = new THREE.Vector3(1, 0, 0);
+    const b1 = new THREE.Vector3(0, 1, 0);
+    if (b0.clone().cross(basisZ).length() > 0.3) {
+        basisY = b0.clone().cross(basisZ).normalize();
+    } else {
+        basisY = b1.clone().cross(basisZ).normalize();
+    }
+    const basisX = basisY.clone().cross(basisZ).normalize();
+
+    // init new grid
+    const lToWMat3 = new THREE.Matrix3(
+        basisX.x, basisY.x, basisZ.x,
+        basisX.y, basisY.y, basisZ.y,
+        basisX.z, basisY.z, basisZ.z,
+    );
+    localHelper.applyMatrix4(new THREE.Matrix4().identity().setFromMatrix3(lToWMat3));
+    return helper;
+};
+
 
 // returns: THREE.Object3D
 const generateStock = () => {
@@ -219,14 +278,51 @@ const transformAABB = (min, max, mtx) => {
 class View3D {
     constructor() {
         this.init();
-        this.visGroups = {};
 
+        this.machineCoord = new THREE.Object3D();
+        this.workCoord = new THREE.Object3D();
+        this.scene.add(this.machineCoord);
+        this.scene.add(this.workCoord);
+
+        // work-coords
+        this.visGroups = {};
+        const gridHelperBottom = new THREE.GridHelper(40, 4);
+        gridHelperBottom.rotateX(Math.PI / 2);
+        this.workCoord.add(gridHelperBottom);
+
+        // machine-coords
         this.tool = generateTool();
-        this.scene.add(this.tool);
+        this.machineCoord.add(this.tool);
+
+        // this..add(createRotationAxisHelper(new THREE.Vector3(0, 0, 1), 2, axisColorA));
+
+        const machineVis = new THREE.Object3D();
+        {
+            const opBox = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3(70, 100, 60));
+            machineVis.add(new THREE.Box3Helper(opBox, new THREE.Color(0x000000)));
+
+            const wireBox = new THREE.Box3();
+            wireBox.setFromCenterAndSize(new THREE.Vector3(30, 15, 30), new THREE.Vector3(1, 20, 1));
+            machineVis.add(new THREE.Box3Helper(wireBox, new THREE.Color(0x000000)));
+
+            const axesHelper = new THREE.AxesHelper(10);
+            machineVis.add(axesHelper);
+            axesHelper.position.set(0.1, 0.1, 0.1); // increase visibility by slight offset
+
+            const textGeom = new TextGeometry("machine", {
+                font,
+                size: 2,
+                depth: 0.1,
+            });
+            const textMesh = new THREE.Mesh(textGeom, new THREE.MeshBasicMaterial({ color: "#222222" }));
+            machineVis.add(textMesh);
+        }
+        this.machineVis = machineVis;
+        this.machineCoord.add(machineVis);
 
         const stock = generateStock();
         this.objStock = stock;
-        this.scene.add(stock);
+        this.workCoord.add(stock);
         this.model = Model.GT2_PULLEY;
         this.showStockMesh = true;
         this.showTargetMesh = true;
@@ -244,7 +340,7 @@ class View3D {
         this.toolZ = 0;
 
         this.coordSystem = "work";
-        this.updateCoordSystemLabel();
+        this.updateVisTransforms();
         this.numSweeps = 0;
         this.showingSweep = 0;
         this.removedVol = 0;
@@ -256,23 +352,42 @@ class View3D {
         this.initGui();
     }
 
-    updateCoordSystemLabel() {
-        const coord = new THREE.Object3D();
+    // Update positions of objects, assuming world coords is what is set by this.coordSystem.
+    updateVisTransforms() {
 
-        const axesHelper = new THREE.AxesHelper(8);
-        coord.add(axesHelper);
-        axesHelper.position.set(-19, -19, 0);
+        this.machineVis.visible = this.coordSystem === "machine";
+        this.tool.visible = this.coordSystem === "machine";
 
-        const textGeom = new TextGeometry(this.coordSystem, {
-            font,
-            size: 2,
-            depth: 0.1,
-        });
-        const textMesh = new THREE.Mesh(textGeom, new THREE.MeshBasicMaterial({ color: "#222222" }));
-        textMesh.position.set(-19, -19, 0);
-        coord.add(textMesh);
+        const workOffset = new THREE.Vector3(20, 40, 20);
 
-        this.updateVis("coord-label", [coord]);
+        if (this.coordSystem === "machine") {
+            this.machineCoord.position.copy(workOffset.clone().multiplyScalar(-1));
+            
+            this.workCoord.position.set(0, 0, 0);
+            this.workCoord.quaternion.set(0, 0, 0, 1); // TODO: this must be affected by machineCoord.
+        } else {
+            this.workCoord.position.set(0, 0, 0);
+            this.workCoord.quaternion.set(0, 0, 0, 1);
+        }
+
+        /*
+        if (this.prevCoordSystem && this.prevCoordSystem !== this.coordSystem) {
+            const cameraOffset = this.camera.position.clone().sub(this.controls.target);
+            if (this.prevCoordSystem === "machine") {
+                //this.camera.position.add(new THREE.Vector3(35, 50, 30));
+                
+                this.controls.target.copy(new THREE.Vector3(35, 50, 30));
+                this.camera.position.copy(cameraOffset.clone().add(new THREE.Vector3(35, 50, 30)));
+                this.controls.update();
+            } else {
+                //this.camera.position.sub(new THREE.Vector3(35, 50, 30));
+                this.controls.target.copy(new THREE.Vector3(0, 0, 0));
+                this.camera.position.copy(cameraOffset.clone()); // .sub(new THREE.Vector3(35, 50, 30)));
+            }
+            //this.camera.updateProjectionMatrix();
+        }
+        this.prevCoordSystem = this.coordSystem;
+        */
     }
 
     initGui() {
@@ -329,7 +444,7 @@ class View3D {
         gui.add(this, "numSweeps").disable().listen();
         gui.add(this, "removedVol").name("Removed Vol (㎣)").disable().listen();
         gui.add(this, "showingSweep", 0, this.numSweeps).step(1).listen();
-        gui.add(this, "coordSystem", ["work", "machine"]).onChange(_ => this.updateCoordSystemLabel());
+        gui.add(this, "coordSystem", ["work", "machine"]).onChange(_ => this.updateVisTransforms());
         gui.add(this, "showTarget")
             .onChange(_ => this.setVisVisibility("targ-vg", this.showTarget))
             .listen();
@@ -357,7 +472,7 @@ class View3D {
         const height = window.innerHeight;
 
         const aspect = width / height;
-        this.camera = new THREE.OrthographicCamera(-25 * aspect, 25 * aspect, 25, -25, 0.1, 150);
+        this.camera = new THREE.OrthographicCamera(-25 * aspect, 25 * aspect, 25, -25, -150, 150);
         this.camera.position.x = 15;
         this.camera.position.y = 40;
         this.camera.position.z = 20;
@@ -382,10 +497,6 @@ class View3D {
 
         const hemiLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 1);
         this.scene.add(hemiLight);
-
-        const gridHelperBottom = new THREE.GridHelper(40, 4);
-        this.scene.add(gridHelperBottom);
-        gridHelperBottom.rotateX(Math.PI / 2);
 
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
 
@@ -643,10 +754,10 @@ class View3D {
 
     updateVis(group, vs, visible = true) {
         if (this.visGroups[group]) {
-            this.visGroups[group].forEach(v => this.scene.remove(v));
+            this.visGroups[group].forEach(v => this.workCoord.remove(v));
         }
         vs.forEach(v => {
-            this.scene.add(v);
+            this.workCoord.add(v);
             v.visible = visible;
         });
         this.visGroups[group] = vs;
