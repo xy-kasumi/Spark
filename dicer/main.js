@@ -479,6 +479,8 @@ class View3D {
         gui.add(this, "showPlanPath")
             .onChange(_ => this.setVisVisibility("plan-path-vg", this.showPlanPath))
             .listen();
+        
+        gui.add(this, "dumpGcode");
     
         loadStl(this.model);
     }
@@ -686,6 +688,7 @@ class View3D {
                 const pathPt = {
                     normal: normal,
                     pos: sweepTarget.centerOf(currIx, currIy, passMaxZ),
+                    group: `sweep-${this.numSweeps}`,
                 };
 
                 if (isFirstInLine) {
@@ -747,8 +750,6 @@ class View3D {
         this.numSweeps++;
         this.showingSweep++;
 
-        this.dumpGcode();
-
         this.updateVis("sweep-slice-vg", [createVgVis(sweep.vis.target, "sweep-slice")], this.showSweepSlice);
         this.updateVis("sweep-removal-vg", [createVgVis(sweep.vis.removed, "sweep-removal")], this.showSweepRemoval);
 
@@ -796,14 +797,19 @@ class View3D {
     }
 
     dumpGcode() {
+        let prevGroup = null;
         const gcode = [];
         for (let i = 0; i < this.planPath.length; i++) {
             const pt = this.planPath[i];
+            if (prevGroup !== pt.group) {
+                gcode.push(`; ${pt.group}`);
+                prevGroup = pt.group;
+            }
             const tipPos = pt.pos;
-            gcode.push(`G1 X${tipPos.x} Y${tipPos.y} Z${tipPos.z} C${this.workCRot * 180 / Math.PI}`);
+            gcode.push(`G1 X${tipPos.x} Y${tipPos.y} Z${tipPos.z} B${this.toolBRot * 180 / Math.PI} C${this.workCRot * 180 / Math.PI}`);
         }
 
-        console.log("GCODE", gcode.join("\n"));
+        console.log(gcode.join("\n"));
     }
 
     updateVis(group, vs, visible = true) {
