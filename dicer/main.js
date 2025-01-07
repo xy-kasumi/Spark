@@ -103,7 +103,6 @@ const createVgVis = (vg, label = "") => {
     mesh.add(axesHelper);
 
     if (label !== "") {
-        console.log(font);
         const textGeom = new TextGeometry(label, {
             font,
             size: 2,
@@ -145,14 +144,15 @@ const axisColorC = new THREE.Color(0x9b59b6);
 const createRotationAxisHelper = (axis, size = 1, color = axisColorA) => {
     const NUM_RING_PTS = 32;
 
+    /////
+    // contsutuct axis & ring out of line segments
+
     // Generate as Z+ axis, scale=1 and rotate & re-scale later.
     const buffer = new THREE.BufferGeometry();
     const pts = [];
-
     // add axis
     pts.push(0, 0, -1);
     pts.push(0, 0, 1);
-
     // add ring
     for (let i = 0; i < NUM_RING_PTS; i++) {
         const angle0 = 2 * Math.PI * i / NUM_RING_PTS;
@@ -160,14 +160,27 @@ const createRotationAxisHelper = (axis, size = 1, color = axisColorA) => {
         pts.push(Math.cos(angle0), Math.sin(angle0), 0);
         pts.push(Math.cos(angle1), Math.sin(angle1), 0);
     }
-
     buffer.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
+    const lineSegs = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color }));
 
+    /////
+    // construct direction cones
+    const geom = new THREE.ConeGeometry(0.1, 0.2);
+    const coneMat = new THREE.MeshBasicMaterial({ color });
+    const cone0 = new THREE.Mesh(geom, coneMat);
+    const cone1 = new THREE.Mesh(geom, coneMat);
+    
+    const localHelper = new THREE.Object3D();
+    localHelper.add(lineSegs);
+    localHelper.add(cone0);
+    cone0.position.set(0.99, 0, 0);
+
+    localHelper.add(cone1);
+    cone1.scale.set(1, -1, 1);
+    cone1.position.set(-0.99, 0, 0);
+
+    ///// 
     // scale & rotate
-    const localHelper = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color }));
-    const helper = new THREE.Object3D();
-    helper.add(localHelper);
-    helper.scale.set(size, size, size);
 
     // create orthonormal basis for rotation.
     const basisZ = axis.normalize();
@@ -187,6 +200,11 @@ const createRotationAxisHelper = (axis, size = 1, color = axisColorA) => {
         basisX.y, basisY.y, basisZ.y,
         basisX.z, basisY.z, basisZ.z,
     );
+
+    const helper = new THREE.Object3D();
+    helper.add(localHelper);
+
+    localHelper.scale.set(size, size, size);
     localHelper.applyMatrix4(new THREE.Matrix4().identity().setFromMatrix3(lToWMat3));
     return helper;
 };
@@ -279,6 +297,9 @@ class View3D {
     constructor() {
         this.init();
 
+        // machine geometries
+        this.workOffset = new THREE.Vector3(20, 40, 20); // in machine coords
+
         this.machineCoord = new THREE.Object3D();
         this.workCoord = new THREE.Object3D();
         this.scene.add(this.machineCoord);
@@ -293,8 +314,6 @@ class View3D {
         // machine-coords
         this.tool = generateTool();
         this.machineCoord.add(this.tool);
-
-        // this..add(createRotationAxisHelper(new THREE.Vector3(0, 0, 1), 2, axisColorA));
 
         const machineVis = new THREE.Object3D();
         {
@@ -319,6 +338,13 @@ class View3D {
         }
         this.machineVis = machineVis;
         this.machineCoord.add(machineVis);
+
+        const cAxisHelper = createRotationAxisHelper(new THREE.Vector3(0, 0, 1), 2, axisColorC);
+        cAxisHelper.position.copy(this.workOffset);
+        this.machineVis.add(cAxisHelper);
+
+        // setup
+        this.workCRot = 0;
 
         const stock = generateStock();
         this.objStock = stock;
@@ -354,40 +380,18 @@ class View3D {
 
     // Update positions of objects, assuming world coords is what is set by this.coordSystem.
     updateVisTransforms() {
-
         this.machineVis.visible = this.coordSystem === "machine";
         this.tool.visible = this.coordSystem === "machine";
 
-        const workOffset = new THREE.Vector3(20, 40, 20);
-
         if (this.coordSystem === "machine") {
-            this.machineCoord.position.copy(workOffset.clone().multiplyScalar(-1));
+            this.machineCoord.position.copy(this.workOffset.clone().multiplyScalar(-1));
             
             this.workCoord.position.set(0, 0, 0);
-            this.workCoord.quaternion.set(0, 0, 0, 1); // TODO: this must be affected by machineCoord.
+            this.workCoord.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), this.workCRot); //  set(0, 0, 0, 1); // TODO: this must be affected by machineCoord.
         } else {
             this.workCoord.position.set(0, 0, 0);
             this.workCoord.quaternion.set(0, 0, 0, 1);
         }
-
-        /*
-        if (this.prevCoordSystem && this.prevCoordSystem !== this.coordSystem) {
-            const cameraOffset = this.camera.position.clone().sub(this.controls.target);
-            if (this.prevCoordSystem === "machine") {
-                //this.camera.position.add(new THREE.Vector3(35, 50, 30));
-                
-                this.controls.target.copy(new THREE.Vector3(35, 50, 30));
-                this.camera.position.copy(cameraOffset.clone().add(new THREE.Vector3(35, 50, 30)));
-                this.controls.update();
-            } else {
-                //this.camera.position.sub(new THREE.Vector3(35, 50, 30));
-                this.controls.target.copy(new THREE.Vector3(0, 0, 0));
-                this.camera.position.copy(cameraOffset.clone()); // .sub(new THREE.Vector3(35, 50, 30)));
-            }
-            //this.camera.updateProjectionMatrix();
-        }
-        this.prevCoordSystem = this.coordSystem;
-        */
     }
 
     initGui() {
@@ -738,6 +742,15 @@ class View3D {
         this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
         this.updateVis("work-vg", [createVgVis(this.workVg, "work-vg")], this.showWork);
 
+        const lastPt = this.planPath[this.planPath.length - 1];
+
+        const n = lastPt.normal.clone();
+        n.z = 0;
+        const workAngle = -Math.atan2(n.y, n.x);  // TODO: this may fail if normal is pointing Z
+        this.workCRot = workAngle;
+        console.log("lastPt", lastPt, workAngle);
+        this.updateVisTransforms();
+
         return true;
     }
 
@@ -746,7 +759,7 @@ class View3D {
         for (let i = 0; i < this.planPath.length; i++) {
             const pt = this.planPath[i];
             const tipPos = pt.pos;
-            gcode.push(`G1 X${tipPos.x} Y${tipPos.y} Z${tipPos.z}`);
+            gcode.push(`G1 X${tipPos.x} Y${tipPos.y} Z${tipPos.z} C${this.workCRot * 180 / Math.PI}`);
         }
 
         console.log("GCODE", gcode.join("\n"));
