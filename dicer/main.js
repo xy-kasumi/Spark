@@ -241,8 +241,18 @@ const generateTool = () => {
     needle.position.y = needleLength / 2;
 
     toolOrigin.add(needle);
-    toolOrigin.rotateOnAxis(new THREE.Vector3(0, 0, 1), Math.PI / 2);
+    toolOrigin.setRotationFromEuler(new THREE.Euler(0, -Math.PI / 2, Math.PI / 2)); // 2nd elem: B rot -pi/2, 3rd elem: fixed
     toolOrigin.position.x = needleLength + 10;
+
+    const aAxisHelper = createRotationAxisHelper(new THREE.Vector3(0, 1, 0), 2, axisColorA);
+    toolOrigin.add(aAxisHelper);
+
+    const bAxisHelper1 = createRotationAxisHelper(new THREE.Vector3(1, 0, 0), 5, axisColorB);
+    const bAxisHelper2 = createRotationAxisHelper(new THREE.Vector3(1, 0, 0), 5, axisColorB);
+    bAxisHelper1.position.set(1, 0, 0);
+    bAxisHelper2.position.set(-1, 0, 0);
+    toolOrigin.add(bAxisHelper1);
+    toolOrigin.add(bAxisHelper2);
 
     return toolOrigin;
 };
@@ -343,8 +353,14 @@ class View3D {
         cAxisHelper.position.copy(this.workOffset);
         this.machineVis.add(cAxisHelper);
 
-        // setup
+        // machine-state setup
+        this.toolLength = 25;
         this.workCRot = 0;
+        this.toolARot = 0;
+        this.toolBRot = 0;
+        this.toolX = 15;
+        this.toolY = 15;
+        this.toolZ = 50;
 
         const stock = generateStock();
         this.objStock = stock;
@@ -354,18 +370,11 @@ class View3D {
         this.showTargetMesh = true;
 
         this.resMm = 0.5;
-        this.lineZ = 1;
-        this.lineY = 0;
         this.showWork = true;
         this.showTarget = false;
         this.targetSurf = null;
-        this.millVgs = [];
-        this.millStep = 0;
-        this.toolX = 0;
-        this.toolY = 0;
-        this.toolZ = 0;
 
-        this.coordSystem = "work";
+        this.viewMode = "machine"; // "work";
         this.updateVisTransforms();
         this.numSweeps = 0;
         this.showingSweep = 0;
@@ -378,12 +387,15 @@ class View3D {
         this.initGui();
     }
 
-    // Update positions of objects, assuming world coords is what is set by this.coordSystem.
+    // Update positions of objects, assuming world coords is what is set by this.viewMode.
     updateVisTransforms() {
-        this.machineVis.visible = this.coordSystem === "machine";
-        this.tool.visible = this.coordSystem === "machine";
+        this.machineVis.visible = this.viewMode === "machine";
+        this.tool.visible = this.viewMode === "machine";
 
-        if (this.coordSystem === "machine") {
+        this.tool.position.set(this.toolX, this.toolY, this.toolZ);
+        this.tool.setRotationFromEuler(new THREE.Euler(0, this.toolBRot - Math.PI / 2, Math.PI / 2)); // TODO: duplicate with init code
+
+        if (this.viewMode === "machine") {
             this.machineCoord.position.copy(this.workOffset.clone().multiplyScalar(-1));
             
             this.workCoord.position.set(0, 0, 0);
@@ -448,7 +460,7 @@ class View3D {
         gui.add(this, "numSweeps").disable().listen();
         gui.add(this, "removedVol").name("Removed Vol (㎣)").disable().listen();
         gui.add(this, "showingSweep", 0, this.numSweeps).step(1).listen();
-        gui.add(this, "coordSystem", ["work", "machine"]).onChange(_ => this.updateVisTransforms());
+        gui.add(this, "viewMode", ["work", "machine"]).onChange(_ => this.updateVisTransforms());
         gui.add(this, "showTarget")
             .onChange(_ => this.setVisVisibility("targ-vg", this.showTarget))
             .listen();
@@ -551,6 +563,7 @@ class View3D {
         }
 
         const candidateNormals = [
+            
             new THREE.Vector3(1, 0, 0),
             new THREE.Vector3(0, 1, 0),
             new THREE.Vector3(-1, 0, 0),
@@ -744,11 +757,39 @@ class View3D {
 
         const lastPt = this.planPath[this.planPath.length - 1];
 
+        // Order of determination ("IK")
+        // 1. Determine B,C axis
+        // 2. Determine X,Y,Z axis
+        // TODO: A-axis
+        // (X,Y,Z) -> B * toolLen = tipPt
+
+        const EPS_ANGLE = 1e-3 / 180 * Math.PI; // 1/1000 degree
+
         const n = lastPt.normal.clone();
+        if (n.z < 0) {
+            console.error("Impossible tool normal; path will be invalid", n);
+        }
+
         n.z = 0;
-        const workAngle = -Math.atan2(n.y, n.x);  // TODO: this may fail if normal is pointing Z
-        this.workCRot = workAngle;
-        console.log("lastPt", lastPt, workAngle);
+        const bAngle = Math.asin(n.length());
+        this.toolBRot = bAngle;
+        if (bAngle < EPS_ANGLE) {
+            // Pure Z+. Prefer neutral work rot.
+            this.workCRot = 0;
+        } else {
+            this.workCRot = -Math.atan2(n.y, n.x);
+        }
+        
+        const tipPosMachineCoord = lastPt.pos.clone();
+        tipPosMachineCoord.applyAxisAngle(new THREE.Vector3(0, 0, 1), this.workCRot);
+        tipPosMachineCoord.add(this.workOffset);
+
+        const offsetBaseToTip = new THREE.Vector3(-Math.sin(bAngle), 0, -Math.cos(bAngle)).multiplyScalar(this.toolLength);
+        tipPosMachineCoord.sub(offsetBaseToTip);
+
+        this.toolX = tipPosMachineCoord.x
+        this.toolY = tipPosMachineCoord.y;
+        this.toolZ = tipPosMachineCoord.z;
         this.updateVisTransforms();
 
         return true;
