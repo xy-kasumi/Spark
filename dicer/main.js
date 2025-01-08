@@ -248,14 +248,14 @@ const generateTool = (toolLength) => {
     const needleExtRadius = 1.5 / 2;
 
     const toolBase = new THREE.Mesh(
-        new THREE.CylinderGeometry(baseRadius, baseRadius, baseHeight, 32, 1),
-        new THREE.MeshPhysicalMaterial({ color: 0xe0e0e0, metalness: 0.2, roughness: 0.8 }));
+        new THREE.CylinderGeometry(baseRadius, baseRadius, baseHeight, 6, 1),
+        new THREE.MeshPhysicalMaterial({ color: 0xe0e0e0, metalness: 0.2, roughness: 0.8, wireframe: true }));
     toolBase.position.y = -baseHeight / 2;
     toolOrigin.add(toolBase);
 
     const needle = new THREE.Mesh(
         new THREE.CylinderGeometry(needleExtRadius, needleExtRadius, toolLength, 32, 1),
-        new THREE.MeshPhysicalMaterial({ color: 0xf0f0f0, metalness: 0.9, roughness: 0.3 }));
+        new THREE.MeshPhysicalMaterial({ color: 0xf0f0f0, metalness: 0.9, roughness: 0.3, wireframe: true }));
     needle.position.y = toolLength / 2;
 
     toolOrigin.add(needle);
@@ -327,6 +327,7 @@ class View3D {
 
         // machine geometries
         this.workOffset = new THREE.Vector3(20, 40, 20); // in machine coords
+        this.wireCenter = new THREE.Vector3(30, 15, 30);
 
         this.machineCoord = new THREE.Object3D();
         this.workCoord = new THREE.Object3D();
@@ -349,7 +350,7 @@ class View3D {
             machineVis.add(new THREE.Box3Helper(opBox, new THREE.Color(0x000000)));
 
             const wireBox = new THREE.Box3();
-            wireBox.setFromCenterAndSize(new THREE.Vector3(30, 15, 30), new THREE.Vector3(1, 20, 1));
+            wireBox.setFromCenterAndSize(this.wireCenter, new THREE.Vector3(1, 20, 1));
             machineVis.add(new THREE.Box3Helper(wireBox, new THREE.Color(0x000000)));
 
             const axesHelper = new THREE.AxesHelper(10);
@@ -715,6 +716,7 @@ class View3D {
             let distSinceRefresh = 0;
             let toolLength = this.toolLength;
             let toolIx = this.toolIx;
+            let prevPtTipPos = null;
             const sweepPath = [];
             while (true) {
                 sweepRemoved.set(currIx, currIy, passMaxZ, 255);
@@ -733,7 +735,6 @@ class View3D {
                     toolLength -= this.resMm; // = feed depth
                     distSinceRefresh = 0;
                     if (toolLength < 5) {
-                        console.log("tool magically renewed");
                         toolIx++;
                         toolLength = 25;
                     }
@@ -747,21 +748,33 @@ class View3D {
                 const upOk = upNeeded && upAccess;
                 const nextOk = nextNeeded && nextAccess;
 
+                const rotPerDist = Math.PI * 2 / 1.0;
+                let toolRotDelta = 0;
+                if (prevPtTipPos !== null) {
+                    const d = tipPos.distanceTo(prevPtTipPos);
+                    toolRotDelta = d * rotPerDist;
+                }
+
                 const pathPt = {
                     group: `sweep-${this.numSweeps}`,
                     type: "remove",
                     tipNormal: normal,
                     tipPos: tipPos,
+                    toolRotDelta: toolRotDelta,
                     axisValues: this.solveIk(tipPos, normal, toolLength),
                 };
 
                 if (isFirstInLine) {
                     sweepPath.push(pathPt);
+                    prevPtTipPos = tipPos;
+
                     isFirstInLine = false;
                 }
 
                 if (!nextOk && !upOk) {
                     sweepPath.push(pathPt);
+                    prevPtTipPos = tipPos;
+
                     break;
                 }
                 if (nextOk) {
@@ -769,6 +782,8 @@ class View3D {
                     currIx = nextIx;
                 } else {
                     sweepPath.push(pathPt);
+                    prevPtTipPos = tipPos;
+
                     isFirstInLine = true;
                     dirR = !dirR;
                     currIy++;
@@ -891,7 +906,7 @@ class View3D {
 
             if (pt.type === "remove") {
                 const vals = pt.axisValues;
-                gcode.push(`G1 X${vals.x} Y${vals.y} Z${vals.z} B${vals.b * 180 / Math.PI} C${vals.c * 180 / Math.PI}`);
+                gcode.push(`G1 X${vals.x} Y${vals.y} Z${vals.z} B${vals.b * 180 / Math.PI} C${vals.c * 180 / Math.PI} D${(pt.toolRotDelta * 180 / Math.PI).toFixed(2)}`);
             } else if (pt.type === "refresh") {
                 // TODO: do what??
                 gcode.push("; TODO refresh tool");
