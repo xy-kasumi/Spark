@@ -190,6 +190,65 @@ const generateTool = (toolLength) => {
     return toolOrigin;
 };
 
+// Parse single line of G-code.
+// [in] line string
+// [in] {x, y, z, a, b, c, gr, d} current values
+// returns: {dur: number, goal: {x, y, z, a, b, c, gr, d}} | null (if g code is empty e.g. comment or M-command)
+const parseGcode = (line, curr) => {
+    const ix = line.indexOf(";");
+    const activePart = ix >= 0 ? line.substring(0, ix) : line;
+    const tokens = activePart.split(" ").filter(t => t);
+    if (tokens.length === 0) {
+        return null;
+    }
+
+    const command = tokens[0];
+    if (command === "G0" || command === "G1") {
+        const axes = ["X", "Y", "Z", "A", "B", "C", "GW", "D"];
+
+        const goal = {};
+        for (let i = 1; i < tokens.length; i++) {
+            const token = tokens[i];
+            const axis = token.match(/^[A-Z]+/)[0];
+            const val = parseFloat(token.substring(axis.length));
+            if (!axes.includes(axis)) {
+                throw new Error(`unknown axis: ${axis}, in ${line}`);
+            }
+            goal[axis] = val;
+        }
+        axes.forEach(axis => {
+            if (goal[axis] === undefined) {
+                goal[axis] = curr[axis];
+            }
+        });
+        const dur = 1; // TODO: change by distance and G0 vs G1
+        return {dur, goal};
+    } else {
+        // TODO: handle properly
+        console.log(`unhandled command: ${command}`);
+        return null;
+    }
+};
+
+// Linearly interpolate between two values. Note interpolation happens independently for each axis.
+// [in] a {x, y, z, a, b, c, gr, d}
+// [in] b {x, y, z, a, b, c, gr, d}
+// [in] t number, 0 <= t <= 1
+// returns: {x, y, z, a, b, c, gr, d}
+const lerpVals = (a, b, t) => {
+    const lerp = (a, b, t) => a + (b - a) * t;
+    return {
+        X: lerp(a.X, b.X, t),
+        Y: lerp(a.Y, b.Y, t),
+        Z: lerp(a.Z, b.Z, t),
+        A: lerp(a.A, b.A, t),
+        B: lerp(a.B, b.B, t),
+        C: lerp(a.C, b.C, t),
+        GW: lerp(a.GW, b.GW, t),
+        D: lerp(a.D, b.D, t),
+    };
+};
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // 3D view
@@ -227,7 +286,7 @@ class View3D {
         this.scene.add(textMesh);
 
         const workStageBox = new THREE.Box3();
-        workStageBox.setFromCenterAndSize(new THREE.Vector3(0, 0, -10), new THREE.Vector3(20, 20, 10));
+        workStageBox.setFromCenterAndSize(new THREE.Vector3(0, 0, -5), new THREE.Vector3(20, 20, 10));
         this.workStageBase = new THREE.Object3D();
         this.workStageBase.position.copy(this.workOffset);
         this.workStageBase.add(new THREE.Box3Helper(workStageBox, new THREE.Color(0x000000)));
@@ -242,6 +301,24 @@ class View3D {
         this.workCRot = 0;
         this.toolARot = 0;
         this.toolBRot = 0;
+
+        const initialVals = {X: 0, Y: 0, Z: 0, A: 0, B: 0, C: 0, GW: 0, D: 0};
+        this.prevPt = initialVals;
+        this.nextPt = initialVals;
+        this.applyVals(initialVals);
+
+        this.speed = 0.02;
+        this.segmentDur = 0;
+        this.segmentT = 0;
+
+        this.valX = 0;
+        this.valY = 0;
+        this.valZ = 0;
+        this.valA = 0;
+        this.valB = 0;
+        this.valC = 0;
+        this.valGW = 0;
+        this.valD = 0;
 
         const stock = generateStock();
         this.workStageBase.add(stock);
@@ -278,9 +355,19 @@ class View3D {
         gui.add(this, "currentGcodeLine").disable().listen();
         gui.add(this, "executingGcode").disable().listen();
 
+        gui.add(this, "speed", 0, 1, 0.01);
         gui.add(this, "reset");
         gui.add(this, "run");
         gui.add(this, "pause");
+
+        gui.add(this, "valX").decimals(3).name("X").listen();
+        gui.add(this, "valY").decimals(3).name("Y").listen();
+        gui.add(this, "valZ").decimals(3).name("Z").listen();
+        gui.add(this, "valA").decimals(3).name("A").listen();
+        gui.add(this, "valB").decimals(3).name("B").listen();
+        gui.add(this, "valC").decimals(3).name("C").listen();
+        gui.add(this, "valGW").decimals(3).name("GW").listen();
+        gui.add(this, "valD").decimals(3).name("D").listen();
     }
 
     init() {
@@ -356,41 +443,46 @@ class View3D {
             return;
         }
 
-        const line = this.gcode[this.currentGcodeLine];
-        this.executingGcode = line;
-        this.currentGcodeLine++;
+        this.segmentT += this.speed;
+        if (this.segmentT >= this.segmentDur) {
+            // proceed to next segment
+            const line = this.gcode[this.currentGcodeLine];
+            this.executingGcode = line;
+            this.currentGcodeLine++;
 
-        const ix = line.indexOf(";");
-        const activePart = ix >= 0 ? line.substring(0, ix) : line;
-        const tokens = activePart.split(" ").filter(t => t);
-        if (tokens.length === 0) {
-            return;  // skip
-        }
+            const command = parseGcode(line, this.nextPt);
+            if (command === null) {
+                return; // let next step() handle it.
+            }
+            
+            this.prevPt = this.nextPt;
+            this.nextPt = command.goal;
+            
+            this.segmentDur = command.dur;
+            this.segmentT = 0;
 
-        const command = tokens[0];
-        if (command === "G0" || command === "G1") {
-            const targetSpec = {};
-            for (let i = 1; i < tokens.length; i++) {
-                const token = tokens[i];
-                const axis = token.match(/^[A-Z]+/)[0];
-                const val = parseFloat(token.substring(axis.length));
-                targetSpec[axis] = val;
-            }
-            console.log(targetSpec);
-            if (targetSpec.X !== undefined) {
-                this.tool.position.x = targetSpec.X;
-            }
-            if (targetSpec.Y !== undefined) {
-                this.tool.position.y = targetSpec.Y;
-            }
-            if (targetSpec.Z !== undefined) {
-                this.tool.position.z = targetSpec.Z;
-            }
-            if (targetSpec.B !== undefined) {
-                const bRot = targetSpec.B * Math.PI / 180;
-                this.tool.setRotationFromEuler(new THREE.Euler(0, bRot - Math.PI / 2, Math.PI / 2));
-            }
+            this.applyVals(this.prevPt);
+        } else {
+            // play interpolated value.
+            const currVal = lerpVals(this.prevPt, this.nextPt, this.segmentT / this.segmentDur);
+            this.applyVals(currVal);
         }
+    }
+
+    applyVals(vals) {
+        console.log("applyVals", vals);
+        this.tool.position.set(vals.X, vals.Y, vals.Z);
+        this.tool.setRotationFromEuler(new THREE.Euler(0, vals.B / 180 * Math.PI - Math.PI / 2, Math.PI / 2));
+        // TODO: GR, a, c, d
+
+        this.valX = vals.X;
+        this.valY = vals.Y;
+        this.valZ = vals.Z;
+        this.valA = vals.A;
+        this.valB = vals.B;
+        this.valC = vals.C;
+        this.valGW = vals.GW;
+        this.valD = vals.D;
     }
 
     onWindowResize() {
