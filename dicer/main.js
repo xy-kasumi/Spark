@@ -126,14 +126,14 @@ const createPathVis = (path) => {
     }
 
     const vs = [];
-    let prevTipPosM = path[0].tipPosM;
+    let prevTipPosW = path[0].tipPosW;
     for (let i = 1; i < path.length; i++) {
         const pt = path[i];
         if (pt.type === "remove-work") {
-            vs.push(prevTipPosM.x, prevTipPosM.y, prevTipPosM.z);
-            vs.push(pt.tipPosM.x, pt.tipPosM.y, pt.tipPosM.z);
+            vs.push(prevTipPosW.x, prevTipPosW.y, prevTipPosW.z);
+            vs.push(pt.tipPosW.x, pt.tipPosW.y, pt.tipPosW.z);
         }
-        prevTipPosM = pt.tipPosM;
+        prevTipPosW = pt.tipPosW;
     }
 
     const pathVis = new THREE.Object3D();
@@ -150,15 +150,40 @@ const createPathVis = (path) => {
     for (let i = 0; i < path.length; i++) {
         const pt = path[i];
         
-        if (pt.type !== "remove-work") {
+        if (pt.type === "move-in") {
             const sph = new THREE.Mesh(sphGeom, sphMat);
-            sph.position.copy(pt.tipPosM);
+            sph.position.copy(pt.tipPosW);
             pathVis.add(sph);
         }
     }
 
     return pathVis;
 };
+
+// Generates a rotation matrix such that Z+ axis will be formed into "z" vector.
+// [in] z THREE.Vector3
+// returns: THREE.Matrix4
+const createRotationWithZ = (z) => {
+    // orthogonalize, with given Z-basis.
+    const basisZ = z;
+    let basisY;
+    const b0 = new THREE.Vector3(1, 0, 0);
+    const b1 = new THREE.Vector3(0, 1, 0);
+    if (b0.clone().cross(basisZ).length() > 0.3) {
+        basisY = b0.clone().cross(basisZ).normalize();
+    } else {
+        basisY = b1.clone().cross(basisZ).normalize();
+    }
+    const basisX = basisY.clone().cross(basisZ).normalize();
+
+    return new THREE.Matrix4(
+        basisX.x, basisY.x, basisZ.x, 0,
+        basisX.y, basisY.y, basisZ.y, 0,
+        basisX.z, basisY.z, basisZ.z, 0,
+        0, 0, 0, 1,
+    );
+}
+
 
 // orange-teal-purple color palette for ABC axes.
 const axisColorA = new THREE.Color(0xe67e22);
@@ -247,41 +272,30 @@ const generateStock = () => {
     return stock;
 };
 
-
+// Generate tool geom, origin = tool tip. In Z+ direction, there will be tool base marker.
 // returns: THREE.Object3D
 const generateTool = (toolLength) => {
     const toolOrigin = new THREE.Object3D();
 
-    const baseRadius = 10;
-    const baseHeight = 10;
+    const toolRadius = 1.5 / 2;
+    const baseRadius = 5;
 
-    const needleExtRadius = 1.5 / 2;
+    // note: cylinder geom is Y direction and centered. Need to rotate and shift.
+
+    const tool = new THREE.Mesh(
+        new THREE.CylinderGeometry(toolRadius, toolRadius, toolLength, 32, 1),
+        new THREE.MeshPhysicalMaterial({ color: 0xf0f0f0, metalness: 0.9, roughness: 0.3, wireframe: true }));
+    tool.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+    tool.position.z = toolLength / 2;
 
     const toolBase = new THREE.Mesh(
-        new THREE.CylinderGeometry(baseRadius, baseRadius, baseHeight, 6, 1),
+        new THREE.CylinderGeometry(baseRadius, baseRadius, 0, 6, 1),
         new THREE.MeshPhysicalMaterial({ color: 0xe0e0e0, metalness: 0.2, roughness: 0.8, wireframe: true }));
-    toolBase.position.y = -baseHeight / 2;
+    toolBase.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+    toolBase.position.z = toolLength;
     toolOrigin.add(toolBase);
 
-    const needle = new THREE.Mesh(
-        new THREE.CylinderGeometry(needleExtRadius, needleExtRadius, toolLength, 32, 1),
-        new THREE.MeshPhysicalMaterial({ color: 0xf0f0f0, metalness: 0.9, roughness: 0.3, wireframe: true }));
-    needle.position.y = toolLength / 2;
-
-    toolOrigin.add(needle);
-    toolOrigin.setRotationFromEuler(new THREE.Euler(0, -Math.PI / 2, Math.PI / 2)); // 2nd elem: B rot -pi/2, 3rd elem: fixed
-    toolOrigin.position.x = toolLength + 10;
-
-    const aAxisHelper = createRotationAxisHelper(new THREE.Vector3(0, 1, 0), 2, axisColorA);
-    toolOrigin.add(aAxisHelper);
-
-    const bAxisHelper1 = createRotationAxisHelper(new THREE.Vector3(1, 0, 0), 5, axisColorB);
-    const bAxisHelper2 = createRotationAxisHelper(new THREE.Vector3(1, 0, 0), 5, axisColorB);
-    bAxisHelper1.position.set(1, 0, 0);
-    bAxisHelper2.position.set(-1, 0, 0);
-    toolOrigin.add(bAxisHelper1);
-    toolOrigin.add(bAxisHelper2);
-
+    toolOrigin.add(tool);
     return toolOrigin;
 };
 
@@ -329,7 +343,7 @@ const transformAABB = (min, max, mtx) => {
 
 
 /**
- * Scene is in mm unit. Right-handed, Z+ up.
+ * Scene is in mm unit. Right-handed, Z+ up. Work-coordinates.
  */
 class View3D {
     constructor() {
@@ -340,9 +354,7 @@ class View3D {
         this.wireCenter = new THREE.Vector3(30, 15, 30);
         this.stockCenter = new THREE.Vector3(10, 10, 10);
 
-        this.machineCoord = new THREE.Object3D();
         this.workCoord = new THREE.Object3D();
-        this.scene.add(this.machineCoord);
         this.scene.add(this.workCoord);
 
         // work-coords
@@ -353,35 +365,7 @@ class View3D {
 
         // machine-coords
         this.tool = generateTool();
-        this.machineCoord.add(this.tool);
-
-        const machineVis = new THREE.Object3D();
-        {
-            const opBox = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3(70, 100, 60));
-            machineVis.add(new THREE.Box3Helper(opBox, new THREE.Color(0x000000)));
-
-            const wireBox = new THREE.Box3();
-            wireBox.setFromCenterAndSize(this.wireCenter, new THREE.Vector3(1, 20, 1));
-            machineVis.add(new THREE.Box3Helper(wireBox, new THREE.Color(0x000000)));
-
-            const axesHelper = new THREE.AxesHelper(10);
-            machineVis.add(axesHelper);
-            axesHelper.position.set(0.1, 0.1, 0.1); // increase visibility by slight offset
-
-            const textGeom = new TextGeometry("machine", {
-                font,
-                size: 2,
-                depth: 0.1,
-            });
-            const textMesh = new THREE.Mesh(textGeom, new THREE.MeshBasicMaterial({ color: "#222222" }));
-            machineVis.add(textMesh);
-        }
-        this.machineVis = machineVis;
-        this.machineCoord.add(machineVis);
-
-        const cAxisHelper = createRotationAxisHelper(new THREE.Vector3(0, 0, 1), 2, axisColorC);
-        cAxisHelper.position.copy(this.workOffset);
-        this.machineVis.add(cAxisHelper);
+        this.workCoord.add(this.tool);
 
         // configuration
         this.ewrMax = 0.3;
@@ -390,11 +374,6 @@ class View3D {
         this.toolLength = 25;
         this.toolDiameter = 1.5;
         this.workCRot = 0;
-        this.toolARot = 0;
-        this.toolBRot = 0;
-        this.toolX = 15;
-        this.toolY = 15;
-        this.toolZ = 50;
 
         const stock = generateStock();
         this.objStock = stock;
@@ -408,8 +387,7 @@ class View3D {
         this.showTarget = false;
         this.targetSurf = null;
 
-        this.viewMode = "machine"; // "work";
-        this.updateVisTransforms();
+        this.updateVisTransforms(new THREE.Vector3(-15, -15, 5), new THREE.Vector3(0, 0, 1), this.toolLength);
         this.numSweeps = 0;
         this.showingSweep = 0;
         this.removedVol = 0;
@@ -422,28 +400,14 @@ class View3D {
         this.initGui();
     }
 
-    // Update positions of objects, assuming world coords is what is set by this.viewMode.
-    updateVisTransforms() {
+    updateVisTransforms(tipPos, tipNormal, toolLength) {
         // regen tool; TODO: more efficient way
-        this.machineCoord.remove(this.tool);
-        this.tool = generateTool(this.toolLength);
-        this.machineCoord.add(this.tool);
+        this.workCoord.remove(this.tool);
+        this.tool = generateTool(toolLength);
+        this.workCoord.add(this.tool);
 
-        this.machineVis.visible = this.viewMode === "machine";
-        this.tool.visible = this.viewMode === "machine";
-
-        this.tool.position.set(this.toolX, this.toolY, this.toolZ);
-        this.tool.setRotationFromEuler(new THREE.Euler(0, this.toolBRot - Math.PI / 2, Math.PI / 2)); // TODO: duplicate with init code
-
-        if (this.viewMode === "machine") {
-            this.machineCoord.position.copy(this.workOffset.clone().multiplyScalar(-1));
-            
-            this.workCoord.position.set(0, 0, 0);
-            this.workCoord.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), this.workCRot); //  set(0, 0, 0, 1); // TODO: this must be affected by machineCoord.
-        } else {
-            this.workCoord.position.set(0, 0, 0);
-            this.workCoord.quaternion.set(0, 0, 0, 1);
-        }
+        this.tool.position.copy(tipPos);
+        this.tool.setRotationFromMatrix(createRotationWithZ(tipNormal));
     }
 
     initGui() {
@@ -470,7 +434,6 @@ class View3D {
         gui.add(this, "removedVol").name("Removed Vol (㎣)").disable().listen();
         gui.add(this, "toolIx").disable().listen();
         // gui.add(this, "showingSweep", 0, this.numSweeps).step(1).listen();
-        gui.add(this, "viewMode", ["work", "machine"]).onChange(_ => this.updateVisTransforms());
         gui.add(this, "showTarget")
             .onChange(_ => this.setVisVisibility("targ-vg", this.showTarget))
             .listen();
@@ -490,7 +453,8 @@ class View3D {
             .onChange(_ => this.setVisVisibility("plan-path-vg", this.showPlanPath))
             .listen();
         
-        gui.add(this, "dumpGcode");
+        gui.add(this, "copyGcode");
+        gui.add(this, "sendGcodeToSim");
     
         this.loadStl(this.model);
     }
@@ -641,36 +605,11 @@ class View3D {
         // [in] normal THREE.Vector3, world coords. Local Z+ will point normal.
         // returns: VoxelGrid, empty voxel grid
         const initReprojGrid = (normal, res) => {
-            // orthogonalize, with given Z-basis.
-            const basisZ = normal;
-            let basisY;
-            const b0 = new THREE.Vector3(1, 0, 0);
-            const b1 = new THREE.Vector3(0, 1, 0);
-            if (b0.clone().cross(basisZ).length() > 0.3) {
-                basisY = b0.clone().cross(basisZ).normalize();
-            } else {
-                basisY = b1.clone().cross(basisZ).normalize();
-            }
-            const basisX = basisY.clone().cross(basisZ).normalize();
-
-            // init new grid
-            const lToWMat3 = new THREE.Matrix3(
-                basisX.x, basisY.x, basisZ.x,
-                basisX.y, basisY.y, basisZ.y,
-                basisX.z, basisY.z, basisZ.z,
-            );
-
-            const lToWQ = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().setFromMatrix3(lToWMat3));
+            const lToWMtx = createRotationWithZ(normal);
             const workMin = this.workVg.ofs.clone();
             const workMax = new THREE.Vector3(this.workVg.numX, this.workVg.numY, this.workVg.numZ).multiplyScalar(this.workVg.res).add(workMin);
-            
-            const wToLMtx = new THREE.Matrix4().compose(
-                new THREE.Vector3(0, 0, 0),
-                lToWQ.clone().invert(),
-                new THREE.Vector3(1, 1, 1));
-            const aabbLoc = transformAABB(workMin, workMax, wToLMtx);
-
-            return initVG(aabbLoc, res, lToWQ, false, 5);
+            const aabbLoc = transformAABB(workMin, workMax, lToWMtx.clone().invert());
+            return initVG(aabbLoc, res, new THREE.Quaternion().setFromRotationMatrix(lToWMtx), false, 5);
         };
 
         // [in] normal THREE.Vector3, world coords.
@@ -736,10 +675,11 @@ class View3D {
 
             const withAxisValue = (pt) => {
                 const isPosW = pt.tipPosW !== undefined;
-                const ikResult = this.solveIk(isPosW ? pt.tipPosW : pt.tipPosM, pt.tipNormalM, toolLength, isPosW);
+                const ikResult = this.solveIk(isPosW ? pt.tipPosW : pt.tipPosM, pt.tipNormalW, toolLength, isPosW);
                 return {
                     ...pt,
                     tipPosM: ikResult.tipPosM,
+                    tipPosW: ikResult.tipPosW,
                     axisValues: ikResult.vals,
                 };
             };
@@ -756,46 +696,46 @@ class View3D {
                     const motionBeginOffset = new THREE.Vector3(-5, 0, 0);
                     const motionEndOffset = new THREE.Vector3(5, 0, 0);
 
-                    // TODO: proper tool length
-                    sweepPath.push(withAxisValue({
-                        sweep: this.numSweeps,
-                        group: `refresh`,
-                        type: "move",
-                        tipPosM: this.wireCenter.clone().add(motionBeginOffset),
-                        tipNormalM: new THREE.Vector3(0, 0, 1),
-                    }));
-
-                    sweepPath.push(withAxisValue({
-                        sweep: this.numSweeps,
-                        group: `refresh`,
-                        type: "remove-tool",
-                        toolRotDelta: Math.PI * 2,
-                        grindDelta: 10,
-                        tipPosM: this.wireCenter.clone().add(motionEndOffset),
-                        tipNormalM: new THREE.Vector3(0, 0, 1),
-                    }));
-
-                    // TODO: gen return path
-
-                    toolLength -= this.resMm; // = feed depth
-                    distSinceRefresh = 0;
-                    if (toolLength < 5) {
+                    const lengthAfterRefresh = toolLength - this.resMm; // resMm == feed depth
+                    if (lengthAfterRefresh < 5) {
+                        // cannot refresh; get new tool
                         toolIx++;
                         toolLength = 25;
+                    } else {
+                        // refresh by grinding
 
-                        // TODO: gen disengage path
-                        /*
+                        // TODO: proper tool length
                         sweepPath.push(withAxisValue({
                             sweep: this.numSweeps,
-                            group: "tool-swap",
-                            type: "move",
-                            tipPos: this.stockCenter.clone(),
-                            tipNormal: new THREE.Vector3(0, 0, 1),
+                            group: `refresh`,
+                            type: "move-out",
+                            tipPosM: this.wireCenter.clone().add(motionBeginOffset),
+                            tipNormalW: new THREE.Vector3(0, 0, 1),
                         }));
-                        */
 
-                        // TODO: gen return path
+                        sweepPath.push(withAxisValue({
+                            sweep: this.numSweeps,
+                            group: `refresh`,
+                            type: "remove-tool",
+                            toolRotDelta: Math.PI * 2,
+                            grindDelta: 10,
+                            tipPosM: this.wireCenter.clone().add(motionEndOffset),
+                            tipNormalW: new THREE.Vector3(0, 0, 1),
+                        }));
+
+                        toolLength = lengthAfterRefresh;
                     }
+
+                    // TODO: gen proper return path
+                    sweepPath.push(withAxisValue({
+                        sweep: this.numSweeps,
+                        group: `return`,
+                        type: "move-in",
+                        tipNormalW: normal,
+                        tipPosW: tipPos,
+                    }));
+
+                    distSinceRefresh = 0;
                 }
 
                 const nextIx = currIx + (dirR ? 1 : -1);
@@ -817,7 +757,7 @@ class View3D {
                     sweep: this.numSweeps,
                     group: `sweep-${this.numSweeps}`,
                     type: "remove-work",
-                    tipNormalM: normal,
+                    tipNormalW: normal,
                     tipPosW: tipPos,
                     toolRotDelta: toolRotDelta,
                 });
@@ -897,13 +837,7 @@ class View3D {
         this.updateVis("work-vg", [createVgVis(this.workVg, "work-vg")], this.showWork);
 
         const lastPt = this.planPath[this.planPath.length - 1];
-        this.toolX = lastPt.axisValues.x;
-        this.toolY = lastPt.axisValues.y;
-        this.toolZ = lastPt.axisValues.z;
-        this.toolBRot = lastPt.axisValues.b;
-        this.workCRot = lastPt.axisValues.c;
-
-        this.updateVisTransforms();
+        this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
 
         return true;
     }
@@ -911,10 +845,10 @@ class View3D {
     // Computes tool base & work table pos from tip target.
     //
     // [in] tipPos tip position in work coordinates
-    // [in] tipNormalM tip normal in machine coordinates (+ is pointing towards base = work surface normal)
+    // [in] tipNormalW tip normal in machine coordinates (+ is pointing towards base = work surface normal)
     // [in] isPosW true: tipPos is in work coordinates, false: tipPos is in machine coordinates
     // [out] {vals: {x, y, z, b, c} machine instructions for moving work table & tool base, tipPosM: THREE.Vector3 tip position in machine coordinates}
-    solveIk(tipPos, tipNormalM, toolLength, isPosW) {
+    solveIk(tipPos, tipNormalW, toolLength, isPosW) {
         // Order of determination ("IK")
         // 1. Determine B,C axis
         // 2. Determine X,Y,Z axis
@@ -923,7 +857,7 @@ class View3D {
 
         const EPS_ANGLE = 1e-3 / 180 * Math.PI; // 1/1000 degree
 
-        const n = tipNormalM.clone();
+        const n = tipNormalW.clone();
         if (n.z < 0) {
             console.error("Impossible tool normal; path will be invalid", n);
         }
@@ -939,9 +873,13 @@ class View3D {
         }
         
         const tipPosM = tipPos.clone();
+        const tipPosW = tipPos.clone();
         if (isPosW) {
             tipPosM.applyAxisAngle(new THREE.Vector3(0, 0, 1), cAngle);
             tipPosM.add(this.workOffset);
+        } else {
+            tipPosW.sub(this.workOffset);
+            tipPosW.applyAxisAngle(new THREE.Vector3(0, 0, 1), -cAngle);
         }
 
         const offsetBaseToTip = new THREE.Vector3(-Math.sin(bAngle), 0, -Math.cos(bAngle)).multiplyScalar(toolLength);
@@ -956,10 +894,21 @@ class View3D {
                 c: cAngle,
             },
             tipPosM: tipPosM,
+            tipPosW: tipPosW,
         };
     }
 
-    dumpGcode() {
+    copyGcode() {
+        const prog = this.generateGcode();
+        navigator.clipboard.writeText(prog);
+    }
+
+    sendGcodeToSim() {
+        const prog = this.generateGcode();
+        new BroadcastChannel("gcode").postMessage(prog);
+    }
+
+    generateGcode() {
         let prevSweep = null;
         let prevType = null;
         let prevX = null;
@@ -993,7 +942,7 @@ class View3D {
                     lines.push(`M4 GV-100`);
                 }
                 gcode.push("G1");
-            } else if (pt.type === "move") {
+            } else if (pt.type === "move-out" || pt.type === "move-in") {
                 if (prevType !== pt.type) {
                     lines.push(`M5`);
                 }
@@ -1037,12 +986,12 @@ class View3D {
         lines.push(`; end`);
         lines.push(`M103`);
 
-        console.log(lines.join("\n"));
+        lines.push("");
+        return lines.join("\n");
     }
 
-    // isWorkCoord: true: work coordinates, false: machine coordinates
-    updateVis(group, vs, visible = true, isWorkCoord = true) {
-        const parent = isWorkCoord ? this.workCoord : this.machineCoord;
+    updateVis(group, vs, visible = true) {
+        const parent = this.workCoord;
         if (this.visGroups[group]) {
             this.visGroups[group].forEach(v => parent.remove(v));
         }

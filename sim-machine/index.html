@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Spark machine simulator</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body {
+            margin: 0
+        }
+
+        .lil-gui .gui-stats {
+            line-height: var(--widget-height);
+            padding: var(--padding);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="container"></div>
+    <script type="importmap">
+		{
+			"imports": {
+				"three": "./three.module.min.js",
+				"three/addons/": "./three-addons/"
+			}
+		}
+	</script>
+    <script type="module" src="main.js"></script>
+</body>
+
+</html>
