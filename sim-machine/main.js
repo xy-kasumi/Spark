@@ -153,7 +153,7 @@ const generateStock = () => {
     return stock;
 };
 
-
+// Generate tool visualization with tool base origin = origin. tool is pointing towards Z-.
 // returns: THREE.Object3D
 const generateTool = (toolLength) => {
     const toolOrigin = new THREE.Object3D();
@@ -161,29 +161,31 @@ const generateTool = (toolLength) => {
     const baseRadius = 10;
     const baseHeight = 10;
 
-    const needleExtRadius = 1.5 / 2;
+    const toolRadius = 1.5 / 2;
 
-    const toolBase = new THREE.Mesh(
+    // note: cylinder geom is Y direction and centered. Need to rotate and shift.
+
+    const base = new THREE.Mesh(
         new THREE.CylinderGeometry(baseRadius, baseRadius, baseHeight, 6, 1),
         new THREE.MeshPhysicalMaterial({ color: 0xe0e0e0, metalness: 0.2, roughness: 0.8, wireframe: true }));
-    toolBase.position.y = -baseHeight / 2;
-    toolOrigin.add(toolBase);
+    base.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+    base.position.z = baseHeight / 2;
+    toolOrigin.add(base);
 
-    const needle = new THREE.Mesh(
-        new THREE.CylinderGeometry(needleExtRadius, needleExtRadius, toolLength, 32, 1),
+    const tool = new THREE.Mesh(
+        new THREE.CylinderGeometry(toolRadius, toolRadius, toolLength, 32, 1),
         new THREE.MeshPhysicalMaterial({ color: 0xf0f0f0, metalness: 0.9, roughness: 0.3, wireframe: true }));
-    needle.position.y = toolLength / 2;
+    tool.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+    tool.position.z = -toolLength / 2;
+    toolOrigin.add(tool);
 
-    toolOrigin.add(needle);
-    toolOrigin.setRotationFromEuler(new THREE.Euler(0, -Math.PI / 2, Math.PI / 2)); // 2nd elem: B rot -pi/2, 3rd elem: fixed
-
-    const aAxisHelper = createRotationAxisHelper(new THREE.Vector3(0, 1, 0), 2, axisColorA);
+    const aAxisHelper = createRotationAxisHelper(new THREE.Vector3(0, 0, -1), 2, axisColorA); // TODO: is this polarity correct?
     toolOrigin.add(aAxisHelper);
 
-    const bAxisHelper1 = createRotationAxisHelper(new THREE.Vector3(1, 0, 0), 5, axisColorB);
-    const bAxisHelper2 = createRotationAxisHelper(new THREE.Vector3(1, 0, 0), 5, axisColorB);
-    bAxisHelper1.position.set(1, 0, 0);
-    bAxisHelper2.position.set(-1, 0, 0);
+    const bAxisHelper1 = createRotationAxisHelper(new THREE.Vector3(0, 1, 0), 5, axisColorB);
+    const bAxisHelper2 = createRotationAxisHelper(new THREE.Vector3(0, 1, 0), 5, axisColorB);
+    bAxisHelper1.position.set(0, 1, 0);
+    bAxisHelper2.position.set(0, -1, 0);
     toolOrigin.add(bAxisHelper1);
     toolOrigin.add(bAxisHelper2);
 
@@ -192,8 +194,8 @@ const generateTool = (toolLength) => {
 
 // Parse single line of G-code.
 // [in] line string
-// [in] {x, y, z, a, b, c, gr, d} current values
-// returns: {dur: number, goal: {x, y, z, a, b, c, gr, d}} | null (if g code is empty e.g. comment or M-command)
+// [in] {X, Y, Z, A, B, C, GW_ABS} current values
+// returns: {dur: number, goal: {X, Y, Z, A, B, C, GW_ABS}} | null (if g code is empty e.g. comment or M-command)
 const parseGcode = (line, curr) => {
     const ix = line.indexOf(";");
     const activePart = ix >= 0 ? line.substring(0, ix) : line;
@@ -205,8 +207,9 @@ const parseGcode = (line, curr) => {
     const command = tokens[0];
     if (command === "G0" || command === "G1") {
         const axes = ["X", "Y", "Z", "A", "B", "C", "GW", "D"];
+        const absAxes = ["X", "Y", "Z", "B", "C"];
 
-        const goal = {};
+        const rawGoal = {};
         for (let i = 1; i < tokens.length; i++) {
             const token = tokens[i];
             const axis = token.match(/^[A-Z]+/)[0];
@@ -214,13 +217,26 @@ const parseGcode = (line, curr) => {
             if (!axes.includes(axis)) {
                 throw new Error(`unknown axis: ${axis}, in ${line}`);
             }
-            goal[axis] = val;
-        }
-        axes.forEach(axis => {
-            if (goal[axis] === undefined) {
-                goal[axis] = curr[axis];
+            if (rawGoal[axis] !== undefined) {
+                throw new Error(`duplicate axis: ${axis}, in ${line}`);
             }
+            rawGoal[axis] = val;
+        }
+        if (rawGoal.A !== undefined && rawGoal.D !== undefined) {
+            throw new Error(`A and D cannot be set at the same time, in ${line}`);
+        }
+
+        const goal = {};
+        absAxes.forEach(axis => {
+            goal[axis] = rawGoal[axis] === undefined ? curr[axis] : rawGoal[axis];
         });
+        if (rawGoal.A !== undefined) {
+            goal.A = rawGoal.A;
+        } else {
+            goal.A = curr.A + (rawGoal.D || 0);
+        }
+        goal.GW_ABS = curr.GW_ABS + (rawGoal.GW || 0);
+
         const dur = 1; // TODO: change by distance and G0 vs G1
         return {dur, goal};
     } else {
@@ -231,10 +247,10 @@ const parseGcode = (line, curr) => {
 };
 
 // Linearly interpolate between two values. Note interpolation happens independently for each axis.
-// [in] a {x, y, z, a, b, c, gr, d}
-// [in] b {x, y, z, a, b, c, gr, d}
+// [in] a {X, Y, Z, A, B, C, GW_ABS}
+// [in] b {X, Y, Z, A, B, C, GW_ABS}
 // [in] t number, 0 <= t <= 1
-// returns: {x, y, z, a, b, c, gr, d}
+// returns: {X, Y, Z, A, B, C, GW_ABS}
 const lerpVals = (a, b, t) => {
     const lerp = (a, b, t) => a + (b - a) * t;
     return {
@@ -244,8 +260,7 @@ const lerpVals = (a, b, t) => {
         A: lerp(a.A, b.A, t),
         B: lerp(a.B, b.B, t),
         C: lerp(a.C, b.C, t),
-        GW: lerp(a.GW, b.GW, t),
-        D: lerp(a.D, b.D, t),
+        GW_ABS: lerp(a.GW_ABS, b.GW_ABS, t),
     };
 };
 
@@ -302,7 +317,7 @@ class View3D {
         this.toolARot = 0;
         this.toolBRot = 0;
 
-        const initialVals = {X: 0, Y: 0, Z: 0, A: 0, B: 0, C: 0, GW: 0, D: 0};
+        const initialVals = {X: 0, Y: 0, Z: 0, A: 0, B: 0, C: 0, GW_ABS: 0};
         this.prevPt = initialVals;
         this.nextPt = initialVals;
         this.applyVals(initialVals);
@@ -366,8 +381,7 @@ class View3D {
         gui.add(this, "valA").decimals(3).name("A").listen();
         gui.add(this, "valB").decimals(3).name("B").listen();
         gui.add(this, "valC").decimals(3).name("C").listen();
-        gui.add(this, "valGW").decimals(3).name("GW").listen();
-        gui.add(this, "valD").decimals(3).name("D").listen();
+        gui.add(this, "valGWAbs").decimals(3).name("GW(abs)").listen();
     }
 
     init() {
@@ -470,10 +484,12 @@ class View3D {
     }
 
     applyVals(vals) {
-        console.log("applyVals", vals);
         this.tool.position.set(vals.X, vals.Y, vals.Z);
-        this.tool.setRotationFromEuler(new THREE.Euler(0, vals.B / 180 * Math.PI - Math.PI / 2, Math.PI / 2));
-        // TODO: GR, a, c, d
+        this.tool.setRotationFromEuler(new THREE.Euler(0, vals.B / 180 * Math.PI, vals.A / 180 * Math.PI));
+
+        this.workStageBase.setRotationFromAxisAngle(new THREE.Vector3(0, 0, 1), vals.C / 180 * Math.PI);
+        
+        // TODO: GW
 
         this.valX = vals.X;
         this.valY = vals.Y;
@@ -481,8 +497,7 @@ class View3D {
         this.valA = vals.A;
         this.valB = vals.B;
         this.valC = vals.C;
-        this.valGW = vals.GW;
-        this.valD = vals.D;
+        this.valGWAbs = vals.GW_ABS;
     }
 
     onWindowResize() {
