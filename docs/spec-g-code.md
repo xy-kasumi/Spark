@@ -21,14 +21,18 @@ However, it does not "remember" how many rotations it has done.
 A axis only remebers phase of rotation, and it must be 0~359.999.
 
 Example 1:
-* G1 X50 D3600  ; rotate tool 10 turns while moving to X=50.
-* G1 A0 ; no rotation at all (because current absolute rotation is 0)
+```
+G1 X50 D3600  ; rotate tool 10 turns while moving to X=50.
+G1 A0 ; no rotation at all (because current absolute rotation is 0)
+```
 
 Also, A-axis takes shortest direction.
 
 Example 2:
-* G1 A0
-* G1 A350 ; rotates -10 degree (not 350 degree)
+```
+G1 A0
+G1 A350 ; rotates -10 degree (not 350 degree)
+```
 
 If you need to ensure direction of rotation and/or number of turns, you need to use D-axis.
 
