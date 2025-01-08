@@ -116,15 +116,24 @@ const createVgVis = (vg, label = "") => {
 };
 
 
-// [in] array of THREE.Vector3, path
+// Visualize tool tip path in machine coordinates.
+//
+// [in] array of THREE.Vector3, path segments
 // returns: THREE.Object3D
 const createPathVis = (path) => {
+    if (path.length === 0) {
+        return new THREE.Object3D();
+    }
+
     const vs = [];
-    for (let i = 0; i < path.length; i++) {
+    let prevTipPosM = path[0].tipPosM;
+    for (let i = 1; i < path.length; i++) {
         const pt = path[i];
-        if (pt.type === "remove") {
-            vs.push(pt.tipPos.x, pt.tipPos.y, pt.tipPos.z);
+        if (pt.type === "remove-work") {
+            vs.push(prevTipPosM.x, prevTipPosM.y, prevTipPosM.z);
+            vs.push(pt.tipPosM.x, pt.tipPosM.y, pt.tipPosM.z);
         }
+        prevTipPosM = pt.tipPosM;
     }
 
     const pathVis = new THREE.Object3D();
@@ -133,16 +142,17 @@ const createPathVis = (path) => {
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vs), 3));
     const mat = new THREE.LineBasicMaterial({ color: 0x808080 });
-    pathVis.add(new THREE.Line(geom, mat));
+    pathVis.add(new THREE.LineSegments(geom, mat));
 
     // add refresh path vis
     const sphGeom = new THREE.SphereGeometry(0.15);
     const sphMat = new THREE.MeshBasicMaterial({ color: 0x606060 });
     for (let i = 0; i < path.length; i++) {
         const pt = path[i];
-        if (pt.type === "refresh") {
+        
+        if (pt.type !== "remove-work") {
             const sph = new THREE.Mesh(sphGeom, sphMat);
-            sph.position.copy(pt.tipPos);
+            sph.position.copy(pt.tipPosM);
             pathVis.add(sph);
         }
     }
@@ -328,6 +338,7 @@ class View3D {
         // machine geometries
         this.workOffset = new THREE.Vector3(20, 40, 20); // in machine coords
         this.wireCenter = new THREE.Vector3(30, 15, 30);
+        this.stockCenter = new THREE.Vector3(10, 10, 10);
 
         this.machineCoord = new THREE.Object3D();
         this.workCoord = new THREE.Object3D();
@@ -588,6 +599,10 @@ class View3D {
         }
     }
 
+    // Pre/post-condition of sweep:
+    // * tool is not touching work nor grinder
+    // * de-energized
+
     // returns: true if sweep is committed, false if not
     genNextSweep() {
         if (this.workVg === undefined) {
@@ -718,25 +733,68 @@ class View3D {
             let toolIx = this.toolIx;
             let prevPtTipPos = null;
             const sweepPath = [];
+
+            const withAxisValue = (pt) => {
+                const isPosW = pt.tipPosW !== undefined;
+                const ikResult = this.solveIk(isPosW ? pt.tipPosW : pt.tipPosM, pt.tipNormalM, toolLength, isPosW);
+                return {
+                    ...pt,
+                    tipPosM: ikResult.tipPosM,
+                    axisValues: ikResult.vals,
+                };
+            };
+
             while (true) {
                 sweepRemoved.set(currIx, currIy, passMaxZ, 255);
                 const tipPos = sweepTarget.centerOf(currIx, currIy, passMaxZ);
                 distSinceRefresh += this.resMm;
 
                 if (distSinceRefresh > tipRefreshDist) {
-                    // TODO: gen refresh path somewhere
-                    // TODO: gen safe return path (revert to previous row)
-                    sweepPath.push({
-                        group: `sweep-${this.numSweeps}`,
-                        type: "refresh",
-                        tipPos: tipPos,
-                    });
+                    // TODO: gen disengage path
+
+                    // gen refresh
+                    const motionBeginOffset = new THREE.Vector3(-5, 0, 0);
+                    const motionEndOffset = new THREE.Vector3(5, 0, 0);
+
+                    // TODO: proper tool length
+                    sweepPath.push(withAxisValue({
+                        sweep: this.numSweeps,
+                        group: `refresh`,
+                        type: "move",
+                        tipPosM: this.wireCenter.clone().add(motionBeginOffset),
+                        tipNormalM: new THREE.Vector3(0, 0, 1),
+                    }));
+
+                    sweepPath.push(withAxisValue({
+                        sweep: this.numSweeps,
+                        group: `refresh`,
+                        type: "remove-tool",
+                        toolRotDelta: Math.PI * 2,
+                        grindDelta: 10,
+                        tipPosM: this.wireCenter.clone().add(motionEndOffset),
+                        tipNormalM: new THREE.Vector3(0, 0, 1),
+                    }));
+
+                    // TODO: gen return path
 
                     toolLength -= this.resMm; // = feed depth
                     distSinceRefresh = 0;
                     if (toolLength < 5) {
                         toolIx++;
                         toolLength = 25;
+
+                        // TODO: gen disengage path
+                        /*
+                        sweepPath.push(withAxisValue({
+                            sweep: this.numSweeps,
+                            group: "tool-swap",
+                            type: "move",
+                            tipPos: this.stockCenter.clone(),
+                            tipNormal: new THREE.Vector3(0, 0, 1),
+                        }));
+                        */
+
+                        // TODO: gen return path
                     }
                 }
 
@@ -755,14 +813,14 @@ class View3D {
                     toolRotDelta = d * rotPerDist;
                 }
 
-                const pathPt = {
+                const pathPt = withAxisValue({
+                    sweep: this.numSweeps,
                     group: `sweep-${this.numSweeps}`,
-                    type: "remove",
-                    tipNormal: normal,
-                    tipPos: tipPos,
+                    type: "remove-work",
+                    tipNormalM: normal,
+                    tipPosW: tipPos,
                     toolRotDelta: toolRotDelta,
-                    axisValues: this.solveIk(tipPos, normal, toolLength),
-                };
+                });
 
                 if (isFirstInLine) {
                     sweepPath.push(pathPt);
@@ -835,7 +893,7 @@ class View3D {
         this.updateVis("sweep-slice-vg", [createVgVis(sweep.vis.target, "sweep-slice")], this.showSweepSlice);
         this.updateVis("sweep-removal-vg", [createVgVis(sweep.vis.removed, "sweep-removal")], this.showSweepRemoval);
 
-        this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
+        this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath, false);
         this.updateVis("work-vg", [createVgVis(this.workVg, "work-vg")], this.showWork);
 
         const lastPt = this.planPath[this.planPath.length - 1];
@@ -852,9 +910,11 @@ class View3D {
 
     // Computes tool base & work table pos from tip target.
     //
-    // [in] tipPos, tipNormal, world/machine coords
-    // [out] {x, y, z, b, c} machine instructions for moving work table & tool base.
-    solveIk(tipPos, tipNormal, toolLength) {
+    // [in] tipPos tip position in work coordinates
+    // [in] tipNormalM tip normal in machine coordinates (+ is pointing towards base = work surface normal)
+    // [in] isPosW true: tipPos is in work coordinates, false: tipPos is in machine coordinates
+    // [out] {vals: {x, y, z, b, c} machine instructions for moving work table & tool base, tipPosM: THREE.Vector3 tip position in machine coordinates}
+    solveIk(tipPos, tipNormalM, toolLength, isPosW) {
         // Order of determination ("IK")
         // 1. Determine B,C axis
         // 2. Determine X,Y,Z axis
@@ -863,7 +923,7 @@ class View3D {
 
         const EPS_ANGLE = 1e-3 / 180 * Math.PI; // 1/1000 degree
 
-        const n = tipNormal.clone();
+        const n = tipNormalM.clone();
         if (n.z < 0) {
             console.error("Impossible tool normal; path will be invalid", n);
         }
@@ -878,50 +938,116 @@ class View3D {
             cAngle = -Math.atan2(n.y, n.x);
         }
         
-        const tipPosMachineCoord = tipPos.clone();
-        tipPosMachineCoord.applyAxisAngle(new THREE.Vector3(0, 0, 1), cAngle);
-        tipPosMachineCoord.add(this.workOffset);
+        const tipPosM = tipPos.clone();
+        if (isPosW) {
+            tipPosM.applyAxisAngle(new THREE.Vector3(0, 0, 1), cAngle);
+            tipPosM.add(this.workOffset);
+        }
 
         const offsetBaseToTip = new THREE.Vector3(-Math.sin(bAngle), 0, -Math.cos(bAngle)).multiplyScalar(toolLength);
-        tipPosMachineCoord.sub(offsetBaseToTip);
+        const tipBasePosM = tipPosM.clone().sub(offsetBaseToTip);
 
         return {
-            x: tipPosMachineCoord.x,
-            y: tipPosMachineCoord.y,
-            z: tipPosMachineCoord.z,
-            b: bAngle,
-            c: cAngle,
+            vals: {
+                x: tipBasePosM.x,
+                y: tipBasePosM.y,
+                z: tipBasePosM.z,
+                b: bAngle,
+                c: cAngle,
+            },
+            tipPosM: tipPosM,
         };
     }
 
     dumpGcode() {
-        let prevGroup = null;
-        const gcode = [];
+        let prevSweep = null;
+        let prevType = null;
+        let prevX = null;
+        let prevY = null;
+        let prevZ = null;
+        let prevB = null;
+        let prevC = null;
+
+        const lines = [];
+
+        lines.push(`; init`);
+        lines.push(`G28`);
+        lines.push(`M100`);
+        lines.push(`M102`);
+
         for (let i = 0; i < this.planPath.length; i++) {
             const pt = this.planPath[i];
-            if (prevGroup !== pt.group) {
-                gcode.push(`; ${pt.group}`);
-                prevGroup = pt.group;
+            if (prevSweep !== pt.sweep) {
+                lines.push(`; sweep-${pt.sweep}`);
+                prevSweep = pt.sweep;
             }
 
-            if (pt.type === "remove") {
-                const vals = pt.axisValues;
-                gcode.push(`G1 X${vals.x} Y${vals.y} Z${vals.z} B${vals.b * 180 / Math.PI} C${vals.c * 180 / Math.PI} D${(pt.toolRotDelta * 180 / Math.PI).toFixed(2)}`);
-            } else if (pt.type === "refresh") {
-                // TODO: do what??
-                gcode.push("; TODO refresh tool");
+            let gcode = [];
+            if (pt.type === "remove-work") {
+                if (prevType !== pt.type) {
+                    lines.push(`M3 WV100`);
+                }
+                gcode.push("G1");
+            } else if (pt.type === "remove-tool") {
+                if (prevType !== pt.type) {
+                    lines.push(`M4 GV-100`);
+                }
+                gcode.push("G1");
+            } else if (pt.type === "move") {
+                if (prevType !== pt.type) {
+                    lines.push(`M5`);
+                }
+                gcode.push("G0");
+            } else {
+                console.error("unknown path segment type", pt.type);
             }
+            prevType = pt.type;
+
+            const vals = pt.axisValues;
+            if (prevX !== vals.x) {
+                gcode.push(`X${vals.x.toFixed(3)}`);
+                prevX = vals.x;
+            }
+            if (prevY !== vals.y) {
+                gcode.push(`Y${vals.y.toFixed(3)}`);
+                prevY = vals.y;
+            }
+            if (prevZ !== vals.z) {
+                gcode.push(`Z${vals.z.toFixed(3)}`);
+                prevZ = vals.z;
+            }
+            if (prevB !== vals.b) {
+                gcode.push(`B${(vals.b * 180 / Math.PI).toFixed(3)}`);
+                prevB = vals.b;
+            }
+            if (prevC !== vals.c) {
+                gcode.push(`C${(vals.c * 180 / Math.PI).toFixed(3)}`);
+                prevC = vals.c;
+            }
+            if (pt.toolRotDelta !== undefined) {
+                gcode.push(`D${(pt.toolRotDelta * 180 / Math.PI).toFixed(2)}`);
+            }
+            if (pt.grindDelta !== undefined) {
+                gcode.push(`GW${pt.grindDelta.toFixed(1)}`);
+            }
+
+            lines.push(gcode.join(" "));
         }
 
-        console.log(gcode.join("\n"));
+        lines.push(`; end`);
+        lines.push(`M103`);
+
+        console.log(lines.join("\n"));
     }
 
-    updateVis(group, vs, visible = true) {
+    // isWorkCoord: true: work coordinates, false: machine coordinates
+    updateVis(group, vs, visible = true, isWorkCoord = true) {
+        const parent = isWorkCoord ? this.workCoord : this.machineCoord;
         if (this.visGroups[group]) {
-            this.visGroups[group].forEach(v => this.workCoord.remove(v));
+            this.visGroups[group].forEach(v => parent.remove(v));
         }
         vs.forEach(v => {
-            this.workCoord.add(v);
+            parent.add(v);
             v.visible = visible;
         });
         this.visGroups[group] = vs;
