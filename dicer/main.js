@@ -274,10 +274,10 @@ const generateStock = () => {
 
 // Generate tool geom, origin = tool tip. In Z+ direction, there will be tool base marker.
 // returns: THREE.Object3D
-const generateTool = (toolLength) => {
+const generateTool = (toolLength, toolDiameter) => {
     const toolOrigin = new THREE.Object3D();
 
-    const toolRadius = 1.5 / 2;
+    const toolRadius = toolDiameter / 2;
     const baseRadius = 5;
 
     // note: cylinder geom is Y direction and centered. Need to rotate and shift.
@@ -350,6 +350,7 @@ class View3D {
         this.init();
 
         // machine geometries
+        this.toolDiameter = 1.5;
         this.workOffset = new THREE.Vector3(20, 40, 20); // in machine coords
         this.wireCenter = new THREE.Vector3(30, 15, 30);
         this.stockCenter = new THREE.Vector3(10, 10, 10);
@@ -364,7 +365,7 @@ class View3D {
         this.workCoord.add(gridHelperBottom);
 
         // machine-coords
-        this.tool = generateTool();
+        this.tool = generateTool(30, this.toolDiameter);
         this.workCoord.add(this.tool);
 
         // configuration
@@ -372,7 +373,6 @@ class View3D {
 
         // machine-state setup
         this.toolLength = 25;
-        this.toolDiameter = 1.5;
         this.workCRot = 0;
 
         const stock = generateStock();
@@ -403,7 +403,7 @@ class View3D {
     updateVisTransforms(tipPos, tipNormal, toolLength) {
         // regen tool; TODO: more efficient way
         this.workCoord.remove(this.tool);
-        this.tool = generateTool(toolLength);
+        this.tool = generateTool(toolLength, this.toolDiameter);
         this.workCoord.add(this.tool);
 
         this.tool.position.copy(tipPos);
@@ -627,7 +627,7 @@ class View3D {
             const sweepTarget = sweepBlocked.clone();
             const sweepRemoved = sweepBlocked.clone();
             resampleVG(sweepBlocked, this.workVg);
-            sweepBlocked.extendByRadiusXY(1.5 / 2);
+            sweepBlocked.extendByRadiusXY(this.toolDiameter / 2);
             sweepBlocked.scanZMaxDesc();
 
             resampleVG(sweepTarget, diffVg);
@@ -790,7 +790,7 @@ class View3D {
 
             const deltaWork = this.workVg.clone();
             deltaWork.fill(0);
-            sweepRemoved.extendByRadiusXY(1.5 / 2);
+            sweepRemoved.extendByRadiusXY(this.toolDiameter / 2);
             resampleVG(deltaWork, sweepRemoved);
 
             return {

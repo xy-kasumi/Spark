@@ -72,5 +72,5 @@ Unless de-energized (M5), none of them is safe to touch regardless of voltage va
 
 ## Reservation for future use
 
-`+#,_` are explicitly reserved for future use, and should not be used anywhere.
+Special characters like `+#,_()[]{}!"'` are explicitly reserved for future use, and should not be used anywhere.
 This especially applies to M-codes, where parameters are much more flexible than G-codes.
