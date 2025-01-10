@@ -350,7 +350,7 @@ class View3D {
         this.init();
 
         // machine geometries
-        this.toolDiameter = 1.5;
+        this.toolDiameter = 3;
         this.workOffset = new THREE.Vector3(20, 40, 20); // in machine coords
         this.wireCenter = new THREE.Vector3(30, 15, 30);
         this.stockCenter = new THREE.Vector3(10, 10, 10);
@@ -382,7 +382,7 @@ class View3D {
         this.showStockMesh = true;
         this.showTargetMesh = true;
 
-        this.resMm = 0.5;
+        this.resMm = 0.25;
         this.showWork = true;
         this.showTarget = false;
         this.targetSurf = null;
@@ -430,6 +430,7 @@ class View3D {
         gui.add(this, "initPlan");
         gui.add(this, "genNextSweep");
         gui.add(this, "genNextSweep10");
+        gui.add(this, "genAllSweeps");
         gui.add(this, "numSweeps").disable().listen();
         gui.add(this, "removedVol").name("Removed Vol (㎣)").disable().listen();
         gui.add(this, "toolIx").disable().listen();
@@ -563,10 +564,13 @@ class View3D {
         }
     }
 
+    genAllSweeps() {
+        this.genSweeps = true;
+    }
+
     // Pre/post-condition of sweep:
     // * tool is not touching work nor grinder
     // * de-energized
-
     // returns: true if sweep is committed, false if not
     genNextSweep() {
         if (this.workVg === undefined) {
@@ -621,7 +625,7 @@ class View3D {
         //   vis: {target: VG, blocked: VG}
         // } | null (if impossible)
         const genPlanarSweep = (normal) => {
-            const accesGridRes = this.resMm;
+            const accesGridRes = 0.7;
             
             const sweepBlocked = initReprojGrid(normal, accesGridRes);
             const sweepTarget = sweepBlocked.clone();
@@ -658,9 +662,9 @@ class View3D {
             }
 
             // in planar sweep, tool is eroded from the side.
-            const feedCrossSectionArea = this.resMm * this.resMm; // feed width x feed depth; feed must be < toolDiameter/2
-            const maxWidthLoss = this.resMm * 0.5;
-            const tipRefreshDist = (this.toolDiameter * Math.PI * maxWidthLoss * this.resMm / this.ewrMax) / feedCrossSectionArea;
+            const feedCrossSectionArea = accesGridRes * accesGridRes; // feed width x feed depth; feed must be < toolDiameter/2
+            const maxWidthLoss = accesGridRes * 0.5;
+            const tipRefreshDist = (this.toolDiameter * Math.PI * maxWidthLoss * accesGridRes / this.ewrMax) / feedCrossSectionArea;
             
             // generate zig-zag
             let isFirstInLine = true;
@@ -687,7 +691,7 @@ class View3D {
             while (true) {
                 sweepRemoved.set(currIx, currIy, passMaxZ, 255);
                 const tipPos = sweepTarget.centerOf(currIx, currIy, passMaxZ);
-                distSinceRefresh += this.resMm;
+                distSinceRefresh += accesGridRes;
 
                 if (distSinceRefresh > tipRefreshDist) {
                     // TODO: gen disengage path
@@ -696,7 +700,7 @@ class View3D {
                     const motionBeginOffset = new THREE.Vector3(-5, 0, 0);
                     const motionEndOffset = new THREE.Vector3(5, 0, 0);
 
-                    const lengthAfterRefresh = toolLength - this.resMm; // resMm == feed depth
+                    const lengthAfterRefresh = toolLength - accesGridRes; // accesGridRes == feed depth
                     if (lengthAfterRefresh < 5) {
                         // cannot refresh; get new tool
                         toolIx++;
@@ -1019,6 +1023,13 @@ class View3D {
     }
 
     animate() {
+        if (this.genSweeps) {
+            const res = this.genNextSweep();
+            if (!res) {
+                this.genSweeps = false; // done
+            }
+        }
+
         this.controls.update();
         this.renderer.render(this.scene, this.camera);
         this.stats.update();
