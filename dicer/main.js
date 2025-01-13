@@ -457,7 +457,8 @@ class TrackingVoxelGrid {
         return cnt * this.res * this.res * this.res;
     }
 
-    // Returns offset of the work in normal direction.
+    // Returns offset of the work in normal direction conservatively.
+    // Conservative means: "no-work" region never has work, despite presence of quantization error.
     //
     // [in] normal THREE.Vector3, work coords.
     // returns: number, offset. No work exists in + side of the plane. normal * offset is on the plane.
@@ -473,7 +474,8 @@ class TrackingVoxelGrid {
                 }
             }
         }
-        return offset;
+        const maxVoxelCenterOfs = this.res * Math.sqrt(3) * 0.5;
+        return offset + maxVoxelCenterOfs;
     }
 
     // Returns true if given semi-infinite cylinder is blocked by material.
@@ -680,23 +682,6 @@ class TrackingVoxelGrid {
     }
 }
 
-
-// Deprecated
-// Sample from ref into vg, using tri-state voxel.
-// [out] vg: VoxelGrid
-// [in] ref: VoxelGrid
-// returns: VoxelGrid vg
-const resampleVG = (vg, ref) => {
-    for (let iz = 0; iz < vg.numZ; iz++) {
-        for (let iy = 0; iy < vg.numY; iy++) {
-            for (let ix = 0; ix < vg.numX; ix++) {
-                const p = vg.centerOf(ix, iy, iz);
-                vg.set(ix, iy, iz, ref.getNearest(p));
-            }
-        }
-    }
-    return vg;
-};
 
 const isectLine = (p, q, z) => {
     const d = q.z - p.z;
@@ -1320,7 +1305,7 @@ class View3D {
         this.showStockMesh = true;
         this.showTargetMesh = true;
 
-        this.resMm = 0.25;
+        this.resMm = 0.5; // 0.25;
         this.showWork = true;
         this.showTarget = false;
         this.targetSurf = null;
@@ -1532,20 +1517,8 @@ class View3D {
             return false;
         }
 
-        // Prepare new (rotated) VG for projecting the work.
-        // [in] normal THREE.Vector3, world coords. Local Z+ will point normal.
-        // returns: VoxelGrid, empty voxel grid
-        const initReprojGrid = (normal, res) => {
-            const lToWMtx = createRotationWithZ(normal);
-            const trMin = this.trvg.ofs.clone();
-            const trMax = new THREE.Vector3(this.trvg.numX, this.trvg.numY, this.trvg.numZ).multiplyScalar(this.trvg.res).add(trMin);
-            const aabbLoc = transformAABB(trMin, trMax, lToWMtx.clone().invert());
-            return initVG(aabbLoc, res, new THREE.Quaternion().setFromRotationMatrix(lToWMtx), 5);
-        };
-
         // Sweep hyperparams
-        const accessGridRes = 0.7;
-        const feedDepth = accessGridRes;
+        const feedDepth = 1; // TODO: reduce later. currently too big for easy debug.
 
         // Generate "planar sweep", directly below given plane.
         //
@@ -1604,66 +1577,13 @@ class View3D {
                     
                     vises.push(createCylinderVis(segBegin, normal, this.toolDiameter / 2, col));
 
-                    row.push({ accessOk, workOk, segBegin, segEnd });
+                    const segEndBot = segEnd.clone().sub(normal.clone().multiplyScalar(feedDepth));
+
+                    row.push({ accessOk, workOk, segBegin, segEndBot });
                 }
                 rows.push(row);
             }
             console.log("sweep-rows", rows);
-
-            // feedWidth = toolRadius
-            // maxWidthLoss = toolRadius / 2 (-eps)
-            // this config discards 25% of tool, even when EWR is perfectly calibrated.
-            //
-            // this will ensure if some work is surrounded by two rows, it will be removed completely.
-            // even if segment were isolated, it can be worked on, although some bits might remain due to tool wear.
-            //
-            // planar sweep scans rows, down to up (Y+).
-            // Each row consists of segments, and scanned from left to right (X+).
-            //
-            // to enter the segment, accessOk must be true.
-            // to work on the segment, workOk must be true.
-            //
-            // When tool wear exceeds maxWidthLoss, tool need to be refreshed.
-            //
-
-            /*
-            const sweepBlocked = initReprojGrid(normal, accessGridRes);
-            const sweepTarget = sweepBlocked.clone();
-            resampleVG(sweepBlocked, this.trvg.extractBlocked());
-            sweepBlocked.extendByRadiusXY(this.toolDiameter / 2);
-            sweepBlocked.scanZMaxDesc();
-
-            resampleVG(sweepTarget, diffVg);
-            const passMaxZ = sweepTarget.findMaxNonZeroZ();
-
-            // prepare 2D-scan at Z= passMaxZ.
-            sweepTarget.filterZ(passMaxZ);
-
-            let minScore = 1e100;
-            let minPt = null;
-            for (let iy = 0; iy < sweepTarget.numY; iy++) {
-                for (let ix = 0; ix < sweepTarget.numX; ix++) {
-                    const v = sweepTarget.get(ix, iy, passMaxZ);
-                    if (v > 0) {
-                        const score = ix + iy;
-                        if (score < minScore) {
-                            minScore = score;
-                            minPt = new THREE.Vector2(ix, iy);
-                        }
-                    }
-                }
-            }
-            if (minPt === null) {
-                return null;
-            }
-
-            // TODO: VERY FRAGILE
-            const access = sweepBlocked.get(minPt.x, minPt.y, passMaxZ + 1);  // check previous layer's access
-            const accessOk = access === 0;
-            if (!accessOk) {
-                return null;
-            }
-            */
 
             // in planar sweep, tool is eroded only from the side.
             const maxWidthLoss = feedWidth * 0.5;
@@ -1733,111 +1653,12 @@ class View3D {
                             group: `sweep-${this.numSweeps}`,
                             type: "remove-work",
                             tipNormalW: normal,
-                            tipPosW: seg.segEnd,
+                            tipPosW: seg.segEndBot,
                             toolRotDelta: 123, // TODO: Fix
                         });
 
                         pushRemoveMovement(pt);
                     }
-                }
-            }
-
-            while (false) {
-                // sweepRemoved.set(currIx, currIy, passMaxZ, 255);
-                const tipPos = sweepTarget.centerOf(currIx, currIy, passMaxZ);
-                distSinceRefresh += accessGridRes;
-
-                if (distSinceRefresh > tipRefreshDist) {
-                    // TODO: gen disengage path
-
-                    // gen refresh
-                    const motionBeginOffset = new THREE.Vector3(-5, 0, 0);
-                    const motionEndOffset = new THREE.Vector3(5, 0, 0);
-
-                    const lengthAfterRefresh = toolLength - feedDepth;
-                    if (lengthAfterRefresh < 5) {
-                        // cannot refresh; get new tool
-                        toolIx++;
-                        toolLength = 25;
-                    } else {
-                        // refresh by grinding
-
-                        // TODO: proper tool length
-                        sweepPath.push(withAxisValue({
-                            sweep: this.numSweeps,
-                            group: `refresh`,
-                            type: "move-out",
-                            tipPosM: this.wireCenter.clone().add(motionBeginOffset),
-                            tipNormalW: new THREE.Vector3(0, 0, 1),
-                        }));
-
-                        sweepPath.push(withAxisValue({
-                            sweep: this.numSweeps,
-                            group: `refresh`,
-                            type: "remove-tool",
-                            toolRotDelta: Math.PI * 2,
-                            grindDelta: 10,
-                            tipPosM: this.wireCenter.clone().add(motionEndOffset),
-                            tipNormalW: new THREE.Vector3(0, 0, 1),
-                        }));
-
-                        toolLength = lengthAfterRefresh;
-                    }
-
-                    // TODO: gen proper return path
-                    sweepPath.push(withAxisValue({
-                        sweep: this.numSweeps,
-                        group: `return`,
-                        type: "move-in",
-                        tipNormalW: normal,
-                        tipPosW: tipPos,
-                    }));
-
-                    distSinceRefresh = 0;
-                }
-
-                const nextIx = currIx + (dirR ? 1 : -1);
-                const nextNeeded = sweepTarget.get(nextIx, currIy, passMaxZ) > 0;
-                const upNeeded = sweepTarget.get(currIx, currIy + 1, passMaxZ) > 0;
-                const nextAccess = sweepBlocked.get(nextIx, currIy, passMaxZ + 1) === 0;
-                const upAccess = sweepBlocked.get(currIx, currIy + 1, passMaxZ + 1) === 0;
-                const upOk = upNeeded && upAccess;
-                const nextOk = nextNeeded && nextAccess;
-
-                const rotPerDist = Math.PI * 2 / 1.0;
-                let toolRotDelta = 0;
-                if (prevPtTipPos !== null) {
-                    const d = tipPos.distanceTo(prevPtTipPos);
-                    toolRotDelta = d * rotPerDist;
-                }
-
-                const pathPt = withAxisValue({
-                    sweep: this.numSweeps,
-                    group: `sweep-${this.numSweeps}`,
-                    type: "remove-work",
-                    tipNormalW: normal,
-                    tipPosW: tipPos,
-                    toolRotDelta: toolRotDelta,
-                });
-
-                if (isFirstInLine) {
-                    pushRemoveMovement(pathPt);
-                    isFirstInLine = false;
-                }
-
-                if (!nextOk && !upOk) {
-                    pushRemoveMovement(pathPt);
-                    break;
-                }
-                if (nextOk) {
-                    // don't write to path here
-                    currIx = nextIx;
-                } else {
-                    pushRemoveMovement(pathPt);
-
-                    isFirstInLine = true;
-                    dirR = !dirR;
-                    currIy++;
                 }
             }
 
@@ -1847,6 +1668,7 @@ class View3D {
             sweepRemoveGeoms.forEach(g => {
                 deltaWork.setExtrudedLongHole(g.p, g.q, g.n, g.r, 255);
             });
+            console.log("delta-work-count", deltaWork.count());
 
             if (sweepPath.length === 0) {
                 return null;
@@ -1859,7 +1681,6 @@ class View3D {
                 toolLength: toolLength,
                 vis: {
                     list: vises,
-                    // target: sweepTarget,
                 }
             };
         };
@@ -1891,8 +1712,7 @@ class View3D {
         this.showingSweep++;
 
         this.updateVis("sweep-slice-vg", sweep.vis.list, this.showSweepSlice);
-        // TODO: show geom directly?
-        // this.updateVis("sweep-removal-vg", [createVgVis(sweep.vis.removed, "sweep-removal")], this.showSweepRemoval);
+        this.updateVis("sweep-removal-vg", [createVgVis(sweep.deltaWork, "sweep-removal")], this.showSweepRemoval);
 
         this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath, false);
         this.updateVis("work-vg", [createVgVis(this.trvg.extractWork(), "work-vg")], this.showWork);
