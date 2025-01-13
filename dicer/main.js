@@ -181,6 +181,63 @@ class VoxelGrid {
         return this;
     }
 
+    // Set cells inside the "extruded long hole" shape to val.
+    // Note this method only test intersection of voxel center, rather than voxel volume.
+    //
+    // [in] p, q: start & end of the hole, in world coordinates
+    // [in] n: normal of the hole extrusion, in world coordinates. Must be perpendicular to p-q line.
+    // [in] r: radius of the hole
+    // [in] val: value to set to cells
+    setExtrudedLongHole(p, q, n, r, val) {
+        if (q.clone().sub(p).dot(n) !== 0) {
+            throw "Invalid extrusion normal";
+        }
+
+        const pL = p.clone().applyMatrix4(this.wToL);
+        const qL = q.clone().applyMatrix4(this.wToL);
+        const nL = n.clone().transformDirection(this.wToL);
+        const dL = qL.clone().sub(pL);
+
+        // Compute intersection of voxel-coordinate point and the ELH-shape.
+        // Uses pL-origin coordinates for computation.
+        //
+        // [in] c: voxel-coordinate point
+        // returns: true if intersects, false otherwise
+        const isectLongHole = (c) => {
+            const dc = c.clone().sub(pL);
+
+            // reject half-space
+            {
+                const t = dc.dot(nL);
+                if (t < 0) {
+                    return false; // opposite region of the shape
+                }
+            }
+
+            // Project onto the plane and turn into 2D problem.
+            const cPlane = dc.clone().projectOnPlane(nL);
+            
+            // now find closest point on line 0-(q-p).
+            let t = cPlane.dot(dL) / dL.dot(dL);
+            t = Math.max(0, Math.min(1, t)); // limit to line segment (between p & q)
+            const cLine = dL.clone().multiplyScalar(t);
+            const dist = cLine.distanceTo(cPlane);
+            return dist <= r;
+        };
+
+        // TODO: optimize. No need to scan all voxels.
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    const locCenter = new Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res);
+                    if (isectLongHole(locCenter)) {
+                        this.set(ix, iy, iz, val);
+                    }
+                }
+            }
+        }
+    }
+
     /////
     // boolean ops
 
@@ -257,6 +314,9 @@ class VoxelGrid {
 }
 
 
+// Represents current work & target.
+// The class ensures that work is bigger than target.
+//
 // voxel-local coordinate
 // voxel at (ix, iy, iz):
 // * occupies volume: [i * res, (i + 1) * res)
@@ -266,9 +326,8 @@ class VoxelGrid {
 //
 // Each cell {
 //   target: {Full, Partial, Empty}
-//   work: {Remaining, Done} 
+//   work: {Remaining, Done} (Done if target == Full)
 // }
-// When target == Full, Work must be == Done. Otherwise, it represents unachievable operation.
 class TrackingVoxelGrid {
     // [in] res: voxel resolution
     // [in] numX, numY, numZ: grid dimensions
@@ -398,6 +457,180 @@ class TrackingVoxelGrid {
         return cnt * this.res * this.res * this.res;
     }
 
+    // Returns offset of the work in normal direction.
+    //
+    // [in] normal THREE.Vector3, work coords.
+    // returns: number, offset. No work exists in + side of the plane. normal * offset is on the plane.
+    queryWorkOffset(normal) {
+        let offset = -Infinity;
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    if (this.getW(ix, iy, iz) === W_REMAINING) {
+                        const t = this.centerOf(ix, iy, iz).dot(normal);
+                        offset = Math.max(offset, t);
+                    }
+                }
+            }
+        }
+        return offset;
+    }
+
+    // Returns true if given semi-infinite cylinder is blocked by material.
+    // Note this method only checks intersection of voxel center, not voxel volume.
+    //
+    // [in] p: start point
+    // [in] n: direction (the cylinder extends infinitely towards n+ direction)
+    // [in] r: radius
+    // returns: true if blocked, false otherwise
+    queryBlockedCylinder(p, n, r) {
+        const isect = q => {
+            const d = q.clone().sub(p);
+            if (n.dot(d) < 0) {
+                return false;
+            }
+            return d.projectOnPlane(n).length() <= r;
+        };
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    // skip empty voxel
+                    if (this.getT(ix, iy, iz) === TG_EMPTY && this.getW(ix, iy, iz) === W_DONE) {
+                        continue;
+                    }
+                    
+                    // if not empty, check if intersects
+                    if (isect(this.centerOf(ix, iy, iz))) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    // Returns true if given ELH is blocked by material.
+    //
+    // [in] p: start point
+    // [in] q: end point
+    // [in] n: direction (p-q must be perpendicular to n). LH is extruded along n+, by h.
+    // [in] r: radius (>= 0)
+    // [in] h: height (>= 0)
+    // returns: true if blocked, false otherwise
+    queryBlockedELH(p, q, n, r, h) {
+        if (q.clone().sub(p).dot(n) !== 0) {
+            throw "Invalid extrusion normal";
+        }
+
+        const dq = q.clone().sub(p);
+        const isectELH = (x) => {
+            const dx = x.clone().sub(p);
+            // reject half-space
+            if (n.dot(dx) < 0) {
+                return false; // opposite region of the shape
+            }
+            if (n.dot(dx) > h) {
+                return false; // too far
+            }
+
+            // Project onto the plane and turn into 2D problem.
+            const xOnPlane = dx.clone().projectOnPlane(n);
+            
+            // now find closest point on line 0-dq.
+            let t = xOnPlane.dot(dq) / dq.dot(dq);
+            t = Math.max(0, Math.min(1, t)); // limit to line segment (between p & q)
+            const xLine = dq.clone().multiplyScalar(t);
+            const dist = xLine.distanceTo(xOnPlane);
+            return dist <= r;
+        };
+
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    // skip empty voxel
+                    if (this.getT(ix, iy, iz) === TG_EMPTY && this.getW(ix, iy, iz) === W_DONE) {
+                        continue;
+                    }
+                    
+                    // if not empty, check if intersects
+                    if (isectELH(this.centerOf(ix, iy, iz))) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    // Returns true if given ELH is accessible.
+    //
+    // [in] p: start point
+    // [in] q: end point
+    // [in] n: direction (p-q must be perpendicular to n). LH is extruded along n+, by h.
+    // [in] r: radius (>= 0)
+    // [in] h: height (>= 0)
+    // returns: true if accessible, false otherwise
+    queryOkToCutELH(p, q, n, r, h) {
+        // TODO: Refactor these isect code.
+        if (q.clone().sub(p).dot(n) !== 0) {
+            throw "Invalid extrusion normal";
+        }
+
+        const dq = q.clone().sub(p);
+        const isectELH = (x) => {
+            const dx = x.clone().sub(p);
+            // reject half-space
+            if (n.dot(dx) < 0) {
+                return false; // opposite region of the shape
+            }
+            if (n.dot(dx) > h) {
+                return false; // too far
+            }
+
+            // Project onto the plane and turn into 2D problem.
+            const xOnPlane = dx.clone().projectOnPlane(n);
+            
+            // now find closest point on line 0-dq.
+            let t = xOnPlane.dot(dq) / dq.dot(dq);
+            t = Math.max(0, Math.min(1, t)); // limit to line segment (between p & q)
+            const xLine = dq.clone().multiplyScalar(t);
+            const dist = xLine.distanceTo(xOnPlane);
+            return dist <= r;
+        };
+
+        let hasAnyWork = false;
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    const tst = this.getT(ix, iy, iz);
+                    const wst = this.getW(ix, iy, iz);
+
+                    // skip empty voxel
+                    if (tst === TG_EMPTY && wst === W_DONE) {
+                        continue;
+                    }
+                    
+                    // if not empty, check if intersects
+                    if (!isectELH(this.centerOf(ix, iy, iz))) {
+                        continue;
+                    }
+
+                    if (tst === TG_PARTIAL) {
+                        return false; // cannot work on this, blocked by partial target
+                    } else if (tst === TG_FULL) {
+                        return false; // cannot work on this, blocked by full target
+                    } else {
+                        // tst === TG_EMPTY
+                        if (wst === W_REMAINING) {
+                            hasAnyWork = true;
+                        }
+                    }
+                }
+            }
+        }
+        return hasAnyWork;
+    }
+
     /////
     // Single read/write
 
@@ -448,6 +681,7 @@ class TrackingVoxelGrid {
 }
 
 
+// Deprecated
 // Sample from ref into vg, using tri-state voxel.
 // [out] vg: VoxelGrid
 // [in] ref: VoxelGrid
@@ -1032,6 +1266,19 @@ const transformAABB = (min, max, mtx) => {
     return { min: minB, max: maxB };
 };
 
+const createCylinderVis = (p, n, r, col) => {
+    // Cylinder lies along Y axis, centered at origin.
+    const geom = new THREE.CylinderGeometry(r, r, 30, 8);
+    const mat = new THREE.MeshBasicMaterial({ color: col, wireframe: true });
+    const mesh = new THREE.Mesh(geom, mat);
+    
+    const rotV = new THREE.Vector3(0, 1, 0).cross(n);
+    if (rotV.length() > 1e-6) {
+        mesh.setRotationFromAxisAngle(rotV.clone().normalize(), Math.asin(rotV.length()));
+    }
+    mesh.position.copy(n.clone().multiplyScalar(15).add(p));
+    return mesh;
+};
 
 /**
  * Scene is in mm unit. Right-handed, Z+ up. Work-coordinates.
@@ -1239,8 +1486,17 @@ class View3D {
         this.trvg.setFromWorkAndTarget(workVg, targVg);
 
         this.planPath = [];
+        const candidateNormals = [
+            new THREE.Vector3(1, 0, 0),
+            new THREE.Vector3(0, 1, 0),
+            new THREE.Vector3(-1, 0, 0),
+            new THREE.Vector3(0, -1, 0),
+            new THREE.Vector3(0, 0, 1),
+        ];
         this.planner = {
             normalIndex: 0,
+            normals: candidateNormals,
+            offsets: candidateNormals.map(n => this.trvg.queryWorkOffset(n)),
         };
 
         this.updateVis("work-vg", [createVgVis(this.trvg.extractWork())], this.showWork);
@@ -1270,28 +1526,6 @@ class View3D {
             this.initPlan();
         }
 
-        const candidateNormals = [
-            new THREE.Vector3(1, 0, 0),
-            new THREE.Vector3(0, 1, 0),
-            new THREE.Vector3(-1, 0, 0),
-            new THREE.Vector3(0, -1, 0),
-            new THREE.Vector3(0, 0, 1),
-        ];
-
-        // "surface" x canditateNormal
-        // compute accessible area from shape x tool base
-        //
-        // reproject to 0.25mm grid of normal dir as local-Z.
-        // compute "access grid"
-        //   convolve tool radius in local XY-direction
-        //   apply projecting-or in Z- direction
-        //   now this grid's empty cells shows accessible locations to start milling from
-        // pick the shallowed layer that contains voxels to be removed
-        // compute the accesssible voxel in the surface, using zig-zag pattern
-        // compute actual path (pre g-code)
-        //
-        // apply the removal to the work vg (how?)
-
         const diffVg = this.trvg.extractWork();
         if (diffVg.count() === 0) {
             console.log("done!");
@@ -1306,10 +1540,18 @@ class View3D {
             const trMin = this.trvg.ofs.clone();
             const trMax = new THREE.Vector3(this.trvg.numX, this.trvg.numY, this.trvg.numZ).multiplyScalar(this.trvg.res).add(trMin);
             const aabbLoc = transformAABB(trMin, trMax, lToWMtx.clone().invert());
-            return initVG(aabbLoc, res, new THREE.Quaternion().setFromRotationMatrix(lToWMtx), false, 5);
+            return initVG(aabbLoc, res, new THREE.Quaternion().setFromRotationMatrix(lToWMtx), 5);
         };
 
-        // [in] normal THREE.Vector3, world coords.
+        // Sweep hyperparams
+        const accessGridRes = 0.7;
+        const feedDepth = accessGridRes;
+
+        // Generate "planar sweep", directly below given plane.
+        //
+        // [in] normal THREE.Vector3, work coords. = tip normal
+        // [in] offset number. offset * normal forms the plane.
+        //
         // returns: {
         //   path: array<Vector3>,
         //   deltaWork: VG,
@@ -1317,12 +1559,76 @@ class View3D {
         //   toolIx: number,
         //   vis: {target: VG, blocked: VG}
         // } | null (if impossible)
-        const genPlanarSweep = (normal) => {
-            const accesGridRes = 0.7;
+        const genPlanarSweep = (normal, offset) => {
+            const outerRadius = 25; // Encompasses everything with a margin. TODO: use smaller to increase efficiency
+
+            const rot = createRotationWithZ(normal);
+            const feedDir = new THREE.Vector3(1, 0, 0).transformDirection(rot);
+            const rowDir = new THREE.Vector3(0, 1, 0).transformDirection(rot);
+
+            // rows : [row]
+            // row : [segment]
+            // segment : {
+            //   accessOk: bool, // can enter this segment from left.
+            //   workOk: bool, // work is available in this segment, and is not blocked.
+            // }
+            const rows = [];
+
+            const feedWidth = this.toolDiameter / 2;
+            const segmentLength = this.toolDiameter / 2;
+            const numRows = Math.ceil(outerRadius * 2 / feedWidth);
+            const numSegs = Math.ceil(outerRadius * 2 / segmentLength);
+            const scanOrigin = normal.clone().multiplyScalar(offset)
+                                    .sub(feedDir.clone().multiplyScalar(outerRadius))
+                                    .sub(rowDir.clone().multiplyScalar(outerRadius));
             
-            const sweepBlocked = initReprojGrid(normal, accesGridRes);
+            const vises = [];
+
+            for (let ixRow = 0; ixRow < numRows; ixRow++) {
+                const row = [];
+                for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
+                    const segBegin = scanOrigin.clone()
+                        .add(rowDir.clone().multiplyScalar(feedWidth * ixRow))
+                        .add(feedDir.clone().multiplyScalar(segmentLength * ixSeg));
+                    const segEnd = segBegin.clone().add(feedDir.clone().multiplyScalar(segmentLength));
+                    
+                    const segBeginBottom = segBegin.clone().sub(normal.clone().multiplyScalar(feedDepth));
+                    const accessOk = !this.trvg.queryBlockedCylinder(segBeginBottom, normal, this.toolDiameter / 2);
+                    
+                    const notBlocked = !this.trvg.queryBlockedELH(segBegin, segEnd, normal, this.toolDiameter / 2, outerRadius);
+                    const okToCut = this.trvg.queryOkToCutELH(segBegin, segEnd, normal.clone().multiplyScalar(-1), this.toolDiameter / 2, feedDepth);
+                    
+                    const workOk = notBlocked && okToCut;
+
+                    const col = new THREE.Color().setRGB(0, notBlocked ? 1 : 0, okToCut ? 1 : 0);
+                    
+                    vises.push(createCylinderVis(segBegin, normal, this.toolDiameter / 2, col));
+
+                    row.push({ accessOk, workOk, segBegin, segEnd });
+                }
+                rows.push(row);
+            }
+            console.log("sweep-rows", rows);
+
+            // feedWidth = toolRadius
+            // maxWidthLoss = toolRadius / 2 (-eps)
+            // this config discards 25% of tool, even when EWR is perfectly calibrated.
+            //
+            // this will ensure if some work is surrounded by two rows, it will be removed completely.
+            // even if segment were isolated, it can be worked on, although some bits might remain due to tool wear.
+            //
+            // planar sweep scans rows, down to up (Y+).
+            // Each row consists of segments, and scanned from left to right (X+).
+            //
+            // to enter the segment, accessOk must be true.
+            // to work on the segment, workOk must be true.
+            //
+            // When tool wear exceeds maxWidthLoss, tool need to be refreshed.
+            //
+
+            /*
+            const sweepBlocked = initReprojGrid(normal, accessGridRes);
             const sweepTarget = sweepBlocked.clone();
-            const sweepRemoved = sweepBlocked.clone();
             resampleVG(sweepBlocked, this.trvg.extractBlocked());
             sweepBlocked.extendByRadiusXY(this.toolDiameter / 2);
             sweepBlocked.scanZMaxDesc();
@@ -1357,17 +1663,15 @@ class View3D {
             if (!accessOk) {
                 return null;
             }
+            */
 
-            // in planar sweep, tool is eroded from the side.
-            const feedCrossSectionArea = accesGridRes * accesGridRes; // feed width x feed depth; feed must be < toolDiameter/2
-            const maxWidthLoss = accesGridRes * 0.5;
-            const tipRefreshDist = (this.toolDiameter * Math.PI * maxWidthLoss * accesGridRes / this.ewrMax) / feedCrossSectionArea;
+            // in planar sweep, tool is eroded only from the side.
+            const maxWidthLoss = feedWidth * 0.5;
+            const tipRefreshDist = Math.PI * (Math.pow(this.toolDiameter / 2, 2) - Math.pow(this.toolDiameter / 2 - maxWidthLoss, 2)) / this.ewrMax / feedWidth;
             
             // generate zig-zag
-            let isFirstInLine = true;
-            let dirR = true; // true: right, false: left
-            let currIx = minPt.x;
-            let currIy = minPt.y;
+            //let currIx = minPt.x;
+            //let currIy = minPt.y;
             let distSinceRefresh = 0;
             let toolLength = this.toolLength;
             let toolIx = this.toolIx;
@@ -1385,10 +1689,63 @@ class View3D {
                 };
             };
 
-            while (true) {
-                sweepRemoved.set(currIx, currIy, passMaxZ, 255);
+            // TODO: track both min & max removal.
+            const sweepRemoveGeoms = [];
+            const pushRemoveMovement = (pathPt) => {
+                if (prevPtTipPos !== null) {
+                    sweepRemoveGeoms.push({
+                        // extruded long hole
+                        // hole spans from two centers; p and q, with radius r.
+                        // the long hole is then extended towards n direction infinitely.
+                        p: prevPtTipPos,
+                        q: pathPt.tipPosW,
+                        n: pathPt.tipNormalW,
+                        r: this.toolDiameter / 2,
+                    });
+                }
+
+                sweepPath.push(pathPt);
+                prevPtTipPos = pathPt.tipPosW;
+            };
+
+            for (let ixRow = 0; ixRow < rows.length; ixRow++) {
+                const row = rows[ixRow];
+                let entered = false;
+                for (let ixSeg = 0; ixSeg < row.length; ixSeg++) {
+                    const seg = row[ixSeg];
+                    let pushThisSeg = false;
+                    if (!entered) {
+                        if (seg.accessOk & seg.workOk) {
+                            entered = true;
+                            pushThisSeg = true;
+                        }
+                    } else {
+                        if (seg.workOk) {
+                            pushThisSeg = true;
+                        } else {
+                            entered = false;
+                        }
+                    }
+
+                    if (pushThisSeg) {
+                        const pt = withAxisValue({
+                            sweep: this.numSweeps,
+                            group: `sweep-${this.numSweeps}`,
+                            type: "remove-work",
+                            tipNormalW: normal,
+                            tipPosW: seg.segEnd,
+                            toolRotDelta: 123, // TODO: Fix
+                        });
+
+                        pushRemoveMovement(pt);
+                    }
+                }
+            }
+
+            while (false) {
+                // sweepRemoved.set(currIx, currIy, passMaxZ, 255);
                 const tipPos = sweepTarget.centerOf(currIx, currIy, passMaxZ);
-                distSinceRefresh += accesGridRes;
+                distSinceRefresh += accessGridRes;
 
                 if (distSinceRefresh > tipRefreshDist) {
                     // TODO: gen disengage path
@@ -1397,7 +1754,7 @@ class View3D {
                     const motionBeginOffset = new THREE.Vector3(-5, 0, 0);
                     const motionEndOffset = new THREE.Vector3(5, 0, 0);
 
-                    const lengthAfterRefresh = toolLength - accesGridRes; // accesGridRes == feed depth
+                    const lengthAfterRefresh = toolLength - feedDepth;
                     if (lengthAfterRefresh < 5) {
                         // cannot refresh; get new tool
                         toolIx++;
@@ -1464,24 +1821,19 @@ class View3D {
                 });
 
                 if (isFirstInLine) {
-                    sweepPath.push(pathPt);
-                    prevPtTipPos = tipPos;
-
+                    pushRemoveMovement(pathPt);
                     isFirstInLine = false;
                 }
 
                 if (!nextOk && !upOk) {
-                    sweepPath.push(pathPt);
-                    prevPtTipPos = tipPos;
-
+                    pushRemoveMovement(pathPt);
                     break;
                 }
                 if (nextOk) {
                     // don't write to path here
                     currIx = nextIx;
                 } else {
-                    sweepPath.push(pathPt);
-                    prevPtTipPos = tipPos;
+                    pushRemoveMovement(pathPt);
 
                     isFirstInLine = true;
                     dirR = !dirR;
@@ -1489,9 +1841,16 @@ class View3D {
                 }
             }
 
+            // Convert sweep geoms into voxel.
             const deltaWork = new VoxelGrid(this.trvg.res, this.trvg.numX, this.trvg.numY, this.trvg.numZ, this.trvg.ofs.clone());
-            sweepRemoved.extendByRadiusXY(this.toolDiameter / 2);
-            resampleVG(deltaWork, sweepRemoved);
+            console.log("sweep-geoms", sweepRemoveGeoms);
+            sweepRemoveGeoms.forEach(g => {
+                deltaWork.setExtrudedLongHole(g.p, g.q, g.n, g.r, 255);
+            });
+
+            if (sweepPath.length === 0) {
+                return null;
+            }
 
             return {
                 path: sweepPath,
@@ -1499,19 +1858,20 @@ class View3D {
                 toolIx: toolIx,
                 toolLength: toolLength,
                 vis: {
-                    target: sweepTarget,
-                    removed: sweepRemoved,
+                    list: vises,
+                    // target: sweepTarget,
                 }
             };
         };
 
         let sweep = null;
-        for (let i = 0; i < candidateNormals.length; i++) {
-            sweep = genPlanarSweep(candidateNormals[this.planner.normalIndex]);
+        for (let i = 0; i < this.planner.normals.length; i++) {
+            sweep = genPlanarSweep(this.planner.normals[this.planner.normalIndex], this.planner.offsets[this.planner.normalIndex]);
+            this.planner.offsets[this.planner.normalIndex] += feedDepth;
             if (sweep) {
                 break;
             }
-            this.planner.normalIndex = (this.planner.normalIndex + 1) % candidateNormals.length;
+            this.planner.normalIndex = (this.planner.normalIndex + 1) % this.planner.normals.length;
         }
         if (sweep === null) {
             console.log("possible sweep exhausted");
@@ -1530,8 +1890,9 @@ class View3D {
         this.numSweeps++;
         this.showingSweep++;
 
-        this.updateVis("sweep-slice-vg", [createVgVis(sweep.vis.target, "sweep-slice")], this.showSweepSlice);
-        this.updateVis("sweep-removal-vg", [createVgVis(sweep.vis.removed, "sweep-removal")], this.showSweepRemoval);
+        this.updateVis("sweep-slice-vg", sweep.vis.list, this.showSweepSlice);
+        // TODO: show geom directly?
+        // this.updateVis("sweep-removal-vg", [createVgVis(sweep.vis.removed, "sweep-removal")], this.showSweepRemoval);
 
         this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath, false);
         this.updateVis("work-vg", [createVgVis(this.trvg.extractWork(), "work-vg")], this.showWork);
