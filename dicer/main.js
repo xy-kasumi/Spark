@@ -18,6 +18,13 @@ const TG_EMPTY = 0; // empty
 const W_REMAINING = 1; // remaining work
 const W_DONE = 0; // work done
 
+const C_FULL_DONE = 0;  // current=full
+const C_EMPTY_DONE = 1;  // current=empty
+const C_EMPTY_REMAINING = 2; // current=non-empty
+const C_PARTIAL_DONE = 1; // current=partial
+const C_PARTIAL_REMAINING = 2; // current=full
+
+
 // Generic voxel grid
 // voxel-local coordinate
 // voxel at (ix, iy, iz):
@@ -314,6 +321,8 @@ class VoxelGrid {
 }
 
 
+
+
 // Represents current work & target.
 // The class ensures that work is bigger than target.
 //
@@ -429,19 +438,73 @@ class TrackingVoxelGrid {
         return res;
     }
 
-    // [in] delta: VoxelGrid (0: empty, 128: partially remove, 255: completely remove)
-    commitRemoval(delta) {
-        for (let i = 0; i < this.dataW.length; i++) {
-            if (delta.data[i] === 255) {
-                if (this.dataT[i] !== TG_EMPTY) {
-                    throw "Trying to commit invalid removal";
+    // Commit (rough) removal of minGeom and maxGeom.
+    // maxGeom >= minGeom must hold. otherwise, throw error.
+    //
+    // Rough removal means, this cut can process TG_EMPTY cells, but not TG_PARTIAL cells.
+    // When cut can potentially affect TG_PARTIAL cells, it will be error (as rough cut might ruin the voxel irreversibly).
+    //
+    // [in] minGeoms: array of shape descriptor, treated as union of all shapes.
+    // [in] maxGeoms: array of shape descriptor, treated as union of all shapes
+    commitRemoval(minGeoms, maxGeoms) {
+        const minVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs.clone());
+        const maxVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs.clone());
+        minGeoms.forEach(g => {
+            minVg.setExtrudedLongHole(g.p, g.q, g.n, g.r, 255);
+        });
+        maxGeoms.forEach(g => {
+            maxVg.setExtrudedLongHole(g.p, g.q, g.n, g.r, 255);
+        });
+
+        console.log("delta-work-count-min", minVg.count());
+        console.log("delta-work-count-max", maxVg.count());
+
+        for (let z = 0; z < this.numZ; z++) {
+            for (let y = 0; y < this.numY; y++) {
+                for (let x = 0; x < this.numX; x++) {
+                    const i = x + y * this.numX + z * this.numX * this.numY;
+                    if (maxVg.data[i] < minVg.data[i]) {
+                        throw `Min/max reversal at i=${i}`;
+                    }
+
+                    // Compute conservative bounds that holds even with quantization error of minVg & maxVg.
+                    let isMin = true;
+                    let isMax = false;
+                    for (let dz = -1; dz <= 1; dz++) {
+                        for (let dy = -1; dy <= 1; dy++) {
+                            for (let dx = -1; dx <= 1; dx++) {
+                                const ox = x + dx;
+                                const oy = y + dy;
+                                const oz = z + dz;
+                                if (ox < 0 || ox >= this.numX || oy < 0 || oy >= this.numY || oz < 0 || oz >= this.numZ) {
+                                    continue;
+                                }
+
+                                const oi = ox + oy * this.numX + oz * this.numX * this.numY;
+                                if (minVg.data[oi] === 0) {
+                                    isMin = false;
+                                }
+                                if (maxVg.data[oi] === 255) {
+                                    isMax = true;
+                                }
+                            }
+                        }
+                    }
+
+                    // Commit.
+                    if (isMax) {
+                        // this voxel can be potentially uncertainly removed.
+                        if (this.dataT[i] !== TG_EMPTY) {
+                            throw `Remove can affect protected region i=${i} / tgt=${this.dataT[i]}`;
+                        }
+                    }
+                    
+                    if (isMin) {
+                        // this voxel will be definitely completely removed.
+                        // (at this point. dataT === TG_EMPTY, because isMin => isMax.)
+                        this.dataW[i] = W_DONE;
+                    }
                 }
-                this.dataW[i] = W_DONE;
-            } else if (delta.data[i] == 128) {
-                if (this.dataT[i] !== TG_EMPTY) {
-                    throw "Trying to commit invalid removal";
-                }
-                // no-op, as work still needs work after uncertain removal.
             }
         }
     }
@@ -1609,11 +1672,20 @@ class View3D {
                 };
             };
 
-            // TODO: track both min & max removal.
-            const sweepRemoveGeoms = [];
+            const minSweepRemoveGeoms = [];
+            const maxSweepRemoveGeoms = [];
             const pushRemoveMovement = (pathPt) => {
                 if (prevPtTipPos !== null) {
-                    sweepRemoveGeoms.push({
+                    minSweepRemoveGeoms.push({
+                        // extruded long hole
+                        // hole spans from two centers; p and q, with radius r.
+                        // the long hole is then extended towards n direction infinitely.
+                        p: prevPtTipPos,
+                        q: pathPt.tipPosW,
+                        n: pathPt.tipNormalW,
+                        r: this.toolDiameter / 2 - maxWidthLoss,
+                    });
+                    maxSweepRemoveGeoms.push({
                         // extruded long hole
                         // hole spans from two centers; p and q, with radius r.
                         // the long hole is then extended towards n direction infinitely.
@@ -1662,21 +1734,13 @@ class View3D {
                 }
             }
 
-            // Convert sweep geoms into voxel.
-            const deltaWork = new VoxelGrid(this.trvg.res, this.trvg.numX, this.trvg.numY, this.trvg.numZ, this.trvg.ofs.clone());
-            console.log("sweep-geoms", sweepRemoveGeoms);
-            sweepRemoveGeoms.forEach(g => {
-                deltaWork.setExtrudedLongHole(g.p, g.q, g.n, g.r, 255);
-            });
-            console.log("delta-work-count", deltaWork.count());
-
             if (sweepPath.length === 0) {
                 return null;
             }
 
             return {
                 path: sweepPath,
-                deltaWork: deltaWork,
+                deltaWork: {max: maxSweepRemoveGeoms, min: minSweepRemoveGeoms},
                 toolIx: toolIx,
                 toolLength: toolLength,
                 vis: {
@@ -1701,18 +1765,23 @@ class View3D {
 
         console.log(`commiting sweep ${this.numSweeps}`, sweep);
 
+        console.log("sweep-geoms-min", sweep.deltaWork.min);
+        console.log("sweep-geoms-max", sweep.deltaWork.max);
+
         this.planPath.push(...sweep.path);
         this.toolIx = sweep.toolIx;
         this.toolLength = sweep.toolLength;
+
+        // Convert sweep geoms into voxel.
         const volBeforeSweep = this.trvg.getRemainingWorkVol();
-        this.trvg.commitRemoval(sweep.deltaWork);
+        this.trvg.commitRemoval(sweep.deltaWork.min, sweep.deltaWork.max);
         const volAfterSweep = this.trvg.getRemainingWorkVol();
         this.removedVol += volBeforeSweep - volAfterSweep;
         this.numSweeps++;
         this.showingSweep++;
 
         this.updateVis("sweep-slice-vg", sweep.vis.list, this.showSweepSlice);
-        this.updateVis("sweep-removal-vg", [createVgVis(sweep.deltaWork, "sweep-removal")], this.showSweepRemoval);
+        //this.updateVis("sweep-removal-vg", [createVgVis(sweep.deltaWork, "sweep-removal")], this.showSweepRemoval);
 
         this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath, false);
         this.updateVis("work-vg", [createVgVis(this.trvg.extractWork(), "work-vg")], this.showWork);
