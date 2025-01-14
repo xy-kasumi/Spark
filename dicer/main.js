@@ -101,28 +101,6 @@ const createSdfElh = (p, q, n, r, h) => {
     return sdf;
 };
 
-const sdfTest = createSdfElh(new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0), 1, 5);
-const testPt = [
-    new THREE.Vector3(0, -1, 0),
-    new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(0, 1, 0),
-    new THREE.Vector3(0, 2, 0),
-    new THREE.Vector3(0, 5, 0),
-    new THREE.Vector3(0, 6, 0),
-    //
-    new THREE.Vector3(1, -1, 0),
-    new THREE.Vector3(1, 0, 0),
-    new THREE.Vector3(1, 1, 0),
-    new THREE.Vector3(1, 2, 0),
-    new THREE.Vector3(1, 5, 0),
-    new THREE.Vector3(1, 6, 0),
-    //
-    new THREE.Vector3(-2, 0, 0)
-];
-testPt.forEach(p => {
-    console.log(`${p.x},${p.y},${p.z}`, sdfTest(p));
-});
-
 
 // Generic voxel grid
 // voxel-local coordinate
@@ -187,20 +165,19 @@ class VoxelGrid {
     }
 
     // Set cells inside the "extruded long hole" shape to val.
-    // Note this method only test intersection of voxel center, rather than voxel volume.
     //
     // [in] p, q: start & end of the hole, in world coordinates
     // [in] n: normal of the hole extrusion, in world coordinates. Must be perpendicular to p-q line.
     // [in] r: radius of the hole
     // [in] val: value to set to cells
-    setExtrudedLongHole(p, q, n, r, val) {
+    // [in] roundToOutside: if true, round to outside of the hole. Otherwise, round to inside.
+    setExtrudedLongHole(p, q, n, r, val, roundToOutside) {
         const sdf = createSdfElh(p, q, n, r, 100);
-
-        // TODO: optimize. No need to scan all voxels.
+        const offset = (roundToOutside ? 1 : -1) * (this.res * 0.5 * Math.sqrt(3));
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
-                    if (sdf(this.centerOf(ix, iy, iz)) <= 0) {
+                    if (sdf(this.centerOf(ix, iy, iz)) <= offset) {
                         this.set(ix, iy, iz, val);
                     }
                 }
@@ -358,10 +335,10 @@ class TrackingVoxelGrid {
         const minVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs.clone());
         const maxVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs.clone());
         minGeoms.forEach(g => {
-            minVg.setExtrudedLongHole(g.p, g.q, g.n, g.r, 255);
+            minVg.setExtrudedLongHole(g.p, g.q, g.n, g.r, 255, false);
         });
         maxGeoms.forEach(g => {
-            maxVg.setExtrudedLongHole(g.p, g.q, g.n, g.r, 255);
+            maxVg.setExtrudedLongHole(g.p, g.q, g.n, g.r, 255, true);
         });
 
         console.log("delta-work-count-min", minVg.count());
@@ -372,109 +349,31 @@ class TrackingVoxelGrid {
             for (let y = 0; y < this.numY; y++) {
                 for (let x = 0; x < this.numX; x++) {
                     const i = x + y * this.numX + z * this.numX * this.numY;
-                    if (maxVg.data[i] < minVg.data[i]) {
+                    const isInMax = maxVg.data[i] > 0;
+                    const isInMin = minVg.data[i] > 0;
+                    if (isInMin && !isInMax) {
                         const p = this.centerOf(x, y, z);
                         const locator = `ix=(${x},${y},${z}), p=(${p.x},${p.y},${p.z})`;
                         throw `Min/max reversal, at ${locator}`;
                     }
 
-                    // Compute conservative bounds that holds even with quantization error of minVg & maxVg.
-                    let isMin = true;
-                    let isMax = false;
-                    for (let dz = -1; dz <= 1; dz++) {
-                        for (let dy = -1; dy <= 1; dy++) {
-                            for (let dx = -1; dx <= 1; dx++) {
-                                const ox = x + dx;
-                                const oy = y + dy;
-                                const oz = z + dz;
-                                if (ox < 0 || ox >= this.numX || oy < 0 || oy >= this.numY || oz < 0 || oz >= this.numZ) {
-                                    continue;
-                                }
-
-                                const oi = ox + oy * this.numX + oz * this.numX * this.numY;
-                                if (minVg.data[oi] === 0) {
-                                    isMin = false;
-                                }
-                                if (maxVg.data[oi] === 255) {
-                                    isMax = true;
-                                }
-                            }
-                        }
-                    }
-
-                    const isNE = this.dataT[i] !== TG_EMPTY;
-                    let isNEExt = false;
-                    for (let dz = -1; dz <= 1; dz++) {
-                        for (let dy = -1; dy <= 1; dy++) {
-                            for (let dx = -1; dx <= 1; dx++) {
-                                const ox = x + dx;
-                                const oy = y + dy;
-                                const oz = z + dz;
-                                if (ox < 0 || ox >= this.numX || oy < 0 || oy >= this.numY || oz < 0 || oz >= this.numZ) {
-                                    continue;
-                                }
-
-                                const oi = ox + oy * this.numX + oz * this.numX * this.numY;
-                                if (this.dataT[oi] !== TG_EMPTY) {
-                                    isNEExt = true;
-                                }
-                            }
-                        }
-                    }
-                    const max = maxVg.data[i] === 255;
-
-                    // Assumed invariance
-                    // max => isMax
-                    // isNE => isNEExt
-                    // (isMax && isNE) == (max && isNEExt)
-                    /*
-                    if (max && !isMax) {
-                        console.log(`invariance violation: max=${max}, isMax=${isMax}`);
-                    }
-                    if (isNE && !isNEExt) {
-                        console.log(`invariance violation: isNE=${isNE}, isNEExt=${isNEExt}`);
-                    }
-                    if ((isMax && isNE) !== (max && isNEExt)) {
-                        console.log(`invariance violation: isMax=${isMax}, isNE=${isNE}, max=${max}, isNEExt=${isNEExt}`);
-                    }
-                        */
-
-
-
-                    
+                    const isTargetNotEmpty = this.dataT[i] !== TG_EMPTY;                    
 
                     // Commit.
-                    if (isMax) {
+                    if (isInMax) {
                         debugBuf.commit.push({ix: x, iy: y, iz: z});
                         // this voxel can be potentially uncertainly removed.
-                        if (isNE) {
+                        if (isTargetNotEmpty) {
                             const p = this.centerOf(x, y, z);
                             const locator = `ix=(${x},${y},${z}), p=(${p.x},${p.y},${p.z})`;
-                            console.log(`isMin=${isMin}, isMax=${isMax}`);
-                            /*
-                            for (let dz = -1; dz <= 1; dz++) {
-                                for (let dy = -1; dy <= 1; dy++) {
-                                    for (let dx = -1; dx <= 1; dx++) {
-                                        const ox = x + dx;
-                                        const oy = y + dy;
-                                        const oz = z + dz;
-                                        if (ox < 0 || ox >= this.numX || oy < 0 || oy >= this.numY || oz < 0 || oz >= this.numZ) {
-                                            continue;
-                                        }
-        
-                                        const oi = ox + oy * this.numX + oz * this.numX * this.numY;
-                                        //console.log(`o=(${ox},${oy},${oz}), minVg=${minVg.data[oi]}, maxVg=${maxVg.data[oi]}`);
-                                    }
-                                }
-                            }
-                            */
+                            //console.log(`isMin=${isInMin}, isMax=${isInMax}`);
                             errorPts.push({ix: x, iy: y, iz: z});
                             console.log(`Remove can affect protected region TG=${this.dataT[i]}, at ${locator}`);
                             //throw `Remove can affect protected region TG=${this.dataT[i]}, at ${locator}`;
                         }
                     }
                     
-                    if (isMin) {
+                    if (isInMin) {
                         // this voxel will be definitely completely removed.
                         // (at this point. dataT === TG_EMPTY, because isMin => isMax.)
                         this.dataW[i] = W_DONE;
@@ -530,13 +429,14 @@ class TrackingVoxelGrid {
     // returns: true if blocked, false otherwise
     queryBlockedCylinder(p, n, r) {
         const sdf = createSdfCylinder(p, n, r);
+        const margin = this.res * 0.5 * Math.sqrt(3);
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
-                    if (sdf(this.centerOf(ix, iy, iz)) > 0) {
+                    if (sdf(this.centerOf(ix, iy, iz)) > margin) {
                         continue;
                     }
-                    if (this.#blockedConsevativeAt(ix, iy, iz)) {
+                    if (this.get(ix, iy, iz) !== C_EMPTY_DONE) {
                         return true;
                     }
                 }
@@ -556,52 +456,14 @@ class TrackingVoxelGrid {
     // returns: true if blocked, false otherwise
     queryBlockedELH(p, q, n, r, h) {
         const sdf = createSdfElh(p, q, n, r, h);
+        const margin = this.res * 0.5 * Math.sqrt(3);
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
-                    if (sdf(this.centerOf(ix, iy, iz)) > 0) {
+                    if (sdf(this.centerOf(ix, iy, iz)) > margin) {
                         continue;
                     }
-                    if (this.#blockedConsevativeAt(ix, iy, iz)) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
-    #blockedConsevativeAt(ix, iy, iz) {
-        for (let dz = -1; dz <= 1; dz++) {
-            for (let dy = -1; dy <= 1; dy++) {
-                for (let dx = -1; dx <= 1; dx++) {
-                    const ox = ix + dx;
-                    const oy = iy + dy;
-                    const oz = iz + dz;
-                    if (ox < 0 || ox >= this.numX || oy < 0 || oy >= this.numY || oz < 0 || oz >= this.numZ) {
-                        continue;
-                    }
-                    if (this.get(ox, oy, oz) !== C_EMPTY_DONE) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
-    #roughCutPreventedConservativeAt(ix, iy, iz) {
-        for (let dz = -1; dz <= 1; dz++) {
-            for (let dy = -1; dy <= 1; dy++) {
-                for (let dx = -1; dx <= 1; dx++) {
-                    const ox = ix + dx;
-                    const oy = iy + dy;
-                    const oz = iz + dz;
-                    if (ox < 0 || ox >= this.numX || oy < 0 || oy >= this.numY || oz < 0 || oz >= this.numZ) {
-                        continue;
-                    }
-                    const st = this.get(ox, oy, oz);
-                    if (st !== C_EMPTY_DONE && st !== C_EMPTY_REMAINING) {
+                    if (this.get(ix, iy, iz) !== C_EMPTY_DONE) {
                         return true;
                     }
                 }
@@ -620,45 +482,23 @@ class TrackingVoxelGrid {
     // [in] h: height (>= 0)
     // returns: true if accessible, false otherwise
     queryOkToCutELH(p, q, n, r, h) {
-        // TODO: Refactor these isect code.
-        if (q.clone().sub(p).dot(n) !== 0) {
-            throw "Invalid extrusion normal";
-        }
-
-        const dq = q.clone().sub(p);
-        const isectELH = (x) => {
-            const dx = x.clone().sub(p);
-            // reject half-space
-            if (n.dot(dx) < 0) {
-                return false; // opposite region of the shape
-            }
-            if (n.dot(dx) > h) {
-                return false; // too far
-            }
-
-            // Project onto the plane and turn into 2D problem.
-            const xOnPlane = dx.clone().projectOnPlane(n);
-            
-            // now find closest point on line 0-dq.
-            let t = xOnPlane.dot(dq) / dq.dot(dq);
-            t = Math.max(0, Math.min(1, t)); // limit to line segment (between p & q)
-            const xLine = dq.clone().multiplyScalar(t);
-            const dist = xLine.distanceTo(xOnPlane);
-            return dist <= r;
-        };
+        const sdf = createSdfElh(p, q, n, r, h);
+        const margin = this.res * 0.5 * Math.sqrt(3);
 
         // let hasAnyWork = true;
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
-                    if (!isectELH(this.centerOf(ix, iy, iz))) {
+                    if (sdf(this.centerOf(ix, iy, iz)) > margin) {
                         continue;
                     }
 
-                    if (this.#roughCutPreventedConservativeAt(ix, iy, iz)) {
+                    const st = this.get(ix, iy, iz);
+                    if (st !== C_EMPTY_DONE && st !== C_EMPTY_REMAINING) {
                         return false;
                     }
-                    debugBuf.checked.push({ix, iy, iz});
+
+                    // debugBuf.checked.push({ix, iy, iz});
                     /*
                     if (this.getW(ix, iy, iz) === W_REMAINING) {
                         hasAnyWork = true;
