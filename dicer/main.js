@@ -78,12 +78,13 @@ const createSdfElh = (p, q, n, r, h) => {
     const clamp01 = x => {
         return Math.max(0, Math.min(1, x));
     };
+
     const sdf = x => {
         const dx = x.clone().sub(p);
 
         // decompose into 2D + 1D
         const dx1 = n.dot(dx);
-        const dx2 = dx.clone().projectOnPlane(n);
+        const dx2 = dx.projectOnPlane(n); // destroys dx
 
         // 1D distance from interval [0, h]
         const d1 = Math.abs(dx1 - h * 0.5) - h * 0.5;
@@ -171,11 +172,46 @@ class VoxelGrid {
     setExtrudedLongHole(p, q, n, r, val, roundToOutside) {
         const sdf = createSdfElh(p, q, n, r, 100);
         const offset = (roundToOutside ? 1 : -1) * (this.res * 0.5 * Math.sqrt(3));
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let iy = 0; iy < this.numY; iy++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    if (sdf(this.centerOf(ix, iy, iz)) <= offset) {
-                        this.set(ix, iy, iz, val);
+        const blockSize = 10;
+
+        const nbx = Math.floor(this.numX / blockSize) + 1;
+        const nby = Math.floor(this.numY / blockSize) + 1;
+        const nbz = Math.floor(this.numZ / blockSize) + 1;
+
+        const blockOffset = this.res * blockSize * 0.5 * Math.sqrt(3);
+        const blocks = [];
+        for (let bz = 0; bz < nbz; bz++) {
+            for (let by = 0; by < nby; by++) {
+                for (let bx = 0; bx < nbx; bx++) {
+                    const blockCenter = new Vector3(bx, by, bz).addScalar(0.5).multiplyScalar(blockSize * this.res).applyMatrix4(this.lToW);
+                    if (sdf(blockCenter) <= blockOffset + offset) {
+                        blocks.push({bx, by, bz});
+                    }
+                }
+            }
+        }
+        console.log(`compressed ${blocks.length / (nbx * nby * nbz)}`);
+
+        for (let i = 0; i < blocks.length; i++) {
+            for (let dz = 0; dz < blockSize; dz++) {
+                const iz = blocks[i].bz * blockSize + dz;
+                if (iz >= this.numZ) {
+                    continue;
+                }
+                for (let dy = 0; dy < blockSize; dy++) {
+                    const iy = blocks[i].by * blockSize + dy;
+                    if (iy >= this.numY) {
+                        continue;
+                    }
+                    for (let dx = 0; dx < blockSize; dx++) {
+                        const ix = blocks[i].bx * blockSize + dx;
+                        if (ix >= this.numX) {
+                            continue;
+                        }
+
+                        if (sdf(this.centerOf(ix, iy, iz)) <= offset) {
+                            this.set(ix, iy, iz, val);
+                        }
                     }
                 }
             }
