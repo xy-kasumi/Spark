@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Vector2, Vector3, Quaternion, Matrix4 } from 'three';
+import { Vector2, Vector3 } from 'three';
 import Stats from 'three/addons/libs/stats.module.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
@@ -99,6 +99,80 @@ const createSdfElh = (p, q, n, r, h) => {
     return sdf;
 };
 
+// Traverse all points that (sdf(p) <= offset), and call fn(ix, iy, iz).
+//
+// [in] vg: VoxelGrid or TrackingVoxelGrid (must implement numX, numY, numZ, res, ofs, centerOf)
+// [in] sdf: number => number. Must be "true" SDF for this to work correctly.
+// [in] offset: offset
+// [in] fn: function(ix, iy, iz) => boolean. If true, stop traversal and return true.
+// returns: boolean. If true, stop traversal and return true.
+const traverseAllPointsInside = (vg, sdf, offset, fn) => {
+    const blockSize = 10;
+    const nbx = Math.floor(vg.numX / blockSize) + 1;
+    const nby = Math.floor(vg.numY / blockSize) + 1;
+    const nbz = Math.floor(vg.numZ / blockSize) + 1;
+
+    const blockOffset = vg.res * blockSize * 0.5 * Math.sqrt(3);
+    const blocks = [];
+    for (let bz = 0; bz < nbz; bz++) {
+        for (let by = 0; by < nby; by++) {
+            for (let bx = 0; bx < nbx; bx++) {
+                const blockCenter = new Vector3(bx, by, bz).addScalar(0.5).multiplyScalar(blockSize * vg.res).add(vg.ofs);
+                if (sdf(blockCenter) <= blockOffset + offset) {
+                    blocks.push({bx, by, bz});
+                }
+            }
+        }
+    }
+
+    for (let i = 0; i < blocks.length; i++) {
+        for (let dz = 0; dz < blockSize; dz++) {
+            const iz = blocks[i].bz * blockSize + dz;
+            if (iz >= vg.numZ) {
+                continue;
+            }
+            for (let dy = 0; dy < blockSize; dy++) {
+                const iy = blocks[i].by * blockSize + dy;
+                if (iy >= vg.numY) {
+                    continue;
+                }
+                for (let dx = 0; dx < blockSize; dx++) {
+                    const ix = blocks[i].bx * blockSize + dx;
+                    if (ix >= vg.numX) {
+                        continue;
+                    }
+
+                    if (sdf(vg.centerOf(ix, iy, iz)) <= offset) {
+                        if (fn(ix, iy, iz)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return false;
+};
+
+// Returns true if all points (sdf(p) <= offset) are pred(p).
+//
+// [in] vg: VoxelGrid or TrackingVoxelGrid (must implement numX, numY, numZ, res, ofs, centerOf)
+// [in] sdf: number => number
+// [in] offset: offset
+// [in] pred: function(ix, iy, iz) => boolean.
+// returns: boolean. If true, stop traversal and return true.
+const everyPointInsideIs = (vg, sdf, offset, pred) => {
+    return !traverseAllPointsInside(vg, sdf, offset, (ix, iy, iz) => {
+        return !pred(ix, iy, iz);
+    });
+};
+
+const anyPointInsideIs = (vg, sdf, offset, pred) => {
+    return traverseAllPointsInside(vg, sdf, offset, (ix, iy, iz) => {
+        return pred(ix, iy, iz);
+    });
+};
+
 
 // Generic voxel grid
 // voxel-local coordinate
@@ -106,60 +180,24 @@ const createSdfElh = (p, q, n, r, h) => {
 // * occupies volume: [i * res, (i + 1) * res)
 // * has center: (i + 0.5) * res
 //
-// loc_world = rot * loc_vx + ofs
+// loc_world = loc_vx + ofs
 class VoxelGrid {
     // [in] res: voxel resolution
     // [in] numX, numY, numZ: grid dimensions
     // [in] ofs: voxel grid offset (local to world)
-    // [in] rot: voxel grid rotation (local to world)
-    constructor(res, numX, numY, numZ, ofs = new Vector3(), rot = new Quaternion().identity()) {
+    constructor(res, numX, numY, numZ, ofs = new Vector3()) {
         this.res = res;
         this.numX = numX;
         this.numY = numY;
         this.numZ = numZ;
         this.data = new Uint8Array(numX * numY * numZ);
         this.ofs = ofs.clone();
-        this.rot = rot.clone();
-        this.lToW = new Matrix4().compose(ofs, rot, new Vector3(1, 1, 1));
-        this.wToL = this.lToW.clone().invert();
-    }
-
-    isAxisAligned() {
-        return this.rot.equals(new Quaternion().identity());
     }
 
     clone() {
-        const vg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs.clone(), this.rot.clone());
+        const vg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         vg.data.set(this.data);
         return vg;
-    }
-
-    sub(other) {
-        for (let i = 0; i < this.data.length; i++) {
-            this.data[i] = Math.max(0, this.data[i] - other.data[i]);
-        }
-        return this;
-    }
-
-    add(other) {
-        for (let i = 0; i < this.data.length; i++) {
-            this.data[i] = Math.min(255, this.data[i] + other.data[i]);
-        }
-        return this;
-    }
-
-    greaterOrEqual(other) {
-        for (let i = 0; i < this.data.length; i++) {
-            this.data[i] = (this.data[i] >= other.data[i]) ? 255 : 0;
-        }
-        return this;
-    }
-
-    multiplyScalar(s) {
-        for (let i = 0; i < this.data.length; i++) {
-            this.data[i] = Math.round(this.data[i] * s);
-        }
-        return this;
     }
 
     // Set cells inside the "extruded long hole" shape to val.
@@ -169,53 +207,13 @@ class VoxelGrid {
     // [in] r: radius of the hole
     // [in] val: value to set to cells
     // [in] roundToOutside: if true, round to outside of the hole. Otherwise, round to inside.
-    setExtrudedLongHole(p, q, n, r, val, roundToOutside) {
+    setExtrudedLongHole(p, q, n, r, val, roundToOutside) {        
         const sdf = createSdfElh(p, q, n, r, 100);
         const offset = (roundToOutside ? 1 : -1) * (this.res * 0.5 * Math.sqrt(3));
-        const blockSize = 10;
 
-        const nbx = Math.floor(this.numX / blockSize) + 1;
-        const nby = Math.floor(this.numY / blockSize) + 1;
-        const nbz = Math.floor(this.numZ / blockSize) + 1;
-
-        const blockOffset = this.res * blockSize * 0.5 * Math.sqrt(3);
-        const blocks = [];
-        for (let bz = 0; bz < nbz; bz++) {
-            for (let by = 0; by < nby; by++) {
-                for (let bx = 0; bx < nbx; bx++) {
-                    const blockCenter = new Vector3(bx, by, bz).addScalar(0.5).multiplyScalar(blockSize * this.res).applyMatrix4(this.lToW);
-                    if (sdf(blockCenter) <= blockOffset + offset) {
-                        blocks.push({bx, by, bz});
-                    }
-                }
-            }
-        }
-        console.log(`compressed ${blocks.length / (nbx * nby * nbz)}`);
-
-        for (let i = 0; i < blocks.length; i++) {
-            for (let dz = 0; dz < blockSize; dz++) {
-                const iz = blocks[i].bz * blockSize + dz;
-                if (iz >= this.numZ) {
-                    continue;
-                }
-                for (let dy = 0; dy < blockSize; dy++) {
-                    const iy = blocks[i].by * blockSize + dy;
-                    if (iy >= this.numY) {
-                        continue;
-                    }
-                    for (let dx = 0; dx < blockSize; dx++) {
-                        const ix = blocks[i].bx * blockSize + dx;
-                        if (ix >= this.numX) {
-                            continue;
-                        }
-
-                        if (sdf(this.centerOf(ix, iy, iz)) <= offset) {
-                            this.set(ix, iy, iz, val);
-                        }
-                    }
-                }
-            }
-        }
+        traverseAllPointsInside(this, sdf, offset, (ix, iy, iz) => {
+            this.set(ix, iy, iz, val);
+        });
     }
 
     /////
@@ -261,7 +259,7 @@ class VoxelGrid {
     }
 
     centerOf(ix, iy, iz) {
-        return new Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res).applyMatrix4(this.lToW);
+        return new Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res).add(this.ofs);
     }
 }
 
@@ -469,19 +467,10 @@ class TrackingVoxelGrid {
     queryBlockedCylinder(p, n, r) {
         const sdf = createSdfCylinder(p, n, r);
         const margin = this.res * 0.5 * Math.sqrt(3);
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let iy = 0; iy < this.numY; iy++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    if (sdf(this.centerOf(ix, iy, iz)) > margin) {
-                        continue;
-                    }
-                    if (this.get(ix, iy, iz) !== C_EMPTY_DONE) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
+
+        return anyPointInsideIs(this, sdf, margin, (ix, iy, iz) => {
+            return this.get(ix, iy, iz) !== C_EMPTY_DONE;
+        });
     }
 
     // Returns true if given ELH is blocked by material, conservatively.
@@ -496,19 +485,10 @@ class TrackingVoxelGrid {
     queryBlockedELH(p, q, n, r, h) {
         const sdf = createSdfElh(p, q, n, r, h);
         const margin = this.res * 0.5 * Math.sqrt(3);
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let iy = 0; iy < this.numY; iy++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    if (sdf(this.centerOf(ix, iy, iz)) > margin) {
-                        continue;
-                    }
-                    if (this.get(ix, iy, iz) !== C_EMPTY_DONE) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
+
+        return anyPointInsideIs(this, sdf, margin, (ix, iy, iz) => {
+            return this.get(ix, iy, iz) !== C_EMPTY_DONE;
+        });
     }
 
     // Returns true if given ELH is accessible for work, conservatively.
@@ -525,27 +505,10 @@ class TrackingVoxelGrid {
         const margin = this.res * 0.5 * Math.sqrt(3);
 
         // let hasAnyWork = true;
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let iy = 0; iy < this.numY; iy++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    if (sdf(this.centerOf(ix, iy, iz)) > margin) {
-                        continue;
-                    }
-
-                    const st = this.get(ix, iy, iz);
-                    if (st !== C_EMPTY_DONE && st !== C_EMPTY_REMAINING) {
-                        return false;
-                    }
-
-                    /*
-                    if (this.getW(ix, iy, iz) === W_REMAINING) {
-                        hasAnyWork = true;
-                    }
-                    */
-                }
-            }
-        }
-        return true;
+        return everyPointInsideIs(this, sdf, margin, (ix, iy, iz) => {
+            const st = this.get(ix, iy, iz);
+            return st === C_EMPTY_DONE || st === C_EMPTY_REMAINING;
+        });
     }
 
     /////
@@ -631,30 +594,19 @@ const computeAABB = (pts) => {
 
 // Initialize voxel grid for storing points.
 // [in] pts: [x0, y0, z0, x1, y1, z1, ...]
+// [in] resMm: voxel resolution
 // returns: VoxelGrid
 const initVGForPoints = (pts, resMm) => {
     const MARGIN_MM = 1;
-    const aabb = computeAABB(pts);
-    return initVG(aabb, resMm, new Quaternion().identity(), MARGIN_MM);
-};
-
-// Initialize voxel grid for storing AABB.
-// [in] aabbL: {min: Vector3, max: Vector3}, in local coordinates
-// [in] res: voxel resolution
-// [in] rotLToW: rotation from local to world, corresponding to aabbL
-// [in] margin: margin, min distance between AABB & grid cells.
-// returns: VoxelGrid
-const initVG = (aabbL, res, rotLToW = new Quaternion().identity(), margin = 1) => {
-    const min = aabbL.min.clone();
-    const max = aabbL.max.clone();
+    const { min, max } = computeAABB(pts);
     const center = min.clone().add(max).divideScalar(2);
-    min.subScalar(margin);
-    max.addScalar(margin);
+    
+    min.subScalar(MARGIN_MM);
+    max.addScalar(MARGIN_MM);
 
-    const numV = max.clone().sub(min).divideScalar(res).ceil();
-    const gridMinL = center.clone().sub(numV.clone().multiplyScalar(res / 2));
-    const gridMinW = gridMinL.clone().applyQuaternion(rotLToW);
-    return new VoxelGrid(res, numV.x, numV.y, numV.z, gridMinW, rotLToW);
+    const numV = max.clone().sub(min).divideScalar(resMm).ceil();
+    const gridMin = center.clone().sub(numV.clone().multiplyScalar(resMm / 2));
+    return new VoxelGrid(resMm, numV.x, numV.y, numV.z, gridMin);
 };
 
 
@@ -683,10 +635,6 @@ const isValueInside = (q, xs) => {
 // TODO: this logic still missses tiny features like a screw lead. Need to sample many and reduce later.
 // 0.5mm grid is obviously not enough to capture M1 screw lead mountains.
 const diceSurf = (surf, vg) => {
-    if (!vg.isAxisAligned()) {
-        throw "diceSurf only supports axis-aligned VG";
-    }
-
     console.log("dicing...");
     for (let iz = 0; iz < vg.numZ; iz++) {
         const sliceZ0 = vg.ofs.z + iz * vg.res;
@@ -943,7 +891,6 @@ const createVgVis = (vg, label = "") => {
     const meshContainer = new THREE.Object3D();
     meshContainer.add(meshFull);
     meshContainer.add(meshPartial);
-    meshContainer.quaternion.copy(vg.rot);
     meshContainer.position.copy(vg.ofs);
 
     const axesHelper = new THREE.AxesHelper();
