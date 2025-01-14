@@ -459,12 +459,15 @@ class TrackingVoxelGrid {
         console.log("delta-work-count-min", minVg.count());
         console.log("delta-work-count-max", maxVg.count());
 
+        let errors = 0;
         for (let z = 0; z < this.numZ; z++) {
             for (let y = 0; y < this.numY; y++) {
                 for (let x = 0; x < this.numX; x++) {
                     const i = x + y * this.numX + z * this.numX * this.numY;
                     if (maxVg.data[i] < minVg.data[i]) {
-                        throw `Min/max reversal at i=${i}`;
+                        const p = this.centerOf(x, y, z);
+                        const locator = `ix=(${x},${y},${z}), p=(${p.x},${p.y},${p.z})`;
+                        throw `Min/max reversal, at ${locator}`;
                     }
 
                     // Compute conservative bounds that holds even with quantization error of minVg & maxVg.
@@ -495,7 +498,26 @@ class TrackingVoxelGrid {
                     if (isMax) {
                         // this voxel can be potentially uncertainly removed.
                         if (this.dataT[i] !== TG_EMPTY) {
-                            throw `Remove can affect protected region i=${i} / tgt=${this.dataT[i]}`;
+                            const p = this.centerOf(x, y, z);
+                            const locator = `ix=(${x},${y},${z}), p=(${p.x},${p.y},${p.z})`;
+                            console.log(`isMin=${isMin}, isMax=${isMax}`);
+                            for (let dz = -1; dz <= 1; dz++) {
+                                for (let dy = -1; dy <= 1; dy++) {
+                                    for (let dx = -1; dx <= 1; dx++) {
+                                        const ox = x + dx;
+                                        const oy = y + dy;
+                                        const oz = z + dz;
+                                        if (ox < 0 || ox >= this.numX || oy < 0 || oy >= this.numY || oz < 0 || oz >= this.numZ) {
+                                            continue;
+                                        }
+        
+                                        const oi = ox + oy * this.numX + oz * this.numX * this.numY;
+                                        console.log(`o=(${ox},${oy},${oz}), minVg=${minVg.data[oi]}, maxVg=${maxVg.data[oi]}`);
+                                    }
+                                }
+                            }
+                            errors++;
+                            //throw `Remove can affect protected region TG=${this.dataT[i]}, at ${locator}`;
                         }
                     }
                     
@@ -507,6 +529,7 @@ class TrackingVoxelGrid {
                 }
             }
         }
+        console.log(`commitRemoval errors=${errors}`);
     }
 
     // returns volume of remaining work.
@@ -541,8 +564,8 @@ class TrackingVoxelGrid {
         return offset + maxVoxelCenterOfs;
     }
 
-    // Returns true if given semi-infinite cylinder is blocked by material.
-    // Note this method only checks intersection of voxel center, not voxel volume.
+    // Returns true if given semi-infinite cylinder is blocked by material, conservatively.
+    // Conservative: voxels with potential overlaps will be considered for block-detection.
     //
     // [in] p: start point
     // [in] n: direction (the cylinder extends infinitely towards n+ direction)
@@ -559,13 +582,10 @@ class TrackingVoxelGrid {
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
-                    // skip empty voxel
-                    if (this.getT(ix, iy, iz) === TG_EMPTY && this.getW(ix, iy, iz) === W_DONE) {
+                    if (!isect(this.centerOf(ix, iy, iz))) {
                         continue;
                     }
-                    
-                    // if not empty, check if intersects
-                    if (isect(this.centerOf(ix, iy, iz))) {
+                    if (this.#blockedConsevativeAt(ix, iy, iz)) {
                         return true;
                     }
                 }
@@ -574,7 +594,8 @@ class TrackingVoxelGrid {
         return false;
     }
 
-    // Returns true if given ELH is blocked by material.
+    // Returns true if given ELH is blocked by material, conservatively.
+    // Conservative: voxels with potential overlaps will be considered for block-detection.
     //
     // [in] p: start point
     // [in] q: end point
@@ -612,13 +633,10 @@ class TrackingVoxelGrid {
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
-                    // skip empty voxel
-                    if (this.getT(ix, iy, iz) === TG_EMPTY && this.getW(ix, iy, iz) === W_DONE) {
+                    if (!isectELH(this.centerOf(ix, iy, iz))) {
                         continue;
                     }
-                    
-                    // if not empty, check if intersects
-                    if (isectELH(this.centerOf(ix, iy, iz))) {
+                    if (this.#blockedConsevativeAt(ix, iy, iz)) {
                         return true;
                     }
                 }
@@ -627,7 +645,47 @@ class TrackingVoxelGrid {
         return false;
     }
 
-    // Returns true if given ELH is accessible.
+    #blockedConsevativeAt(ix, iy, iz) {
+        for (let dz = -1; dz <= 1; dz++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    const ox = ix + dx;
+                    const oy = iy + dy;
+                    const oz = iz + dz;
+                    if (ox < 0 || ox >= this.numX || oy < 0 || oy >= this.numY || oz < 0 || oz >= this.numZ) {
+                        continue;
+                    }
+                    if (this.get(ox, oy, oz) !== C_EMPTY_DONE) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    #roughCutPreventedConservativeAt(ix, iy, iz) {
+        for (let dz = -1; dz <= 1; dz++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    const ox = ix + dx;
+                    const oy = iy + dy;
+                    const oz = iz + dz;
+                    if (ox < 0 || ox >= this.numX || oy < 0 || oy >= this.numY || oz < 0 || oz >= this.numZ) {
+                        continue;
+                    }
+                    const st = this.get(ox, oy, oz);
+                    if (st !== C_EMPTY_DONE && st !== C_EMPTY_REMAINING) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    // Returns true if given ELH is accessible for work, conservatively.
+    // accessible for work: work won't accidentally destroy protected region && region contains work.
     //
     // [in] p: start point
     // [in] q: end point
@@ -663,32 +721,19 @@ class TrackingVoxelGrid {
             return dist <= r;
         };
 
-        let hasAnyWork = false;
+        let hasAnyWork = true;
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
-                    const tst = this.getT(ix, iy, iz);
-                    const wst = this.getW(ix, iy, iz);
-
-                    // skip empty voxel
-                    if (tst === TG_EMPTY && wst === W_DONE) {
-                        continue;
-                    }
-                    
-                    // if not empty, check if intersects
                     if (!isectELH(this.centerOf(ix, iy, iz))) {
                         continue;
                     }
 
-                    if (tst === TG_PARTIAL) {
-                        return false; // cannot work on this, blocked by partial target
-                    } else if (tst === TG_FULL) {
-                        return false; // cannot work on this, blocked by full target
-                    } else {
-                        // tst === TG_EMPTY
-                        if (wst === W_REMAINING) {
-                            hasAnyWork = true;
-                        }
+                    if (this.#roughCutPreventedConservativeAt(ix, iy, iz)) {
+                        return false;
+                    }
+                    if (this.getW(ix, iy, iz) === W_REMAINING) {
+                        hasAnyWork = true;
                     }
                 }
             }
@@ -709,6 +754,22 @@ class TrackingVoxelGrid {
     // [in] tgt: one of TG_FULL, TG_PARTIAL, TG_EMPTY
     setT(ix, iy, iz, tst) {
         this.dataT[ix + iy * this.numX + iz * this.numX * this.numY] = tst;
+    }
+
+    // [in] ix, iy, iz: voxel index
+    // returns: voxel value
+    get(ix, iy, iz) {
+        const t = this.dataT[ix + iy * this.numX + iz * this.numX * this.numY];
+        const w = this.dataW[ix + iy * this.numX + iz * this.numX * this.numY];
+
+        switch (t) {
+            case TG_FULL:
+                return C_FULL_DONE;
+            case TG_EMPTY:
+                return w === W_DONE ? C_EMPTY_DONE : C_EMPTY_REMAINING;
+            case TG_PARTIAL:
+                return w === W_DONE ? C_PARTIAL_DONE : C_PARTIAL_REMAINING;
+        }
     }
 
     // [in] ix, iy, iz: voxel index
@@ -1328,6 +1389,14 @@ const createCylinderVis = (p, n, r, col) => {
     return mesh;
 };
 
+const createErrorLocVis = (p, col) => {
+    const sphGeom = new THREE.SphereGeometry(0.1);
+    const sphMat = new THREE.MeshBasicMaterial({ color: col });
+    const sph = new THREE.Mesh(sphGeom, sphMat);
+    sph.position.copy(p);
+    return sph;
+}
+
 /**
  * Scene is in mm unit. Right-handed, Z+ up. Work-coordinates.
  */
@@ -1382,6 +1451,8 @@ class View3D {
         this.showSweepSlice = false;
         this.showSweepRemoval = false;
         this.showPlanPath = true;
+
+        this.scene.add(createErrorLocVis(new THREE.Vector3(4.25,2.25,0.7499999999999991), "violet"));
 
         this.initGui();
     }
@@ -1583,6 +1654,8 @@ class View3D {
         // Sweep hyperparams
         const feedDepth = 1; // TODO: reduce later. currently too big for easy debug.
 
+        const sweepVises = [];
+
         // Generate "planar sweep", directly below given plane.
         //
         // [in] normal THREE.Vector3, work coords. = tip normal
@@ -1618,8 +1691,7 @@ class View3D {
                                     .sub(feedDir.clone().multiplyScalar(outerRadius))
                                     .sub(rowDir.clone().multiplyScalar(outerRadius));
             
-            const vises = [];
-
+            sweepVises.length = 0;
             for (let ixRow = 0; ixRow < numRows; ixRow++) {
                 const row = [];
                 for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
@@ -1627,22 +1699,24 @@ class View3D {
                         .add(rowDir.clone().multiplyScalar(feedWidth * ixRow))
                         .add(feedDir.clone().multiplyScalar(segmentLength * ixSeg));
                     const segEnd = segBegin.clone().add(feedDir.clone().multiplyScalar(segmentLength));
+
+                    const segBeginBot = segBegin.clone().sub(normal.clone().multiplyScalar(feedDepth));
+                    const segEndBot = segEnd.clone().sub(normal.clone().multiplyScalar(feedDepth));
                     
-                    const segBeginBottom = segBegin.clone().sub(normal.clone().multiplyScalar(feedDepth));
-                    const accessOk = !this.trvg.queryBlockedCylinder(segBeginBottom, normal, this.toolDiameter / 2);
+                    const accessOk = !this.trvg.queryBlockedCylinder(segBeginBot, normal, this.toolDiameter / 2);
                     
-                    const notBlocked = !this.trvg.queryBlockedELH(segBegin, segEnd, normal, this.toolDiameter / 2, outerRadius);
-                    const okToCut = this.trvg.queryOkToCutELH(segBegin, segEnd, normal.clone().multiplyScalar(-1), this.toolDiameter / 2, feedDepth);
+                    // const notBlocked = !this.trvg.queryBlockedELH(segBegin, segEnd, normal, this.toolDiameter / 2, outerRadius);
+                    const notBlocked = true;
+                    const collateralRange = 10;
+                    const okToCut = this.trvg.queryOkToCutELH(segBeginBot, segEndBot, normal, this.toolDiameter / 2, collateralRange);
                     
                     const workOk = notBlocked && okToCut;
 
                     const col = new THREE.Color().setRGB(0, notBlocked ? 1 : 0, okToCut ? 1 : 0);
                     
-                    vises.push(createCylinderVis(segBegin, normal, this.toolDiameter / 2, col));
+                    sweepVises.push(createCylinderVis(segBegin, normal, this.toolDiameter / 2, col));
 
-                    const segEndBot = segEnd.clone().sub(normal.clone().multiplyScalar(feedDepth));
-
-                    row.push({ accessOk, workOk, segBegin, segEndBot });
+                    row.push({ accessOk, workOk, segBegin, segEnd, segBeginBot, segEndBot });
                 }
                 rows.push(row);
             }
@@ -1700,6 +1774,13 @@ class View3D {
                 prevPtTipPos = pathPt.tipPosW;
             };
 
+            const pushNonRemoveMovement = (pathPt) => {
+                sweepPath.push(pathPt);
+                prevPtTipPos = pathPt.tipPosW;
+            };
+
+            const evacuateOffset = normal.clone().multiplyScalar(3);
+
             for (let ixRow = 0; ixRow < rows.length; ixRow++) {
                 const row = rows[ixRow];
                 let entered = false;
@@ -1708,13 +1789,34 @@ class View3D {
                     let pushThisSeg = false;
                     if (!entered) {
                         if (seg.accessOk & seg.workOk) {
+                            pushNonRemoveMovement({
+                                sweep: this.numSweeps,
+                                group: `sweep-${this.numSweeps}`,
+                                type: "move-in",
+                                tipNormalW: normal,
+                                tipPosW: seg.segBegin.clone().add(evacuateOffset),
+                            });
+                            pushNonRemoveMovement({
+                                sweep: this.numSweeps,
+                                group: `sweep-${this.numSweeps}`,
+                                type: "move-in",
+                                tipNormalW: normal,
+                                tipPosW: seg.segBeginBot,
+                            });
                             entered = true;
                             pushThisSeg = true;
                         }
                     } else {
-                        if (seg.workOk) {
+                        if (seg.workOk && ixSeg !== row.length - 1) {
                             pushThisSeg = true;
                         } else {
+                            pushNonRemoveMovement({
+                                sweep: this.numSweeps,
+                                group: `sweep-${this.numSweeps}`,
+                                type: "move-out",
+                                tipNormalW: normal,
+                                tipPosW: seg.segBegin.clone().add(evacuateOffset),
+                            });
                             entered = false;
                         }
                     }
@@ -1732,6 +1834,10 @@ class View3D {
                         pushRemoveMovement(pt);
                     }
                 }
+
+                if (entered) {
+                    throw "Row ended, but path continues; scan range too small";
+                }
             }
 
             if (sweepPath.length === 0) {
@@ -1744,7 +1850,7 @@ class View3D {
                 toolIx: toolIx,
                 toolLength: toolLength,
                 vis: {
-                    list: vises,
+                    //list: sweepVises,
                 }
             };
         };
@@ -1752,12 +1858,15 @@ class View3D {
         let sweep = null;
         for (let i = 0; i < this.planner.normals.length; i++) {
             sweep = genPlanarSweep(this.planner.normals[this.planner.normalIndex], this.planner.offsets[this.planner.normalIndex]);
-            this.planner.offsets[this.planner.normalIndex] += feedDepth;
+            this.planner.offsets[this.planner.normalIndex] -= feedDepth;
             if (sweep) {
                 break;
             }
             this.planner.normalIndex = (this.planner.normalIndex + 1) % this.planner.normals.length;
         }
+
+        this.updateVis("sweep-slice-vg", sweepVises, this.showSweepSlice);
+
         if (sweep === null) {
             console.log("possible sweep exhausted");
             return false;
@@ -1780,7 +1889,7 @@ class View3D {
         this.numSweeps++;
         this.showingSweep++;
 
-        this.updateVis("sweep-slice-vg", sweep.vis.list, this.showSweepSlice);
+        
         //this.updateVis("sweep-removal-vg", [createVgVis(sweep.deltaWork, "sweep-removal")], this.showSweepRemoval);
 
         this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath, false);
