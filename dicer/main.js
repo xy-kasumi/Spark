@@ -25,6 +25,105 @@ const C_PARTIAL_DONE = 1; // current=partial
 const C_PARTIAL_REMAINING = 2; // current=full
 
 
+let debugSamples = false;
+const debugBuf = {
+    checked: [],
+    commit: [],
+};
+
+// see https://iquilezles.org/articles/distfunctions/ for SDFs in general.
+
+// Returns a SDF for a cylinder.
+// [in] p: start point
+// [in] n: direction (the cylinder extends infinitely towards n+ direction)
+// [in] r: radius
+// returns: SDF: THREE.Vector3 -> number (+: outside, 0: surface, -: inside)
+const createSdfCylinder = (p, n, r) => {
+    if (n.length() !== 1) {
+        throw "Cylinder direction not normalized";
+    }
+    const sdf = x => {
+        const dx = x.clone().sub(p);
+
+        // decompose into 1D + 2D
+        const dx1 = dx.dot(n);
+        const dx2 = dx.clone().projectOnPlane(n);
+
+        // 1D distance from interval [0, +inf)
+        const d1 = -dx1;
+
+        // 2D distance from a circle r.
+        const d2 = dx2.length() - r;
+
+        // Combine 1D + 2D distances.
+        return Math.min(Math.max(d1, d2), 0) + Math.hypot(Math.max(d1, 0), Math.max(d2, 0));
+    };
+    return sdf;
+};
+
+// Returns a SDF for ELH (extruded long hole).
+//
+// [in] p: start point
+// [in] q: end point
+// [in] n: direction (p-q must be perpendicular to n). LH is extruded along n+, by h.
+// [in] r: radius (>= 0)
+// [in] h: height (>= 0)
+// returns: SDF: THREE.Vector3 -> number (+: outside, 0: surface, -: inside)
+const createSdfElh = (p, q, n, r, h) => {
+    if (n.length() !== 1) {
+        throw "ELH direction not normalized";
+    }
+    if (q.clone().sub(p).dot(n) !== 0) {
+        throw "Invalid extrusion normal";
+    }
+    const dq = q.clone().sub(p);
+    const dqLenSq = dq.dot(dq);
+    const clamp01 = x => {
+        return Math.max(0, Math.min(1, x));
+    };
+    const sdf = x => {
+        const dx = x.clone().sub(p);
+
+        // decompose into 2D + 1D
+        const dx1 = n.dot(dx);
+        const dx2 = dx.clone().projectOnPlane(n);
+
+        // 1D distance from interval [0, h]
+        const d1 = Math.abs(dx1 - h * 0.5) - h * 0.5;
+
+        // 2D distance from long hole (0,dq,r)
+        const t = clamp01(dx2.dot(dq) / dqLenSq); // limit to line segment (between p & q)
+        const d2 = dx2.distanceTo(dq.clone().multiplyScalar(t)) - r;
+
+        // Combine 1D + 2D distances.
+        return Math.min(Math.max(d1, d2), 0) + Math.hypot(Math.max(d1, 0), Math.max(d2, 0));
+    };
+    return sdf;
+};
+
+const sdfTest = createSdfElh(new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0), 1, 5);
+const testPt = [
+    new THREE.Vector3(0, -1, 0),
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, 2, 0),
+    new THREE.Vector3(0, 5, 0),
+    new THREE.Vector3(0, 6, 0),
+    //
+    new THREE.Vector3(1, -1, 0),
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(1, 1, 0),
+    new THREE.Vector3(1, 2, 0),
+    new THREE.Vector3(1, 5, 0),
+    new THREE.Vector3(1, 6, 0),
+    //
+    new THREE.Vector3(-2, 0, 0)
+];
+testPt.forEach(p => {
+    console.log(`${p.x},${p.y},${p.z}`, sdfTest(p));
+});
+
+
 // Generic voxel grid
 // voxel-local coordinate
 // voxel at (ix, iy, iz):
@@ -59,22 +158,6 @@ class VoxelGrid {
         return vg;
     }
 
-    saturateFill() {
-        for (let i = 0; i < this.data.length; i++) {
-            const v = this.data[i];
-            this.data[i] = v > 0 ? 255 : 0;
-        }
-        return this;
-    }
-
-    saturateEmpty() {
-        for (let i = 0; i < this.data.length; i++) {
-            const v = this.data[i];
-            this.data[i] = v < 255 ? 0 : 255;
-        }
-        return this;
-    }
-
     sub(other) {
         for (let i = 0; i < this.data.length; i++) {
             this.data[i] = Math.max(0, this.data[i] - other.data[i]);
@@ -103,91 +186,6 @@ class VoxelGrid {
         return this;
     }
 
-    extendByRadiusXY(r) {
-        const rN = r / this.res;
-        const ref = this.clone();
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let iy = 0; iy < this.numY; iy++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    let accum = 0;
-                    const rNc = Math.ceil(rN);
-                    for (let dy = -rNc; dy <= rNc; dy++) {
-                        const cy = iy + dy;
-                        if (cy < 0 || cy >= this.numY) continue;
-                        
-                        for (let dx = -rNc; dx <= rNc; dx++) {
-                            const cx = ix + dx;
-                            if (cx < 0 || cx >= this.numX) continue;
-
-                            const dist = Math.sqrt(dx * dx + dy * dy);
-                            if (dist <= rN) {
-                                const v = ref.get(cx, cy, iz);
-                                accum = Math.max(accum, v);
-                            }
-                        }
-                    }
-                    this.set(ix, iy, iz, accum);
-                }
-            }
-        }
-        return this;
-    }
-
-    // return: number | null, max iz that has any non-zero cell.
-    findMaxNonZeroZ() {
-        for (let iz = this.numZ - 1; iz >= 0; iz--) {
-            for (let iy = 0; iy < this.numY; iy++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    if (this.get(ix, iy, iz) > 0) {
-                        return iz;
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    // Scan towards Z- direction, keeping max value in the column.
-    scanZMaxDesc() {
-        for (let iy = 0; iy < this.numY; iy++) {
-            for (let ix = 0; ix < this.numX; ix++) {
-                let maxZ = 0;
-                for (let iz = this.numZ - 1; iz >= 0; iz--) {
-                    maxZ = Math.max(maxZ, this.get(ix, iy, iz));
-                    this.set(ix, iy, iz, maxZ);
-                }
-            }
-        }
-    }
-    
-    /** Keep specified Z-layer, set 0 to all others. */
-    filterZ(iz) {
-        for (let i = 0; i < this.data.length; i++) {
-            if (Math.floor(i / (this.numX * this.numY)) !== iz) {
-                this.data[i] = 0;
-            }
-        }
-        return this;
-    }
-
-    filterY(iy) {
-        for (let i = 0; i < this.data.length; i++) {
-            if (Math.floor(i / this.numX) % this.numY !== iy) {
-                this.data[i] = 0;
-            }
-        }
-        return this;
-    }
-
-    filterX(ix) {
-        for (let i = 0; i < this.data.length; i++) {
-            if (i % this.numX !== ix) {
-                this.data[i] = 0;
-            }
-        }
-        return this;
-    }
-
     // Set cells inside the "extruded long hole" shape to val.
     // Note this method only test intersection of voxel center, rather than voxel volume.
     //
@@ -196,77 +194,18 @@ class VoxelGrid {
     // [in] r: radius of the hole
     // [in] val: value to set to cells
     setExtrudedLongHole(p, q, n, r, val) {
-        if (q.clone().sub(p).dot(n) !== 0) {
-            throw "Invalid extrusion normal";
-        }
-
-        const pL = p.clone().applyMatrix4(this.wToL);
-        const qL = q.clone().applyMatrix4(this.wToL);
-        const nL = n.clone().transformDirection(this.wToL);
-        const dL = qL.clone().sub(pL);
-
-        // Compute intersection of voxel-coordinate point and the ELH-shape.
-        // Uses pL-origin coordinates for computation.
-        //
-        // [in] c: voxel-coordinate point
-        // returns: true if intersects, false otherwise
-        const isectLongHole = (c) => {
-            const dc = c.clone().sub(pL);
-
-            // reject half-space
-            {
-                const t = dc.dot(nL);
-                if (t < 0) {
-                    return false; // opposite region of the shape
-                }
-            }
-
-            // Project onto the plane and turn into 2D problem.
-            const cPlane = dc.clone().projectOnPlane(nL);
-            
-            // now find closest point on line 0-(q-p).
-            let t = cPlane.dot(dL) / dL.dot(dL);
-            t = Math.max(0, Math.min(1, t)); // limit to line segment (between p & q)
-            const cLine = dL.clone().multiplyScalar(t);
-            const dist = cLine.distanceTo(cPlane);
-            return dist <= r;
-        };
+        const sdf = createSdfElh(p, q, n, r, 100);
 
         // TODO: optimize. No need to scan all voxels.
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
-                    const locCenter = new Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res);
-                    if (isectLongHole(locCenter)) {
+                    if (sdf(this.centerOf(ix, iy, iz)) <= 0) {
                         this.set(ix, iy, iz, val);
                     }
                 }
             }
         }
-    }
-
-    /////
-    // boolean ops
-
-    not() {
-        for (let i = 0; i < this.data.length; i++) {
-            this.data[i] = this.data[i] > 0 ? 0 : 255;
-        }
-        return this;
-    }
-
-    and(other) {
-        for (let i = 0; i < this.data.length; i++) {
-            this.data[i] = (this.data[i] > 0 && other.data[i] > 0) ? 255 : 0;
-        }
-        return this;
-    }
-
-    or(other) {
-        for (let i = 0; i < this.data.length; i++) {
-            this.data[i] = (this.data[i] > 0 || other.data[i] > 0) ? 255 : 0;
-        }
-        return this;
     }
 
     /////
@@ -303,20 +242,6 @@ class VoxelGrid {
 
     centerOf(ix, iy, iz) {
         return new Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res).applyMatrix4(this.lToW);
-    }
-
-    getNearest(p) {
-        const ix = p.clone().applyMatrix4(this.wToL).multiplyScalar(1 / this.res).floor();
-        if (ix.x < 0 || ix.x >= this.numX) {
-            return 0;
-        }
-        if (ix.y < 0 || ix.y >= this.numY) {
-            return 0;
-        }
-        if (ix.z < 0 || ix.z >= this.numZ) {
-            return 0;
-        }
-        return this.get(ix.x, ix.y, ix.z);
     }
 }
 
@@ -421,23 +346,6 @@ class TrackingVoxelGrid {
         return res;
     }
 
-    // Scaffold for refactoring.
-    // returns: VoxelGrid (0: free, 255: maybe blocked)
-    extractBlocked() {
-        const res = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs.clone());
-        for (let i = 0; i < this.dataW.length; i++) {
-            const tst = this.dataT[i];
-            const wst = this.dataW[i];
-
-            if (tst === TG_EMPTY && wst === W_DONE) {
-                res.data[i] = 0;
-            } else {
-                res.data[i] = 255;
-            }
-        }
-        return res;
-    }
-
     // Commit (rough) removal of minGeom and maxGeom.
     // maxGeom >= minGeom must hold. otherwise, throw error.
     //
@@ -459,7 +367,7 @@ class TrackingVoxelGrid {
         console.log("delta-work-count-min", minVg.count());
         console.log("delta-work-count-max", maxVg.count());
 
-        let errors = 0;
+        let errorPts = [];
         for (let z = 0; z < this.numZ; z++) {
             for (let y = 0; y < this.numY; y++) {
                 for (let x = 0; x < this.numX; x++) {
@@ -494,13 +402,56 @@ class TrackingVoxelGrid {
                         }
                     }
 
+                    const isNE = this.dataT[i] !== TG_EMPTY;
+                    let isNEExt = false;
+                    for (let dz = -1; dz <= 1; dz++) {
+                        for (let dy = -1; dy <= 1; dy++) {
+                            for (let dx = -1; dx <= 1; dx++) {
+                                const ox = x + dx;
+                                const oy = y + dy;
+                                const oz = z + dz;
+                                if (ox < 0 || ox >= this.numX || oy < 0 || oy >= this.numY || oz < 0 || oz >= this.numZ) {
+                                    continue;
+                                }
+
+                                const oi = ox + oy * this.numX + oz * this.numX * this.numY;
+                                if (this.dataT[oi] !== TG_EMPTY) {
+                                    isNEExt = true;
+                                }
+                            }
+                        }
+                    }
+                    const max = maxVg.data[i] === 255;
+
+                    // Assumed invariance
+                    // max => isMax
+                    // isNE => isNEExt
+                    // (isMax && isNE) == (max && isNEExt)
+                    /*
+                    if (max && !isMax) {
+                        console.log(`invariance violation: max=${max}, isMax=${isMax}`);
+                    }
+                    if (isNE && !isNEExt) {
+                        console.log(`invariance violation: isNE=${isNE}, isNEExt=${isNEExt}`);
+                    }
+                    if ((isMax && isNE) !== (max && isNEExt)) {
+                        console.log(`invariance violation: isMax=${isMax}, isNE=${isNE}, max=${max}, isNEExt=${isNEExt}`);
+                    }
+                        */
+
+
+
+                    
+
                     // Commit.
                     if (isMax) {
+                        debugBuf.commit.push({ix: x, iy: y, iz: z});
                         // this voxel can be potentially uncertainly removed.
-                        if (this.dataT[i] !== TG_EMPTY) {
+                        if (isNE) {
                             const p = this.centerOf(x, y, z);
                             const locator = `ix=(${x},${y},${z}), p=(${p.x},${p.y},${p.z})`;
                             console.log(`isMin=${isMin}, isMax=${isMax}`);
+                            /*
                             for (let dz = -1; dz <= 1; dz++) {
                                 for (let dy = -1; dy <= 1; dy++) {
                                     for (let dx = -1; dx <= 1; dx++) {
@@ -512,11 +463,13 @@ class TrackingVoxelGrid {
                                         }
         
                                         const oi = ox + oy * this.numX + oz * this.numX * this.numY;
-                                        console.log(`o=(${ox},${oy},${oz}), minVg=${minVg.data[oi]}, maxVg=${maxVg.data[oi]}`);
+                                        //console.log(`o=(${ox},${oy},${oz}), minVg=${minVg.data[oi]}, maxVg=${maxVg.data[oi]}`);
                                     }
                                 }
                             }
-                            errors++;
+                            */
+                            errorPts.push({ix: x, iy: y, iz: z});
+                            console.log(`Remove can affect protected region TG=${this.dataT[i]}, at ${locator}`);
                             //throw `Remove can affect protected region TG=${this.dataT[i]}, at ${locator}`;
                         }
                     }
@@ -529,7 +482,11 @@ class TrackingVoxelGrid {
                 }
             }
         }
-        console.log(`commitRemoval errors=${errors}`);
+        console.log(`commitRemoval errors=${errorPts.length}`);
+        if (debugSamples) {
+            console.log(errorPts);
+            console.log(debugBuf);
+        }
     }
 
     // returns volume of remaining work.
@@ -572,17 +529,11 @@ class TrackingVoxelGrid {
     // [in] r: radius
     // returns: true if blocked, false otherwise
     queryBlockedCylinder(p, n, r) {
-        const isect = q => {
-            const d = q.clone().sub(p);
-            if (n.dot(d) < 0) {
-                return false;
-            }
-            return d.projectOnPlane(n).length() <= r;
-        };
+        const sdf = createSdfCylinder(p, n, r);
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
-                    if (!isect(this.centerOf(ix, iy, iz))) {
+                    if (sdf(this.centerOf(ix, iy, iz)) > 0) {
                         continue;
                     }
                     if (this.#blockedConsevativeAt(ix, iy, iz)) {
@@ -604,36 +555,11 @@ class TrackingVoxelGrid {
     // [in] h: height (>= 0)
     // returns: true if blocked, false otherwise
     queryBlockedELH(p, q, n, r, h) {
-        if (q.clone().sub(p).dot(n) !== 0) {
-            throw "Invalid extrusion normal";
-        }
-
-        const dq = q.clone().sub(p);
-        const isectELH = (x) => {
-            const dx = x.clone().sub(p);
-            // reject half-space
-            if (n.dot(dx) < 0) {
-                return false; // opposite region of the shape
-            }
-            if (n.dot(dx) > h) {
-                return false; // too far
-            }
-
-            // Project onto the plane and turn into 2D problem.
-            const xOnPlane = dx.clone().projectOnPlane(n);
-            
-            // now find closest point on line 0-dq.
-            let t = xOnPlane.dot(dq) / dq.dot(dq);
-            t = Math.max(0, Math.min(1, t)); // limit to line segment (between p & q)
-            const xLine = dq.clone().multiplyScalar(t);
-            const dist = xLine.distanceTo(xOnPlane);
-            return dist <= r;
-        };
-
+        const sdf = createSdfElh(p, q, n, r, h);
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
-                    if (!isectELH(this.centerOf(ix, iy, iz))) {
+                    if (sdf(this.centerOf(ix, iy, iz)) > 0) {
                         continue;
                     }
                     if (this.#blockedConsevativeAt(ix, iy, iz)) {
@@ -721,7 +647,7 @@ class TrackingVoxelGrid {
             return dist <= r;
         };
 
-        let hasAnyWork = true;
+        // let hasAnyWork = true;
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
@@ -732,13 +658,16 @@ class TrackingVoxelGrid {
                     if (this.#roughCutPreventedConservativeAt(ix, iy, iz)) {
                         return false;
                     }
+                    debugBuf.checked.push({ix, iy, iz});
+                    /*
                     if (this.getW(ix, iy, iz) === W_REMAINING) {
                         hasAnyWork = true;
                     }
+                    */
                 }
             }
         }
-        return hasAnyWork;
+        return true;
     }
 
     /////
@@ -757,7 +686,7 @@ class TrackingVoxelGrid {
     }
 
     // [in] ix, iy, iz: voxel index
-    // returns: voxel value
+    // returns: voxel value. One of C_FULL_DONE, C_EMPTY_DONE, C_EMPTY_REMAINING, C_PARTIAL_DONE, C_PARTIAL_REMAINING.
     get(ix, iy, iz) {
         const t = this.dataT[ix + iy * this.numX + iz * this.numX * this.numY];
         const w = this.dataW[ix + iy * this.numX + iz * this.numX * this.numY];
@@ -789,20 +718,6 @@ class TrackingVoxelGrid {
 
     centerOf(ix, iy, iz) {
         return new Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res).add(this.ofs);
-    }
-
-    getNearest(p) {
-        const ix = p.clone().sub(this.ofs).multiplyScalar(1 / this.res).floor();
-        if (ix.x < 0 || ix.x >= this.numX) {
-            return 0;
-        }
-        if (ix.y < 0 || ix.y >= this.numY) {
-            return 0;
-        }
-        if (ix.z < 0 || ix.z >= this.numZ) {
-            return 0;
-        }
-        return this.get(ix.x, ix.y, ix.z);
     }
 }
 
@@ -1649,6 +1564,10 @@ class View3D {
         if (diffVg.count() === 0) {
             console.log("done!");
             return false;
+        }
+
+        if (this.numSweeps === 2) {
+            debugSamples = true;
         }
 
         // Sweep hyperparams
