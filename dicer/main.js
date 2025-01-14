@@ -11,25 +11,19 @@ const fontLoader = new FontLoader();
 let font = null;
 
 
-const TG_FULL = 2; // fully occupied
+const TG_FULL = 0; // fully occupied
 const TG_PARTIAL = 1; // partially occupied
-const TG_EMPTY = 0; // empty
+const TG_EMPTY = 2; // empty
 
-const W_REMAINING = 1; // remaining work
-const W_DONE = 0; // work done
+const W_REMAINING = 0; // remaining work
+const W_DONE = 1; // work done
 
 const C_FULL_DONE = 0;  // current=full
 const C_EMPTY_DONE = 1;  // current=empty
 const C_EMPTY_REMAINING = 2; // current=non-empty
-const C_PARTIAL_DONE = 1; // current=partial
-const C_PARTIAL_REMAINING = 2; // current=full
+const C_PARTIAL_DONE = 3; // current=partial
+const C_PARTIAL_REMAINING = 4; // current=full
 
-
-let debugSamples = false;
-const debugBuf = {
-    checked: [],
-    commit: [],
-};
 
 // see https://iquilezles.org/articles/distfunctions/ for SDFs in general.
 
@@ -75,6 +69,9 @@ const createSdfElh = (p, q, n, r, h) => {
     }
     if (q.clone().sub(p).dot(n) !== 0) {
         throw "Invalid extrusion normal";
+    }
+    if (q.distanceTo(p) < 0) {
+        throw "Invalid p-q pair";
     }
     const dq = q.clone().sub(p);
     const dqLenSq = dq.dot(dq);
@@ -210,6 +207,16 @@ class VoxelGrid {
         return cnt;
     }
 
+    countEq(val) {
+        let cnt = 0;
+        for (let i = 0; i < this.data.length; i++) {
+            if (this.data[i] === val) {
+                cnt++;
+            }
+        }
+        return cnt;
+    }
+
     //////
     // spatial op
 
@@ -306,7 +313,7 @@ class TrackingVoxelGrid {
     // Scaffold for refactoring.
     // returns: VoxelGrid (0: empty, 255: full)
     extractWork() {
-        const res = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs.clone());
+        const res = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         for (let i = 0; i < this.dataW.length; i++) {
             res.data[i] = this.dataW[i] === W_REMAINING ? 255 : 0;
         }
@@ -316,7 +323,7 @@ class TrackingVoxelGrid {
     // Scaffold for refactoring.
     // returns: VoxelGrid (0: empty, 128: partial, 255: full)
     extractTarget() {
-        const res = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs.clone());
+        const res = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         for (let i = 0; i < this.dataT.length; i++) {
             res.data[i] = this.dataT[i] === TG_FULL ? 255 : (this.dataT[i] === TG_PARTIAL ? 128 : 0);
         }
@@ -332,8 +339,8 @@ class TrackingVoxelGrid {
     // [in] minGeoms: array of shape descriptor, treated as union of all shapes.
     // [in] maxGeoms: array of shape descriptor, treated as union of all shapes
     commitRemoval(minGeoms, maxGeoms) {
-        const minVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs.clone());
-        const maxVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs.clone());
+        const minVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
+        const maxVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         minGeoms.forEach(g => {
             minVg.setExtrudedLongHole(g.p, g.q, g.n, g.r, 255, false);
         });
@@ -348,26 +355,25 @@ class TrackingVoxelGrid {
         for (let z = 0; z < this.numZ; z++) {
             for (let y = 0; y < this.numY; y++) {
                 for (let x = 0; x < this.numX; x++) {
-                    const i = x + y * this.numX + z * this.numX * this.numY;
-                    const isInMax = maxVg.data[i] > 0;
-                    const isInMin = minVg.data[i] > 0;
+                    const isInMax = maxVg.get(x, y, z) > 0;
+                    const isInMin = minVg.get(x, y, z) > 0;
                     if (isInMin && !isInMax) {
                         const p = this.centerOf(x, y, z);
                         const locator = `ix=(${x},${y},${z}), p=(${p.x},${p.y},${p.z})`;
                         throw `Min/max reversal, at ${locator}`;
                     }
 
+                    const i = x + y * this.numX + z * this.numX * this.numY;
                     const isTargetNotEmpty = this.dataT[i] !== TG_EMPTY;                    
 
                     // Commit.
                     if (isInMax) {
-                        debugBuf.commit.push({ix: x, iy: y, iz: z});
                         // this voxel can be potentially uncertainly removed.
                         if (isTargetNotEmpty) {
                             const p = this.centerOf(x, y, z);
                             const locator = `ix=(${x},${y},${z}), p=(${p.x},${p.y},${p.z})`;
                             //console.log(`isMin=${isInMin}, isMax=${isInMax}`);
-                            errorPts.push({ix: x, iy: y, iz: z});
+                            errorPts.push({ix: x, iy: y, iz: z, p: this.centerOf(x, y, z)});
                             console.log(`Remove can affect protected region TG=${this.dataT[i]}, at ${locator}`);
                             //throw `Remove can affect protected region TG=${this.dataT[i]}, at ${locator}`;
                         }
@@ -382,10 +388,7 @@ class TrackingVoxelGrid {
             }
         }
         console.log(`commitRemoval errors=${errorPts.length}`);
-        if (debugSamples) {
-            console.log(errorPts);
-            console.log(debugBuf);
-        }
+        return errorPts;
     }
 
     // returns volume of remaining work.
@@ -498,7 +501,6 @@ class TrackingVoxelGrid {
                         return false;
                     }
 
-                    // debugBuf.checked.push({ix, iy, iz});
                     /*
                     if (this.getW(ix, iy, iz) === W_REMAINING) {
                         hasAnyWork = true;
@@ -539,6 +541,7 @@ class TrackingVoxelGrid {
             case TG_PARTIAL:
                 return w === W_DONE ? C_PARTIAL_DONE : C_PARTIAL_REMAINING;
         }
+        throw `Invalid cell state T=${t}, W=${w}`;
     }
 
     // [in] ix, iy, iz: voxel index
@@ -869,9 +872,13 @@ const generateStockGeom = () => {
 const createVgVis = (vg, label = "") => {
     const cubeGeom = new THREE.BoxGeometry(vg.res * 0.9, vg.res * 0.9, vg.res * 0.9);
 
-    const num = vg.count();
-    const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial(), num);
-    let instanceIx = 0;
+    //const num = vg.count();
+    const meshFull = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial(), vg.countEq(255));
+    const meshPartial = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial({transparent: true, opacity: 0.25}), vg.countEq(128));
+    
+    //const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial(), num);
+    let instanceIxFull = 0;
+    let instanceIxPartial = 0;
     for (let iz = 0; iz < vg.numZ; iz++) {
         for (let iy = 0; iy < vg.numY; iy++) {
             for (let ix = 0; ix < vg.numX; ix++) {
@@ -884,21 +891,28 @@ const createVgVis = (vg, label = "") => {
                 mtx.compose(
                     new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res),
                     new THREE.Quaternion(),
-                    new THREE.Vector3(1, 1, 1).multiplyScalar(v / 255));
-                mesh.setMatrixAt(instanceIx, mtx);
-                instanceIx++;
+                    new THREE.Vector3(1, 1, 1).multiplyScalar(v === 255 ? 1.0 : 0.8));
+
+                if (v === 255) {
+                    meshFull.setMatrixAt(instanceIxFull, mtx);
+                    instanceIxFull++;
+                } else {
+                    meshPartial.setMatrixAt(instanceIxPartial, mtx);
+                    instanceIxPartial++;
+                }
             }
         }
     }
 
     const meshContainer = new THREE.Object3D();
-    meshContainer.add(mesh);
+    meshContainer.add(meshFull);
+    meshContainer.add(meshPartial);
     meshContainer.quaternion.copy(vg.rot);
     meshContainer.position.copy(vg.ofs);
 
     const axesHelper = new THREE.AxesHelper();
     axesHelper.scale.set(vg.res * vg.numX, vg.res * vg.numY, vg.res * vg.numZ);
-    mesh.add(axesHelper);
+    meshFull.add(axesHelper);
 
     if (label !== "") {
         const textGeom = new TextGeometry(label, {
@@ -913,45 +927,99 @@ const createVgVis = (vg, label = "") => {
     return meshContainer;
 };
 
+// Create a text visualizer.
+// [in] p THREE.Vector3, location in work coords.
+// [in] text string
+// [in] size number, text size
+// [in] color THREE.Color
+// returns: THREE.Mesh
+const createTextVis = (p, text, size=0.25, color="#222222") => {
+    const textGeom = new TextGeometry(text, {
+        font,
+        size,
+        depth: 0.1,
+    });
+    const textMesh = new THREE.Mesh(textGeom, new THREE.MeshBasicMaterial({ color }));
+    textMesh.position.copy(p);
+    return textMesh;
+};
+
 
 // Visualize tool tip path in machine coordinates.
 //
 // [in] array of THREE.Vector3, path segments
+// [in] highlightSweep number, sweep index to highlight
 // returns: THREE.Object3D
-const createPathVis = (path) => {
+const createPathVis = (path, highlightSweep = 2) => {
     if (path.length === 0) {
         return new THREE.Object3D();
-    }
-
-    const vs = [];
-    let prevTipPosW = path[0].tipPosW;
-    for (let i = 1; i < path.length; i++) {
-        const pt = path[i];
-        if (pt.type === "remove-work") {
-            vs.push(prevTipPosW.x, prevTipPosW.y, prevTipPosW.z);
-            vs.push(pt.tipPosW.x, pt.tipPosW.y, pt.tipPosW.z);
-        }
-        prevTipPosW = pt.tipPosW;
     }
 
     const pathVis = new THREE.Object3D();
 
     // add remove path vis
+    const vs = [];
+    const cs = [];
+    let prevTipPosW = path[0].tipPosW;
+    for (let i = 1; i < path.length; i++) {
+        const pt = path[i];
+        vs.push(prevTipPosW.x, prevTipPosW.y, prevTipPosW.z);
+        vs.push(pt.tipPosW.x, pt.tipPosW.y, pt.tipPosW.z);
+
+        if (pt.sweep === highlightSweep) {
+            if (pt.type === "remove-work") {
+                // red
+                cs.push(0.8, 0, 0);
+                cs.push(0.8, 0, 0);
+            } else {
+                // blue-ish gray
+                cs.push(0.5, 0.5, 1);
+                cs.push(0.5, 0.5, 1);
+            }
+        } else {
+            if (pt.type === "remove-work") {
+                // red-ish faint gray
+                cs.push(1, 0.8, 0.8);
+                cs.push(1, 0.8, 0.8);
+            } else {
+                // blue-ish faint gray
+                cs.push(0.8, 0.8, 1);
+                cs.push(0.8, 0.8, 1);
+            }
+        }
+        prevTipPosW = pt.tipPosW;
+    }
+
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vs), 3));
-    const mat = new THREE.LineBasicMaterial({ color: 0x808080 });
+    geom.setAttribute('color', new THREE.BufferAttribute(new Float32Array(cs), 3));
+    const mat = new THREE.LineBasicMaterial({ vertexColors: true });
     pathVis.add(new THREE.LineSegments(geom, mat));
 
     // add refresh path vis
     const sphGeom = new THREE.SphereGeometry(0.15);
-    const sphMat = new THREE.MeshBasicMaterial({ color: 0x606060 });
+    const sphRemoveMat = new THREE.MeshBasicMaterial({ color: "red" });
+    const sphOtherMat = new THREE.MeshBasicMaterial({ color: "blue" });
+    const sphNonHighlight = new THREE.MeshBasicMaterial({ color: "gray" });
     for (let i = 0; i < path.length; i++) {
         const pt = path[i];
-        
-        if (pt.type === "move-in") {
-            const sph = new THREE.Mesh(sphGeom, sphMat);
-            sph.position.copy(pt.tipPosW);
-            pathVis.add(sph);
+
+        if (pt.sweep !== highlightSweep) {
+            if (pt.type !== "remove-work") {
+                const sph = new THREE.Mesh(sphGeom, sphNonHighlight);
+                sph.position.copy(pt.tipPosW);
+                pathVis.add(sph);
+            }
+        } else {
+            if (pt.type === "remove-work") {
+                const sph = new THREE.Mesh(sphGeom, sphRemoveMat);
+                sph.position.copy(pt.tipPosW);
+                pathVis.add(sph);
+            } else {
+                const sph = new THREE.Mesh(sphGeom, sphOtherMat);
+                sph.position.copy(pt.tipPosW);
+                pathVis.add(sph);
+            }
         }
     }
 
@@ -1144,6 +1212,10 @@ const createCylinderVis = (p, n, r, col) => {
     return mesh;
 };
 
+// Create a sphere visualizer for error location.
+// [in] p THREE.Vector3, location in work coords.
+// [in] col THREE.Color, color
+// returns: THREE.Mesh
 const createErrorLocVis = (p, col) => {
     const sphGeom = new THREE.SphereGeometry(0.1);
     const sphMat = new THREE.MeshBasicMaterial({ color: col });
@@ -1202,12 +1274,8 @@ class View3D {
         this.showingSweep = 0;
         this.removedVol = 0;
         this.toolIx = 0;
-        this.showSweepAccess = false;
-        this.showSweepSlice = false;
-        this.showSweepRemoval = false;
+        this.showSweepVis = false;
         this.showPlanPath = true;
-
-        this.scene.add(createErrorLocVis(new THREE.Vector3(4.25,2.25,0.7499999999999991), "violet"));
 
         this.initGui();
     }
@@ -1246,21 +1314,14 @@ class View3D {
         gui.add(this, "numSweeps").disable().listen();
         gui.add(this, "removedVol").name("Removed Vol (㎣)").disable().listen();
         gui.add(this, "toolIx").disable().listen();
-        // gui.add(this, "showingSweep", 0, this.numSweeps).step(1).listen();
         gui.add(this, "showTarget")
             .onChange(_ => this.setVisVisibility("targ-vg", this.showTarget))
             .listen();
         gui.add(this, "showWork")
             .onChange(_ => this.setVisVisibility("work-vg", this.showWork))
             .listen();
-        gui.add(this, "showSweepAccess")
-            .onChange(_ => this.setVisVisibility("sweep-access-vg", this.showSweepAccess))
-            .listen();
-        gui.add(this, "showSweepSlice")
-            .onChange(_ => this.setVisVisibility("sweep-slice-vg", this.showSweepSlice))
-            .listen();
-        gui.add(this, "showSweepRemoval")
-            .onChange(_ => this.setVisVisibility("sweep-removal-vg", this.showSweepRemoval))
+        gui.add(this, "showSweepVis")
+            .onChange(_ => this.setVisVisibility("sweep-vis", this.showSweepVis))
             .listen();
         gui.add(this, "showPlanPath")
             .onChange(_ => this.setVisVisibility("plan-path-vg", this.showPlanPath))
@@ -1406,10 +1467,6 @@ class View3D {
             return false;
         }
 
-        if (this.numSweeps === 2) {
-            debugSamples = true;
-        }
-
         // Sweep hyperparams
         const feedDepth = 1; // TODO: reduce later. currently too big for easy debug.
 
@@ -1428,11 +1485,13 @@ class View3D {
         //   vis: {target: VG, blocked: VG}
         // } | null (if impossible)
         const genPlanarSweep = (normal, offset) => {
-            const outerRadius = 25; // Encompasses everything with a margin. TODO: use smaller to increase efficiency
-
             const rot = createRotationWithZ(normal);
             const feedDir = new THREE.Vector3(1, 0, 0).transformDirection(rot);
             const rowDir = new THREE.Vector3(0, 1, 0).transformDirection(rot);
+
+            const halfDiagVec = new THREE.Vector3(this.trvg.numX, this.trvg.numY, this.trvg.numZ).multiplyScalar(this.trvg.res * 0.5);
+            const trvgCenter = this.trvg.ofs.clone().add(halfDiagVec);
+            const trvgRadius = halfDiagVec.length(); // TODO: proper bounds
 
             // rows : [row]
             // row : [segment]
@@ -1444,11 +1503,13 @@ class View3D {
 
             const feedWidth = this.toolDiameter / 2;
             const segmentLength = this.toolDiameter / 2;
-            const numRows = Math.ceil(outerRadius * 2 / feedWidth);
-            const numSegs = Math.ceil(outerRadius * 2 / segmentLength);
-            const scanOrigin = normal.clone().multiplyScalar(offset)
-                                    .sub(feedDir.clone().multiplyScalar(outerRadius))
-                                    .sub(rowDir.clone().multiplyScalar(outerRadius));
+            const numRows = Math.ceil(trvgRadius * 2 / feedWidth);
+            const numSegs = Math.ceil(trvgRadius * 2 / segmentLength);
+            const scanOrigin = 
+                trvgCenter.clone().projectOnPlane(normal)
+                    .add(normal.clone().multiplyScalar(offset))
+                    .add(feedDir.clone().multiplyScalar(-trvgRadius))
+                    .add(rowDir.clone().multiplyScalar(-trvgRadius));
             
             sweepVises.length = 0;
             for (let ixRow = 0; ixRow < numRows; ixRow++) {
@@ -1464,16 +1525,25 @@ class View3D {
                     
                     const accessOk = !this.trvg.queryBlockedCylinder(segBeginBot, normal, this.toolDiameter / 2);
                     
+                    // notBlocked is required when there's work-remaining overhang; technically the tool can cut the overhang too,
+                    // but should be avoided to localize tool wear.
                     // const notBlocked = !this.trvg.queryBlockedELH(segBegin, segEnd, normal, this.toolDiameter / 2, outerRadius);
                     const notBlocked = true;
-                    const collateralRange = 10;
+                    const collateralRange = 100;
                     const okToCut = this.trvg.queryOkToCutELH(segBeginBot, segEndBot, normal, this.toolDiameter / 2, collateralRange);
                     
                     const workOk = notBlocked && okToCut;
 
-                    const col = new THREE.Color().setRGB(0, notBlocked ? 1 : 0, okToCut ? 1 : 0);
-                    
-                    sweepVises.push(createCylinderVis(segBegin, normal, this.toolDiameter / 2, col));
+                    /*
+                    const col = new THREE.Color().setRGB(0, notBlocked ? .5 : 0, okToCut ? .5 : 0);
+                    let label = "";
+                    label += `${ixRow},${ixSeg}:`;
+                    label += accessOk ? "A" : "";
+                    label += notBlocked ? "O" : "";
+                    if (label.length > 0) {
+                        sweepVises.push(createTextVis(segBeginBot, label, 0.25, col));
+                    }
+                    */
 
                     row.push({ accessOk, workOk, segBegin, segEnd, segBeginBot, segEndBot });
                 }
@@ -1482,7 +1552,7 @@ class View3D {
             console.log("sweep-rows", rows);
 
             // in planar sweep, tool is eroded only from the side.
-            const maxWidthLoss = feedWidth * 0.5;
+            const maxWidthLoss = feedWidth * 0.1; // *0.5 is fine for EWR. but with coarse grid, needs to be smaller to not leave gaps between rows.
             const tipRefreshDist = Math.PI * (Math.pow(this.toolDiameter / 2, 2) - Math.pow(this.toolDiameter / 2 - maxWidthLoss, 2)) / this.ewrMax / feedWidth;
             
             // generate zig-zag
@@ -1508,27 +1578,28 @@ class View3D {
             const minSweepRemoveGeoms = [];
             const maxSweepRemoveGeoms = [];
             const pushRemoveMovement = (pathPt) => {
-                if (prevPtTipPos !== null) {
-                    minSweepRemoveGeoms.push({
-                        // extruded long hole
-                        // hole spans from two centers; p and q, with radius r.
-                        // the long hole is then extended towards n direction infinitely.
-                        p: prevPtTipPos,
-                        q: pathPt.tipPosW,
-                        n: pathPt.tipNormalW,
-                        r: this.toolDiameter / 2 - maxWidthLoss,
-                    });
-                    maxSweepRemoveGeoms.push({
-                        // extruded long hole
-                        // hole spans from two centers; p and q, with radius r.
-                        // the long hole is then extended towards n direction infinitely.
-                        p: prevPtTipPos,
-                        q: pathPt.tipPosW,
-                        n: pathPt.tipNormalW,
-                        r: this.toolDiameter / 2,
-                    });
+                if (prevPtTipPos === null) {
+                    throw "remove path needs prevPtTipPos to be set by pushNonRemoveMovement";
                 }
-
+                
+                minSweepRemoveGeoms.push({
+                    // extruded long hole
+                    // hole spans from two centers; p and q, with radius r.
+                    // the long hole is then extended towards n direction infinitely.
+                    p: prevPtTipPos,
+                    q: pathPt.tipPosW,
+                    n: pathPt.tipNormalW,
+                    r: this.toolDiameter / 2 - maxWidthLoss,
+                });
+                maxSweepRemoveGeoms.push({
+                    // extruded long hole
+                    // hole spans from two centers; p and q, with radius r.
+                    // the long hole is then extended towards n direction infinitely.
+                    p: prevPtTipPos,
+                    q: pathPt.tipPosW,
+                    n: pathPt.tipNormalW,
+                    r: this.toolDiameter / 2,
+                });
                 sweepPath.push(pathPt);
                 prevPtTipPos = pathPt.tipPosW;
             };
@@ -1545,7 +1616,18 @@ class View3D {
                 let entered = false;
                 for (let ixSeg = 0; ixSeg < row.length; ixSeg++) {
                     const seg = row[ixSeg];
-                    let pushThisSeg = false;
+                    const pushRemoveThisSeg = () => {
+                        const pt = withAxisValue({
+                            sweep: this.numSweeps,
+                            group: `sweep-${this.numSweeps}`,
+                            type: "remove-work",
+                            tipNormalW: normal,
+                            tipPosW: seg.segEndBot,
+                            toolRotDelta: 123, // TODO: Fix
+                        });
+                        pushRemoveMovement(pt);
+                    };
+
                     if (!entered) {
                         if (seg.accessOk & seg.workOk) {
                             pushNonRemoveMovement({
@@ -1562,12 +1644,12 @@ class View3D {
                                 tipNormalW: normal,
                                 tipPosW: seg.segBeginBot,
                             });
+                            pushRemoveThisSeg();
                             entered = true;
-                            pushThisSeg = true;
                         }
                     } else {
                         if (seg.workOk && ixSeg !== row.length - 1) {
-                            pushThisSeg = true;
+                            pushRemoveThisSeg();
                         } else {
                             pushNonRemoveMovement({
                                 sweep: this.numSweeps,
@@ -1578,19 +1660,6 @@ class View3D {
                             });
                             entered = false;
                         }
-                    }
-
-                    if (pushThisSeg) {
-                        const pt = withAxisValue({
-                            sweep: this.numSweeps,
-                            group: `sweep-${this.numSweeps}`,
-                            type: "remove-work",
-                            tipNormalW: normal,
-                            tipPosW: seg.segEndBot,
-                            toolRotDelta: 123, // TODO: Fix
-                        });
-
-                        pushRemoveMovement(pt);
                     }
                 }
 
@@ -1608,9 +1677,6 @@ class View3D {
                 deltaWork: {max: maxSweepRemoveGeoms, min: minSweepRemoveGeoms},
                 toolIx: toolIx,
                 toolLength: toolLength,
-                vis: {
-                    //list: sweepVises,
-                }
             };
         };
 
@@ -1624,7 +1690,7 @@ class View3D {
             this.planner.normalIndex = (this.planner.normalIndex + 1) % this.planner.normals.length;
         }
 
-        this.updateVis("sweep-slice-vg", sweepVises, this.showSweepSlice);
+        this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
 
         if (sweep === null) {
             console.log("possible sweep exhausted");
@@ -1642,14 +1708,17 @@ class View3D {
 
         // Convert sweep geoms into voxel.
         const volBeforeSweep = this.trvg.getRemainingWorkVol();
-        this.trvg.commitRemoval(sweep.deltaWork.min, sweep.deltaWork.max);
+        const resDebug = this.trvg.commitRemoval(sweep.deltaWork.min, sweep.deltaWork.max);
+        if (resDebug.length > 0) {
+            resDebug.forEach(pt => {
+                this.scene.add(createErrorLocVis(pt.p, "violet"));
+            });
+            throw "commitRemoval failed";
+        }
         const volAfterSweep = this.trvg.getRemainingWorkVol();
         this.removedVol += volBeforeSweep - volAfterSweep;
         this.numSweeps++;
         this.showingSweep++;
-
-        
-        //this.updateVis("sweep-removal-vg", [createVgVis(sweep.deltaWork, "sweep-removal")], this.showSweepRemoval);
 
         this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath, false);
         this.updateVis("work-vg", [createVgVis(this.trvg.extractWork(), "work-vg")], this.showWork);
