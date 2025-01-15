@@ -377,6 +377,7 @@ class TrackingVoxelGrid {
     //
     // [in] minGeoms: array of shape descriptor, treated as union of all shapes.
     // [in] maxGeoms: array of shape descriptor, treated as union of all shapes
+    // returns: volume of neewly removed work.
     commitRemoval(minGeoms, maxGeoms) {
         const minVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         const maxVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
@@ -388,6 +389,7 @@ class TrackingVoxelGrid {
         });
 
         let numDamages = 0;
+        let numRemoved = 0;
         for (let z = 0; z < this.numZ; z++) {
             for (let y = 0; y < this.numY; y++) {
                 for (let x = 0; x < this.numX; x++) {
@@ -414,7 +416,10 @@ class TrackingVoxelGrid {
                     if (isInMin) {
                         // this voxel will be definitely completely removed.
                         // (at this point. dataT === TG_EMPTY, because isMin => isMax.)
-                        this.dataW[i] = W_DONE;
+                        if (this.dataW[i] === W_REMAINING) {
+                            this.dataW[i] = W_DONE;
+                            numRemoved++;
+                        }
                     }
                 }
             }
@@ -422,6 +427,7 @@ class TrackingVoxelGrid {
         if (debug.strict && numDamages > 0) {
             throw `${numDamages} cells are potentially damaged`;
         }
+        return numRemoved * this.res * this.res * this.res;
     }
 
     // returns volume of remaining work.
@@ -1463,32 +1469,33 @@ class View3D {
         for (let i = 0; i < this.planner.normals.length; i++) {
             sweep = genPlanarSweep(this.planner.normals[this.planner.normalIndex], this.planner.offsets[this.planner.normalIndex]);
             this.planner.offsets[this.planner.normalIndex] -= feedDepth;
+
+            this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
             if (sweep) {
-                break;
+                console.log(`trying to commit sweep ${this.numSweeps}`, sweep);
+
+                const volRemoved = this.trvg.commitRemoval(sweep.deltaWork.min, sweep.deltaWork.max);
+                if (volRemoved === 0) {
+                    console.log("rejected, because work not removed");
+                    continue;
+                } else {
+                    // commit success
+                    this.removedVol += volRemoved;
+                    this.planPath.push(...sweep.path);
+                    this.toolIx = sweep.toolIx;
+                    this.toolLength = sweep.toolLength;
+                    this.numSweeps++;
+                    this.showingSweep++;
+                    break;
+                }
             }
             this.planner.normalIndex = (this.planner.normalIndex + 1) % this.planner.normals.length;
         }
-
-        this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
 
         if (sweep === null) {
             console.log("possible sweep exhausted");
             return false;
         }
-
-        console.log(`commiting sweep ${this.numSweeps}`, sweep);
-
-        this.planPath.push(...sweep.path);
-        this.toolIx = sweep.toolIx;
-        this.toolLength = sweep.toolLength;
-
-        // Convert sweep geoms into voxel.
-        const volBeforeSweep = this.trvg.getRemainingWorkVol();
-        this.trvg.commitRemoval(sweep.deltaWork.min, sweep.deltaWork.max);
-        const volAfterSweep = this.trvg.getRemainingWorkVol();
-        this.removedVol += volBeforeSweep - volAfterSweep;
-        this.numSweeps++;
-        this.showingSweep++;
 
         this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath, false);
         this.updateVis("work-vg", [createVgVis(this.trvg.extractWork(), "work-vg")], this.showWork);
