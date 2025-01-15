@@ -25,6 +25,10 @@ const C_EMPTY_REMAINING = 2; // current=non-empty
 const C_PARTIAL_DONE = 3; // current=partial
 const C_PARTIAL_REMAINING = 4; // current=full
 
+const debug = {
+    strict: false, // should raise exception at logic boundary even when it can continue.
+};
+
 
 // see https://iquilezles.org/articles/distfunctions/ for SDFs in general.
 
@@ -383,10 +387,7 @@ class TrackingVoxelGrid {
             maxVg.setExtrudedLongHole(g.p, g.q, g.n, g.r, 255, true);
         });
 
-        console.log("delta-work-count-min", minVg.count());
-        console.log("delta-work-count-max", maxVg.count());
-
-        let errorPts = [];
+        let numDamages = 0;
         for (let z = 0; z < this.numZ; z++) {
             for (let y = 0; y < this.numY; y++) {
                 for (let x = 0; x < this.numX; x++) {
@@ -405,12 +406,8 @@ class TrackingVoxelGrid {
                     if (isInMax) {
                         // this voxel can be potentially uncertainly removed.
                         if (isTargetNotEmpty) {
-                            const p = this.centerOf(x, y, z);
-                            const locator = `ix=(${x},${y},${z}), p=(${p.x},${p.y},${p.z})`;
-                            //console.log(`isMin=${isInMin}, isMax=${isInMax}`);
-                            errorPts.push({ix: x, iy: y, iz: z, p: this.centerOf(x, y, z)});
-                            console.log(`Remove can affect protected region TG=${this.dataT[i]}, at ${locator}`);
-                            //throw `Remove can affect protected region TG=${this.dataT[i]}, at ${locator}`;
+                            debug.vlogE(createErrorLocVis(this.centerOf(x, y, z), "violet"));
+                            numDamages++;
                         }
                     }
                     
@@ -422,8 +419,9 @@ class TrackingVoxelGrid {
                 }
             }
         }
-        console.log(`commitRemoval errors=${errorPts.length}`);
-        return errorPts;
+        if (debug.strict && numDamages > 0) {
+            throw `${numDamages} cells are potentially damaged`;
+        }
     }
 
     // returns volume of remaining work.
@@ -499,16 +497,19 @@ class TrackingVoxelGrid {
     // [in] q: end point
     // [in] n: direction (p-q must be perpendicular to n). LH is extruded along n+, by h.
     // [in] r: radius (>= 0)
-    // [in] h: height (>= 0)
+    // [in] hWork: height of work region (>= 0)
+    // [in] hCollateral: height of collateral region (>= 0)
     // returns: true if accessible, false otherwise
-    queryOkToCutELH(p, q, n, r, h) {
-        const sdf = createSdfElh(p, q, n, r, h);
+    queryOkToCutELH(p, q, n, r, hWork, hCollateral) {
+        const sdfWork = createSdfElh(p, q, n, r, hWork);
+        const sdfCollateral = createSdfElh(p, q, n, r, hCollateral);
         const margin = this.res * 0.5 * Math.sqrt(3);
 
-        // let hasAnyWork = true;
-        return everyPointInsideIs(this, sdf, margin, (ix, iy, iz) => {
+        return everyPointInsideIs(this, sdfCollateral, margin, (ix, iy, iz) => {
             const st = this.get(ix, iy, iz);
             return st === C_EMPTY_DONE || st === C_EMPTY_REMAINING;
+        }) && anyPointInsideIs(this, sdfWork, margin, (ix, iy, iz) => {
+            return this.getW(ix, iy, iz) === W_REMAINING;
         });
     }
 
@@ -1045,6 +1046,16 @@ class View3D {
         this.showSweepVis = false;
         this.showPlanPath = true;
 
+        this.vlogErrors = [];
+        this.lastNumVlogErrors = 0;
+        
+        // Visually log errors.
+        // [in] obj: THREE.Object3D
+        debug.vlogE = (obj) => {
+            this.vlogErrors.push(obj);
+            this.scene.add(obj);
+        };
+
         this.initGui();
     }
 
@@ -1298,7 +1309,7 @@ class View3D {
                     // const notBlocked = !this.trvg.queryBlockedELH(segBegin, segEnd, normal, this.toolDiameter / 2, outerRadius);
                     const notBlocked = true;
                     const collateralRange = 100;
-                    const okToCut = this.trvg.queryOkToCutELH(segBeginBot, segEndBot, normal, this.toolDiameter / 2, collateralRange);
+                    const okToCut = this.trvg.queryOkToCutELH(segBeginBot, segEndBot, normal, this.toolDiameter / 2, feedDepth, collateralRange);
                     
                     const workOk = notBlocked && okToCut;
 
@@ -1317,7 +1328,7 @@ class View3D {
                 }
                 rows.push(row);
             }
-            console.log("sweep-rows", rows);
+            // console.log("sweep-rows", rows);
 
             // in planar sweep, tool is eroded only from the side.
             const maxWidthLoss = feedWidth * 0.1; // *0.5 is fine for EWR. but with coarse grid, needs to be smaller to not leave gaps between rows.
@@ -1467,22 +1478,13 @@ class View3D {
 
         console.log(`commiting sweep ${this.numSweeps}`, sweep);
 
-        console.log("sweep-geoms-min", sweep.deltaWork.min);
-        console.log("sweep-geoms-max", sweep.deltaWork.max);
-
         this.planPath.push(...sweep.path);
         this.toolIx = sweep.toolIx;
         this.toolLength = sweep.toolLength;
 
         // Convert sweep geoms into voxel.
         const volBeforeSweep = this.trvg.getRemainingWorkVol();
-        const resDebug = this.trvg.commitRemoval(sweep.deltaWork.min, sweep.deltaWork.max);
-        if (resDebug.length > 0) {
-            resDebug.forEach(pt => {
-                this.scene.add(createErrorLocVis(pt.p, "violet"));
-            });
-            throw "commitRemoval failed";
-        }
+        this.trvg.commitRemoval(sweep.deltaWork.min, sweep.deltaWork.max);
         const volAfterSweep = this.trvg.getRemainingWorkVol();
         this.removedVol += volBeforeSweep - volAfterSweep;
         this.numSweeps++;
@@ -1679,6 +1681,11 @@ class View3D {
             if (!res) {
                 this.genSweeps = false; // done
             }
+        }
+
+        if (this.vlogErrors.length > this.lastNumVlogErrors) {
+            console.warn(`${this.vlogErrors.length - this.lastNumVlogErrors} new errors`);
+            this.lastNumVlogErrors = this.vlogErrors.length;
         }
 
         this.controls.update();
