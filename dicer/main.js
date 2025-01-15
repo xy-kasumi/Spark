@@ -41,12 +41,13 @@ const createSdfCylinder = (p, n, r) => {
     if (n.length() !== 1) {
         throw "Cylinder direction not normalized";
     }
+    const temp = new Vector3();
     const sdf = x => {
-        const dx = x.clone().sub(p);
+        const dx = temp.copy(x).sub(p);
 
         // decompose into 1D + 2D
         const dx1 = dx.dot(n);
-        const dx2 = dx.clone().projectOnPlane(n);
+        const dx2 = dx.projectOnPlane(n); // destroys dx
 
         // 1D distance from interval [0, +inf)
         const d1 = -dx1;
@@ -84,8 +85,10 @@ const createSdfElh = (p, q, n, r, h) => {
         return Math.max(0, Math.min(1, x));
     };
 
+    const temp = new Vector3();
+    const temp2 = new Vector3();
     const sdf = x => {
-        const dx = x.clone().sub(p);
+        const dx = temp.copy(x).sub(p);
 
         // decompose into 2D + 1D
         const dx1 = n.dot(dx);
@@ -96,7 +99,7 @@ const createSdfElh = (p, q, n, r, h) => {
 
         // 2D distance from long hole (0,dq,r)
         const t = clamp01(dx2.dot(dq) / dqLenSq); // limit to line segment (between p & q)
-        const d2 = dx2.distanceTo(dq.clone().multiplyScalar(t)) - r;
+        const d2 = dx2.distanceTo(temp2.copy(dq).multiplyScalar(t)) - r;
 
         // Combine 1D + 2D distances.
         return Math.min(Math.max(d1, d2), 0) + Math.hypot(Math.max(d1, 0), Math.max(d2, 0));
@@ -112,7 +115,7 @@ const createSdfElh = (p, q, n, r, h) => {
 // [in] fn: function(ix, iy, iz) => boolean. If true, stop traversal and return true.
 // returns: boolean. If true, stop traversal and return true.
 const traverseAllPointsInside = (vg, sdf, offset, fn) => {
-    const blockSize = 10;
+    const blockSize = 8;
     const nbx = Math.floor(vg.numX / blockSize) + 1;
     const nby = Math.floor(vg.numY / blockSize) + 1;
     const nbz = Math.floor(vg.numZ / blockSize) + 1;
@@ -1039,7 +1042,7 @@ class View3D {
         this.showStockMesh = true;
         this.showTargetMesh = true;
 
-        this.resMm = 0.5; // 0.25;
+        this.resMm = 0.25;
         this.showWork = true;
         this.showTarget = false;
         this.targetSurf = null;
@@ -1385,12 +1388,12 @@ class View3D {
                     n: pathPt.tipNormalW,
                     r: this.toolDiameter / 2,
                 });
-                sweepPath.push(pathPt);
+                sweepPath.push(withAxisValue(pathPt));
                 prevPtTipPos = pathPt.tipPosW;
             };
 
             const pushNonRemoveMovement = (pathPt) => {
-                sweepPath.push(pathPt);
+                sweepPath.push(withAxisValue(pathPt));
                 prevPtTipPos = pathPt.tipPosW;
             };
 
@@ -1402,7 +1405,7 @@ class View3D {
                 for (let ixSeg = 0; ixSeg < row.length; ixSeg++) {
                     const seg = row[ixSeg];
                     const pushRemoveThisSeg = () => {
-                        const pt = withAxisValue({
+                        pushRemoveMovement({
                             sweep: this.numSweeps,
                             group: `sweep-${this.numSweeps}`,
                             type: "remove-work",
@@ -1410,7 +1413,6 @@ class View3D {
                             tipPosW: seg.segEndBot,
                             toolRotDelta: 123, // TODO: Fix
                         });
-                        pushRemoveMovement(pt);
                     };
 
                     if (!entered) {
