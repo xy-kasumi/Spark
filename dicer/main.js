@@ -522,6 +522,18 @@ class TrackingVoxelGrid {
         });
     }
 
+    queryOkToCutCylinder(p, n, r) {
+        const sdf = createSdfCylinder(p, n, r);
+        const margin = this.res * 0.5 * Math.sqrt(3);
+
+        return everyPointInsideIs(this, sdf, margin, (ix, iy, iz) => {
+            const st = this.get(ix, iy, iz);
+            return st === C_EMPTY_DONE || st === C_EMPTY_REMAINING;
+        }) && anyPointInsideIs(this, sdf, margin, (ix, iy, iz) => {
+            return this.getW(ix, iy, iz) === W_REMAINING;
+        });
+    }
+
     /////
     // Single read/write
 
@@ -1467,8 +1479,137 @@ class View3D {
             };
         };
 
+        // Generate "drill sweep", axis=normal.
+        // [in] normal THREE.Vector3, work coords. = tip normal
+        // returns: {
+        //   path: array<Vector3>,
+        //   deltaWork: VG,
+        //   toolLength: number,
+        //   toolIx: number,
+        //   vis: {target: VG, blocked: VG}
+        // } | null (if impossible)
+        const genDrillSweep = (normal) => {
+            const rot = createRotationWithZ(normal);
+            const scanDir0 = new THREE.Vector3(1, 0, 0).transformDirection(rot);
+            const scanDir1 = new THREE.Vector3(0, 1, 0).transformDirection(rot);
+
+            const halfDiagVec = new THREE.Vector3(this.trvg.numX, this.trvg.numY, this.trvg.numZ).multiplyScalar(this.trvg.res * 0.5);
+            const trvgCenter = this.trvg.ofs.clone().add(halfDiagVec);
+            const trvgRadius = halfDiagVec.length(); // TODO: proper bounds
+
+            const scanRes = 1;
+            const numScan0 = Math.ceil(trvgRadius * 2 / scanRes);
+            const numScan1 = Math.ceil(trvgRadius * 2 / scanRes);
+            const scanOrigin = trvgCenter.clone().sub(scanDir0.clone().multiplyScalar(trvgRadius)).sub(scanDir1.clone().multiplyScalar(trvgRadius));
+
+            const holeDiameter = this.toolDiameter; //  * 1.5;
+
+            // grid query for drilling
+            // if ok, just drill it with helical downwards path.
+            const drillHoles = [];
+            for (let ixScan0 = 0; ixScan0 < numScan0; ixScan0++) {
+                for (let ixScan1 = 0; ixScan1 < numScan1; ixScan1++) {
+                    const scanPt = scanOrigin.clone()
+                        .add(scanDir0.clone().multiplyScalar(scanRes * ixScan0))
+                        .add(scanDir1.clone().multiplyScalar(scanRes * ixScan1));
+                    
+                    const holeBot = scanPt.clone().sub(normal.clone().multiplyScalar(trvgRadius));
+                    const ok = this.trvg.queryOkToCutCylinder(holeBot, normal, holeDiameter / 2);
+                    if (ok) {
+                        debug.vlogE(createErrorLocVis(holeBot, "red"));
+                        drillHoles.push({
+                            pos: scanPt
+                        });
+                    } else {
+                        debug.vlogE(createErrorLocVis(holeBot, "blue"));
+                    }
+                }
+            }
+            console.log("drillHoles", drillHoles);
+
+            // Generate paths
+            let prevPtTipPos = null;
+            const sweepPath = [];
+
+            const withAxisValue = (pt) => {
+                const isPosW = pt.tipPosW !== undefined;
+                const ikResult = this.solveIk(isPosW ? pt.tipPosW : pt.tipPosM, pt.tipNormalW, toolLength, isPosW);
+                return {
+                    ...pt,
+                    tipPosM: ikResult.tipPosM,
+                    tipPosW: ikResult.tipPosW,
+                    axisValues: ikResult.vals,
+                };
+            };
+
+            const minSweepRemoveGeoms = [];
+            const maxSweepRemoveGeoms = [];
+            const pushRemoveMovement = (pathPt) => {
+                if (prevPtTipPos === null) {
+                    throw "remove path needs prevPtTipPos to be set by pushNonRemoveMovement";
+                }
+                
+                minSweepRemoveGeoms.push({
+                    // extruded long hole
+                    // hole spans from two centers; p and q, with radius r.
+                    // the long hole is then extended towards n direction infinitely.
+                    p: prevPtTipPos,
+                    q: pathPt.tipPosW,
+                    n: pathPt.tipNormalW,
+                    r: this.toolDiameter / 2 - maxWidthLoss,
+                });
+                maxSweepRemoveGeoms.push({
+                    // extruded long hole
+                    // hole spans from two centers; p and q, with radius r.
+                    // the long hole is then extended towards n direction infinitely.
+                    p: prevPtTipPos,
+                    q: pathPt.tipPosW,
+                    n: pathPt.tipNormalW,
+                    r: this.toolDiameter / 2,
+                });
+                sweepPath.push(withAxisValue(pathPt));
+                prevPtTipPos = pathPt.tipPosW;
+            };
+
+            const pushNonRemoveMovement = (pathPt) => {
+                sweepPath.push(withAxisValue(pathPt));
+                prevPtTipPos = pathPt.tipPosW;
+            };
+
+            const evacuateOffset = normal.clone().multiplyScalar(3);
+            
+            return null;
+        };
+
         let sweep = null;
         for (let i = 0; i < this.planner.normals.length; i++) {
+            sweep = genDrillSweep(this.planner.normals[this.planner.normalIndex]);
+            this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
+            if (sweep) {
+                console.log(`trying to commit sweep ${this.numSweeps}`, sweep);
+
+                const volRemoved = this.trvg.commitRemoval(sweep.deltaWork.min, sweep.deltaWork.max);
+                if (volRemoved === 0) {
+                    console.log("rejected, because work not removed");
+                    continue;
+                } else {
+                    // commit success
+                    this.removedVol += volRemoved;
+                    this.planPath.push(...sweep.path);
+                    this.toolIx = sweep.toolIx;
+                    this.toolLength = sweep.toolLength;
+                    this.numSweeps++;
+                    this.showingSweep++;
+                    break;
+                }
+            }
+            this.planner.normalIndex = (this.planner.normalIndex + 1) % this.planner.normals.length;
+        }
+        for (let i = 0; i < this.planner.normals.length; i++) {
+            if (sweep) {
+                break;
+            }
+
             sweep = genPlanarSweep(this.planner.normals[this.planner.normalIndex], this.planner.offsets[this.planner.normalIndex]);
             this.planner.offsets[this.planner.normalIndex] -= feedDepth;
 
