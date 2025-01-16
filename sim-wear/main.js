@@ -304,6 +304,8 @@ class GpuKernels {
         this.device.queue.submit([commandEncoder.finish()]);
         await this.device.queue.onSubmittedWorkDone();
 
+        paramBuf.destroy();
+
         return pointsBuf;
     }
 
@@ -343,6 +345,7 @@ class GpuKernels {
         const commandEncoder = this.device.createCommandEncoder();
         this.#dispatchKernel(commandEncoder, this.applyCylinderPipeline, [psIn, psOut, paramBuf], numPoints);
         this.device.queue.submit([commandEncoder.finish()]);
+        paramBuf.destroy();
         return psOut;
     }
 
@@ -383,6 +386,7 @@ class GpuKernels {
         const commandEncoder = this.device.createCommandEncoder();
         this.#dispatchKernel(commandEncoder, this.applyTransformPipeline, [psIn, psOut, matBuf], numPoints);
         this.device.queue.submit([commandEncoder.finish()]);
+        matBuf.destroy();
         return psOut;
     }
     
@@ -485,6 +489,12 @@ class GpuKernels {
         }
         readBuf.unmap();
 
+        temp0Min.destroy();
+        temp0Max.destroy();
+        temp1Min.destroy();
+        temp1Max.destroy();
+        readBuf.destroy();
+
         return aabb;
     }
 
@@ -540,6 +550,9 @@ class GpuKernels {
             this.device.queue.submit([commandEncoder.finish()]);
             await this.device.queue.onSubmittedWorkDone();
         }
+        tempBuf.destroy();
+        countBuf.destroy();
+        countBufReading.destroy();
         return resultBuffer;
     }
 
@@ -831,6 +844,7 @@ class GpuKernels {
         this.device.queue.submit([commandEncoder.finish()]);
 
         await this.device.queue.onSubmittedWorkDone();
+        
         return {
             unit: grid.unit,
             gridBuf: gridBuf,
@@ -907,6 +921,11 @@ class GpuKernels {
             }
             result.push({ix: pixsCpuBuf[i], d});
         }
+
+        distsBuf.destroy();
+        pixsBuf.destroy();
+        readDistBuf.destroy();
+        readPixsBuf.destroy();
         return result;
     }
 
@@ -921,6 +940,14 @@ class GpuKernels {
         this.device.queue.submit([commandEncoder.finish()]);
         await this.device.queue.onSubmittedWorkDone();
         return normalsBuf;
+    }
+
+    destroyIndex(psIndex) {
+        psIndex.gridBuf.destroy();
+        psIndex.pointsBuf.destroy();
+        psIndex.pixsBuf.destroy();
+        psIndex.beginBuf.destroy();
+        psIndex.endBuf.destroy();
     }
 
     // Mark specified point as dead.
@@ -992,12 +1019,20 @@ class Simulator {
         commandEncoder.copyBufferToBuffer(normals, 0, normalStagingBuf, 0, numActive * 16);
         this.kernels.device.queue.submit([commandEncoder.finish()]);
         await this.kernels.device.queue.onSubmittedWorkDone();
+
+        activePointsBuf.destroy();
+        activeWorldPointsBuf.destroy();
+        this.kernels.destroyIndex(index);
         
         await posStagingBuf.mapAsync(GPUMapMode.READ);
         await normalStagingBuf.mapAsync(GPUMapMode.READ);
         return {
             pos: new Float32Array(posStagingBuf.getMappedRange(), 0, numActive * 4),
-            normal: new Float32Array(normalStagingBuf.getMappedRange(), 0, numActive * 4)
+            normal: new Float32Array(normalStagingBuf.getMappedRange(), 0, numActive * 4),
+            destroy: () => {
+                posStagingBuf.destroy();
+                normalStagingBuf.destroy();
+            },
         };
     }
 
@@ -1011,8 +1046,12 @@ class Simulator {
         let t0; // for performance logging
 
         t0 = performance.now();
+        const prevSolidW = this.solidW;
+        const prevSolidT = this.solidT;
         this.solidW = await this.kernels.gatherActive(this.solidW);
         this.solidT = await this.kernels.gatherActive(this.solidT);
+        prevSolidW.destroy();
+        prevSolidT.destroy();
         console.log(`  RC: gather ${performance.now() - t0} ms`);
         
         t0 = performance.now();
@@ -1043,6 +1082,11 @@ class Simulator {
         this.kernels.markDead(this.solidW, closeW.slice(0, removeW).map(c => c.ix));
         this.kernels.markDead(this.solidT, closeT.slice(0, removeT).map(c => c.ix));
         console.log(`  RC: remove ${performance.now() - t0} ms`);
+
+        ptsWWorld.destroy();
+        ptsTWorld.destroy();
+        this.kernels.destroyIndex(indexW);
+        this.kernels.destroyIndex(indexT);
     }
 }
 
@@ -1070,6 +1114,11 @@ class View3D {
         this.sliceX = 0; // mm
 
         this.currentSimFeedDist = 0;
+
+        // points visualization sync
+        this.currentFrame = 0;
+        this.requestFrame = 0;
+        this.showingFrame = -1;
 
         this.init();
         this.setupGui();
@@ -1230,7 +1279,7 @@ class View3D {
 
         gui.add(this, "toolShape", ["cylinder", "square"]).name("Tool Shape").onChange(async () => {
             await this.#regenerateTool();
-            this.updatePointsFromGPU();
+            this.flagPointsForUpdate();
         });
 
         const pathModeUpdated = () => {
@@ -1251,7 +1300,7 @@ class View3D {
         const toolPathUpdated = () => {
             this.simulator.transT = this.computeToolTrans(0);
             this.updateToolPathVis(this.toolPathMarkerPos, this.feedDist);
-            this.updatePointsFromGPU();
+            this.flagPointsForUpdate();
         };
         
         gui.add(this, "toolInitX", -15, 15, 0.1).name("Tool Init X (mm)").onChange(toolPathUpdated);
@@ -1341,7 +1390,7 @@ class View3D {
                 const t1 = performance.now();
                 console.log("GPU-removeClose", t1 - t0, "ms");
 
-                await this.updatePointsFromGPU();
+                this.flagPointsForUpdate();
 
                 if (this.stopSimulation) {
                     break;
@@ -1368,7 +1417,7 @@ class View3D {
             this.simulator.transT = this.computeToolTrans(0);
             await this.#regenerateTool();
             await this.#regenerateWork();
-            this.updatePointsFromGPU();
+            this.flagPointsForUpdate();
         };
         regen(); // fire and forget
     }
@@ -1394,28 +1443,27 @@ class View3D {
         this.renderer.setSize(width, height);
     }
 
+    flagPointsForUpdate() {
+        this.requestFrame = this.currentFrame;
+    }
+
     async updatePointsFromGPU() {
+        const t0 = performance.now();
         const pointsW = await this.simulator.getRenderingBufferW();
         const pointsT = await this.simulator.getRenderingBufferT();
-        console.log(`Showing W:${pointsW.pos.length / 4} pts, T:${pointsT.pos.length / 4} pts`);
-
-        /*
-        const t0 = performance.now();
-        const max = new THREE.Vector3(-1e10, -1e10, -1e10);
-        const min = new THREE.Vector3(1e10, 1e10, 1e10);
-        for (let i = 0; i < pointsW.length / 4; i++) {
-            const p = new THREE.Vector3(pointsW[i * 4], pointsW[i * 4 + 1], pointsW[i * 4 + 2]);
-            min.min(p);
-            max.max(p);
-        }
-        const t1 = performance.now();
-        console.log("CPU-AABB-W", min, max, "took", t1 - t0, "ms");
-        */
 
         this.solidWPoints.geometry.setAttribute('position', new THREE.BufferAttribute(pointsW.pos, 4));
         this.solidWPoints.geometry.setAttribute('normal', new THREE.BufferAttribute(pointsW.normal, 4));
         this.solidTPoints.geometry.setAttribute('position', new THREE.BufferAttribute(pointsT.pos, 4));
         this.solidTPoints.geometry.setAttribute('normal', new THREE.BufferAttribute(pointsT.normal, 4));
+        if (this.currPointsBufDestroy) {
+            this.currPointsBufDestroy();
+        }
+        this.currPointsBufDestroy = () => {
+            pointsW.destroy();
+            pointsT.destroy();
+        };
+        const t1 = performance.now();
     }
 
     animate() {
@@ -1426,14 +1474,19 @@ class View3D {
             console.warn('Simulation step failed:', e);
         }
 
-        if (!this.gpuIsWorking) {
-            this.gpuIsWorking = true;
-            this.updatePointsFromGPU();
-            //this.gpuIsWorking = false);
+        if (this.requestFrame > this.showingFrame && this.requestFrame >= this.currentFrame && !this.gpuIsWorking) {
+            const currentFrame = this.currentFrame;
+            (async () => {
+                this.gpuIsWorking = true;
+                await this.updatePointsFromGPU();
+                this.showingFrame = currentFrame;
+                this.gpuIsWorking = false;
+            })();
         }
 
         this.controls.update();
         this.renderer.render(this.scene, this.camera);
+        this.currentFrame++;
     }
 }
 
