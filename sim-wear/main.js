@@ -1104,8 +1104,8 @@ class View3D {
         this.toolInitZ = 1;
         this.pathMode = "linear";
         this.feedDir = 0; // deg; 0=Z-, 90=X+
-        this.helixDiameter = 0;
-        this.helixPitch = 1;
+        this.helixDiameter = 1.5;
+        this.helixPitch = 3;
         this.toolRot = 10; // deg/mm; CCW
         this.feedDist = 15; // mm
 
@@ -1270,8 +1270,12 @@ class View3D {
         this.scene.add(this.solidTPoints);
 
         // Prepare tool path visualization
-        this.toolPathMarkerPos = new THREE.Vector3(1.5 / 2, 0, -5);
-        this.updateToolPathVis(this.toolPathMarkerPos, this.feedDist);
+        this.toolPathMarkersPosList = [
+            new THREE.Vector3(1.5 / 2, 0, -5),
+            new THREE.Vector3(0, 0, -5),
+            new THREE.Vector3(-1.5 / 2, 0, -5),
+        ];
+        this.updateToolPathVis();
     }
 
     setupGui() {
@@ -1299,7 +1303,7 @@ class View3D {
 
         const toolPathUpdated = () => {
             this.simulator.transT = this.computeToolTrans(0);
-            this.updateToolPathVis(this.toolPathMarkerPos, this.feedDist);
+            this.updateToolPathVis();
             this.flagPointsForUpdate();
         };
         
@@ -1316,6 +1320,8 @@ class View3D {
         const helixDiaGui = gui.add(this, "helixDiameter", 0, 20, 0.1).name("Helix Dia. (mm)").onChange(toolPathUpdated);
         const helixPitchGui = gui.add(this, "helixPitch", 0.1, 5, 0.1).name("Helix Pitch (mm)").onChange(toolPathUpdated);
         pathModeUpdated();
+
+        gui.add(this, "feedDist", 0, 50, 1).name("Feed Dist (mm)").onChange(toolPathUpdated);
 
         gui.add(this, "toolRot", 0, 360, 1).name("Tool Rot (deg/mm)").onChange(toolPathUpdated);
         gui.add(this, "ewr", 0, 500, 1).name("E. Wear Ratio (%)");
@@ -1345,22 +1351,30 @@ class View3D {
         } else if (this.pathMode == "helical") {
             const singleRotFeedDist = Math.hypot(this.helixDiameter * Math.PI, this.helixPitch);
             const helixRot = feedDist / singleRotFeedDist;
-            const helixAngle = helixRot * 2 * Math.PI;
+            const helixAngle = -helixRot * 2 * Math.PI;
             pos.add(new THREE.Vector3(this.helixDiameter * 0.5 * Math.cos(helixAngle), this.helixDiameter * 0.5 * Math.sin(helixAngle), -this.helixPitch * helixRot));
         }
         return makeTrans(pos, rot);
     }
 
-    updateToolPathVis(initLocPos, distance) {
-        const computeToolTrans = (t) => this.computeToolTrans(t * distance);
+    updateToolPathVis() {
+        const computeToolTrans = (t) => this.computeToolTrans(t * this.feedDist);
         class ToolPathCurve extends THREE.Curve {
+            constructor(init) {
+                super();
+                this.init = init;
+            }
             getPoint(t, optionalTarget = new THREE.Vector3()) {
-                return optionalTarget.copy(initLocPos).applyMatrix4(computeToolTrans(t));
+                return optionalTarget.copy(this.init).applyMatrix4(computeToolTrans(t));
             }
         }
-        const vis = new THREE.Mesh(
-            new THREE.TubeGeometry(new ToolPathCurve(), 1024, 0.1, 6),
-            new THREE.MeshBasicMaterial({color: "darkgray"}));
+        const vis = new THREE.Object3D();
+        this.toolPathMarkersPosList.forEach(init => {
+            const path = new THREE.Mesh(
+                new THREE.TubeGeometry(new ToolPathCurve(init), 1024, 0.03, 6),
+                new THREE.MeshBasicMaterial({color: "darkgray"}));
+            vis.add(path);
+        });
         
         if (this.toolPathVis) {
             this.scene.remove(this.toolPathVis);
