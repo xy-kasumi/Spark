@@ -1058,7 +1058,10 @@ class View3D {
         this.toolInitX = 0;
         this.toolInitY = 0;
         this.toolInitZ = 1;
+        this.pathMode = "linear";
         this.feedDir = 0; // deg; 0=Z-, 90=X+
+        this.helixDiameter = 0;
+        this.helixPitch = 1;
         this.toolRot = 10; // deg/mm; CCW
         this.feedDist = 15; // mm
 
@@ -1230,6 +1233,21 @@ class View3D {
             this.updatePointsFromGPU();
         });
 
+        const pathModeUpdated = () => {
+            switch (this.pathMode) {
+                case "linear":
+                    feedDirGui.show();
+                    helixDiaGui.hide();
+                    helixPitchGui.hide();
+                    break;
+                case "helical":
+                    feedDirGui.hide();
+                    helixDiaGui.show();
+                    helixPitchGui.show();
+                    break;
+            }
+        };
+
         const toolPathUpdated = () => {
             this.simulator.transT = this.computeToolTrans(0);
             this.updateToolPathVis(this.toolPathMarkerPos, this.feedDist);
@@ -1239,7 +1257,17 @@ class View3D {
         gui.add(this, "toolInitX", -15, 15, 0.1).name("Tool Init X (mm)").onChange(toolPathUpdated);
         gui.add(this, "toolInitY", -15, 15, 0.1).name("Tool Init Y (mm)").onChange(toolPathUpdated);
         gui.add(this, "toolInitZ", -5, 5, 0.1).name("Tool Init Z (mm)").onChange(toolPathUpdated);
-        gui.add(this, "feedDir", 0, 90, 1).name("Feed Dir (deg)").onChange(toolPathUpdated);
+
+        gui.add(this, "pathMode", ["linear", "helical"]).name("Path Mode").onChange(_ => {
+            pathModeUpdated();
+            toolPathUpdated();
+        });
+
+        const feedDirGui = gui.add(this, "feedDir", 0, 90, 1).name("Feed Dir (deg)").onChange(toolPathUpdated);
+        const helixDiaGui = gui.add(this, "helixDiameter", 0, 20, 0.1).name("Helix Dia. (mm)").onChange(toolPathUpdated);
+        const helixPitchGui = gui.add(this, "helixPitch", 0.1, 5, 0.1).name("Helix Pitch (mm)").onChange(toolPathUpdated);
+        pathModeUpdated();
+
         gui.add(this, "toolRot", 0, 360, 1).name("Tool Rot (deg/mm)").onChange(toolPathUpdated);
         gui.add(this, "ewr", 0, 500, 1).name("E. Wear Ratio (%)");
 
@@ -1262,8 +1290,15 @@ class View3D {
         const pos = new THREE.Vector3(this.toolInitX, this.toolInitY, 5 + this.toolInitZ);
         const rot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), feedDist * this.toolRot * Math.PI / 180);
 
-        const angle = this.feedDir * Math.PI / 180;
-        pos.add(new THREE.Vector3(feedDist * Math.sin(angle), 0, -feedDist * Math.cos(angle)));
+        if (this.pathMode == "linear") {
+            const angle = this.feedDir * Math.PI / 180;
+            pos.add(new THREE.Vector3(feedDist * Math.sin(angle), 0, -feedDist * Math.cos(angle)));
+        } else if (this.pathMode == "helical") {
+            const singleRotFeedDist = Math.hypot(this.helixDiameter * Math.PI, this.helixPitch);
+            const helixRot = feedDist / singleRotFeedDist;
+            const helixAngle = helixRot * 2 * Math.PI;
+            pos.add(new THREE.Vector3(this.helixDiameter * 0.5 * Math.cos(helixAngle), this.helixDiameter * 0.5 * Math.sin(helixAngle), -this.helixPitch * helixRot));
+        }
         return makeTrans(pos, rot);
     }
 
