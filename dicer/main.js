@@ -160,7 +160,42 @@ const C_PARTIAL_DONE = 3; // current=partial
 const C_PARTIAL_REMAINING = 4; // current=full
 
 
+// Shapes
+
+// [in] p: start point
+// [in] n: direction (the cylinder extends infinitely towards n+ direction)
+// [in] r: radius
+// returns: Shape
+const createCylinderShape = (p, n, r) => {
+    return {type: "cylinder", p, n, r};
+};
+
+// [in] p: start point
+// [in] q: end point
+// [in] n: direction (p-q must be perpendicular to n). LH is extruded along n+, by h.
+// [in] r: radius (>= 0)
+// [in] h: height (>= 0)
+// returns: Shape
+const createELHShape = (p, q, n, r, h) => {
+    return {type: "ELH", p, q, n, r, h};
+};
+
+
 // see https://iquilezles.org/articles/distfunctions/ for SDFs in general.
+
+// Returns a SDF for a shape.
+// [in] shape: Shape
+// returns: SDF: THREE.Vector3 -> number (+: outside, 0: surface, -: inside)
+const createSdf = (shape) => {
+    switch (shape.type) {
+        case "cylinder":
+            return createSdfCylinder(shape.p, shape.n, shape.r);
+        case "ELH":
+            return createSdfElh(shape.p, shape.q, shape.n, shape.r, shape.h);
+        default:
+            throw `Unknown shape type: ${shape.type}`;
+    }
+};
 
 // Returns a SDF for a cylinder.
 // [in] p: start point
@@ -338,17 +373,14 @@ class VoxelGrid {
         return vg;
     }
 
-    // Set cells inside the "extruded long hole" shape to val.
+    // Set cells inside the given shape to val.
     //
-    // [in] p, q: start & end of the hole, in world coordinates
-    // [in] n: normal of the hole extrusion, in world coordinates. Must be perpendicular to p-q line.
-    // [in] r: radius of the hole
+    // [in] shape: shape
     // [in] val: value to set to cells
     // [in] roundToOutside: if true, round to outside of the hole. Otherwise, round to inside.
-    setExtrudedLongHole(p, q, n, r, val, roundToOutside) {        
-        const sdf = createSdfElh(p, q, n, r, 100);
+    fillShape(shape, val, roundToOutside) {        
+        const sdf = createSdf(shape);
         const offset = (roundToOutside ? 1 : -1) * (this.res * 0.5 * Math.sqrt(3));
-
         traverseAllPointsInside(this, sdf, offset, (ix, iy, iz) => {
             this.set(ix, iy, iz, val);
         });
@@ -506,17 +538,17 @@ class TrackingVoxelGrid {
     // Rough removal means, this cut can process TG_EMPTY cells, but not TG_PARTIAL cells.
     // When cut can potentially affect TG_PARTIAL cells, it will be error (as rough cut might ruin the voxel irreversibly).
     //
-    // [in] minGeoms: array of shape descriptor, treated as union of all shapes.
-    // [in] maxGeoms: array of shape descriptor, treated as union of all shapes
+    // [in] minShapes: array of shapes, treated as union of all shapes
+    // [in] maxShapes: array of shapes, treated as union of all shapes
     // returns: volume of neewly removed work.
-    commitRemoval(minGeoms, maxGeoms) {
+    commitRemoval(minShapes, maxShapes) {
         const minVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         const maxVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
-        minGeoms.forEach(g => {
-            minVg.setExtrudedLongHole(g.p, g.q, g.n, g.r, 255, false);
+        minShapes.forEach(shape => {
+            minVg.fillShape(shape, 255, false);
         });
-        maxGeoms.forEach(g => {
-            maxVg.setExtrudedLongHole(g.p, g.q, g.n, g.r, 255, true);
+        maxShapes.forEach(shape => {
+            maxVg.fillShape(shape, 255, true);
         });
 
         let numDamages = 0;
@@ -593,35 +625,13 @@ class TrackingVoxelGrid {
         return offset + maxVoxelCenterOfs;
     }
 
-    // Returns true if given semi-infinite cylinder is blocked by material, conservatively.
+    // Returns true if given shape is blocked by material, conservatively.
     // Conservative: voxels with potential overlaps will be considered for block-detection.
-    //
-    // [in] p: start point
-    // [in] n: direction (the cylinder extends infinitely towards n+ direction)
-    // [in] r: radius
+    // [in] shape: shape
     // returns: true if blocked, false otherwise
-    queryBlockedCylinder(p, n, r) {
-        const sdf = createSdfCylinder(p, n, r);
+    queryBlocked(shape) {
+        const sdf = createSdf(shape);
         const margin = this.res * 0.5 * Math.sqrt(3);
-
-        return anyPointInsideIs(this, sdf, margin, (ix, iy, iz) => {
-            return this.get(ix, iy, iz) !== C_EMPTY_DONE;
-        });
-    }
-
-    // Returns true if given ELH is blocked by material, conservatively.
-    // Conservative: voxels with potential overlaps will be considered for block-detection.
-    //
-    // [in] p: start point
-    // [in] q: end point
-    // [in] n: direction (p-q must be perpendicular to n). LH is extruded along n+, by h.
-    // [in] r: radius (>= 0)
-    // [in] h: height (>= 0)
-    // returns: true if blocked, false otherwise
-    queryBlockedELH(p, q, n, r, h) {
-        const sdf = createSdfElh(p, q, n, r, h);
-        const margin = this.res * 0.5 * Math.sqrt(3);
-
         return anyPointInsideIs(this, sdf, margin, (ix, iy, iz) => {
             return this.get(ix, iy, iz) !== C_EMPTY_DONE;
         });
@@ -1170,27 +1180,16 @@ class Planner {
                     const segBeginBot = segBegin.clone().sub(normal.clone().multiplyScalar(feedDepth));
                     const segEndBot = segEnd.clone().sub(normal.clone().multiplyScalar(feedDepth));
                     
-                    const accessOk = !this.trvg.queryBlockedCylinder(segBeginBot, normal, this.toolDiameter / 2);
+                    const accessOk = !this.trvg.queryBlocked(createCylinderShape(segBeginBot, normal, this.toolDiameter / 2));
                     
                     // notBlocked is required when there's work-remaining overhang; technically the tool can cut the overhang too,
                     // but should be avoided to localize tool wear.
-                    // const notBlocked = !this.trvg.queryBlockedELH(segBegin, segEnd, normal, this.toolDiameter / 2, outerRadius);
+                    // const notBlocked = !this.trvg.queryBlocked(createELHShape(segBegin, segEnd, normal, this.toolDiameter / 2, outerRadius));
                     const notBlocked = true;
                     const collateralRange = 100;
                     const okToCut = this.trvg.queryOkToCutELH(segBeginBot, segEndBot, normal, this.toolDiameter / 2, feedDepth, collateralRange);
                     
                     const workOk = notBlocked && okToCut;
-
-                    /*
-                    const col = new THREE.Color().setRGB(0, notBlocked ? .5 : 0, okToCut ? .5 : 0);
-                    let label = "";
-                    label += `${ixRow},${ixSeg}:`;
-                    label += accessOk ? "A" : "";
-                    label += notBlocked ? "O" : "";
-                    if (label.length > 0) {
-                        sweepVises.push(createTextVis(segBeginBot, label, 0.25, col));
-                    }
-                    */
 
                     row.push({ accessOk, workOk, segBegin, segEnd, segBeginBot, segEndBot });
                 }
@@ -1222,31 +1221,14 @@ class Planner {
                 };
             };
 
-            const minSweepRemoveGeoms = [];
-            const maxSweepRemoveGeoms = [];
+            const minSweepRemoveShapes = [];
+            const maxSweepRemoveShapes = [];
             const pushRemoveMovement = (pathPt) => {
                 if (prevPtTipPos === null) {
                     throw "remove path needs prevPtTipPos to be set by pushNonRemoveMovement";
                 }
-                
-                minSweepRemoveGeoms.push({
-                    // extruded long hole
-                    // hole spans from two centers; p and q, with radius r.
-                    // the long hole is then extended towards n direction infinitely.
-                    p: prevPtTipPos,
-                    q: pathPt.tipPosW,
-                    n: pathPt.tipNormalW,
-                    r: this.toolDiameter / 2 - maxWidthLoss,
-                });
-                maxSweepRemoveGeoms.push({
-                    // extruded long hole
-                    // hole spans from two centers; p and q, with radius r.
-                    // the long hole is then extended towards n direction infinitely.
-                    p: prevPtTipPos,
-                    q: pathPt.tipPosW,
-                    n: pathPt.tipNormalW,
-                    r: this.toolDiameter / 2,
-                });
+                minSweepRemoveShapes.push(createELHShape(prevPtTipPos, pathPt.tipPosW, pathPt.tipNormalW, this.toolDiameter / 2 - maxWidthLoss, 100));
+                maxSweepRemoveShapes.push(createELHShape(prevPtTipPos, pathPt.tipPosW, pathPt.tipNormalW, this.toolDiameter / 2, 100));
                 sweepPath.push(withAxisValue(pathPt));
                 prevPtTipPos = pathPt.tipPosW;
             };
@@ -1320,7 +1302,7 @@ class Planner {
 
             return {
                 path: sweepPath,
-                deltaWork: {max: maxSweepRemoveGeoms, min: minSweepRemoveGeoms},
+                deltaWork: {max: maxSweepRemoveShapes, min: minSweepRemoveShapes},
                 toolIx: toolIx,
                 toolLength: toolLength,
             };
@@ -1361,11 +1343,14 @@ class Planner {
                         .add(scanDir1.clone().multiplyScalar(scanRes * ixScan1));
                     
                     const holeBot = scanPt.clone().sub(normal.clone().multiplyScalar(trvgRadius));
+                    const holeTop = holeBot.clone().add(normal.clone().multiplyScalar(trvgRadius * 2));
                     const ok = this.trvg.queryOkToCutCylinder(holeBot, normal, holeDiameter / 2);
                     if (ok) {
                         //debug.vlogE(createErrorLocVis(holeBot, "red"));
                         drillHoles.push({
-                            pos: scanPt
+                            pos: scanPt,
+                            holeBot,
+                            holeTop,
                         });
                     } else {
                         //debug.vlogE(createErrorLocVis(holeBot, "blue"));
@@ -1373,8 +1358,13 @@ class Planner {
                 }
             }
             console.log("drillHoles", drillHoles);
+            if (drillHoles.length === 0) {
+                return null;
+            }
 
             // Generate paths
+            let toolLength = this.toolLength;
+            let toolIx = this.toolIx;
             let prevPtTipPos = null;
             const sweepPath = [];
 
@@ -1389,34 +1379,8 @@ class Planner {
                 };
             };
 
-            const minSweepRemoveGeoms = [];
-            const maxSweepRemoveGeoms = [];
-            const pushRemoveMovement = (pathPt) => {
-                if (prevPtTipPos === null) {
-                    throw "remove path needs prevPtTipPos to be set by pushNonRemoveMovement";
-                }
-                
-                minSweepRemoveGeoms.push({
-                    // extruded long hole
-                    // hole spans from two centers; p and q, with radius r.
-                    // the long hole is then extended towards n direction infinitely.
-                    p: prevPtTipPos,
-                    q: pathPt.tipPosW,
-                    n: pathPt.tipNormalW,
-                    r: this.toolDiameter / 2 - maxWidthLoss,
-                });
-                maxSweepRemoveGeoms.push({
-                    // extruded long hole
-                    // hole spans from two centers; p and q, with radius r.
-                    // the long hole is then extended towards n direction infinitely.
-                    p: prevPtTipPos,
-                    q: pathPt.tipPosW,
-                    n: pathPt.tipNormalW,
-                    r: this.toolDiameter / 2,
-                });
-                sweepPath.push(withAxisValue(pathPt));
-                prevPtTipPos = pathPt.tipPosW;
-            };
+            const minSweepRemoveShapes = [];
+            const maxSweepRemoveShapes = [];
 
             const pushNonRemoveMovement = (pathPt) => {
                 sweepPath.push(withAxisValue(pathPt));
@@ -1424,8 +1388,44 @@ class Planner {
             };
 
             const evacuateOffset = normal.clone().multiplyScalar(3);
+
+            drillHoles.forEach(hole => {
+                pushNonRemoveMovement({
+                    sweep: this.numSweeps,
+                    group: `sweep-${this.numSweeps}`,
+                    type: "move-in",
+                    tipNormalW: normal,
+                    tipPosW: hole.holeTop.clone().add(evacuateOffset),
+                });
+
+                // TODO: helical path
+                minSweepRemoveShapes.push(createCylinderShape(hole.holeBot, normal, holeDiameter / 2));
+                maxSweepRemoveShapes.push(createCylinderShape(hole.holeBot, normal, holeDiameter / 2));
+                sweepPath.push(withAxisValue({
+                    sweep: this.numSweeps,
+                    group: `sweep-${this.numSweeps}`,
+                    type: "remove-work",
+                    tipNormalW: normal,
+                    tipPosW: hole.holeBot,
+                    toolRotDelta: 123, // TODO: Fix
+                }));
+                prevPtTipPos = hole.holeBot;
+
+                pushNonRemoveMovement({
+                    sweep: this.numSweeps,
+                    group: `sweep-${this.numSweeps}`,
+                    type: "move-out",
+                    tipNormalW: normal,
+                    tipPosW: hole.holeTop.clone().add(evacuateOffset),
+                });
+            });
             
-            return null;
+            return {
+                path: sweepPath,
+                deltaWork: {max: maxSweepRemoveShapes, min: minSweepRemoveShapes},
+                toolIx: toolIx,
+                toolLength: toolLength,
+            };
         };
 
         ////////////////////////////////////////
