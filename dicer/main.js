@@ -1051,6 +1051,15 @@ class Planner {
             .listen();
     }
 
+    animateHook() {
+        if (this.genSweeps) {
+            const res = this.genNextSweep();
+            if (!res) {
+                this.genSweeps = false; // done
+            }
+        }
+    }
+
 
     initPlan() {
         this.numSweeps = 0;
@@ -1847,12 +1856,7 @@ class View3D {
     }
 
     animate() {
-        if (this.genSweeps) {
-            const res = this.genNextSweep();
-            if (!res) {
-                this.genSweeps = false; // done
-            }
-        }
+        this.modPlanner.animateHook();
 
         if (this.vlogErrors.length > this.lastNumVlogErrors) {
             console.warn(`${this.vlogErrors.length - this.lastNumVlogErrors} new errors`);
