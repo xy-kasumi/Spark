@@ -8,9 +8,143 @@ import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { diceSurf } from './mesh.js';
 
+////////////////////////////////////////////////////////////////////////////////
+// Basis
+
 const fontLoader = new FontLoader();
 let font = null;
 
+const debug = {
+    strict: false, // should raise exception at logic boundary even when it can continue.
+};
+
+// orange-teal-purple color palette for ABC axes.
+const axisColorA = new THREE.Color(0xe67e22);
+const axisColorB = new THREE.Color(0x1abc9c);
+const axisColorC = new THREE.Color(0x9b59b6);
+
+
+const createCylinderVis = (p, n, r, col) => {
+    // Cylinder lies along Y axis, centered at origin.
+    const geom = new THREE.CylinderGeometry(r, r, 30, 8);
+    const mat = new THREE.MeshBasicMaterial({ color: col, wireframe: true });
+    const mesh = new THREE.Mesh(geom, mat);
+    
+    const rotV = new THREE.Vector3(0, 1, 0).cross(n);
+    if (rotV.length() > 1e-6) {
+        mesh.setRotationFromAxisAngle(rotV.clone().normalize(), Math.asin(rotV.length()));
+    }
+    mesh.position.copy(n.clone().multiplyScalar(15).add(p));
+    return mesh;
+};
+
+// Create a sphere visualizer for error location.
+// [in] p THREE.Vector3, location in work coords.
+// [in] col THREE.Color, color
+// returns: THREE.Mesh
+const createErrorLocVis = (p, col) => {
+    const sphGeom = new THREE.SphereGeometry(0.1);
+    const sphMat = new THREE.MeshBasicMaterial({ color: col });
+    const sph = new THREE.Mesh(sphGeom, sphMat);
+    sph.position.copy(p);
+    return sph;
+}
+
+// Create a text visualizer.
+// [in] p THREE.Vector3, location in work coords.
+// [in] text string
+// [in] size number, text size
+// [in] color THREE.Color
+// returns: THREE.Mesh
+const createTextVis = (p, text, size=0.25, color="#222222") => {
+    const textGeom = new TextGeometry(text, {
+        font,
+        size,
+        depth: 0.1,
+    });
+    const textMesh = new THREE.Mesh(textGeom, new THREE.MeshBasicMaterial({ color }));
+    textMesh.position.copy(p);
+    return textMesh;
+};
+
+
+// Creates ring+axis rotational axis visualizer.
+// [in] axis THREE.Vector3. rotates around this axis in CCW.
+// [in] size number feature size. typically ring radius.
+// [in] color THREE.Color
+// returns: THREE.Object3D
+const createRotationAxisHelper = (axis, size = 1, color = axisColorA) => {
+    const NUM_RING_PTS = 32;
+
+    /////
+    // contsutuct axis & ring out of line segments
+
+    // Generate as Z+ axis, scale=1 and rotate & re-scale later.
+    const buffer = new THREE.BufferGeometry();
+    const pts = [];
+    // add axis
+    pts.push(0, 0, -1);
+    pts.push(0, 0, 1);
+    // add ring
+    for (let i = 0; i < NUM_RING_PTS; i++) {
+        const angle0 = 2 * Math.PI * i / NUM_RING_PTS;
+        const angle1 = 2 * Math.PI * (i + 1) / NUM_RING_PTS;
+        pts.push(Math.cos(angle0), Math.sin(angle0), 0);
+        pts.push(Math.cos(angle1), Math.sin(angle1), 0);
+    }
+    buffer.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
+    const lineSegs = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color }));
+
+    /////
+    // construct direction cones
+    const geom = new THREE.ConeGeometry(0.1, 0.2);
+    const coneMat = new THREE.MeshBasicMaterial({ color });
+    const cone0 = new THREE.Mesh(geom, coneMat);
+    const cone1 = new THREE.Mesh(geom, coneMat);
+    
+    const localHelper = new THREE.Object3D();
+    localHelper.add(lineSegs);
+    localHelper.add(cone0);
+    cone0.position.set(0.99, 0, 0);
+
+    localHelper.add(cone1);
+    cone1.scale.set(1, -1, 1);
+    cone1.position.set(-0.99, 0, 0);
+
+    ///// 
+    // scale & rotate
+
+    // create orthonormal basis for rotation.
+    const basisZ = axis.normalize();
+    let basisY;
+    const b0 = new THREE.Vector3(1, 0, 0);
+    const b1 = new THREE.Vector3(0, 1, 0);
+    if (b0.clone().cross(basisZ).length() > 0.3) {
+        basisY = b0.clone().cross(basisZ).normalize();
+    } else {
+        basisY = b1.clone().cross(basisZ).normalize();
+    }
+    const basisX = basisY.clone().cross(basisZ).normalize();
+
+    // init new grid
+    const lToWMat3 = new THREE.Matrix3(
+        basisX.x, basisY.x, basisZ.x,
+        basisX.y, basisY.y, basisZ.y,
+        basisX.z, basisY.z, basisZ.z,
+    );
+
+    const helper = new THREE.Object3D();
+    helper.add(localHelper);
+
+    localHelper.scale.set(size, size, size);
+    localHelper.applyMatrix4(new THREE.Matrix4().identity().setFromMatrix3(lToWMat3));
+    return helper;
+};
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Planner Module
 
 const TG_FULL = 0; // fully occupied
 const TG_PARTIAL = 1; // partially occupied
@@ -24,10 +158,6 @@ const C_EMPTY_DONE = 1;  // current=empty
 const C_EMPTY_REMAINING = 2; // current=non-empty
 const C_PARTIAL_DONE = 3; // current=partial
 const C_PARTIAL_REMAINING = 4; // current=full
-
-const debug = {
-    strict: false, // should raise exception at logic boundary even when it can continue.
-};
 
 
 // see https://iquilezles.org/articles/distfunctions/ for SDFs in general.
@@ -270,8 +400,6 @@ class VoxelGrid {
         return new Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res).add(this.ofs);
     }
 }
-
-
 
 
 // Represents current work & target.
@@ -717,22 +845,6 @@ const createVgVis = (vg, label = "") => {
     return meshContainer;
 };
 
-// Create a text visualizer.
-// [in] p THREE.Vector3, location in work coords.
-// [in] text string
-// [in] size number, text size
-// [in] color THREE.Color
-// returns: THREE.Mesh
-const createTextVis = (p, text, size=0.25, color="#222222") => {
-    const textGeom = new TextGeometry(text, {
-        font,
-        size,
-        depth: 0.1,
-    });
-    const textMesh = new THREE.Mesh(textGeom, new THREE.MeshBasicMaterial({ color }));
-    textMesh.position.copy(p);
-    return textMesh;
-};
 
 
 // Visualize tool tip path in machine coordinates.
@@ -841,85 +953,6 @@ const createRotationWithZ = (z) => {
 }
 
 
-// orange-teal-purple color palette for ABC axes.
-const axisColorA = new THREE.Color(0xe67e22);
-const axisColorB = new THREE.Color(0x1abc9c);
-const axisColorC = new THREE.Color(0x9b59b6);
-
-// Creates ring+axis rotational axis visualizer.
-// [in] axis THREE.Vector3. rotates around this axis in CCW.
-// [in] size number feature size. typically ring radius.
-// [in] color THREE.Color
-// returns: THREE.Object3D
-const createRotationAxisHelper = (axis, size = 1, color = axisColorA) => {
-    const NUM_RING_PTS = 32;
-
-    /////
-    // contsutuct axis & ring out of line segments
-
-    // Generate as Z+ axis, scale=1 and rotate & re-scale later.
-    const buffer = new THREE.BufferGeometry();
-    const pts = [];
-    // add axis
-    pts.push(0, 0, -1);
-    pts.push(0, 0, 1);
-    // add ring
-    for (let i = 0; i < NUM_RING_PTS; i++) {
-        const angle0 = 2 * Math.PI * i / NUM_RING_PTS;
-        const angle1 = 2 * Math.PI * (i + 1) / NUM_RING_PTS;
-        pts.push(Math.cos(angle0), Math.sin(angle0), 0);
-        pts.push(Math.cos(angle1), Math.sin(angle1), 0);
-    }
-    buffer.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
-    const lineSegs = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color }));
-
-    /////
-    // construct direction cones
-    const geom = new THREE.ConeGeometry(0.1, 0.2);
-    const coneMat = new THREE.MeshBasicMaterial({ color });
-    const cone0 = new THREE.Mesh(geom, coneMat);
-    const cone1 = new THREE.Mesh(geom, coneMat);
-    
-    const localHelper = new THREE.Object3D();
-    localHelper.add(lineSegs);
-    localHelper.add(cone0);
-    cone0.position.set(0.99, 0, 0);
-
-    localHelper.add(cone1);
-    cone1.scale.set(1, -1, 1);
-    cone1.position.set(-0.99, 0, 0);
-
-    ///// 
-    // scale & rotate
-
-    // create orthonormal basis for rotation.
-    const basisZ = axis.normalize();
-    let basisY;
-    const b0 = new THREE.Vector3(1, 0, 0);
-    const b1 = new THREE.Vector3(0, 1, 0);
-    if (b0.clone().cross(basisZ).length() > 0.3) {
-        basisY = b0.clone().cross(basisZ).normalize();
-    } else {
-        basisY = b1.clone().cross(basisZ).normalize();
-    }
-    const basisX = basisY.clone().cross(basisZ).normalize();
-
-    // init new grid
-    const lToWMat3 = new THREE.Matrix3(
-        basisX.x, basisY.x, basisZ.x,
-        basisX.y, basisY.y, basisZ.y,
-        basisX.z, basisY.z, basisZ.z,
-    );
-
-    const helper = new THREE.Object3D();
-    helper.add(localHelper);
-
-    localHelper.scale.set(size, size, size);
-    localHelper.applyMatrix4(new THREE.Matrix4().identity().setFromMatrix3(lToWMat3));
-    return helper;
-};
-
-
 // returns: THREE.Object3D
 const generateStock = () => {
     const stock = new THREE.Mesh(
@@ -955,158 +988,48 @@ const generateTool = (toolLength, toolDiameter) => {
     return toolOrigin;
 };
 
-
-////////////////////////////////////////////////////////////////////////////////
-// 3D view
-
-const Model = {
-    GT2_PULLEY: "GT2_pulley",
-    HELICAL_GEAR: "helical_gear",
-    HELICAL_GEAR_STANDING: "helical_gear_standing",
-    DICE_TOWER: "dice_tower",
-    BENCHY: "benchy_25p",
-    BOLT_M3: "M3x10",
-};
-
-
-// Apply transformation to AABB, and return the transformed AABB.
-// [in] min, max THREE.Vector3 in coordinates A.
-// [in] mtx THREE.Matrix4 transforms (A -> B)
-// returns: {min: THREE.Vector3, max: THREE.Vector3} in coordinates B.
-const transformAABB = (min, max, mtx) => {
-    const minB = new THREE.Vector3(1e100, 1e100, 1e100);
-    const maxB = new THREE.Vector3(-1e100, -1e100, -1e100);
-    for (let i = 0; i < 8; i++) {
-        const cubeVertex = new THREE.Vector3(
-            (i & 1) ? min.x : max.x,
-            (i & 2) ? min.y : max.y,
-            (i & 4) ? min.z : max.z,
-        ).applyMatrix4(mtx);
-        minB.min(cubeVertex);
-        maxB.max(cubeVertex);
-    }
-    return { min: minB, max: maxB };
-};
-
-const createCylinderVis = (p, n, r, col) => {
-    // Cylinder lies along Y axis, centered at origin.
-    const geom = new THREE.CylinderGeometry(r, r, 30, 8);
-    const mat = new THREE.MeshBasicMaterial({ color: col, wireframe: true });
-    const mesh = new THREE.Mesh(geom, mat);
-    
-    const rotV = new THREE.Vector3(0, 1, 0).cross(n);
-    if (rotV.length() > 1e-6) {
-        mesh.setRotationFromAxisAngle(rotV.clone().normalize(), Math.asin(rotV.length()));
-    }
-    mesh.position.copy(n.clone().multiplyScalar(15).add(p));
-    return mesh;
-};
-
-// Create a sphere visualizer for error location.
-// [in] p THREE.Vector3, location in work coords.
-// [in] col THREE.Color, color
-// returns: THREE.Mesh
-const createErrorLocVis = (p, col) => {
-    const sphGeom = new THREE.SphereGeometry(0.1);
-    const sphMat = new THREE.MeshBasicMaterial({ color: col });
-    const sph = new THREE.Mesh(sphGeom, sphMat);
-    sph.position.copy(p);
-    return sph;
-}
-
-/**
- * Scene is in mm unit. Right-handed, Z+ up. Work-coordinates.
- */
-class View3D {
-    constructor() {
-        this.init();
+// planner gets two meshes and generate path as a list of points.
+// planner is not pure function. but it's a "module" with UIs and depends on debug stuff.
+// thus, planner instance should be kept, even when re-running planner from scratch.
+class Planner {
+    constructor(updateVis, setVisVisibility) {
+        this.updateVis = updateVis;
+        this.setVisVisibility = setVisVisibility;
 
         // machine geometries
         this.toolDiameter = 3;
+        this.toolLength = 25;
+
         this.workOffset = new THREE.Vector3(20, 40, 20); // in machine coords
         this.wireCenter = new THREE.Vector3(30, 15, 30);
         this.stockCenter = new THREE.Vector3(10, 10, 10);
 
-        this.workCoord = new THREE.Object3D();
-        this.scene.add(this.workCoord);
-
-        // work-coords
-        this.visGroups = {};
-        const gridHelperBottom = new THREE.GridHelper(40, 4);
-        gridHelperBottom.rotateX(Math.PI / 2);
-        this.workCoord.add(gridHelperBottom);
-
-        // machine-coords
-        this.tool = generateTool(30, this.toolDiameter);
-        this.workCoord.add(this.tool);
+        // tool vis
+        this.updateVisTransforms(new THREE.Vector3(-15, -15, 5), new THREE.Vector3(0, 0, 1), this.toolLength);
 
         // configuration
         this.ewrMax = 0.3;
 
         // machine-state setup
-        this.toolLength = 25;
         this.workCRot = 0;
-
-        const stock = generateStock();
-        this.objStock = stock;
-        this.workCoord.add(stock);
-        this.model = Model.GT2_PULLEY;
-        this.showStockMesh = true;
-        this.showTargetMesh = true;
 
         this.resMm = 0.25;
         this.showWork = true;
         this.showTarget = false;
         this.targetSurf = null;
 
-        this.updateVisTransforms(new THREE.Vector3(-15, -15, 5), new THREE.Vector3(0, 0, 1), this.toolLength);
         this.numSweeps = 0;
         this.showingSweep = 0;
         this.removedVol = 0;
         this.toolIx = 0;
         this.showSweepVis = false;
         this.showPlanPath = true;
-
-        this.vlogErrors = [];
-        this.lastNumVlogErrors = 0;
-        
-        // Visually log errors.
-        // [in] obj: THREE.Object3D
-        debug.vlogE = (obj) => {
-            this.vlogErrors.push(obj);
-            this.scene.add(obj);
-        };
-
-        this.initGui();
     }
 
-    updateVisTransforms(tipPos, tipNormal, toolLength) {
-        // regen tool; TODO: more efficient way
-        this.workCoord.remove(this.tool);
-        this.tool = generateTool(toolLength, this.toolDiameter);
-        this.workCoord.add(this.tool);
-
-        this.tool.position.copy(tipPos);
-        this.tool.setRotationFromMatrix(createRotationWithZ(tipNormal));
-    }
-
-    initGui() {
-        const gui = new GUI();
-        gui.add(this, 'model', Model).onChange((model) => {
-            this.updateVis("targ-vg", []);
-            this.updateVis("work-vg", []);
-            this.updateVis("misc", []);
-            this.loadStl(model);
-        });
-        gui.add(this, "showStockMesh").onChange(v => {
-            this.objStock.visible = v;
-        }).listen();
-        gui.add(this, "showTargetMesh").onChange(v => {
-            this.setVisVisibility("target", v);
-        }).listen();
-
+    // [in] gui lilgui instance
+    guiHook(gui) {
         gui.add(this, "resMm", [1e-3, 5e-2, 1e-2, 1e-1, 0.25, 0.5, 1]);
-    
+
         gui.add(this, "initPlan");
         gui.add(this, "genNextSweep");
         gui.add(this, "genNextSweep10");
@@ -1126,84 +1049,8 @@ class View3D {
         gui.add(this, "showPlanPath")
             .onChange(_ => this.setVisVisibility("plan-path-vg", this.showPlanPath))
             .listen();
-        
-        gui.add(this, "copyGcode");
-        gui.add(this, "sendGcodeToSim");
-    
-        this.loadStl(this.model);
     }
 
-    init() {
-        const width = window.innerWidth;
-        const height = window.innerHeight;
-
-        const aspect = width / height;
-        this.camera = new THREE.OrthographicCamera(-25 * aspect, 25 * aspect, 25, -25, -150, 150);
-        this.camera.position.x = 15;
-        this.camera.position.y = 40;
-        this.camera.position.z = 20;
-        this.camera.up.set(1, 0, 0);
-
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
-        this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.renderer.setSize(width, height);
-        this.renderer.setAnimationLoop(() => this.animate());
-        this.container = document.getElementById('container');
-        this.container.appendChild(this.renderer.domElement);
-
-        this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0xffffff);
-
-        const light = new THREE.AmbientLight(0x404040); // soft white light
-        this.scene.add(light);
-
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-        directionalLight.position.set(0, 0, 1);
-        this.scene.add(directionalLight);
-
-        const hemiLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 1);
-        this.scene.add(hemiLight);
-
-        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-
-        this.stats = new Stats();
-        container.appendChild(this.stats.dom);
-
-        const guiStatsEl = document.createElement('div');
-        guiStatsEl.classList.add('gui-stats');
-
-        window.addEventListener('resize', () => this.onWindowResize());
-        Object.assign(window, { scene: this.scene });
-    }
-
-    loadStl(fname) {
-        const loader = new STLLoader();
-        loader.load(
-            `models/${fname}.stl`,
-            (geometry) => {
-                // To avoid parts going out of work by numerical error, slightly offset the part geometry.
-                translateGeom(geometry, new THREE.Vector3(0, 0, 0.5));
-                this.targetSurf = convGeomToSurf(geometry);
-
-                const material = new THREE.MeshPhysicalMaterial({
-                    color: 0xb2ffc8,
-                    metalness: 0.1,
-                    roughness: 0.8,
-                    transparent: true,
-                    opacity: 0.8,
-                });
-
-                const mesh = new THREE.Mesh(geometry, material)
-                this.updateVis("target", [mesh]);
-            },
-            (xhr) => {
-                console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
-            },
-            (error) => {
-                console.log(error);
-            }
-        );
-    }
 
     initPlan() {
         this.numSweeps = 0;
@@ -1366,7 +1213,7 @@ class View3D {
 
             const withAxisValue = (pt) => {
                 const isPosW = pt.tipPosW !== undefined;
-                const ikResult = this.solveIk(isPosW ? pt.tipPosW : pt.tipPosM, pt.tipNormalW, toolLength, isPosW);
+                const ikResult = this.#solveIk(isPosW ? pt.tipPosW : pt.tipPosM, pt.tipNormalW, toolLength, isPosW);
                 return {
                     ...pt,
                     tipPosM: ikResult.tipPosM,
@@ -1502,7 +1349,7 @@ class View3D {
             const numScan1 = Math.ceil(trvgRadius * 2 / scanRes);
             const scanOrigin = trvgCenter.clone().sub(scanDir0.clone().multiplyScalar(trvgRadius)).sub(scanDir1.clone().multiplyScalar(trvgRadius));
 
-            const holeDiameter = this.toolDiameter; //  * 1.5;
+            const holeDiameter = this.toolDiameter * 1.1;
 
             // grid query for drilling
             // if ok, just drill it with helical downwards path.
@@ -1533,7 +1380,7 @@ class View3D {
 
             const withAxisValue = (pt) => {
                 const isPosW = pt.tipPosW !== undefined;
-                const ikResult = this.solveIk(isPosW ? pt.tipPosW : pt.tipPosM, pt.tipNormalW, toolLength, isPosW);
+                const ikResult = this.#solveIk(isPosW ? pt.tipPosW : pt.tipPosM, pt.tipNormalW, toolLength, isPosW);
                 return {
                     ...pt,
                     tipPosM: ikResult.tipPosM,
@@ -1655,7 +1502,7 @@ class View3D {
     // [in] tipNormalW tip normal in machine coordinates (+ is pointing towards base = work surface normal)
     // [in] isPosW true: tipPos is in work coordinates, false: tipPos is in machine coordinates
     // [out] {vals: {x, y, z, b, c} machine instructions for moving work table & tool base, tipPosM: THREE.Vector3 tip position in machine coordinates}
-    solveIk(tipPos, tipNormalW, toolLength, isPosW) {
+    #solveIk(tipPos, tipNormalW, toolLength, isPosW) {
         // Order of determination ("IK")
         // 1. Determine B,C axis
         // 2. Determine X,Y,Z axis
@@ -1705,6 +1552,179 @@ class View3D {
         };
     }
 
+    updateVisTransforms(tipPos, tipNormal, toolLength) {
+        const tool = generateTool(toolLength, this.toolDiameter);
+        this.updateVis("tool", [tool], true);
+
+        tool.position.copy(tipPos);
+        tool.setRotationFromMatrix(createRotationWithZ(tipNormal));
+    }
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// 3D view (Module + basis)
+
+
+// Apply transformation to AABB, and return the transformed AABB.
+// [in] min, max THREE.Vector3 in coordinates A.
+// [in] mtx THREE.Matrix4 transforms (A -> B)
+// returns: {min: THREE.Vector3, max: THREE.Vector3} in coordinates B.
+const transformAABB = (min, max, mtx) => {
+    const minB = new THREE.Vector3(1e100, 1e100, 1e100);
+    const maxB = new THREE.Vector3(-1e100, -1e100, -1e100);
+    for (let i = 0; i < 8; i++) {
+        const cubeVertex = new THREE.Vector3(
+            (i & 1) ? min.x : max.x,
+            (i & 2) ? min.y : max.y,
+            (i & 4) ? min.z : max.z,
+        ).applyMatrix4(mtx);
+        minB.min(cubeVertex);
+        maxB.max(cubeVertex);
+    }
+    return { min: minB, max: maxB };
+};
+
+
+// Provides basic UI framework, 3D scene, and mesh/gcode I/O UI.
+// Scene is in mm unit. Right-handed, Z+ up. Work-coordinates.
+class View3D {
+    constructor() {
+        this.init();
+
+        this.models = {
+            GT2_PULLEY: "GT2_pulley",
+            HELICAL_GEAR: "helical_gear",
+            HELICAL_GEAR_STANDING: "helical_gear_standing",
+            DICE_TOWER: "dice_tower",
+            BENCHY: "benchy_25p",
+            BOLT_M3: "M3x10",
+        };
+
+        // work-coords
+        this.visGroups = {};
+        const gridHelperBottom = new THREE.GridHelper(40, 4);
+        gridHelperBottom.rotateX(Math.PI / 2);
+        this.scene.add(gridHelperBottom);
+
+        const stock = generateStock();
+        this.objStock = stock;
+        this.scene.add(stock);
+        this.model = this.models.GT2_PULLEY;
+        this.showStockMesh = true;
+        this.showTargetMesh = true;
+
+        this.vlogErrors = [];
+        this.lastNumVlogErrors = 0;
+        
+        // Visually log errors.
+        // [in] obj: THREE.Object3D
+        debug.vlogE = (obj) => {
+            this.vlogErrors.push(obj);
+            this.scene.add(obj);
+        };
+
+        this.modPlanner = new Planner((group, vs, visible = true) => this.updateVis(group, vs, visible), (group, visible = true) => this.setVisVisibility(group, visible));
+        this.initGui();
+    }
+
+    initGui() {
+        const gui = new GUI();
+        gui.add(this, 'model', this.models).onChange((model) => {
+            this.updateVis("targ-vg", []);
+            this.updateVis("work-vg", []);
+            this.updateVis("misc", []);
+            this.loadStl(model);
+        });
+        gui.add(this, "showStockMesh").onChange(v => {
+            this.objStock.visible = v;
+        }).listen();
+        gui.add(this, "showTargetMesh").onChange(v => {
+            this.setVisVisibility("target", v);
+        }).listen();
+
+        this.modPlanner.guiHook(gui);
+        
+        gui.add(this, "copyGcode");
+        gui.add(this, "sendGcodeToSim");
+    
+        this.loadStl(this.model);
+    }
+
+    init() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        const aspect = width / height;
+        this.camera = new THREE.OrthographicCamera(-25 * aspect, 25 * aspect, 25, -25, -150, 150);
+        this.camera.position.x = 15;
+        this.camera.position.y = 40;
+        this.camera.position.z = 20;
+        this.camera.up.set(1, 0, 0);
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setSize(width, height);
+        this.renderer.setAnimationLoop(() => this.animate());
+        this.container = document.getElementById('container');
+        this.container.appendChild(this.renderer.domElement);
+
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0xffffff);
+
+        const light = new THREE.AmbientLight(0x404040); // soft white light
+        this.scene.add(light);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(0, 0, 1);
+        this.scene.add(directionalLight);
+
+        const hemiLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 1);
+        this.scene.add(hemiLight);
+
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+
+        this.stats = new Stats();
+        container.appendChild(this.stats.dom);
+
+        const guiStatsEl = document.createElement('div');
+        guiStatsEl.classList.add('gui-stats');
+
+        window.addEventListener('resize', () => this.onWindowResize());
+        Object.assign(window, { scene: this.scene });
+    }
+
+    loadStl(fname) {
+        const loader = new STLLoader();
+        loader.load(
+            `models/${fname}.stl`,
+            (geometry) => {
+                // To avoid parts going out of work by numerical error, slightly offset the part geometry.
+                translateGeom(geometry, new THREE.Vector3(0, 0, 0.5));
+                this.targetSurf = convGeomToSurf(geometry);
+                this.modPlanner.targetSurf = this.targetSurf;
+
+                const material = new THREE.MeshPhysicalMaterial({
+                    color: 0xb2ffc8,
+                    metalness: 0.1,
+                    roughness: 0.8,
+                    transparent: true,
+                    opacity: 0.8,
+                });
+
+                const mesh = new THREE.Mesh(geometry, material)
+                this.updateVis("target", [mesh]);
+            },
+            (xhr) => {
+                console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
+            },
+            (error) => {
+                console.log(error);
+            }
+        );
+    }
+
     copyGcode() {
         const prog = this.generateGcode();
         navigator.clipboard.writeText(prog);
@@ -1716,6 +1736,8 @@ class View3D {
     }
 
     generateGcode() {
+        const planPath = this.modPlanner.planPath;
+
         let prevSweep = null;
         let prevType = null;
         let prevX = null;
@@ -1731,8 +1753,8 @@ class View3D {
         lines.push(`M100`);
         lines.push(`M102`);
 
-        for (let i = 0; i < this.planPath.length; i++) {
-            const pt = this.planPath[i];
+        for (let i = 0; i < planPath.length; i++) {
+            const pt = planPath[i];
             if (prevSweep !== pt.sweep) {
                 lines.push(`; sweep-${pt.sweep}`);
                 prevSweep = pt.sweep;
@@ -1798,12 +1820,11 @@ class View3D {
     }
 
     updateVis(group, vs, visible = true) {
-        const parent = this.workCoord;
         if (this.visGroups[group]) {
-            this.visGroups[group].forEach(v => parent.remove(v));
+            this.visGroups[group].forEach(v => this.scene.remove(v));
         }
         vs.forEach(v => {
-            parent.add(v);
+            this.scene.add(v);
             v.visible = visible;
         });
         this.visGroups[group] = vs;
@@ -1843,11 +1864,6 @@ class View3D {
         this.stats.update();
     }
 }
-
-
-////////////////////////////////////////////////////////////////////////////////
-// entry point
-
 
 const loadFont = async () => {
     return new Promise((resolve) => {
