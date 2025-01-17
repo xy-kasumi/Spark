@@ -1198,7 +1198,7 @@ class Planner {
         const targVg = workVg.clone();
         diceSurf(this.stockSurf, workVg);
         diceSurf(this.targetSurf, targVg);
-        console.log(`stock: ${workVg.volume()} mm^3 (${workVg.count()} voxels) / target: ${targVg.volume()} mm^3 (${targVg.count()} voxels)`);
+        console.log(`stock: ${workVg.volume()} mm^3 (${workVg.count().toLocaleString("en-US")} voxels) / target: ${targVg.volume()} mm^3 (${targVg.count().toLocaleString("en-US")} voxels)`);
 
         this.trvg = new TrackingVoxelGrid(workVg.res, workVg.numX, workVg.numY, workVg.numZ, workVg.ofs.clone());
         this.trvg.setFromWorkAndTarget(workVg, targVg);
