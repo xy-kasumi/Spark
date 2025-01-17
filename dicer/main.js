@@ -377,10 +377,20 @@ class VoxelGrid {
     //
     // [in] shape: shape
     // [in] val: value to set to cells
-    // [in] roundToOutside: if true, round to outside of the hole. Otherwise, round to inside.
-    fillShape(shape, val, roundToOutside) {        
+    // [in] roundMode: "outside", "inside", "nearest"
+    fillShape(shape, val, roundMode) {
         const sdf = createSdf(shape);
-        const offset = (roundToOutside ? 1 : -1) * (this.res * 0.5 * Math.sqrt(3));
+        let offset = null;
+        const halfDiag = this.res * 0.5 * Math.sqrt(3);
+        if (roundMode === "outside") {
+            offset = halfDiag;
+        } else if (roundMode === "inside") {
+            offset = -halfDiag;
+        } else if (roundMode === "nearest") {
+            offset = 0;
+        } else {
+            throw `Unknown round mode: ${roundMode}`;
+        }
         traverseAllPointsInside(this, sdf, offset, (ix, iy, iz) => {
             this.set(ix, iy, iz, val);
         });
@@ -512,12 +522,47 @@ class TrackingVoxelGrid {
         }
     }
 
+    // Designate work below specified z to be protected. Primarily used to mark stock that should be kept for next session.
+    // [in] z: Z+ in work coords.
+    setProtectedWorkBelowZ(z) {
+        this.protectedWorkBelowZ = z;
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    const p = this.centerOf(ix, iy, iz);
+                    if (p.z < z) {
+                        if (this.get(ix, iy, iz) === C_EMPTY_REMAINING) {
+                            this.set(ix, iy, iz, C_FULL_DONE);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Scaffold for refactoring.
-    // returns: VoxelGrid (0: empty, 255: full)
-    extractWork() {
+    // [in] excludeProtectedWork: if true, exclude protected work.
+    // returns: VoxelGrid (0: empty, 128: partial done, 255: full)
+    extractWork(excludeProtectedWork = false) {
         const res = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
-        for (let i = 0; i < this.dataW.length; i++) {
-            res.data[i] = this.dataW[i] === W_REMAINING ? 255 : 0;
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    if (excludeProtectedWork && this.protectedWorkBelowZ !== undefined && this.centerOf(ix, iy, iz).z < this.protectedWorkBelowZ) {
+                        res.set(ix, iy, iz, 0);
+                        continue;
+                    }
+
+                    const s = this.get(ix, iy, iz);
+                    if (s === C_FULL_DONE || s === C_EMPTY_REMAINING || s === C_PARTIAL_REMAINING) {
+                        res.set(ix, iy, iz, 255);
+                    } else if (s === C_PARTIAL_DONE) {
+                        res.set(ix, iy, iz, 128);
+                    } else {
+                        res.set(ix, iy, iz, 0);
+                    }
+                }
+            }
         }
         return res;
     }
@@ -540,15 +585,16 @@ class TrackingVoxelGrid {
     //
     // [in] minShapes: array of shapes, treated as union of all shapes
     // [in] maxShapes: array of shapes, treated as union of all shapes
+    // [in] ignoreOvercutErrors: if true, ignore overcut errors. Hack to get final cut done.
     // returns: volume of neewly removed work.
-    commitRemoval(minShapes, maxShapes) {
+    commitRemoval(minShapes, maxShapes, ignoreOvercutErrors = false) {
         const minVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         const maxVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         minShapes.forEach(shape => {
-            minVg.fillShape(shape, 255, false);
+            minVg.fillShape(shape, 255, ignoreOvercutErrors ? "outside" : "inside"); // hack to get "clean-looking" work after final cut.
         });
         maxShapes.forEach(shape => {
-            maxVg.fillShape(shape, 255, true);
+            maxVg.fillShape(shape, 255, "outside");
         });
 
         let numDamages = 0;
@@ -565,17 +611,16 @@ class TrackingVoxelGrid {
                     }
 
                     const i = x + y * this.numX + z * this.numX * this.numY;
-                    const isTargetNotEmpty = this.dataT[i] !== TG_EMPTY;                    
+                    const isTargetNotEmpty = this.dataT[i] !== TG_EMPTY;
 
-                    // Commit.
-                    if (isInMax) {
+                    // Check overcut.
+                    if (!ignoreOvercutErrors && isInMax && isTargetNotEmpty) {
                         // this voxel can be potentially uncertainly removed.
-                        if (isTargetNotEmpty) {
-                            debug.vlogE(createErrorLocVis(this.centerOf(x, y, z), "violet"));
-                            numDamages++;
-                        }
+                        debug.vlogE(createErrorLocVis(this.centerOf(x, y, z), "violet"));
+                        numDamages++;
                     }
                     
+                    // Commit.
                     if (isInMin) {
                         // this voxel will be definitely completely removed.
                         // (at this point. dataT === TG_EMPTY, because isMin => isMax.)
@@ -676,6 +721,34 @@ class TrackingVoxelGrid {
     // Single read/write
 
     // [in] ix, iy, iz: voxel index
+    // [in] val: voxel value. One of C_FULL_DONE, C_EMPTY_DONE, C_EMPTY_REMAINING, C_PARTIAL_DONE, C_PARTIAL_REMAINING.
+    set(ix, iy, iz, val) {
+        const i = ix + iy * this.numX + iz * this.numX * this.numY;
+        switch (val) {
+            case C_FULL_DONE:
+                this.dataT[i] = TG_FULL;
+                this.dataW[i] = W_DONE;
+                break;
+            case C_EMPTY_DONE:
+                this.dataT[i] = TG_EMPTY;
+                this.dataW[i] = W_DONE;
+                break;
+            case C_EMPTY_REMAINING:
+                this.dataT[i] = TG_EMPTY;
+                this.dataW[i] = W_REMAINING;
+                break;
+            case C_PARTIAL_DONE:
+                this.dataT[i] = TG_PARTIAL;
+                this.dataW[i] = W_DONE;
+                break;
+            case C_PARTIAL_REMAINING:
+                this.dataT[i] = TG_PARTIAL;
+                this.dataW[i] = W_REMAINING;
+                break;
+        }
+    }
+
+    // [in] ix, iy, iz: voxel index
     // returns: voxel value. One of C_FULL_DONE, C_EMPTY_DONE, C_EMPTY_REMAINING, C_PARTIAL_DONE, C_PARTIAL_REMAINING.
     get(ix, iy, iz) {
         const t = this.dataT[ix + iy * this.numX + iz * this.numX * this.numY];
@@ -731,7 +804,7 @@ const computeAABB = (pts) => {
 // [in] resMm: voxel resolution
 // returns: VoxelGrid
 const initVGForPoints = (pts, resMm) => {
-    const MARGIN_MM = 1;
+    const MARGIN_MM = resMm; // want to keep boundary one voxel clear to avoid any mishaps. resMm should be enough.
     const { min, max } = computeAABB(pts);
     const center = min.clone().add(max).divideScalar(2);
     
@@ -744,8 +817,8 @@ const initVGForPoints = (pts, resMm) => {
 };
 
 // Apply translation to geometry in-place.
-// [in]: THREE.BufferGeometry
-// [in]: THREE.Vector3
+// [in] geom THREE.BufferGeometry
+// [in] trans THREE.Vector3
 const translateGeom = (geom, trans) => {
     const pos = geom.getAttribute("position").array;
     for (let i = 0; i < pos.length; i += 3) {
@@ -781,6 +854,9 @@ const convGeomToSurf = (geom) => {
 };
 
 
+// Generate stock cylinder geometry, spanning Z [0, stockHeight].
+// [in] stockRadius: number, radius of the stock
+// [in] stockHeight: number, height of the stock
 // returns: THREE.BufferGeometry
 const generateStockGeom = (stockRadius = 7.5, stockHeight = 15) => {
     const geom = new THREE.CylinderGeometry(stockRadius, stockRadius, stockHeight, 64, 1);
@@ -960,12 +1036,16 @@ const createRotationWithZ = (z) => {
     );
 }
 
-
+// Generate stock visualization.
+// [in] stockRadius: number, radius of the stock
+// [in] stockHeight: number, height of the stock
+// [in] baseZ: number, Z+ in machine coords where work coords Z=0 (bottom of the targer surface).
 // returns: THREE.Object3D
-const generateStock = (stockRadius = 7.5, stockHeight = 15) => {
+const generateStock = (stockRadius = 7.5, stockHeight = 15, baseZ = 0) => {
     const stock = new THREE.Mesh(
         generateStockGeom(stockRadius, stockHeight),
         new THREE.MeshLambertMaterial({ color: "blue", wireframe: true, transparent: true, opacity: 0.05 }));
+    stock.position.z = -baseZ;
     return stock;
 };
 
@@ -1023,6 +1103,9 @@ class Planner {
         this.workCRot = 0;
 
         this.resMm = 0.25;
+        this.stockCutWidth = 1.0; // width of tool blade when cutting off the work.
+        this.simWorkBuffer = 1.0; // extended bottom side of the work by this amount.
+
         this.showWork = true;
         this.showTarget = false;
         this.targetSurf = null;
@@ -1030,6 +1113,8 @@ class Planner {
         this.numSweeps = 0;
         this.showingSweep = 0;
         this.removedVol = 0;
+        this.remainingVol = 0;
+        this.deviation = "unknown";
         this.toolIx = 0;
         this.showSweepVis = false;
         this.showPlanPath = true;
@@ -1039,12 +1124,12 @@ class Planner {
     guiHook(gui) {
         gui.add(this, "resMm", [1e-3, 5e-2, 1e-2, 1e-1, 0.25, 0.5, 1]);
 
-        gui.add(this, "initPlan");
-        gui.add(this, "genNextSweep");
-        gui.add(this, "genNextSweep10");
         gui.add(this, "genAllSweeps");
+        gui.add(this, "genNextSweep");
         gui.add(this, "numSweeps").disable().listen();
-        gui.add(this, "removedVol").name("Removed Vol (㎣)").disable().listen();
+        gui.add(this, "removedVol").name("Removed Vol (㎣)").decimals(9).disable().listen();
+        gui.add(this, "remainingVol").name("Remaining Vol (㎣)").decimals(9).disable().listen();
+        gui.add(this, "deviation").disable().listen();
         gui.add(this, "toolIx").disable().listen();
         gui.add(this, "showTarget")
             .onChange(_ => this.setVisVisibility("targ-vg", this.showTarget))
@@ -1069,17 +1154,18 @@ class Planner {
         }
     }
 
-    initPlan() {
+    // Setup new targets.
+    //
+    // [in] targetSurf: THREE.BufferGeometry
+    // [in] baseZ: number, Z+ in machine coords where work coords Z=0 (bottom of the targer surface).
+    // [in] aboveWorkSize: number, length of stock to be worked "above" baseZ plane. Note below-baseZ work will be still removed to cut off the work.
+    // [in] stockDiameter: number, diameter of the stock.
+    initPlan(targetSurf, baseZ, aboveWorkSize, stockDiameter) {
+        this.targetSurf = targetSurf;
+        this.stockDiameter = stockDiameter;
+        this.baseZ = baseZ;
+        this.aboveWorkSize = aboveWorkSize;
         this.gen = this.#pathGenerator();
-    }
-
-    genNextSweep10() {
-        for (let i = 0; i < 10; i++) {
-            const done = this.genNextSweep();
-            if (done) {
-                break;
-            }
-        }
     }
 
     genAllSweeps() {
@@ -1104,7 +1190,10 @@ class Planner {
         this.removedVol = 0;
         this.toolIx = 0;
 
-        this.stockSurf = convGeomToSurf(generateStockGeom(this.stockDiameter / 2));
+        const simStockLength = this.stockCutWidth + this.simWorkBuffer + this.aboveWorkSize;
+        const stockGeom = generateStockGeom(this.stockDiameter / 2, simStockLength);
+        translateGeom(stockGeom, new THREE.Vector3(0, 0, -(this.stockCutWidth + this.simWorkBuffer)));
+        this.stockSurf = convGeomToSurf(stockGeom);
         const workVg = initVGForPoints(this.stockSurf, this.resMm);
         const targVg = workVg.clone();
         diceSurf(this.stockSurf, workVg);
@@ -1113,9 +1202,10 @@ class Planner {
 
         this.trvg = new TrackingVoxelGrid(workVg.res, workVg.numX, workVg.numY, workVg.numZ, workVg.ofs.clone());
         this.trvg.setFromWorkAndTarget(workVg, targVg);
+        this.trvg.setProtectedWorkBelowZ(-this.stockCutWidth);
 
         this.planPath = [];
-        this.updateVis("work-vg", [createVgVis(this.trvg.extractWork())], this.showWork);
+        this.updateVis("work-vg", [createVgVis(this.trvg.extractWork(true))], this.showWork);
         this.updateVis("targ-vg", [createVgVis(this.trvg.extractTarget())], this.showTarget);
         this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
 
@@ -1143,7 +1233,7 @@ class Planner {
         //   toolIx: number,
         //   vis: {target: VG, blocked: VG}
         // } | null (if impossible)
-        const genPlanarSweep = (normal, offset) => {
+        const genPlanarSweep = (normal, offset, toolDiameter) => {
             const rot = createRotationWithZ(normal);
             const feedDir = new THREE.Vector3(1, 0, 0).transformDirection(rot);
             const rowDir = new THREE.Vector3(0, 1, 0).transformDirection(rot);
@@ -1160,8 +1250,8 @@ class Planner {
             // }
             const rows = [];
 
-            const feedWidth = this.toolDiameter / 2;
-            const segmentLength = this.toolDiameter / 2;
+            const feedWidth = toolDiameter / 2;
+            const segmentLength = toolDiameter / 2;
             const numRows = Math.ceil(trvgRadius * 2 / feedWidth);
             const numSegs = Math.ceil(trvgRadius * 2 / segmentLength);
             const scanOrigin = 
@@ -1182,14 +1272,14 @@ class Planner {
                     const segBeginBot = segBegin.clone().sub(normal.clone().multiplyScalar(feedDepth));
                     const segEndBot = segEnd.clone().sub(normal.clone().multiplyScalar(feedDepth));
                     
-                    const accessOk = !this.trvg.queryBlocked(createCylinderShape(segBeginBot, normal, this.toolDiameter / 2));
+                    const accessOk = !this.trvg.queryBlocked(createCylinderShape(segBeginBot, normal, toolDiameter / 2));
                     
                     // notBlocked is required when there's work-remaining overhang; technically the tool can cut the overhang too,
                     // but should be avoided to localize tool wear.
                     // const notBlocked = !this.trvg.queryBlocked(createELHShape(segBegin, segEnd, normal, this.toolDiameter / 2, outerRadius));
                     const notBlocked = true;
                     const collateralRange = 100;
-                    const okToCut = this.trvg.queryOkToCutELH(segBeginBot, segEndBot, normal, this.toolDiameter / 2, feedDepth, collateralRange);
+                    const okToCut = this.trvg.queryOkToCutELH(segBeginBot, segEndBot, normal, toolDiameter / 2, feedDepth, collateralRange);
                     
                     const workOk = notBlocked && okToCut;
 
@@ -1201,7 +1291,7 @@ class Planner {
 
             // in planar sweep, tool is eroded only from the side.
             const maxWidthLoss = feedWidth * 0.1; // *0.5 is fine for EWR. but with coarse grid, needs to be smaller to not leave gaps between rows.
-            const tipRefreshDist = Math.PI * (Math.pow(this.toolDiameter / 2, 2) - Math.pow(this.toolDiameter / 2 - maxWidthLoss, 2)) / this.ewrMax / feedWidth;
+            const tipRefreshDist = Math.PI * (Math.pow(toolDiameter / 2, 2) - Math.pow(toolDiameter / 2 - maxWidthLoss, 2)) / this.ewrMax / feedWidth;
             
             // generate zig-zag
             //let currIx = minPt.x;
@@ -1229,8 +1319,8 @@ class Planner {
                 if (prevPtTipPos === null) {
                     throw "remove path needs prevPtTipPos to be set by pushNonRemoveMovement";
                 }
-                minSweepRemoveShapes.push(createELHShape(prevPtTipPos, pathPt.tipPosW, pathPt.tipNormalW, this.toolDiameter / 2 - maxWidthLoss, 100));
-                maxSweepRemoveShapes.push(createELHShape(prevPtTipPos, pathPt.tipPosW, pathPt.tipNormalW, this.toolDiameter / 2, 100));
+                minSweepRemoveShapes.push(createELHShape(prevPtTipPos, pathPt.tipPosW, pathPt.tipNormalW, toolDiameter / 2 - maxWidthLoss, 100));
+                maxSweepRemoveShapes.push(createELHShape(prevPtTipPos, pathPt.tipPosW, pathPt.tipNormalW, toolDiameter / 2, 100));
                 sweepPath.push(withAxisValue(pathPt));
                 prevPtTipPos = pathPt.tipPosW;
             };
@@ -1319,7 +1409,7 @@ class Planner {
         //   toolIx: number,
         //   vis: {target: VG, blocked: VG}
         // } | null (if impossible)
-        const genDrillSweep = (normal) => {
+        const genDrillSweep = (normal, toolDiameter) => {
             const rot = createRotationWithZ(normal);
             const scanDir0 = new THREE.Vector3(1, 0, 0).transformDirection(rot);
             const scanDir1 = new THREE.Vector3(0, 1, 0).transformDirection(rot);
@@ -1328,12 +1418,12 @@ class Planner {
             const trvgCenter = this.trvg.ofs.clone().add(halfDiagVec);
             const trvgRadius = halfDiagVec.length(); // TODO: proper bounds
 
-            const scanRes = 1;
+            const scanRes = .5;
             const numScan0 = Math.ceil(trvgRadius * 2 / scanRes);
             const numScan1 = Math.ceil(trvgRadius * 2 / scanRes);
             const scanOrigin = trvgCenter.clone().sub(scanDir0.clone().multiplyScalar(trvgRadius)).sub(scanDir1.clone().multiplyScalar(trvgRadius));
 
-            const holeDiameter = this.toolDiameter * 1.1;
+            const holeDiameter = toolDiameter * 1.1;
 
             // grid query for drilling
             // if ok, just drill it with helical downwards path.
@@ -1430,6 +1520,77 @@ class Planner {
             };
         };
 
+        // Generate "cut" sweep.
+        const genCutSweep = () => {
+            // TODO: use rectangular tool for efficiency.
+            // for now, just use circular tool because impl is simpler.
+            const normal = new THREE.Vector3(1, 0, 0);
+            const cutDir = new THREE.Vector3(0, 1, 0);
+
+            const ctMin = this.trvg.queryWorkOffset(cutDir.clone().multiplyScalar(-1));
+            const ctMax = this.trvg.queryWorkOffset(cutDir);
+            const nrMin = this.trvg.queryWorkOffset(normal.clone().multiplyScalar(-1));
+            const cutOffset = new THREE.Vector3(0, 0, -this.stockCutWidth * 0.5); // center of cut path
+
+            const ptBeginBot = cutOffset.clone().add(cutDir.clone().multiplyScalar(-ctMin)).add(normal.clone().multiplyScalar(-nrMin));
+            const ptEndBot = cutOffset.clone().add(cutDir.clone().multiplyScalar(ctMax)).add(normal.clone().multiplyScalar(-nrMin));
+
+            const toolLength = this.toolLength;
+            const toolIx = this.toolIx;
+            const sweepPath = [];
+            let prevPtTipPos = null;
+            const withAxisValue = (pt) => {
+                const isPosW = pt.tipPosW !== undefined;
+                const ikResult = this.#solveIk(isPosW ? pt.tipPosW : pt.tipPosM, pt.tipNormalW, toolLength, isPosW);
+                return {
+                    ...pt,
+                    tipPosM: ikResult.tipPosM,
+                    tipPosW: ikResult.tipPosW,
+                    axisValues: ikResult.vals,
+                };
+            };
+
+            const minSweepRemoveShapes = [];
+            const maxSweepRemoveShapes = [];
+            const pushRemoveMovement = (pathPt) => {
+                if (prevPtTipPos === null) {
+                    throw "remove path needs prevPtTipPos to be set by pushNonRemoveMovement";
+                }
+                minSweepRemoveShapes.push(createELHShape(prevPtTipPos, pathPt.tipPosW, pathPt.tipNormalW, this.stockCutWidth / 2, 100));
+                maxSweepRemoveShapes.push(createELHShape(prevPtTipPos, pathPt.tipPosW, pathPt.tipNormalW, this.stockCutWidth / 2, 100));
+                sweepPath.push(withAxisValue(pathPt));
+                prevPtTipPos = pathPt.tipPosW;
+            };
+
+            const pushNonRemoveMovement = (pathPt) => {
+                sweepPath.push(withAxisValue(pathPt));
+                prevPtTipPos = pathPt.tipPosW;
+            };
+
+            pushNonRemoveMovement({
+                sweep: this.numSweeps,
+                group: `sweep-${this.numSweeps}`,
+                type: "move-in",
+                tipNormalW: normal,
+                tipPosW: ptBeginBot,
+            });
+            pushRemoveMovement({
+                sweep: this.numSweeps,
+                group: `sweep-${this.numSweeps}`,
+                type: "remove-work",
+                tipNormalW: normal,
+                tipPosW: ptEndBot,
+            });
+
+            return {
+                path: sweepPath,
+                deltaWork: {max: maxSweepRemoveShapes, min: minSweepRemoveShapes},
+                toolIx: toolIx,
+                toolLength: toolLength,
+                ignoreOvercutErrors: true,
+            };
+        };
+
         ////////////////////////////////////////
         // Main Loop
 
@@ -1448,7 +1609,7 @@ class Planner {
             // update sweep vis regardless of commit result
             this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
             
-            const volRemoved = this.trvg.commitRemoval(sweep.deltaWork.min, sweep.deltaWork.max);
+            const volRemoved = this.trvg.commitRemoval(sweep.deltaWork.min, sweep.deltaWork.max, sweep.ignoreOvercutErrors ?? false);
             if (volRemoved === 0) {
                 console.log("commit rejected, because work not removed");
                 return false;
@@ -1456,6 +1617,7 @@ class Planner {
                 console.log(`commit sweep-${this.numSweeps} success`);
                 // commit success
                 this.removedVol += volRemoved;
+                this.remainingVol = this.trvg.getRemainingWorkVol();
                 this.planPath.push(...sweep.path);
                 this.toolIx = sweep.toolIx;
                 this.toolLength = sweep.toolLength;
@@ -1464,26 +1626,20 @@ class Planner {
 
                 // update visualizations
                 this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath, false);
-                this.updateVis("work-vg", [createVgVis(this.trvg.extractWork(), "work-vg")], this.showWork);
+                this.updateVis("work-vg", [createVgVis(this.trvg.extractWork(true), "work-vg")], this.showWork);
                 const lastPt = this.planPath[this.planPath.length - 1];
                 this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
                 return true;
             }
         };
-        const isDone = () => {
-            const flag = this.trvg.extractWork().count() === 0;
-            if (flag) {
-                console.log(`done after ${(performance.now() - t0) / 1e3}sec`);
-            }
-            return flag;
-        };
 
         // rough removals
+        
         for (const normal of candidateNormals) {
             let offset = this.trvg.queryWorkOffset(normal);
 
             while (true) {
-                const sweep = genPlanarSweep(normal, offset);
+                const sweep = genPlanarSweep(normal, offset, this.toolDiameter);
                 if (!sweep) {
                     break;
                 }
@@ -1491,24 +1647,25 @@ class Planner {
                 if (tryCommitSweep(sweep)) {
                     yield;
                 }
-                if (isDone()) {
-                    return;
-                }
             }
         }
+            
 
         // rough drills
         for (const normal of candidateNormals) {
-            const sweep = genDrillSweep(normal);
+            const sweep = genDrillSweep(normal, this.toolDiameter / 4);
             this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
             if (sweep) {
                 if (tryCommitSweep(sweep)) {
                     yield;
                 }
-                if (isDone()) {
-                    return;
-                }
             }
+        }
+
+        // cut
+        const sweep = genCutSweep();
+        if (tryCommitSweep(sweep)) {
+            yield;
         }
 
         // not done, but out of choices
@@ -1586,25 +1743,6 @@ class Planner {
 // 3D view (Module + basis)
 
 
-// Apply transformation to AABB, and return the transformed AABB.
-// [in] min, max THREE.Vector3 in coordinates A.
-// [in] mtx THREE.Matrix4 transforms (A -> B)
-// returns: {min: THREE.Vector3, max: THREE.Vector3} in coordinates B.
-const transformAABB = (min, max, mtx) => {
-    const minB = new THREE.Vector3(1e100, 1e100, 1e100);
-    const maxB = new THREE.Vector3(-1e100, -1e100, -1e100);
-    for (let i = 0; i < 8; i++) {
-        const cubeVertex = new THREE.Vector3(
-            (i & 1) ? min.x : max.x,
-            (i & 2) ? min.y : max.y,
-            (i & 4) ? min.z : max.z,
-        ).applyMatrix4(mtx);
-        minB.min(cubeVertex);
-        maxB.max(cubeVertex);
-    }
-    return { min: minB, max: maxB };
-};
-
 
 // Provides basic UI framework, 3D scene, and mesh/gcode I/O UI.
 // Scene is in mm unit. Right-handed, Z+ up. Work-coordinates.
@@ -1642,9 +1780,11 @@ class View3D {
 
         this.model = this.models.GT2_PULLEY;
         this.stockDiameter = 15;
+        this.stockLength = 20;
+        this.stockTopBuffer = 0.5;
         this.showStockMesh = true;
         this.showTargetMesh = true;
-        this.updateVis("stock", [generateStock(this.stockDiameter / 2)], this.showStockMesh);
+        this.updateVis("stock", [generateStock(this.stockDiameter / 2, this.stockLength)], this.showStockMesh);
 
         // Setup modules & GUI
         this.modPlanner = new Planner((group, vs, visible = true) => this.updateVis(group, vs, visible), (group, visible = true) => this.setVisVisibility(group, visible));
@@ -1659,10 +1799,14 @@ class View3D {
             this.updateVis("misc", []);
             this.loadStl(model);
         });
-        gui.add(this, "stockDiameter", [10, 15, 20, 25]).onChange(_ => {
-            this.modPlanner.stockDiameter = this.stockDiameter;
-            this.updateVis("stock", [generateStock(this.stockDiameter / 2)], this.showStockMesh);
-            this.modPlanner.initPlan();
+        gui.add(this, "stockDiameter", 1, 30, 0.1).onChange(_ => {
+            this.#updateStockVis();
+            this.modPlanner.initPlan(this.targetSurf, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+        });
+        gui.add(this, "stockLength", 1, 30, 0.1).onChange(_ => {
+            this.baseZ = this.stockLength - this.aboveWorkSize;
+            this.#updateStockVis();
+            this.modPlanner.initPlan(this.targetSurf, this.baseZ, this.aboveWorkSize, this.stockDiameter);
         });
         gui.add(this, "showStockMesh").onChange(v => {
             this.setVisVisibility("stock", v);
@@ -1722,16 +1866,22 @@ class View3D {
         Object.assign(window, { scene: this.scene });
     }
 
+    #updateStockVis() {
+        this.updateVis("stock", [generateStock(this.stockDiameter / 2, this.stockLength, this.baseZ)], this.showStockMesh);
+    }
+
     loadStl(fname) {
         const loader = new STLLoader();
         loader.load(
             `models/${fname}.stl`,
             (geometry) => {
-                // To avoid parts going out of work by numerical error, slightly offset the part geometry.
-                translateGeom(geometry, new THREE.Vector3(0, 0, 0.5));
                 this.targetSurf = convGeomToSurf(geometry);
-                this.modPlanner.targetSurf = this.targetSurf;
-                this.modPlanner.initPlan(); // reset plan state; a bit of a hack
+                const aabb = computeAABB(this.targetSurf);
+                // assuming aabb.min.z == 0.
+                this.aboveWorkSize = aabb.max.z + this.stockTopBuffer;
+                this.baseZ = this.stockLength - this.aboveWorkSize;
+                this.#updateStockVis();
+                this.modPlanner.initPlan(this.targetSurf, this.baseZ, this.aboveWorkSize, this.stockDiameter);
 
                 const material = new THREE.MeshPhysicalMaterial({
                     color: 0xb2ffc8,
@@ -1740,9 +1890,7 @@ class View3D {
                     transparent: true,
                     opacity: 0.8,
                 });
-
-                const mesh = new THREE.Mesh(geometry, material)
-                this.updateVis("target", [mesh]);
+                this.updateVis("target", [new THREE.Mesh(geometry, material)]);
             },
             (xhr) => {
                 console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
