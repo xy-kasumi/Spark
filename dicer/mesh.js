@@ -8,7 +8,6 @@ import { Vector2, Vector3 } from 'three';
 // TODO: this logic still missses tiny features like a screw lead. Need to sample many and reduce later.
 // 0.5mm grid is obviously not enough to capture M1 screw lead mountains.
 export const diceSurf = (surf, vg) => {
-    console.log("dicing...");
     for (let iz = 0; iz < vg.numZ; iz++) {
         const sliceZ0 = vg.ofs.z + iz * vg.res;
         const sliceZ1 = vg.ofs.z + (iz + 1) * vg.res;
@@ -53,7 +52,6 @@ export const diceSurf = (surf, vg) => {
             }
         }
     }
-    console.log(`dicing done; volume: ${vg.volume()} mm^3 (${vg.count()} voxels)`);
     return vg;
 };
 

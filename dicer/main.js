@@ -782,9 +782,7 @@ const convGeomToSurf = (geom) => {
 
 
 // returns: THREE.BufferGeometry
-const generateStockGeom = () => {
-    const stockRadius = 7.5;
-    const stockHeight = 15;
+const generateStockGeom = (stockRadius = 7.5, stockHeight = 15) => {
     const geom = new THREE.CylinderGeometry(stockRadius, stockRadius, stockHeight, 64, 1);
     const transf = new THREE.Matrix4().compose(
         new THREE.Vector3(0, 0, stockHeight / 2),
@@ -964,9 +962,9 @@ const createRotationWithZ = (z) => {
 
 
 // returns: THREE.Object3D
-const generateStock = () => {
+const generateStock = (stockRadius = 7.5, stockHeight = 15) => {
     const stock = new THREE.Mesh(
-        generateStockGeom(),
+        generateStockGeom(stockRadius, stockHeight),
         new THREE.MeshLambertMaterial({ color: "blue", wireframe: true, transparent: true, opacity: 0.05 }));
     return stock;
 };
@@ -1021,6 +1019,7 @@ class Planner {
         this.ewrMax = 0.3;
 
         // machine-state setup
+        this.stockDiameter = 15;
         this.workCRot = 0;
 
         this.resMm = 0.25;
@@ -1096,6 +1095,8 @@ class Planner {
     }
 
     *#pathGenerator() {
+        const t0 = performance.now();
+
         ////////////////////////////////////////
         // Init
 
@@ -1103,11 +1104,12 @@ class Planner {
         this.removedVol = 0;
         this.toolIx = 0;
 
-        this.stockSurf = convGeomToSurf(generateStockGeom());
+        this.stockSurf = convGeomToSurf(generateStockGeom(this.stockDiameter / 2));
         const workVg = initVGForPoints(this.stockSurf, this.resMm);
         const targVg = workVg.clone();
         diceSurf(this.stockSurf, workVg);
         diceSurf(this.targetSurf, targVg);
+        console.log(`stock: ${workVg.volume()} mm^3 (${workVg.count()} voxels) / target: ${targVg.volume()} mm^3 (${targVg.count()} voxels)`);
 
         this.trvg = new TrackingVoxelGrid(workVg.res, workVg.numX, workVg.numY, workVg.numZ, workVg.ofs.clone());
         this.trvg.setFromWorkAndTarget(workVg, targVg);
@@ -1469,7 +1471,11 @@ class Planner {
             }
         };
         const isDone = () => {
-            return this.trvg.extractWork().count() === 0;
+            const flag = this.trvg.extractWork().count() === 0;
+            if (flag) {
+                console.log(`done after ${(performance.now() - t0) / 1e3}sec`);
+            }
+            return flag;
         };
 
         // rough removals
@@ -1506,7 +1512,7 @@ class Planner {
         }
 
         // not done, but out of choices
-        console.log("possible sweep exhausted");
+        console.log(`possible sweep exhausted after ${(performance.now() - t0) / 1e3}sec`);
     }
 
     // Computes tool base & work table pos from tip target.
@@ -1604,29 +1610,10 @@ const transformAABB = (min, max, mtx) => {
 // Scene is in mm unit. Right-handed, Z+ up. Work-coordinates.
 class View3D {
     constructor() {
+        // Initialize basis
         this.init();
 
-        this.models = {
-            GT2_PULLEY: "GT2_pulley",
-            HELICAL_GEAR: "helical_gear",
-            HELICAL_GEAR_STANDING: "helical_gear_standing",
-            DICE_TOWER: "dice_tower",
-            BENCHY: "benchy_25p",
-            BOLT_M3: "M3x10",
-        };
-
-        // work-coords
         this.visGroups = {};
-        const gridHelperBottom = new THREE.GridHelper(40, 4);
-        gridHelperBottom.rotateX(Math.PI / 2);
-        this.scene.add(gridHelperBottom);
-
-        const stock = generateStock();
-        this.objStock = stock;
-        this.scene.add(stock);
-        this.model = this.models.GT2_PULLEY;
-        this.showStockMesh = true;
-        this.showTargetMesh = true;
 
         this.vlogErrors = [];
         this.lastNumVlogErrors = 0;
@@ -1638,6 +1625,28 @@ class View3D {
             this.scene.add(obj);
         };
 
+        // Setup extra permanent visualization
+        const gridHelperBottom = new THREE.GridHelper(40, 4);
+        gridHelperBottom.rotateX(Math.PI / 2);
+        this.scene.add(gridHelperBottom);
+
+        // Setup data
+        this.models = {
+            GT2_PULLEY: "GT2_pulley",
+            HELICAL_GEAR: "helical_gear",
+            HELICAL_GEAR_STANDING: "helical_gear_standing",
+            LATTICE: "cube_lattice",
+            BENCHY: "benchy_25p",
+            BOLT_M3: "M3x10",
+        };
+
+        this.model = this.models.GT2_PULLEY;
+        this.stockDiameter = 15;
+        this.showStockMesh = true;
+        this.showTargetMesh = true;
+        this.updateVis("stock", [generateStock(this.stockDiameter / 2)], this.showStockMesh);
+
+        // Setup modules & GUI
         this.modPlanner = new Planner((group, vs, visible = true) => this.updateVis(group, vs, visible), (group, visible = true) => this.setVisVisibility(group, visible));
         this.initGui();
     }
@@ -1650,8 +1659,13 @@ class View3D {
             this.updateVis("misc", []);
             this.loadStl(model);
         });
+        gui.add(this, "stockDiameter", [10, 15, 20, 25]).onChange(_ => {
+            this.modPlanner.stockDiameter = this.stockDiameter;
+            this.updateVis("stock", [generateStock(this.stockDiameter / 2)], this.showStockMesh);
+            this.modPlanner.initPlan();
+        });
         gui.add(this, "showStockMesh").onChange(v => {
-            this.objStock.visible = v;
+            this.setVisVisibility("stock", v);
         }).listen();
         gui.add(this, "showTargetMesh").onChange(v => {
             this.setVisVisibility("target", v);
@@ -1717,6 +1731,7 @@ class View3D {
                 translateGeom(geometry, new THREE.Vector3(0, 0, 0.5));
                 this.targetSurf = convGeomToSurf(geometry);
                 this.modPlanner.targetSurf = this.targetSurf;
+                this.modPlanner.initPlan(); // reset plan state; a bit of a hack
 
                 const material = new THREE.MeshPhysicalMaterial({
                     color: 0xb2ffc8,
