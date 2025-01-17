@@ -1053,17 +1053,43 @@ class Planner {
 
     animateHook() {
         if (this.genSweeps) {
-            const res = this.genNextSweep();
-            if (!res) {
-                this.genSweeps = false; // done
+            const done = this.genNextSweep();
+            if (done) {
+                this.genSweeps = false;
             }
         }
     }
 
-
     initPlan() {
+        this.gen = this.#pathGenerator();
+    }
+
+    genNextSweep10() {
+        for (let i = 0; i < 10; i++) {
+            const done = this.genNextSweep();
+            if (done) {
+                break;
+            }
+        }
+    }
+
+    genAllSweeps() {
+        this.genSweeps = true;
+    }
+
+    genNextSweep() {
+        if (!this.gen) {
+            this.gen = this.#pathGenerator();
+        }
+        const res = this.gen.next();
+        return res.done;
+    }
+
+    *#pathGenerator() {
+        ////////////////////////////////////////
+        // Init
+
         this.numSweeps = 0;
-        this.showingSweep = 0;
         this.removedVol = 0;
         this.toolIx = 0;
 
@@ -1077,55 +1103,20 @@ class Planner {
         this.trvg.setFromWorkAndTarget(workVg, targVg);
 
         this.planPath = [];
-        const candidateNormals = [
-            new THREE.Vector3(1, 0, 0),
-            new THREE.Vector3(0, 1, 0),
-            new THREE.Vector3(-1, 0, 0),
-            new THREE.Vector3(0, -1, 0),
-            new THREE.Vector3(0, 0, 1),
-        ];
-        this.planner = {
-            normalIndex: 0,
-            normals: candidateNormals,
-            offsets: candidateNormals.map(n => this.trvg.queryWorkOffset(n)),
-        };
-
         this.updateVis("work-vg", [createVgVis(this.trvg.extractWork())], this.showWork);
         this.updateVis("targ-vg", [createVgVis(this.trvg.extractTarget())], this.showTarget);
         this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
-    }
 
-    genNextSweep10() {
-        for (let i = 0; i < 10; i++) {
-            const committed = this.genNextSweep();
-            if (!committed) {
-                break;
-            }
-        }
-    }
+        ////////////////////////////////////////
+        // Sweep generators
 
-    genAllSweeps() {
-        this.genSweeps = true;
-    }
-
-    // Pre/post-condition of sweep:
-    // * tool is not touching work nor grinder
-    // * de-energized
-    // returns: true if sweep is committed, false if not
-    genNextSweep() {
-        if (this.trvg === undefined) {
-            this.initPlan();
-        }
-
-        const diffVg = this.trvg.extractWork();
-        if (diffVg.count() === 0) {
-            console.log("done!");
-            return false;
-        }
+        // Pre/post-condition of sweep:
+        // * tool is not touching work nor grinder
+        // * de-energized
+        // returns: true if sweep is committed, false if not
 
         // Sweep hyperparams
         const feedDepth = 1; // TODO: reduce later. currently too big for easy debug.
-
         const sweepVises = [];
 
         // Generate "planar sweep", directly below given plane.
@@ -1372,12 +1363,12 @@ class Planner {
                     const holeBot = scanPt.clone().sub(normal.clone().multiplyScalar(trvgRadius));
                     const ok = this.trvg.queryOkToCutCylinder(holeBot, normal, holeDiameter / 2);
                     if (ok) {
-                        debug.vlogE(createErrorLocVis(holeBot, "red"));
+                        //debug.vlogE(createErrorLocVis(holeBot, "red"));
                         drillHoles.push({
                             pos: scanPt
                         });
                     } else {
-                        debug.vlogE(createErrorLocVis(holeBot, "blue"));
+                        //debug.vlogE(createErrorLocVis(holeBot, "blue"));
                     }
                 }
             }
@@ -1437,72 +1428,85 @@ class Planner {
             return null;
         };
 
-        let sweep = null;
-        for (let i = 0; i < this.planner.normals.length; i++) {
-            sweep = genDrillSweep(this.planner.normals[this.planner.normalIndex]);
-            this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
-            if (sweep) {
-                console.log(`trying to commit sweep ${this.numSweeps}`, sweep);
+        ////////////////////////////////////////
+        // Main Loop
 
-                const volRemoved = this.trvg.commitRemoval(sweep.deltaWork.min, sweep.deltaWork.max);
-                if (volRemoved === 0) {
-                    console.log("rejected, because work not removed");
-                    continue;
-                } else {
-                    // commit success
-                    this.removedVol += volRemoved;
-                    this.planPath.push(...sweep.path);
-                    this.toolIx = sweep.toolIx;
-                    this.toolLength = sweep.toolLength;
-                    this.numSweeps++;
-                    this.showingSweep++;
+        // TODO: augment this from model normal features?
+        const candidateNormals = [
+            new THREE.Vector3(1, 0, 0),
+            new THREE.Vector3(0, 1, 0),
+            new THREE.Vector3(-1, 0, 0),
+            new THREE.Vector3(0, -1, 0),
+            new THREE.Vector3(0, 0, 1),
+        ];
+
+        // Verify and commit sweep.
+        // returns: true if committed, false if rejected.
+        const tryCommitSweep = (sweep) => {
+            // update sweep vis regardless of commit result
+            this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
+            
+            const volRemoved = this.trvg.commitRemoval(sweep.deltaWork.min, sweep.deltaWork.max);
+            if (volRemoved === 0) {
+                console.log("commit rejected, because work not removed");
+                return false;
+            } else {
+                console.log(`commit sweep-${this.numSweeps} success`);
+                // commit success
+                this.removedVol += volRemoved;
+                this.planPath.push(...sweep.path);
+                this.toolIx = sweep.toolIx;
+                this.toolLength = sweep.toolLength;
+                this.numSweeps++;
+                this.showingSweep++;
+
+                // update visualizations
+                this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath, false);
+                this.updateVis("work-vg", [createVgVis(this.trvg.extractWork(), "work-vg")], this.showWork);
+                const lastPt = this.planPath[this.planPath.length - 1];
+                this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
+                return true;
+            }
+        };
+        const isDone = () => {
+            return this.trvg.extractWork().count() === 0;
+        };
+
+        // rough removals
+        for (const normal of candidateNormals) {
+            let offset = this.trvg.queryWorkOffset(normal);
+
+            while (true) {
+                const sweep = genPlanarSweep(normal, offset);
+                if (!sweep) {
                     break;
                 }
-            }
-            this.planner.normalIndex = (this.planner.normalIndex + 1) % this.planner.normals.length;
-        }
-        for (let i = 0; i < this.planner.normals.length; i++) {
-            if (sweep) {
-                break;
-            }
-
-            sweep = genPlanarSweep(this.planner.normals[this.planner.normalIndex], this.planner.offsets[this.planner.normalIndex]);
-            this.planner.offsets[this.planner.normalIndex] -= feedDepth;
-
-            this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
-            if (sweep) {
-                console.log(`trying to commit sweep ${this.numSweeps}`, sweep);
-
-                const volRemoved = this.trvg.commitRemoval(sweep.deltaWork.min, sweep.deltaWork.max);
-                if (volRemoved === 0) {
-                    console.log("rejected, because work not removed");
-                    continue;
-                } else {
-                    // commit success
-                    this.removedVol += volRemoved;
-                    this.planPath.push(...sweep.path);
-                    this.toolIx = sweep.toolIx;
-                    this.toolLength = sweep.toolLength;
-                    this.numSweeps++;
-                    this.showingSweep++;
-                    break;
+                offset -= feedDepth;
+                if (tryCommitSweep(sweep)) {
+                    yield;
+                }
+                if (isDone()) {
+                    return;
                 }
             }
-            this.planner.normalIndex = (this.planner.normalIndex + 1) % this.planner.normals.length;
         }
 
-        if (sweep === null) {
-            console.log("possible sweep exhausted");
-            return false;
+        // rough drills
+        for (const normal of candidateNormals) {
+            const sweep = genDrillSweep(normal);
+            this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
+            if (sweep) {
+                if (tryCommitSweep(sweep)) {
+                    yield;
+                }
+                if (isDone()) {
+                    return;
+                }
+            }
         }
 
-        this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath, false);
-        this.updateVis("work-vg", [createVgVis(this.trvg.extractWork(), "work-vg")], this.showWork);
-
-        const lastPt = this.planPath[this.planPath.length - 1];
-        this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
-
-        return true;
+        // not done, but out of choices
+        console.log("possible sweep exhausted");
     }
 
     // Computes tool base & work table pos from tip target.
