@@ -358,17 +358,27 @@ class VoxelGrid {
     // [in] res: voxel resolution
     // [in] numX, numY, numZ: grid dimensions
     // [in] ofs: voxel grid offset (local to world)
-    constructor(res, numX, numY, numZ, ofs = new Vector3()) {
+    // [in] type: "u8" | "f32". Type of cell
+    constructor(res, numX, numY, numZ, ofs = new Vector3(), type = "u8") {
         this.res = res;
         this.numX = numX;
         this.numY = numY;
         this.numZ = numZ;
-        this.data = new Uint8Array(numX * numY * numZ);
         this.ofs = ofs.clone();
+
+        const ArrayConstructors = {
+            "u8": Uint8Array,
+            "f32": Float32Array,
+        };
+        if (!ArrayConstructors[type]) {
+            throw `Unknown voxel type: ${type}`;
+        }
+        this.type = type;
+        this.data = new ArrayConstructors[type](numX * numY * numZ);
     }
 
     clone() {
-        const vg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
+        const vg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, this.type);
         vg.data.set(this.data);
         return vg;
     }
@@ -429,6 +439,26 @@ class VoxelGrid {
             }
         }
         return cnt;
+    }
+
+    countLessThan(val) {
+        let cnt = 0;
+        for (let i = 0; i < this.data.length; i++) {
+            if (this.data[i] < val) {
+                cnt++;
+            }
+        }
+        return cnt;
+    }
+
+    max() {
+        let max = -Infinity;
+        for (let i = 0; i < this.data.length; i++) {
+            if (this.data[i] > max) {
+                max = this.data[i];
+            }
+        }
+        return max;
     }
 
     //////
@@ -565,6 +595,103 @@ class TrackingVoxelGrid {
             }
         }
         return res;
+    }
+
+    // Extract work volume as voxels. Each cell will contain deviation from target shape.
+    // positive value indicates deviation. 0 for perfect finish or inside. -1 for empty regions.
+    //
+    // [in] excludeProtectedWork: if true, exclude protected work. (treat them as empty)
+    // returns: VoxelGrid(f32)
+    extractWorkWithDeviation() {
+        // Jump Flood
+        const dist = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, "f32"); // -1 means invalid data.
+        const seedPosX = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, "f32");
+        const seedPosY = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, "f32");
+        const seedPosZ = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, "f32");
+
+        // Initialize with target data.
+        dist.fill(-1);
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    if (this.getT(ix, iy, iz) !== TG_EMPTY) {
+                        const pos = this.centerOf(ix, iy, iz);
+                        dist.set(ix, iy, iz, 0);
+                        seedPosX.set(ix, iy, iz, pos.x);
+                        seedPosY.set(ix, iy, iz, pos.y);
+                        seedPosZ.set(ix, iy, iz, pos.z);
+                    }
+                }
+            }
+        }
+
+        const numPass = Math.ceil(Math.log2(Math.max(this.numX, this.numY, this.numZ)));
+        const neighborOffsets = [
+            [-1, 0, 0],
+            [1, 0, 0],
+            [0, -1, 0],
+            [0, 1, 0],
+            [0, 0, -1],
+            [0, 0, 1],
+        ]; // maybe better to use 26-neighbor
+        for (let pass = 0; pass < numPass; pass++) {
+            const step = Math.pow(2, numPass - pass - 1);
+            for (let iz = 0; iz < this.numZ; iz++) {
+                for (let iy = 0; iy < this.numY; iy++) {
+                    for (let ix = 0; ix < this.numX; ix++) {
+                        const pos = this.centerOf(ix, iy, iz);
+                        if (dist.get(ix, iy, iz) === 0) {
+                            continue; // no possibility of change
+                        }
+
+                        for (const neighborOffset of neighborOffsets) {
+                            const nx = ix + neighborOffset[0] * step;
+                            const ny = iy + neighborOffset[1] * step;
+                            const nz = iz + neighborOffset[2] * step;
+                            if (nx < 0 || nx >= this.numX || ny < 0 || ny >= this.numY || nz < 0 || nz >= this.numZ) {
+                                continue;
+                            }
+                            if (dist.get(nx, ny, nz) < 0) {
+                                continue; // neibor is invalid
+                            }
+                            const nSeedPos = new THREE.Vector3(seedPosX.get(nx, ny, nz), seedPosY.get(nx, ny, nz), seedPosZ.get(nx, ny, nz));
+                            const dNew = nSeedPos.distanceTo(pos);
+                            if (dist.get(ix, iy, iz) < 0 || dNew < dist.get(ix, iy, iz)) {
+                                dist.set(ix, iy, iz, dNew);
+                                seedPosX.set(ix, iy, iz, nSeedPos.x);
+                                seedPosY.set(ix, iy, iz, nSeedPos.y);
+                                seedPosZ.set(ix, iy, iz, nSeedPos.z);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Convert JF data to work data.
+        const vxDiag = this.res * Math.sqrt(3);
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    const d = dist.get(ix, iy, iz);
+                    const s = this.get(ix, iy, iz);
+                    if (d < 0) {
+                        throw "Jump Flood impl error; failed to cover entire grid";
+                    }
+
+                    if (s === C_EMPTY_DONE) {
+                        dist.set(ix, iy, iz, -1); // empty
+                    } else if (d === 0) {
+                        dist.set(ix, iy, iz, 0); // inside
+                    } else {
+                        // trueD <= 0.5 vxDiag (partial vertex - partial center) + d (partial center - cell center) + 0.5 vxDiag (cell center - cell vertex)
+                        // because of triangle inequality.
+                        dist.set(ix, iy, iz, d + vxDiag);
+                    }
+                }
+            }
+        }
+        return dist;
     }
 
     // Scaffold for refactoring.
@@ -871,50 +998,95 @@ const generateStockGeom = (stockRadius = 7.5, stockHeight = 15) => {
 
 // [in] VoxelGrid
 // [in] label optional string to display on the voxel grid
+// [in] mode "occupancy" | "deviation". "occupancy" treats 255:full, 128:partial, 0:empty. "deviation" is >=0 as deviation and -1 as empty.
 // returns: THREE.Object3D
-const createVgVis = (vg, label = "") => {
-    const cubeGeom = new THREE.BoxGeometry(vg.res * 0.9, vg.res * 0.9, vg.res * 0.9);
+const createVgVis = (vg, label = "", mode="occupancy") => {
+    const cubeSize = vg.res * 1.0;
+    const cubeGeom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
 
-    //const num = vg.count();
-    const meshFull = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial(), vg.countEq(255));
-    const meshPartial = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial({transparent: true, opacity: 0.25}), vg.countEq(128));
-    
-    //const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial(), num);
-    let instanceIxFull = 0;
-    let instanceIxPartial = 0;
-    for (let iz = 0; iz < vg.numZ; iz++) {
-        for (let iy = 0; iy < vg.numY; iy++) {
-            for (let ix = 0; ix < vg.numX; ix++) {
-                const v = vg.get(ix, iy, iz);
-                if (v === 0) {
-                    continue;
-                }
+    const meshContainer = new THREE.Object3D();
+    meshContainer.position.copy(vg.ofs);
+    const axesHelper = new THREE.AxesHelper();
+    axesHelper.scale.set(vg.res * vg.numX, vg.res * vg.numY, vg.res * vg.numZ);
 
-                const mtx = new THREE.Matrix4();
-                mtx.compose(
-                    new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res),
-                    new THREE.Quaternion(),
-                    new THREE.Vector3(1, 1, 1).multiplyScalar(v === 255 ? 1.0 : 0.8));
+    if (mode === "occupancy") {
+        if (vg.type !== "u8") {
+            throw `Invalid vg type for occupancy: ${vg.type}`;
+        }
 
-                if (v === 255) {
-                    meshFull.setMatrixAt(instanceIxFull, mtx);
-                    instanceIxFull++;
-                } else {
-                    meshPartial.setMatrixAt(instanceIxPartial, mtx);
-                    instanceIxPartial++;
+        const meshFull = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), vg.countEq(255));
+        const meshPartial = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial({transparent: true, opacity: 0.25}), vg.countEq(128));
+        
+        let instanceIxFull = 0;
+        let instanceIxPartial = 0;
+        for (let iz = 0; iz < vg.numZ; iz++) {
+            for (let iy = 0; iy < vg.numY; iy++) {
+                for (let ix = 0; ix < vg.numX; ix++) {
+                    const v = vg.get(ix, iy, iz);
+                    if (v === 0) {
+                        continue;
+                    }
+
+                    // whatever different color gradient
+                    meshFull.setColorAt(instanceIxFull, new THREE.Color(ix * 0.01 + 0.5, iy * 0.01 + 0.5, iz * 0.01 + 0.5));
+
+                    const mtx = new THREE.Matrix4();
+                    mtx.compose(
+                        new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res),
+                        new THREE.Quaternion(),
+                        new THREE.Vector3(1, 1, 1).multiplyScalar(v === 255 ? 1.0 : 0.8));
+
+                    if (v === 255) {
+                        meshFull.setMatrixAt(instanceIxFull, mtx);
+                        instanceIxFull++;
+                    } else {
+                        meshPartial.setMatrixAt(instanceIxPartial, mtx);
+                        instanceIxPartial++;
+                    }
                 }
             }
         }
+
+        meshContainer.add(meshFull);
+        meshContainer.add(meshPartial);
+        meshFull.add(axesHelper);
+    } else if (mode === "deviation") {
+        if (vg.type !== "f32") {
+            throw `Invalid vg type for deviation: ${vg.type}`;
+        }
+
+        const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), vg.numX * vg.numY * vg.numZ - vg.countLessThan(0));
+
+        let instanceIx = 0;
+        const maxDev = 3;
+        for (let iz = 0; iz < vg.numZ; iz++) {
+            for (let iy = 0; iy < vg.numY; iy++) {
+                for (let ix = 0; ix < vg.numX; ix++) {
+                    const v = vg.get(ix, iy, iz);
+                    if (v < 0) {
+                        continue;
+                    }
+
+                    // apply deviation color, from blue(0) to red(maxDev).
+                    const t = Math.min(1, v / maxDev);
+                    mesh.setColorAt(instanceIx, new THREE.Color(t, 0, 1 - t));
+
+                    const mtx = new THREE.Matrix4();
+                    mtx.compose(
+                        new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res),
+                        new THREE.Quaternion(),
+                        new THREE.Vector3(1, 1, 1));
+                    mesh.setMatrixAt(instanceIx, mtx);
+                    instanceIx++;
+                }
+            }
+        }
+
+        meshContainer.add(mesh);
+        mesh.add(axesHelper);
+    } else {
+        throw `Invalid mode: ${mode}`;
     }
-
-    const meshContainer = new THREE.Object3D();
-    meshContainer.add(meshFull);
-    meshContainer.add(meshPartial);
-    meshContainer.position.copy(vg.ofs);
-
-    const axesHelper = new THREE.AxesHelper();
-    axesHelper.scale.set(vg.res * vg.numX, vg.res * vg.numY, vg.res * vg.numZ);
-    meshFull.add(axesHelper);
 
     if (label !== "") {
         const textGeom = new TextGeometry(label, {
@@ -1114,7 +1286,7 @@ class Planner {
         this.showingSweep = 0;
         this.removedVol = 0;
         this.remainingVol = 0;
-        this.deviation = "unknown";
+        this.deviation = 0;
         this.toolIx = 0;
         this.showSweepVis = false;
         this.showPlanPath = true;
@@ -1129,7 +1301,7 @@ class Planner {
         gui.add(this, "numSweeps").disable().listen();
         gui.add(this, "removedVol").name("Removed Vol (㎣)").decimals(9).disable().listen();
         gui.add(this, "remainingVol").name("Remaining Vol (㎣)").decimals(9).disable().listen();
-        gui.add(this, "deviation").disable().listen();
+        gui.add(this, "deviation").name("Deviation (mm)").decimals(3).disable().listen();
         gui.add(this, "toolIx").disable().listen();
         gui.add(this, "showTarget")
             .onChange(_ => this.setVisVisibility("targ-vg", this.showTarget))
@@ -1205,7 +1377,7 @@ class Planner {
         this.trvg.setProtectedWorkBelowZ(-this.stockCutWidth);
 
         this.planPath = [];
-        this.updateVis("work-vg", [createVgVis(this.trvg.extractWork(true))], this.showWork);
+        this.updateVis("work-vg", [createVgVis(this.trvg.extractWorkWithDeviation(), "work", "deviation")], this.showWork);
         this.updateVis("targ-vg", [createVgVis(this.trvg.extractTarget())], this.showTarget);
         this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
 
@@ -1625,10 +1797,12 @@ class Planner {
                 this.showingSweep++;
 
                 // update visualizations
+                const workDeviation = this.trvg.extractWorkWithDeviation(true);
                 this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath, false);
-                this.updateVis("work-vg", [createVgVis(this.trvg.extractWork(true), "work-vg")], this.showWork);
+                this.updateVis("work-vg", [createVgVis(workDeviation, "work-vg", "deviation")], this.showWork);
                 const lastPt = this.planPath[this.planPath.length - 1];
                 this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
+                this.deviation = workDeviation.max();
                 return true;
             }
         };
