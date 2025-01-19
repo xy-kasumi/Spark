@@ -1026,6 +1026,116 @@ const generateTool = (toolLength, toolDiameter) => {
     return toolOrigin;
 };
 
+
+/**
+ * Utility to accumulate correct path for short-ish tool paths. (e.g. single sweep or part of it)
+ */
+class PartialPath {
+    /**
+     * @param {number} sweepIx - Sweep index
+     * @param {string} group - Group name
+     * @param {THREE.Vector3} normal - Normal vector
+     * @param {Function} solveIk - #solveIk() function
+     * @param {number} toolLength - Length of the tool
+     */
+    constructor(sweepIx, group, normal, solveIk, toolLength) {
+        this.sweepIx = sweepIx;
+        this.group = group;
+        this.normal = normal;
+        this.minSweepRemoveShapes = [];
+        this.maxSweepRemoveShapes = [];
+        this.path = [];
+        this.prevPtTipPos = null;
+        this.solveIk = solveIk;
+        this.toolLength = toolLength;
+    }
+
+    #withAxisValue(type, pt) {
+        const isPosW = pt.tipPosW !== undefined;
+        const ikResult = this.solveIk(isPosW ? pt.tipPosW : pt.tipPosM, this.normal, this.toolLength, isPosW);
+        return {
+            ...pt,
+            type: type,
+            tipPosM: ikResult.tipPosM,
+            tipPosW: ikResult.tipPosW,
+            axisValues: ikResult.vals,
+            sweep: this.sweepIx,
+            group: this.group,
+            tipNormalW: this.normal,
+        };
+    }
+
+    /**
+     * Add non-material-removing move. (i.e. G0 move)
+     * @param {string} type - label for this move
+     * @param {THREE.Vector3} tipPos - Tip position in work coordinates
+     */
+    nonRemove(type, tipPos) {
+        this.path.push(this.#withAxisValue(type, {tipPosW: tipPos}));
+        this.prevPtTipPos = tipPos;
+    }
+
+    /**
+     * Add material-removing move. (i.e. G1 move) The move must be horizontal.
+     * @param {THREE.Vector3} tipPos - Tip position in work coordinates
+     * @param {number} toolRotDelta - Tool rotation delta in radians
+     * @param {number} maxDiameter - Maximum diameter of the tool
+     * @param {number} minDiameter - Minimum diameter of the tool
+     */
+    removeHorizontal(tipPos, toolRotDelta, maxDiameter, minDiameter) {
+        if (this.prevPtTipPos === null) {
+            throw "nonRemove() need to be called before removeHorizontal()";
+        }
+        if (tipPos.clone().sub(this.prevPtTipPos).dot(this.normal) !== 0) {
+            throw "remove path needs to be horizontal (perpendicular to normal)";
+        }
+
+        this.minSweepRemoveShapes.push(createELHShape(this.prevPtTipPos, tipPos, this.normal, minDiameter / 2, 100));
+        this.maxSweepRemoveShapes.push(createELHShape(this.prevPtTipPos, tipPos, this.normal, maxDiameter / 2, 100));
+        this.path.push(this.#withAxisValue("remove-work", {tipPosW: tipPos, toolRotDelta: toolRotDelta}));
+        this.prevPtTipPos = tipPos;
+    }
+
+    /**
+     * Add material-removing move. (i.e. G1 move) The move must be vertical.
+     * @param {THREE.Vector3} tipPos - Tip position in work coordinates
+     * @param {number} toolRotDelta - Tool rotation delta in radians
+     * @param {number} maxDiameter - Maximum diameter of the tool
+     * @param {number} minDiameter - Minimum diameter of the tool
+     */
+    removeVertical(tipPos, toolRotDelta, maxDiameter, minDiameter) {
+        if (this.prevPtTipPos === null) {
+            throw "nonRemove() need to be called before removeVertical()";
+        }
+        if (tipPos.clone().sub(this.prevPtTipPos).cross(this.normal).length() !== 0) {
+            throw "remove path needs to be vertical (parallel to normal)";
+        }
+
+        this.minSweepRemoveShapes.push(createCylinderShape(this.prevPtTipPos, this.normal, minDiameter / 2));
+        this.maxSweepRemoveShapes.push(createCylinderShape(this.prevPtTipPos, this.normal, maxDiameter / 2));
+        this.path.push(this.#withAxisValue("remove-work", {
+            tipPosW: tipPos,
+            toolRotDelta: toolRotDelta,
+        }));
+        this.prevPtTipPos = tipPos;
+    }
+
+    getPath() {
+        return this.path;
+    }
+
+    getMaxRemoveShapes() {
+        return this.maxSweepRemoveShapes;
+    }
+
+    getMinRemoveShapes() {
+        return this.minSweepRemoveShapes;
+    }
+
+}
+
+
+
 /**
  * Planner class for generating tool paths.
  *
@@ -1200,15 +1310,11 @@ class Planner {
          * @param {THREE.Vector3} normal Normal vector, in work coords. = tip normal
          * @param {number} offset Offset from the plane. offset * normal forms the plane.
          * @param {number} toolDiameter Tool diameter
-         * @returns {Object} {
-         *   path: array<THREE.Vector3>,
-         *   deltaWork: VG,
-         *   toolLength: number,
-         *   toolIx: number,
-         *   vis: {target: VG, blocked: VG}
-         * } | null (if impossible)
+         * @returns {PartialPath | null} PartialPath or null if impossible
          */
         const genPlanarSweep = (normal, offset, toolDiameter) => {
+            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, (tipPos, tipNormalW, toolLength, isPosW) => this.#solveIk(tipPos, tipNormalW, toolLength, isPosW), this.toolLength);
+
             const rot = createRotationWithZ(normal);
             const feedDir = new THREE.Vector3(1, 0, 0).transformDirection(rot);
             const rowDir = new THREE.Vector3(0, 1, 0).transformDirection(rot);
@@ -1269,42 +1375,9 @@ class Planner {
             const tipRefreshDist = Math.PI * (Math.pow(toolDiameter / 2, 2) - Math.pow(toolDiameter / 2 - maxWidthLoss, 2)) / this.ewrMax / feedWidth;
             
             // generate zig-zag
-            //let currIx = minPt.x;
-            //let currIy = minPt.y;
             let distSinceRefresh = 0;
             let toolLength = this.toolLength;
             let toolIx = this.toolIx;
-            let prevPtTipPos = null;
-            const sweepPath = [];
-
-            const withAxisValue = (pt) => {
-                const isPosW = pt.tipPosW !== undefined;
-                const ikResult = this.#solveIk(isPosW ? pt.tipPosW : pt.tipPosM, pt.tipNormalW, toolLength, isPosW);
-                return {
-                    ...pt,
-                    tipPosM: ikResult.tipPosM,
-                    tipPosW: ikResult.tipPosW,
-                    axisValues: ikResult.vals,
-                };
-            };
-
-            const minSweepRemoveShapes = [];
-            const maxSweepRemoveShapes = [];
-            const pushRemoveMovement = (pathPt) => {
-                if (prevPtTipPos === null) {
-                    throw "remove path needs prevPtTipPos to be set by pushNonRemoveMovement";
-                }
-                minSweepRemoveShapes.push(createELHShape(prevPtTipPos, pathPt.tipPosW, pathPt.tipNormalW, toolDiameter / 2 - maxWidthLoss, 100));
-                maxSweepRemoveShapes.push(createELHShape(prevPtTipPos, pathPt.tipPosW, pathPt.tipNormalW, toolDiameter / 2, 100));
-                sweepPath.push(withAxisValue(pathPt));
-                prevPtTipPos = pathPt.tipPosW;
-            };
-
-            const pushNonRemoveMovement = (pathPt) => {
-                sweepPath.push(withAxisValue(pathPt));
-                prevPtTipPos = pathPt.tipPosW;
-            };
-
             const evacuateOffset = normal.clone().multiplyScalar(3);
 
             for (let ixRow = 0; ixRow < rows.length; ixRow++) {
@@ -1312,47 +1385,18 @@ class Planner {
                 let entered = false;
                 for (let ixSeg = 0; ixSeg < row.length; ixSeg++) {
                     const seg = row[ixSeg];
-                    const pushRemoveThisSeg = () => {
-                        pushRemoveMovement({
-                            sweep: this.numSweeps,
-                            group: `sweep-${this.numSweeps}`,
-                            type: "remove-work",
-                            tipNormalW: normal,
-                            tipPosW: seg.segEndBot,
-                            toolRotDelta: 123, // TODO: Fix
-                        });
-                    };
-
                     if (!entered) {
                         if (seg.accessOk & seg.workOk) {
-                            pushNonRemoveMovement({
-                                sweep: this.numSweeps,
-                                group: `sweep-${this.numSweeps}`,
-                                type: "move-in",
-                                tipNormalW: normal,
-                                tipPosW: seg.segBegin.clone().add(evacuateOffset),
-                            });
-                            pushNonRemoveMovement({
-                                sweep: this.numSweeps,
-                                group: `sweep-${this.numSweeps}`,
-                                type: "move-in",
-                                tipNormalW: normal,
-                                tipPosW: seg.segBeginBot,
-                            });
-                            pushRemoveThisSeg();
+                            sweepPath.nonRemove("move-in", seg.segBegin.clone().add(evacuateOffset));
+                            sweepPath.nonRemove("move-in", seg.segBeginBot);
+                            sweepPath.removeHorizontal(seg.segEndBot, 123, this.toolDiameter, this.toolDiameter - maxWidthLoss * 2); // TODO: proper tool rotation
                             entered = true;
                         }
                     } else {
                         if (seg.workOk && ixSeg !== row.length - 1) {
-                            pushRemoveThisSeg();
+                            sweepPath.removeHorizontal(seg.segEndBot, 123, this.toolDiameter, this.toolDiameter - maxWidthLoss * 2); // TODO: proper tool rotation
                         } else {
-                            pushNonRemoveMovement({
-                                sweep: this.numSweeps,
-                                group: `sweep-${this.numSweeps}`,
-                                type: "move-out",
-                                tipNormalW: normal,
-                                tipPosW: seg.segBegin.clone().add(evacuateOffset),
-                            });
+                            sweepPath.nonRemove("move-out", seg.segBegin.clone().add(evacuateOffset));
                             entered = false;
                         }
                     }
@@ -1363,13 +1407,13 @@ class Planner {
                 }
             }
 
-            if (sweepPath.length === 0) {
+            if (sweepPath.getPath().length === 0) {
                 return null;
             }
 
             return {
-                path: sweepPath,
-                deltaWork: {max: maxSweepRemoveShapes, min: minSweepRemoveShapes},
+                path: sweepPath.getPath(),
+                deltaWork: {max: sweepPath.getMaxRemoveShapes(), min: sweepPath.getMinRemoveShapes()},
                 toolIx: toolIx,
                 toolLength: toolLength,
             };
@@ -1379,15 +1423,11 @@ class Planner {
          * Generate "drill sweep", axis=normal.
          * @param {THREE.Vector3} normal Normal vector, in work coords. = tip normal
          * @param {number} toolDiameter Tool diameter
-         * @returns {Object} {
-         *   path: array<THREE.Vector3>,
-         *   deltaWork: VG,
-         *   toolLength: number,
-         *   toolIx: number,
-         *   vis: {target: VG, blocked: VG}
-         * } | null (if impossible)
+         * @returns {PartialPath | null} PartialPath or null if impossible
          */
         const genDrillSweep = (normal, toolDiameter) => {
+            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, (tipPos, tipNormalW, toolLength, isPosW) => this.#solveIk(tipPos, tipNormalW, toolLength, isPosW), this.toolLength);
+
             const rot = createRotationWithZ(normal);
             const scanDir0 = new THREE.Vector3(1, 0, 0).transformDirection(rot);
             const scanDir1 = new THREE.Vector3(0, 1, 0).transformDirection(rot);
@@ -1435,64 +1475,17 @@ class Planner {
             // Generate paths
             let toolLength = this.toolLength;
             let toolIx = this.toolIx;
-            let prevPtTipPos = null;
-            const sweepPath = [];
-
-            const withAxisValue = (pt) => {
-                const isPosW = pt.tipPosW !== undefined;
-                const ikResult = this.#solveIk(isPosW ? pt.tipPosW : pt.tipPosM, pt.tipNormalW, toolLength, isPosW);
-                return {
-                    ...pt,
-                    tipPosM: ikResult.tipPosM,
-                    tipPosW: ikResult.tipPosW,
-                    axisValues: ikResult.vals,
-                };
-            };
-
-            const minSweepRemoveShapes = [];
-            const maxSweepRemoveShapes = [];
-
-            const pushNonRemoveMovement = (pathPt) => {
-                sweepPath.push(withAxisValue(pathPt));
-                prevPtTipPos = pathPt.tipPosW;
-            };
-
             const evacuateOffset = normal.clone().multiplyScalar(3);
 
             drillHoles.forEach(hole => {
-                pushNonRemoveMovement({
-                    sweep: this.numSweeps,
-                    group: `sweep-${this.numSweeps}`,
-                    type: "move-in",
-                    tipNormalW: normal,
-                    tipPosW: hole.holeTop.clone().add(evacuateOffset),
-                });
-
-                // TODO: helical path
-                minSweepRemoveShapes.push(createCylinderShape(hole.holeBot, normal, holeDiameter / 2));
-                maxSweepRemoveShapes.push(createCylinderShape(hole.holeBot, normal, holeDiameter / 2));
-                sweepPath.push(withAxisValue({
-                    sweep: this.numSweeps,
-                    group: `sweep-${this.numSweeps}`,
-                    type: "remove-work",
-                    tipNormalW: normal,
-                    tipPosW: hole.holeBot,
-                    toolRotDelta: 123, // TODO: Fix
-                }));
-                prevPtTipPos = hole.holeBot;
-
-                pushNonRemoveMovement({
-                    sweep: this.numSweeps,
-                    group: `sweep-${this.numSweeps}`,
-                    type: "move-out",
-                    tipNormalW: normal,
-                    tipPosW: hole.holeTop.clone().add(evacuateOffset),
-                });
+                sweepPath.nonRemove("move-in", hole.holeTop.clone().add(evacuateOffset));
+                sweepPath.removeVertical(hole.holeBot); // TODO: helical path
+                sweepPath.nonRemove("move-out", hole.holeTop.clone().add(evacuateOffset));
             });
             
             return {
-                path: sweepPath,
-                deltaWork: {max: maxSweepRemoveShapes, min: minSweepRemoveShapes},
+                path: sweepPath.getPath(),
+                deltaWork: {max: sweepPath.getMaxRemoveShapes(), min: sweepPath.getMinRemoveShapes()},
                 toolIx: toolIx,
                 toolLength: toolLength,
             };
@@ -1514,6 +1507,8 @@ class Planner {
             const normal = new THREE.Vector3(1, 0, 0);
             const cutDir = new THREE.Vector3(0, 1, 0);
 
+            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, (tipPos, tipNormalW, toolLength, isPosW) => this.#solveIk(tipPos, tipNormalW, toolLength, isPosW), this.toolLength);
+
             const ctMin = this.trvg.queryWorkOffset(cutDir.clone().multiplyScalar(-1));
             const ctMax = this.trvg.queryWorkOffset(cutDir);
             const nrMin = this.trvg.queryWorkOffset(normal.clone().multiplyScalar(-1));
@@ -1524,54 +1519,13 @@ class Planner {
 
             const toolLength = this.toolLength;
             const toolIx = this.toolIx;
-            const sweepPath = [];
-            let prevPtTipPos = null;
-            const withAxisValue = (pt) => {
-                const isPosW = pt.tipPosW !== undefined;
-                const ikResult = this.#solveIk(isPosW ? pt.tipPosW : pt.tipPosM, pt.tipNormalW, toolLength, isPosW);
-                return {
-                    ...pt,
-                    tipPosM: ikResult.tipPosM,
-                    tipPosW: ikResult.tipPosW,
-                    axisValues: ikResult.vals,
-                };
-            };
 
-            const minSweepRemoveShapes = [];
-            const maxSweepRemoveShapes = [];
-            const pushRemoveMovement = (pathPt) => {
-                if (prevPtTipPos === null) {
-                    throw "remove path needs prevPtTipPos to be set by pushNonRemoveMovement";
-                }
-                minSweepRemoveShapes.push(createELHShape(prevPtTipPos, pathPt.tipPosW, pathPt.tipNormalW, this.stockCutWidth / 2, 100));
-                maxSweepRemoveShapes.push(createELHShape(prevPtTipPos, pathPt.tipPosW, pathPt.tipNormalW, this.stockCutWidth / 2, 100));
-                sweepPath.push(withAxisValue(pathPt));
-                prevPtTipPos = pathPt.tipPosW;
-            };
-
-            const pushNonRemoveMovement = (pathPt) => {
-                sweepPath.push(withAxisValue(pathPt));
-                prevPtTipPos = pathPt.tipPosW;
-            };
-
-            pushNonRemoveMovement({
-                sweep: this.numSweeps,
-                group: `sweep-${this.numSweeps}`,
-                type: "move-in",
-                tipNormalW: normal,
-                tipPosW: ptBeginBot,
-            });
-            pushRemoveMovement({
-                sweep: this.numSweeps,
-                group: `sweep-${this.numSweeps}`,
-                type: "remove-work",
-                tipNormalW: normal,
-                tipPosW: ptEndBot,
-            });
+            sweepPath.nonRemove("move-in", ptBeginBot);
+            sweepPath.removeHorizontal(ptEndBot, 123, this.toolDiameter, this.toolDiameter);
 
             return {
-                path: sweepPath,
-                deltaWork: {max: maxSweepRemoveShapes, min: minSweepRemoveShapes},
+                path: sweepPath.getPath(),
+                deltaWork: {max: sweepPath.getMaxRemoveShapes(), min: sweepPath.getMinRemoveShapes()},
                 toolIx: toolIx,
                 toolLength: toolLength,
                 ignoreOvercutErrors: true,
@@ -1666,8 +1620,9 @@ class Planner {
     /**
      * Computes tool base & work table pos from tip target.
      *
-     * @param {THREE.Vector3} tipPos - Tip position in work coordinates
-     * @param {THREE.Vector3} tipNormalW - Tip normal in machine coordinates (+ is pointing towards base = work surface normal)
+     * @param {THREE.Vector3} tipPos - Tip position in work or machine coordinates (determined by isPosW)
+     * @param {THREE.Vector3} tipNormalW - Tip normal in work coordinates. Tip normal corresponds to work surface, and points towards tool holder
+     * @param {number} toolLength - Tool length
      * @param {boolean} isPosW - True if tipPos is in work coordinates, false if in machine coordinates
      * @returns {{vals: {x: number, y: number, z: number, b: number, c: number}, tipPosM: THREE.Vector3, tipPosW: THREE.Vector3}}
      *   - vals: Machine instructions for moving work table & tool base
