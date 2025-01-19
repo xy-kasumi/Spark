@@ -19,6 +19,15 @@ import { createSdf, createSdfElh, createSdfCylinder, createELHShape, createCylin
 const fontLoader = new FontLoader();
 let font = null;
 
+const loadFont = async () => {
+    return new Promise((resolve) => {
+        fontLoader.load("./Source Sans 3_Regular.json", (f) => {
+            font = f;
+            resolve();
+        });
+    });
+};
+
 const debug = {
     strict: false, // should raise exception at logic boundary even when it can continue.
 };
@@ -868,10 +877,10 @@ const createVgVis = (vg, label = "", mode="occupancy") => {
  * Visualize tool tip path in machine coordinates.
  *
  * @param {Array<THREE.Vector3>} path - Array of path segments
- * @param {number} [highlightSweep=2] - Sweep index to highlight
+ * @param {number} [highlightSweep] - If specified, highlight this sweep.
  * @returns {THREE.Object3D} Path visualization object
  */
-const createPathVis = (path, highlightSweep = 2) => {
+const createPathVis = (path, highlightSweep = -1) => {
     if (path.length === 0) {
         return new THREE.Object3D();
     }
@@ -1066,6 +1075,7 @@ class Planner {
         this.toolIx = 0;
         this.showSweepVis = false;
         this.showPlanPath = true;
+        this.highlightSweep = 2;
     }
 
     /**
@@ -1076,7 +1086,9 @@ class Planner {
 
         gui.add(this, "genAllSweeps");
         gui.add(this, "genNextSweep");
-        gui.add(this, "numSweeps").disable().listen();
+        gui.add(this, "numSweeps").disable().onChange(_ => {
+            highlightGui.max(this.numSweeps);
+        }).listen();
         gui.add(this, "removedVol").name("Removed Vol (㎣)").decimals(9).disable().listen();
         gui.add(this, "remainingVol").name("Remaining Vol (㎣)").decimals(9).disable().listen();
         gui.add(this, "deviation").name("Deviation (mm)").decimals(3).disable().listen();
@@ -1093,6 +1105,12 @@ class Planner {
         gui.add(this, "showPlanPath")
             .onChange(_ => this.setVisVisibility("plan-path-vg", this.showPlanPath))
             .listen();
+        this.highlightGui = gui.add(this, "highlightSweep", 0, 50, 1).onChange(_ => {
+            if (!this.planPath) {
+                return;
+            }
+            this.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath);
+        }).listen();
     }
 
     animateHook() {
@@ -1591,11 +1609,13 @@ class Planner {
                 this.toolIx = sweep.toolIx;
                 this.toolLength = sweep.toolLength;
                 this.numSweeps++;
+                this.highlightGui.max(this.numSweeps - 1); // ugly...
+                this.highlightSweep = this.numSweeps - 1;
                 this.showingSweep++;
 
                 // update visualizations
                 const workDeviation = this.trvg.extractWorkWithDeviation(true);
-                this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath, false);
+                this.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath, false);
                 this.updateVis("work-vg", [createVgVis(workDeviation, "work-vg", "deviation")], this.showWork);
                 const lastPt = this.planPath[this.planPath.length - 1];
                 this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
@@ -2053,15 +2073,6 @@ class View3D {
         this.stats.update();
     }
 }
-
-const loadFont = async () => {
-    return new Promise((resolve) => {
-        fontLoader.load("./Source Sans 3_Regular.json", (f) => {
-            font = f;
-            resolve();
-        });
-    });
-};
 
 (async () => {
     await loadFont();
