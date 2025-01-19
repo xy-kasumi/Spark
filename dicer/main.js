@@ -1066,6 +1066,14 @@ class PartialPath {
     }
 
     /**
+     * Discard given length of the tool. Replace to a new tool if necessary.
+     * @param {number} length - Length of the tool to discard
+     */
+    discardToolTip(length) {
+        // TODO: implement
+    }
+
+    /**
      * Add non-material-removing move. (i.e. G0 move)
      * @param {string} type - label for this move
      * @param {THREE.Vector3} tipPos - Tip position in work coordinates
@@ -1302,15 +1310,17 @@ class Planner {
         // returns: true if sweep is committed, false if not
 
         // Sweep hyperparams
-        const feedDepth = 1; // TODO: reduce later. currently too big for easy debug.
+        const feedDepth = 1; // TODO: reduce later. current values allow fast debug, but too big for actual use.
         const sweepVises = [];
 
         /**
          * Generate "planar sweep", directly below given plane.
+         * Planer sweep only uses horizontal cuts.
+         * 
          * @param {THREE.Vector3} normal Normal vector, in work coords. = tip normal
          * @param {number} offset Offset from the plane. offset * normal forms the plane.
          * @param {number} toolDiameter Tool diameter
-         * @returns {PartialPath | null} PartialPath or null if impossible
+         * @returns {{partialPath: PartialPath, toolIx: number, toolLength: number, ignoreOvercutErrors: boolean} | null} null if impossible
          */
         const genPlanarSweep = (normal, offset, toolDiameter) => {
             const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, (tipPos, tipNormalW, toolLength, isPosW) => this.#solveIk(tipPos, tipNormalW, toolLength, isPosW), this.toolLength);
@@ -1333,6 +1343,14 @@ class Planner {
 
             const feedWidth = toolDiameter / 2;
             const segmentLength = toolDiameter / 2;
+            const minAllowedDiameter = toolDiameter / 2;
+            // this is very pessimistic, will waste a lot of time & tool.
+            // by making this closer to actual work volume, we can generate faster path that use less tool.
+            // Wasteful parts:
+            // * segment overlap (left, right part)
+            // * row overlap (width)
+            const segmentWorkVolume = feedDepth * (toolDiameter * segmentLength + Math.PI * Math.pow(toolDiameter / 2, 2));
+
             const numRows = Math.ceil(trvgRadius * 2 / feedWidth);
             const numSegs = Math.ceil(trvgRadius * 2 / segmentLength);
             const scanOrigin = 
@@ -1363,21 +1381,42 @@ class Planner {
                     const okToCut = this.trvg.queryOkToCutELH(segBeginBot, segEndBot, normal, toolDiameter / 2, feedDepth, collateralRange);
                     
                     const workOk = notBlocked && okToCut;
-
-                    row.push({ accessOk, workOk, segBegin, segEnd, segBeginBot, segEndBot });
+                    row.push({ accessOk, workOk, segBegin, segEnd, segBeginBot, segEndBot, workVolume: segmentWorkVolume });
                 }
                 rows.push(row);
             }
-            // console.log("sweep-rows", rows);
 
-            // in planar sweep, tool is eroded only from the side.
-            const maxWidthLoss = feedWidth * 0.1; // *0.5 is fine for EWR. but with coarse grid, needs to be smaller to not leave gaps between rows.
-            const tipRefreshDist = Math.PI * (Math.pow(toolDiameter / 2, 2) - Math.pow(toolDiameter / 2 - maxWidthLoss, 2)) / this.ewrMax / feedWidth;
-            
-            // generate zig-zag
-            let distSinceRefresh = 0;
+            /**
+             * Calculates how tool diameter shrinks after cutting a single segment of given remaining work volume.
+             * This function does not check if diameter is too small to cut the work.
+             * 
+             * @param {number} workVol - Remaining work volume in mm^3. Needs to be max estimate to be correct.
+             * @param {number} diaBefore - Tool diameter before cutting
+             * @returns {number} Tool diameter after cutting
+             */
+            const getMinDiaAfterSegWork = (workVol, diaBefore) => {
+                let maxToolWearVol = workVol * this.ewrMax;
+                let toolArea = Math.PI * (diaBefore / 2) ** 2;
+                toolArea = Math.max(0, toolArea - maxToolWearVol / feedDepth);
+                return Math.sqrt(toolArea / Math.PI) * 2;
+            };
+
+            /**
+             * Conservative estimate of work volume after cutting a single segment with minDia.
+             * 
+             * @param {number} minDia - Tool diameter after cutting
+             * @returns {number} Work volume in mm^3
+             */
+            const maxSegWorkVolAfterCut = (minDia) => {
+                const cutVolume = feedDepth * (minDia * segmentLength + Math.PI * Math.pow(minDia / 2, 2));
+                return segmentWorkVolume - cutVolume;
+            };
+
+            // Scan each segments.
             let toolLength = this.toolLength;
             let toolIx = this.toolIx;
+            const maxDiameter = this.toolDiameter;
+            let minDiameter = this.toolDiameter;
             const evacuateOffset = normal.clone().multiplyScalar(3);
 
             for (let ixRow = 0; ixRow < rows.length; ixRow++) {
@@ -1385,35 +1424,59 @@ class Planner {
                 let entered = false;
                 for (let ixSeg = 0; ixSeg < row.length; ixSeg++) {
                     const seg = row[ixSeg];
+                    const nextSeg = ixSeg + 1 < row.length ? row[ixSeg + 1] : null;
+
+                    // should enter?
                     if (!entered) {
-                        if (seg.accessOk & seg.workOk) {
+                        if (seg.accessOk && seg.workOk) {
                             sweepPath.nonRemove("move-in", seg.segBegin.clone().add(evacuateOffset));
                             sweepPath.nonRemove("move-in", seg.segBeginBot);
-                            sweepPath.removeHorizontal(seg.segEndBot, 123, this.toolDiameter, this.toolDiameter - maxWidthLoss * 2); // TODO: proper tool rotation
                             entered = true;
                         }
-                    } else {
-                        if (seg.workOk && ixSeg !== row.length - 1) {
-                            sweepPath.removeHorizontal(seg.segEndBot, 123, this.toolDiameter, this.toolDiameter - maxWidthLoss * 2); // TODO: proper tool rotation
-                        } else {
+                    }
+
+                    // can work?
+                    if (entered && seg.workOk) {
+                        const minDiaAfterThisSeg = getMinDiaAfterSegWork(seg.workVolume, minDiameter);
+
+                        // refresh tool?
+                        if (minDiaAfterThisSeg < minAllowedDiameter) {
+                            if (minDiameter === toolDiameter) {
+                                // this means tool is already refreshed, but can't "survive" a single segment.
+                                // suggets very high EWR.
+                                // technically, we can continue with smaller segWidth or segLen, but op time will be too long to be useful anyway.
+                                // TODO: This is very unhelpful to user. Compute allowed max EWR beforehand and warn user is much better.
+                                throw "Tool wear too quick (too large EWR). Tool diameter cannot survive a single segment. Cannot continue planar sweep generation.";
+                            }
+                            // refresh tool and restart from last access point. (one surely exist at the beginning of the row; no need to revert ixRow)
                             sweepPath.nonRemove("move-out", seg.segBegin.clone().add(evacuateOffset));
+                            sweepPath.discardToolTip(feedDepth);
+                            minDiameter = toolDiameter;
+                            entered = false;
+                            ixSeg = 0; // TODO: find last access point instead of beginning from the row start, which is faster
+                            continue;
+                        }
+
+                        sweepPath.removeHorizontal(seg.segEndBot, 123, maxDiameter, minDiaAfterThisSeg); // TODO: proper tool rotation
+                        seg.workVolume = maxSegWorkVolAfterCut(minDiaAfterThisSeg);
+                        minDiameter = minDiaAfterThisSeg;
+                    }
+
+                    // should exit?
+                    if (entered) {
+                        if (!nextSeg?.workOk) {
+                            sweepPath.nonRemove("move-out", seg.segEnd.clone().add(evacuateOffset));
                             entered = false;
                         }
                     }
-                }
-
-                if (entered) {
-                    throw "Row ended, but path continues; scan range too small";
                 }
             }
 
             if (sweepPath.getPath().length === 0) {
                 return null;
             }
-
             return {
-                path: sweepPath.getPath(),
-                deltaWork: {max: sweepPath.getMaxRemoveShapes(), min: sweepPath.getMinRemoveShapes()},
+                partialPath: sweepPath,
                 toolIx: toolIx,
                 toolLength: toolLength,
             };
@@ -1423,7 +1486,7 @@ class Planner {
          * Generate "drill sweep", axis=normal.
          * @param {THREE.Vector3} normal Normal vector, in work coords. = tip normal
          * @param {number} toolDiameter Tool diameter
-         * @returns {PartialPath | null} PartialPath or null if impossible
+         * @returns {{partialPath: PartialPath, toolIx: number, toolLength: number, ignoreOvercutErrors: boolean} | null} null if impossible
          */
         const genDrillSweep = (normal, toolDiameter) => {
             const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, (tipPos, tipNormalW, toolLength, isPosW) => this.#solveIk(tipPos, tipNormalW, toolLength, isPosW), this.toolLength);
@@ -1484,24 +1547,17 @@ class Planner {
             });
             
             return {
-                path: sweepPath.getPath(),
-                deltaWork: {max: sweepPath.getMaxRemoveShapes(), min: sweepPath.getMinRemoveShapes()},
+                partialPath: sweepPath,
                 toolIx: toolIx,
                 toolLength: toolLength,
             };
         };
 
         /**
-         * Generate "cut" sweep.
-         * @returns {Object} {
-         *   path: array<THREE.Vector3>,
-         *   deltaWork: VG,
-         *   toolIx: number,
-         *   toolLength: number,
-         *   ignoreOvercutErrors: boolean,
-         * }
+         * Generate "part off" sweep.
+         * @returns {{partialPath: PartialPath, toolIx: number, toolLength: number, ignoreOvercutErrors: boolean}}
          */
-        const genCutSweep = () => {
+        const genPartOffSweep = () => {
             // TODO: use rectangular tool for efficiency.
             // for now, just use circular tool because impl is simpler.
             const normal = new THREE.Vector3(1, 0, 0);
@@ -1524,8 +1580,7 @@ class Planner {
             sweepPath.removeHorizontal(ptEndBot, 123, this.toolDiameter, this.toolDiameter);
 
             return {
-                path: sweepPath.getPath(),
-                deltaWork: {max: sweepPath.getMaxRemoveShapes(), min: sweepPath.getMinRemoveShapes()},
+                partialPath: sweepPath,
                 toolIx: toolIx,
                 toolLength: toolLength,
                 ignoreOvercutErrors: true,
@@ -1550,7 +1605,11 @@ class Planner {
             // update sweep vis regardless of commit result
             this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
             
-            const volRemoved = this.trvg.commitRemoval(sweep.deltaWork.min, sweep.deltaWork.max, sweep.ignoreOvercutErrors ?? false);
+            const volRemoved = this.trvg.commitRemoval(
+                sweep.partialPath.getMinRemoveShapes(), 
+                sweep.partialPath.getMaxRemoveShapes(), 
+                sweep.ignoreOvercutErrors ?? false
+            );
             if (volRemoved === 0) {
                 console.log("commit rejected, because work not removed");
                 return false;
@@ -1559,7 +1618,7 @@ class Planner {
                 // commit success
                 this.removedVol += volRemoved;
                 this.remainingVol = this.trvg.getRemainingWorkVol();
-                this.planPath.push(...sweep.path);
+                this.planPath.push(...sweep.partialPath.getPath());
                 this.toolIx = sweep.toolIx;
                 this.toolLength = sweep.toolLength;
                 this.numSweeps++;
@@ -1607,8 +1666,8 @@ class Planner {
             }
         }
 
-        // cut
-        const sweep = genCutSweep();
+        // part off
+        const sweep = genPartOffSweep();
         if (tryCommitSweep(sweep)) {
             yield;
         }
@@ -1681,7 +1740,7 @@ class Planner {
 
     updateVisTransforms(tipPos, tipNormal, toolLength) {
         const tool = generateTool(toolLength, this.toolDiameter);
-        this.updateVis("tool", [tool], true);
+        this.updateVis("tool", [tool], false);
 
         tool.position.copy(tipPos);
         tool.setRotationFromMatrix(createRotationWithZ(tipNormal));
