@@ -6,6 +6,10 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { N8AOPass } from './N8AO.js';
 import { diceSurf } from './mesh.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1069,7 +1073,7 @@ const createVgVis = (vg, label = "", mode="occupancy") => {
 
                     // apply deviation color, from blue(0) to red(maxDev).
                     const t = Math.min(1, v / maxDev);
-                    mesh.setColorAt(instanceIx, new THREE.Color(t, 0, 1 - t));
+                    mesh.setColorAt(instanceIx, new THREE.Color(0.2 + t * 0.8, 0.2, 0.2 + (1 - t) * 0.8));
 
                     const mtx = new THREE.Matrix4();
                     mtx.compose(
@@ -1960,6 +1964,11 @@ class View3D {
         this.showTargetMesh = true;
         this.updateVis("stock", [generateStock(this.stockDiameter / 2, this.stockLength)], this.showStockMesh);
 
+        this.renderAoRadius = 5;
+        this.renderDistFallOff = 1.0;
+        this.renderAoItensity = 5;
+        this.renderAoScreenRadius = false;
+
         // Setup modules & GUI
         this.modPlanner = new Planner((group, vs, visible = true) => this.updateVis(group, vs, visible), (group, visible = true) => this.setVisVisibility(group, visible));
         this.initGui();
@@ -2002,7 +2011,7 @@ class View3D {
         const height = window.innerHeight;
 
         const aspect = width / height;
-        this.camera = new THREE.OrthographicCamera(-25 * aspect, 25 * aspect, 25, -25, -150, 150);
+        this.camera = new THREE.OrthographicCamera(-25 * aspect, 25 * aspect, 25, -25, 1, 150);
         this.camera.position.x = 15;
         this.camera.position.y = 40;
         this.camera.position.z = 20;
@@ -2018,7 +2027,7 @@ class View3D {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0xffffff);
 
-        const light = new THREE.AmbientLight(0x404040); // soft white light
+        const light = new THREE.AmbientLight(0x808080); // soft white light
         this.scene.add(light);
 
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
@@ -2027,6 +2036,21 @@ class View3D {
 
         const hemiLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 1);
         this.scene.add(hemiLight);
+
+        this.composer = new EffectComposer(this.renderer);
+        const renderPass = new RenderPass(this.scene, this.camera);
+        this.composer.addPass(renderPass);
+
+        const n8aoPass = new N8AOPass(this.scene, this.camera, width, height);
+        // We want "AO" effect to take effect at all scales, even though they're physically wrong.
+        n8aoPass.configuration.screenSpaceRadius = true;
+        n8aoPass.configuration.aoRadius = 64;
+        n8aoPass.configuration.distanceFalloff = 0.2;
+        n8aoPass.configuration.intensity = 5;
+        this.composer.addPass(n8aoPass);
+
+        const outputPass = new OutputPass();
+        this.composer.addPass(outputPass);
 
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
 
@@ -2194,6 +2218,7 @@ class View3D {
         this.camera.updateProjectionMatrix();
 
         this.renderer.setSize(width, height);
+        this.composer.setSize(width, height);
     }
 
     animate() {
@@ -2205,7 +2230,7 @@ class View3D {
         }
 
         this.controls.update();
-        this.renderer.render(this.scene, this.camera);
+        this.composer.render();
         this.stats.update();
     }
 }
