@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { Vector3 } from 'three';
 import Stats from 'three/addons/libs/stats.module.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
@@ -30,6 +29,13 @@ const axisColorB = new THREE.Color(0x1abc9c);
 const axisColorC = new THREE.Color(0x9b59b6);
 
 
+/**
+ * @param {THREE.Vector3} p Start point
+ * @param {THREE.Vector3} n Direction vector
+ * @param {number} r Radius
+ * @param {THREE.Color} col Color
+ * @returns {THREE.Mesh} Cylinder visualization mesh
+ */
 const createCylinderVis = (p, n, r, col) => {
     // Cylinder lies along Y axis, centered at origin.
     const geom = new THREE.CylinderGeometry(r, r, 30, 8);
@@ -44,10 +50,11 @@ const createCylinderVis = (p, n, r, col) => {
     return mesh;
 };
 
-// Create a sphere visualizer for error location.
-// [in] p THREE.Vector3, location in work coords.
-// [in] col THREE.Color, color
-// returns: THREE.Mesh
+/**
+ * @param {THREE.Vector3} p Location in work coords
+ * @param {THREE.Color} col Color
+ * @returns {THREE.Mesh} Sphere visualization mesh
+ */
 const createErrorLocVis = (p, col) => {
     const sphGeom = new THREE.SphereGeometry(0.1);
     const sphMat = new THREE.MeshBasicMaterial({ color: col });
@@ -56,12 +63,13 @@ const createErrorLocVis = (p, col) => {
     return sph;
 }
 
-// Create a text visualizer.
-// [in] p THREE.Vector3, location in work coords.
-// [in] text string
-// [in] size number, text size
-// [in] color THREE.Color
-// returns: THREE.Mesh
+/**
+ * @param {THREE.Vector3} p Location in work coords
+ * @param {string} text Text to display
+ * @param {number} [size=0.25] Text size
+ * @param {string} [color="#222222"] Text color
+ * @returns {THREE.Mesh} Text visualization mesh
+ */
 const createTextVis = (p, text, size=0.25, color="#222222") => {
     const textGeom = new TextGeometry(text, {
         font,
@@ -74,11 +82,13 @@ const createTextVis = (p, text, size=0.25, color="#222222") => {
 };
 
 
-// Creates ring+axis rotational axis visualizer.
-// [in] axis THREE.Vector3. rotates around this axis in CCW.
-// [in] size number feature size. typically ring radius.
-// [in] color THREE.Color
-// returns: THREE.Object3D
+/**
+ * Creates rotational axis visualizer (ring+axis)
+ * @param {THREE.Vector3} axis Rotates around this axis in CCW
+ * @param {number} [size=1] Feature size (typically ring radius)
+ * @param {THREE.Color} [color=axisColorA] Color
+ * @returns {THREE.Object3D} Axis visualization object
+ */
 const createRotationAxisHelper = (axis, size = 1, color = axisColorA) => {
     const NUM_RING_PTS = 32;
 
@@ -166,25 +176,31 @@ const C_PARTIAL_DONE = 3; // current=partial
 const C_PARTIAL_REMAINING = 4; // current=full
 
 
-// Represents current work & target.
-// The class ensures that work is bigger than target.
-//
-// voxel-local coordinate
-// voxel at (ix, iy, iz):
-// * occupies volume: [i * res, (i + 1) * res)
-// * has center: (i + 0.5) * res
-//
-// loc_world = loc_vx + ofs
-//
-// Each cell {
-//   target: {Full, Partial, Empty}
-//   work: {Remaining, Done} (Done if target == Full)
-// }
+/**
+ * Represents current work & target.
+ * The class ensures that work is bigger than target.
+ *
+ * voxel-local coordinate
+ * voxel at (ix, iy, iz):
+ * - occupies volume: [i * res, (i + 1) * res)
+ * - has center: (i + 0.5) * res
+ *
+ * loc_world = loc_vx + ofs
+ *
+ * Each cell {
+ *   target: {Full, Partial, Empty}
+ *   work: {Remaining, Done} (Done if target == Full)
+ * }
+ */
 class TrackingVoxelGrid {
-    // [in] res: voxel resolution
-    // [in] numX, numY, numZ: grid dimensions
-    // [in] ofs: voxel grid offset (local to world)
-    constructor(res, numX, numY, numZ, ofs = new Vector3()) {
+    /**
+     * @param {number} res Voxel resolution
+     * @param {number} numX Grid width
+     * @param {number} numY Grid height
+     * @param {number} numZ Grid depth
+     * @param {THREE.Vector3} [ofs=new THREE.Vector3()] Voxel grid offset (local to world)
+     */
+    constructor(res, numX, numY, numZ, ofs = new THREE.Vector3()) {
         this.res = res;
         this.numX = numX;
         this.numY = numY;
@@ -201,9 +217,11 @@ class TrackingVoxelGrid {
         return vg;
     }
 
-    // Scaffold for refactoring.
-    // [in] work: VoxelGrid (0: empty, 128: partial, 255: full)
-    // [in] target: VoxelGrid (0: empty, 128: partial, 255: full)
+    /**
+     * Scaffold for refactoring.
+     * @param {VoxelGrid} work VoxelGrid (0: empty, 128: partial, 255: full)
+     * @param {VoxelGrid} target VoxelGrid (0: empty, 128: partial, 255: full)
+     */
     setFromWorkAndTarget(work, target) {
         for (let i = 0; i < this.dataW.length; i++) {
             let tst = null;
@@ -244,8 +262,10 @@ class TrackingVoxelGrid {
         }
     }
 
-    // Designate work below specified z to be protected. Primarily used to mark stock that should be kept for next session.
-    // [in] z: Z+ in work coords.
+    /**
+     * Designate work below specified z to be protected. Primarily used to mark stock that should be kept for next session.
+     * @param {number} z Z+ in work coords.
+     */
     setProtectedWorkBelowZ(z) {
         this.protectedWorkBelowZ = z;
         for (let iz = 0; iz < this.numZ; iz++) {
@@ -262,9 +282,11 @@ class TrackingVoxelGrid {
         }
     }
 
-    // Scaffold for refactoring.
-    // [in] excludeProtectedWork: if true, exclude protected work.
-    // returns: VoxelGrid (0: empty, 128: partial done, 255: full)
+    /**
+     * Scaffold for refactoring.
+     * @param {boolean} [excludeProtectedWork=false] If true, exclude protected work.
+     * @returns {VoxelGrid} (0: empty, 128: partial done, 255: full)
+     */
     extractWork(excludeProtectedWork = false) {
         const res = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         for (let iz = 0; iz < this.numZ; iz++) {
@@ -289,11 +311,11 @@ class TrackingVoxelGrid {
         return res;
     }
 
-    // Extract work volume as voxels. Each cell will contain deviation from target shape.
-    // positive value indicates deviation. 0 for perfect finish or inside. -1 for empty regions.
-    //
-    // [in] excludeProtectedWork: if true, exclude protected work. (treat them as empty)
-    // returns: VoxelGrid(f32)
+    /**
+     * Extract work volume as voxels. Each cell will contain deviation from target shape.
+     * positive value indicates deviation. 0 for perfect finish or inside. -1 for empty regions.
+     * @returns {VoxelGrid} (f32)
+     */
     extractWorkWithDeviation() {
         // Jump Flood
         const dist = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, "f32"); // -1 means invalid data.
@@ -386,8 +408,10 @@ class TrackingVoxelGrid {
         return dist;
     }
 
-    // Scaffold for refactoring.
-    // returns: VoxelGrid (0: empty, 128: partial, 255: full)
+    /**
+     * Scaffold for refactoring.
+     * @returns {VoxelGrid} (0: empty, 128: partial, 255: full)
+     */
     extractTarget() {
         const res = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         for (let i = 0; i < this.dataT.length; i++) {
@@ -396,16 +420,18 @@ class TrackingVoxelGrid {
         return res;
     }
 
-    // Commit (rough) removal of minGeom and maxGeom.
-    // maxGeom >= minGeom must hold. otherwise, throw error.
-    //
-    // Rough removal means, this cut can process TG_EMPTY cells, but not TG_PARTIAL cells.
-    // When cut can potentially affect TG_PARTIAL cells, it will be error (as rough cut might ruin the voxel irreversibly).
-    //
-    // [in] minShapes: array of shapes, treated as union of all shapes
-    // [in] maxShapes: array of shapes, treated as union of all shapes
-    // [in] ignoreOvercutErrors: if true, ignore overcut errors. Hack to get final cut done.
-    // returns: volume of neewly removed work.
+    /**
+     * Commit (rough) removal of minGeom and maxGeom.
+     * maxGeom >= minGeom must hold. otherwise, throw error.
+     * 
+     * Rough removal means, this cut can process TG_EMPTY cells, but not TG_PARTIAL cells.
+     * When cut can potentially affect TG_PARTIAL cells, it will be error (as rough cut might ruin the voxel irreversibly).
+     * 
+     * @param {Array} minShapes array of shapes, treated as union of all shapes
+     * @param {Array} maxShapes array of shapes, treated as union of all shapes
+     * @param {boolean} [ignoreOvercutErrors=false] if true, ignore overcut errors. Hack to get final cut done.
+     * @returns {number} volume of neewly removed work.
+     */
     commitRemoval(minShapes, maxShapes, ignoreOvercutErrors = false) {
         const minVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         const maxVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
@@ -457,7 +483,10 @@ class TrackingVoxelGrid {
         return numRemoved * this.res * this.res * this.res;
     }
 
-    // returns volume of remaining work.
+    /**
+     * Returns volume of remaining work.
+     * @returns {number} volume of remaining work.
+     */
     getRemainingWorkVol() {
         let cnt = 0;
         for (let i = 0; i < this.dataW.length; i++) {
@@ -468,11 +497,13 @@ class TrackingVoxelGrid {
         return cnt * this.res * this.res * this.res;
     }
 
-    // Returns offset of the work in normal direction conservatively.
-    // Conservative means: "no-work" region never has work, despite presence of quantization error.
-    //
-    // [in] normal THREE.Vector3, work coords.
-    // returns: number, offset. No work exists in + side of the plane. normal * offset is on the plane.
+    /**
+     * Returns offset of the work in normal direction conservatively.
+     * Conservative means: "no-work" region never has work, despite presence of quantization error.
+     * 
+     * @param {THREE.Vector3} normal Normal vector, in work coords.
+     * @returns {number} Offset. No work exists in + side of the plane. normal * offset is on the plane.
+     */
     queryWorkOffset(normal) {
         let offset = -Infinity;
         for (let iz = 0; iz < this.numZ; iz++) {
@@ -489,10 +520,12 @@ class TrackingVoxelGrid {
         return offset + maxVoxelCenterOfs;
     }
 
-    // Returns true if given shape is blocked by material, conservatively.
-    // Conservative: voxels with potential overlaps will be considered for block-detection.
-    // [in] shape: shape
-    // returns: true if blocked, false otherwise
+    /**
+     * Returns true if given shape is blocked by material, conservatively.
+     * Conservative: voxels with potential overlaps will be considered for block-detection.
+     * @param {Object} shape Shape object, created by {@link createCylinderShape}, {@link createELHShape}, etc.
+     * @returns {boolean} true if blocked, false otherwise
+     */
     queryBlocked(shape) {
         const sdf = createSdf(shape);
         const margin = this.res * 0.5 * Math.sqrt(3);
@@ -501,16 +534,18 @@ class TrackingVoxelGrid {
         });
     }
 
-    // Returns true if given ELH is accessible for work, conservatively.
-    // accessible for work: work won't accidentally destroy protected region && region contains work.
-    //
-    // [in] p: start point
-    // [in] q: end point
-    // [in] n: direction (p-q must be perpendicular to n). LH is extruded along n+, by h.
-    // [in] r: radius (>= 0)
-    // [in] hWork: height of work region (>= 0)
-    // [in] hCollateral: height of collateral region (>= 0)
-    // returns: true if accessible, false otherwise
+    /**
+     * Returns true if given ELH is accessible for work, conservatively.
+     * Accessible for work: work won't accidentally destroy protected region && region contains work.
+     * 
+     * @param {THREE.Vector3} p Start point
+     * @param {THREE.Vector3} q End point
+     * @param {THREE.Vector3} n Direction (p-q must be perpendicular to n). LH is extruded along n+, by h.
+     * @param {number} r Radius (>= 0)
+     * @param {number} hWork Height of work region (>= 0)
+     * @param {number} hCollateral Height of collateral region (>= 0)
+     * @returns {boolean} true if accessible, false otherwise
+     */
     queryOkToCutELH(p, q, n, r, hWork, hCollateral) {
         const sdfWork = createSdfElh(p, q, n, r, hWork);
         const sdfCollateral = createSdfElh(p, q, n, r, hCollateral);
@@ -536,11 +571,13 @@ class TrackingVoxelGrid {
         });
     }
 
-    /////
-    // Single read/write
-
-    // [in] ix, iy, iz: voxel index
-    // [in] val: voxel value. One of C_FULL_DONE, C_EMPTY_DONE, C_EMPTY_REMAINING, C_PARTIAL_DONE, C_PARTIAL_REMAINING.
+    /**
+     * Set value at given coordinates
+     * @param {number} ix X coordinate
+     * @param {number} iy Y coordinate
+     * @param {number} iz Z coordinate
+     * @param {number} val One of C_FULL_DONE, C_EMPTY_DONE, C_EMPTY_REMAINING, C_PARTIAL_DONE, C_PARTIAL_REMAINING
+     */
     set(ix, iy, iz, val) {
         const i = ix + iy * this.numX + iz * this.numX * this.numY;
         switch (val) {
@@ -567,8 +604,13 @@ class TrackingVoxelGrid {
         }
     }
 
-    // [in] ix, iy, iz: voxel index
-    // returns: voxel value. One of C_FULL_DONE, C_EMPTY_DONE, C_EMPTY_REMAINING, C_PARTIAL_DONE, C_PARTIAL_REMAINING.
+    /**
+     * Get value at given coordinates
+     * @param {number} ix X coordinate
+     * @param {number} iy Y coordinate
+     * @param {number} iz Z coordinate
+     * @returns {number} One of C_FULL_DONE, C_EMPTY_DONE, C_EMPTY_REMAINING, C_PARTIAL_DONE, C_PARTIAL_REMAINING
+     */
     get(ix, iy, iz) {
         const t = this.dataT[ix + iy * this.numX + iz * this.numX * this.numY];
         const w = this.dataW[ix + iy * this.numX + iz * this.numX * this.numY];
@@ -584,29 +626,45 @@ class TrackingVoxelGrid {
         throw `Invalid cell state T=${t}, W=${w}`;
     }
 
-    // [in] ix, iy, iz: voxel index
-    // returns: one of W_REMAINING, or W_DONE
+    /**
+     * Get work state at given coordinates
+     * @param {number} ix X coordinate
+     * @param {number} iy Y coordinate
+     * @param {number} iz Z coordinate
+     * @returns {number} One of W_REMAINING or W_DONE
+     */
     getW(ix, iy, iz) {
         return this.dataW[ix + iy * this.numX + iz * this.numX * this.numY];
     }
 
-    // [in] ix, iy, iz: voxel index
-    // returns: one of TG_FULL, TG_PARTIAL, TG_EMPTY
+    /**
+     * Get target state at given coordinates
+     * @param {number} ix X coordinate
+     * @param {number} iy Y coordinate
+     * @param {number} iz Z coordinate
+     * @returns {number} One of TG_FULL, TG_PARTIAL, TG_EMPTY
+     */
     getT(ix, iy, iz) {
         return this.dataT[ix + iy * this.numX + iz * this.numX * this.numY];
     }
 
-    //////
-    // spatial op
-
+    /**
+     * Get center coordinates of cell at given indices
+     * @param {number} ix X coordinate
+     * @param {number} iy Y coordinate
+     * @param {number} iz Z coordinate
+     * @returns {THREE.Vector3} Center point of cell
+     */
     centerOf(ix, iy, iz) {
-        return new Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res).add(this.ofs);
+        return new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res).add(this.ofs);
     }
 }
 
-// Computes AABB for bunch of points.
-// [in] pts: [x0, y0, z0, x1, y1, z1, ...]
-// returns: {min: Vector3, max: Vector3}
+/**
+ * Computes AABB for bunch of points
+ * @param {Float32Array} pts Points array [x0, y0, z0, x1, y1, z1, ...]
+ * @returns {{min: THREE.Vector3, max: THREE.Vector3}} AABB bounds
+ */
 const computeAABB = (pts) => {
     const min = new THREE.Vector3(Infinity, Infinity, Infinity);
     const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
@@ -618,10 +676,12 @@ const computeAABB = (pts) => {
     return { min, max };
 };
 
-// Initialize voxel grid for storing points.
-// [in] pts: [x0, y0, z0, x1, y1, z1, ...]
-// [in] resMm: voxel resolution
-// returns: VoxelGrid
+/**
+ * Initialize voxel grid for storing points
+ * @param {Float32Array} pts Points array [x0, y0, z0, x1, y1, z1, ...]
+ * @param {number} resMm Voxel resolution
+ * @returns {VoxelGrid} Initialized voxel grid
+ */
 const initVGForPoints = (pts, resMm) => {
     const MARGIN_MM = resMm; // want to keep boundary one voxel clear to avoid any mishaps. resMm should be enough.
     const { min, max } = computeAABB(pts);
@@ -635,9 +695,11 @@ const initVGForPoints = (pts, resMm) => {
     return new VoxelGrid(resMm, numV.x, numV.y, numV.z, gridMin);
 };
 
-// Apply translation to geometry in-place.
-// [in] geom THREE.BufferGeometry
-// [in] trans THREE.Vector3
+/**
+ * Apply translation to geometry in-place
+ * @param {THREE.BufferGeometry} geom Geometry to translate
+ * @param {THREE.Vector3} trans Translation vector
+ */
 const translateGeom = (geom, trans) => {
     const pos = geom.getAttribute("position").array;
     for (let i = 0; i < pos.length; i += 3) {
@@ -648,9 +710,11 @@ const translateGeom = (geom, trans) => {
 };
 
 
-// Get "triangle soup" representation from a geometry.
-// [in]: THREE.BufferGeometry
-// returns: TypedArray
+/**
+ * Get "triangle soup" representation from a geometry
+ * @param {THREE.BufferGeometry} geom Input geometry
+ * @returns {Float32Array} Triangle soup array
+ */
 const convGeomToSurf = (geom) => {
     if (geom.index === null) {
         return geom.getAttribute("position").array;
@@ -673,10 +737,12 @@ const convGeomToSurf = (geom) => {
 };
 
 
-// Generate stock cylinder geometry, spanning Z [0, stockHeight].
-// [in] stockRadius: number, radius of the stock
-// [in] stockHeight: number, height of the stock
-// returns: THREE.BufferGeometry
+/**
+ * Generate stock cylinder geometry, spanning Z [0, stockHeight]
+ * @param {number} [stockRadius=7.5] Radius of the stock
+ * @param {number} [stockHeight=15] Height of the stock
+ * @returns {THREE.BufferGeometry} Stock cylinder geometry
+ */
 const generateStockGeom = (stockRadius = 7.5, stockHeight = 15) => {
     const geom = new THREE.CylinderGeometry(stockRadius, stockRadius, stockHeight, 64, 1);
     const transf = new THREE.Matrix4().compose(
@@ -688,10 +754,13 @@ const generateStockGeom = (stockRadius = 7.5, stockHeight = 15) => {
 };
 
 
-// [in] VoxelGrid
-// [in] label optional string to display on the voxel grid
-// [in] mode "occupancy" | "deviation". "occupancy" treats 255:full, 128:partial, 0:empty. "deviation" is >=0 as deviation and -1 as empty.
-// returns: THREE.Object3D
+/**
+ * Create visualization for voxel grid
+ * @param {VoxelGrid} vg Voxel grid to visualize
+ * @param {string} [label=""] Optional label to display on the voxel grid
+ * @param {string} [mode="occupancy"] "occupancy" | "deviation". "occupancy" treats 255:full, 128:partial, 0:empty. "deviation" is >=0 as deviation and -1 as empty
+ * @returns {THREE.Object3D} Visualization object
+ */
 const createVgVis = (vg, label = "", mode="occupancy") => {
     const cubeSize = vg.res * 1.0;
     const cubeGeom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
@@ -795,11 +864,13 @@ const createVgVis = (vg, label = "", mode="occupancy") => {
 
 
 
-// Visualize tool tip path in machine coordinates.
-//
-// [in] array of THREE.Vector3, path segments
-// [in] highlightSweep number, sweep index to highlight
-// returns: THREE.Object3D
+/**
+ * Visualize tool tip path in machine coordinates.
+ *
+ * @param {Array<THREE.Vector3>} path - Array of path segments
+ * @param {number} [highlightSweep=2] - Sweep index to highlight
+ * @returns {THREE.Object3D} Path visualization object
+ */
 const createPathVis = (path, highlightSweep = 2) => {
     if (path.length === 0) {
         return new THREE.Object3D();
@@ -876,9 +947,11 @@ const createPathVis = (path, highlightSweep = 2) => {
     return pathVis;
 };
 
-// Generates a rotation matrix such that Z+ axis will be formed into "z" vector.
-// [in] z THREE.Vector3
-// returns: THREE.Matrix4
+/**
+ * Generates a rotation matrix such that Z+ axis will be formed into "z" vector.
+ * @param {THREE.Vector3} z Z-basis vector
+ * @returns {THREE.Matrix4} Rotation matrix
+ */
 const createRotationWithZ = (z) => {
     // orthogonalize, with given Z-basis.
     const basisZ = z;
@@ -900,11 +973,13 @@ const createRotationWithZ = (z) => {
     );
 }
 
-// Generate stock visualization.
-// [in] stockRadius: number, radius of the stock
-// [in] stockHeight: number, height of the stock
-// [in] baseZ: number, Z+ in machine coords where work coords Z=0 (bottom of the targer surface).
-// returns: THREE.Object3D
+/**
+ * Generate stock visualization.
+ * @param {number} [stockRadius=7.5] - Radius of the stock
+ * @param {number} [stockHeight=15] - Height of the stock
+ * @param {number} [baseZ=0] - Z+ in machine coords where work coords Z=0 (bottom of the targer surface).
+ * @returns {THREE.Object3D} Stock visualization object
+ */
 const generateStock = (stockRadius = 7.5, stockHeight = 15, baseZ = 0) => {
     const stock = new THREE.Mesh(
         generateStockGeom(stockRadius, stockHeight),
@@ -913,8 +988,10 @@ const generateStock = (stockRadius = 7.5, stockHeight = 15, baseZ = 0) => {
     return stock;
 };
 
-// Generate tool geom, origin = tool tip. In Z+ direction, there will be tool base marker.
-// returns: THREE.Object3D
+/**
+ * Generate tool geom, origin = tool tip. In Z+ direction, there will be tool base marker.
+ * @returns {THREE.Object3D} Tool visualization object
+ */
 const generateTool = (toolLength, toolDiameter) => {
     const toolOrigin = new THREE.Object3D();
 
@@ -940,10 +1017,17 @@ const generateTool = (toolLength, toolDiameter) => {
     return toolOrigin;
 };
 
-// planner gets two meshes and generate path as a list of points.
-// planner is not pure function. but it's a "module" with UIs and depends on debug stuff.
-// thus, planner instance should be kept, even when re-running planner from scratch.
+/**
+ * Planner class for generating tool paths.
+ *
+ * This class is not pure function. It's a "module" with UIs and depends on debug stuff.
+ * Thus, planner instance should be kept, even when re-running planner from scratch.
+ */
 class Planner {
+    /**
+     * @param {Function} updateVis - Function to update visualizations
+     * @param {Function} setVisVisibility - Function to set visualization visibility
+     */
     constructor(updateVis, setVisVisibility) {
         this.updateVis = updateVis;
         this.setVisVisibility = setVisVisibility;
@@ -984,7 +1068,9 @@ class Planner {
         this.showPlanPath = true;
     }
 
-    // [in] gui lilgui instance
+    /**
+     * @param {lilgui} gui - lilgui instance
+     */
     guiHook(gui) {
         gui.add(this, "resMm", [1e-3, 5e-2, 1e-2, 1e-1, 0.25, 0.5, 1]);
 
@@ -1018,12 +1104,14 @@ class Planner {
         }
     }
 
-    // Setup new targets.
-    //
-    // [in] targetSurf: THREE.BufferGeometry
-    // [in] baseZ: number, Z+ in machine coords where work coords Z=0 (bottom of the targer surface).
-    // [in] aboveWorkSize: number, length of stock to be worked "above" baseZ plane. Note below-baseZ work will be still removed to cut off the work.
-    // [in] stockDiameter: number, diameter of the stock.
+    /**
+     * Setup new targets.
+     *
+     * @param {THREE.BufferGeometry} targetSurf - Target surface geometry
+     * @param {number} baseZ - Z+ in machine coords where work coords Z=0 (bottom of the targer surface).
+     * @param {number} aboveWorkSize - Length of stock to be worked "above" baseZ plane. Note below-baseZ work will be still removed to cut off the work.
+     * @param {number} stockDiameter - Diameter of the stock.
+     */
     initPlan(targetSurf, baseZ, aboveWorkSize, stockDiameter) {
         this.targetSurf = targetSurf;
         this.stockDiameter = stockDiameter;
@@ -1036,6 +1124,10 @@ class Planner {
         this.genSweeps = true;
     }
 
+    /**
+     * Generate the next sweep.
+     * @returns {boolean} True if the sweep generation is done, false otherwise.
+     */
     genNextSweep() {
         if (!this.gen) {
             this.gen = this.#pathGenerator();
@@ -1085,18 +1177,19 @@ class Planner {
         const feedDepth = 1; // TODO: reduce later. currently too big for easy debug.
         const sweepVises = [];
 
-        // Generate "planar sweep", directly below given plane.
-        //
-        // [in] normal THREE.Vector3, work coords. = tip normal
-        // [in] offset number. offset * normal forms the plane.
-        //
-        // returns: {
-        //   path: array<Vector3>,
-        //   deltaWork: VG,
-        //   toolLength: number,
-        //   toolIx: number,
-        //   vis: {target: VG, blocked: VG}
-        // } | null (if impossible)
+        /**
+         * Generate "planar sweep", directly below given plane.
+         * @param {THREE.Vector3} normal Normal vector, in work coords. = tip normal
+         * @param {number} offset Offset from the plane. offset * normal forms the plane.
+         * @param {number} toolDiameter Tool diameter
+         * @returns {Object} {
+         *   path: array<THREE.Vector3>,
+         *   deltaWork: VG,
+         *   toolLength: number,
+         *   toolIx: number,
+         *   vis: {target: VG, blocked: VG}
+         * } | null (if impossible)
+         */
         const genPlanarSweep = (normal, offset, toolDiameter) => {
             const rot = createRotationWithZ(normal);
             const feedDir = new THREE.Vector3(1, 0, 0).transformDirection(rot);
@@ -1264,15 +1357,18 @@ class Planner {
             };
         };
 
-        // Generate "drill sweep", axis=normal.
-        // [in] normal THREE.Vector3, work coords. = tip normal
-        // returns: {
-        //   path: array<Vector3>,
-        //   deltaWork: VG,
-        //   toolLength: number,
-        //   toolIx: number,
-        //   vis: {target: VG, blocked: VG}
-        // } | null (if impossible)
+        /**
+         * Generate "drill sweep", axis=normal.
+         * @param {THREE.Vector3} normal Normal vector, in work coords. = tip normal
+         * @param {number} toolDiameter Tool diameter
+         * @returns {Object} {
+         *   path: array<THREE.Vector3>,
+         *   deltaWork: VG,
+         *   toolLength: number,
+         *   toolIx: number,
+         *   vis: {target: VG, blocked: VG}
+         * } | null (if impossible)
+         */
         const genDrillSweep = (normal, toolDiameter) => {
             const rot = createRotationWithZ(normal);
             const scanDir0 = new THREE.Vector3(1, 0, 0).transformDirection(rot);
@@ -1384,7 +1480,16 @@ class Planner {
             };
         };
 
-        // Generate "cut" sweep.
+        /**
+         * Generate "cut" sweep.
+         * @returns {Object} {
+         *   path: array<THREE.Vector3>,
+         *   deltaWork: VG,
+         *   toolIx: number,
+         *   toolLength: number,
+         *   ignoreOvercutErrors: boolean,
+         * }
+         */
         const genCutSweep = () => {
             // TODO: use rectangular tool for efficiency.
             // for now, just use circular tool because impl is simpler.
@@ -1538,12 +1643,17 @@ class Planner {
         console.log(`possible sweep exhausted after ${(performance.now() - t0) / 1e3}sec`);
     }
 
-    // Computes tool base & work table pos from tip target.
-    //
-    // [in] tipPos tip position in work coordinates
-    // [in] tipNormalW tip normal in machine coordinates (+ is pointing towards base = work surface normal)
-    // [in] isPosW true: tipPos is in work coordinates, false: tipPos is in machine coordinates
-    // [out] {vals: {x, y, z, b, c} machine instructions for moving work table & tool base, tipPosM: THREE.Vector3 tip position in machine coordinates}
+    /**
+     * Computes tool base & work table pos from tip target.
+     *
+     * @param {THREE.Vector3} tipPos - Tip position in work coordinates
+     * @param {THREE.Vector3} tipNormalW - Tip normal in machine coordinates (+ is pointing towards base = work surface normal)
+     * @param {boolean} isPosW - True if tipPos is in work coordinates, false if in machine coordinates
+     * @returns {{vals: {x: number, y: number, z: number, b: number, c: number}, tipPosM: THREE.Vector3, tipPosW: THREE.Vector3}}
+     *   - vals: Machine instructions for moving work table & tool base
+     *   - tipPosM: Tip position in machine coordinates
+     *   - tipPosW: Tip position in work coordinates
+     */
     #solveIk(tipPos, tipNormalW, toolLength, isPosW) {
         // Order of determination ("IK")
         // 1. Determine B,C axis
@@ -1610,8 +1720,10 @@ class Planner {
 
 
 
-// Provides basic UI framework, 3D scene, and mesh/gcode I/O UI.
-// Scene is in mm unit. Right-handed, Z+ up. Work-coordinates.
+/**
+ * Provides basic UI framework, 3D scene, and mesh/gcode I/O UI.
+ * Scene is in mm unit. Right-handed, Z+ up. Work-coordinates.
+ */
 class View3D {
     constructor() {
         // Initialize basis
@@ -1756,6 +1868,10 @@ class View3D {
         this.updateVis("stock", [generateStock(this.stockDiameter / 2, this.stockLength, this.baseZ)], this.showStockMesh);
     }
 
+    /**
+     * Load STL model
+     * @param {string} fname Model filename
+     */
     loadStl(fname) {
         const loader = new STLLoader();
         loader.load(
@@ -1797,6 +1913,10 @@ class View3D {
         new BroadcastChannel("gcode").postMessage(prog);
     }
 
+    /**
+     * Generate G-code from plan path
+     * @returns {string} Generated G-code
+     */
     generateGcode() {
         const planPath = this.modPlanner.planPath;
 
@@ -1881,6 +2001,12 @@ class View3D {
         return lines.join("\n");
     }
 
+    /**
+     * Update visualization group
+     * @param {string} group Group identifier
+     * @param {Array<THREE.Object3D>} vs Array of objects to visualize
+     * @param {boolean} [visible=true] Whether the group should be visible
+     */
     updateVis(group, vs, visible = true) {
         if (this.visGroups[group]) {
             this.visGroups[group].forEach(v => this.scene.remove(v));
@@ -1892,6 +2018,11 @@ class View3D {
         this.visGroups[group] = vs;
     }
 
+    /**
+     * Set visibility of visualization group
+     * @param {string} group Group identifier
+     * @param {boolean} visible Whether the group should be visible
+     */
     setVisVisibility(group, visible) {
         if (this.visGroups[group]) {
             this.visGroups[group].forEach(v => v.visible = visible);

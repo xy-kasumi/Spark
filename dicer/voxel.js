@@ -1,31 +1,37 @@
+/**
+ * Voxel operation and SDF (signed distance function) based queries.
+ * 
+ * See https://iquilezles.org/articles/distfunctions/ for nice introduction to SDF.
+ */
 import { Vector3 } from 'three';
 
-// Shapes
-
-// [in] p: start point
-// [in] n: direction (the cylinder extends infinitely towards n+ direction)
-// [in] r: radius
-// returns: Shape
+/**
+ * @param {Vector3} p Start point
+ * @param {Vector3} n Direction (the cylinder extends infinitely towards n+ direction)
+ * @param {number} r Radius
+ * @returns {Object} Shape
+ */
 export const createCylinderShape = (p, n, r) => {
     return {type: "cylinder", p, n, r};
 };
 
-// [in] p: start point
-// [in] q: end point
-// [in] n: direction (p-q must be perpendicular to n). LH is extruded along n+, by h.
-// [in] r: radius (>= 0)
-// [in] h: height (>= 0)
-// returns: Shape
+/**
+ * @param {Vector3} p Start point
+ * @param {Vector3} q End point
+ * @param {Vector3} n Direction (p-q must be perpendicular to n). LH is extruded along n+, by h
+ * @param {number} r Radius (>= 0)
+ * @param {number} h Height (>= 0)
+ * @returns {Object} Shape
+ */
 export const createELHShape = (p, q, n, r, h) => {
     return {type: "ELH", p, q, n, r, h};
 };
 
-
-// see https://iquilezles.org/articles/distfunctions/ for SDFs in general.
-
-// Returns a SDF for a shape.
-// [in] shape: Shape
-// returns: SDF: THREE.Vector3 -> number (+: outside, 0: surface, -: inside)
+/**
+ * Returns a SDF for a shape.
+ * @param {Object} shape Shape object, created by {@link createCylinderShape}, {@link createELHShape}, etc.
+ * @returns {Function} SDF: Vector3 -> number (+: outside, 0: surface, -: inside)
+ */
 export const createSdf = (shape) => {
     switch (shape.type) {
         case "cylinder":
@@ -37,11 +43,12 @@ export const createSdf = (shape) => {
     }
 };
 
-// Returns a SDF for a cylinder.
-// [in] p: start point
-// [in] n: direction (the cylinder extends infinitely towards n+ direction)
-// [in] r: radius
-// returns: SDF: THREE.Vector3 -> number (+: outside, 0: surface, -: inside)
+/**
+ * @param {Vector3} p Start point
+ * @param {Vector3} n Direction (the cylinder extends infinitely towards n+ direction)
+ * @param {number} r Radius
+ * @returns {Function} SDF: Vector3 -> number (+: outside, 0: surface, -: inside)
+ */
 export const createSdfCylinder = (p, n, r) => {
     if (n.length() !== 1) {
         throw "Cylinder direction not normalized";
@@ -66,14 +73,14 @@ export const createSdfCylinder = (p, n, r) => {
     return sdf;
 };
 
-// Returns a SDF for ELH (extruded long hole).
-//
-// [in] p: start point
-// [in] q: end point
-// [in] n: direction (p-q must be perpendicular to n). LH is extruded along n+, by h.
-// [in] r: radius (>= 0)
-// [in] h: height (>= 0)
-// returns: SDF: THREE.Vector3 -> number (+: outside, 0: surface, -: inside)
+/**
+ * @param {Vector3} p Start point
+ * @param {Vector3} q End point
+ * @param {Vector3} n Direction (p-q must be perpendicular to n). LH is extruded along n+, by h
+ * @param {number} r Radius (>= 0)
+ * @param {number} h Height (>= 0)
+ * @returns {Function} SDF: Vector3 -> number (+: outside, 0: surface, -: inside)
+ */
 export const createSdfElh = (p, q, n, r, h) => {
     if (n.length() !== 1) {
         throw "ELH direction not normalized";
@@ -112,13 +119,14 @@ export const createSdfElh = (p, q, n, r, h) => {
     return sdf;
 };
 
-// Traverse all points that (sdf(p) <= offset), and call fn(ix, iy, iz).
-//
-// [in] vg: VoxelGrid or TrackingVoxelGrid (must implement numX, numY, numZ, res, ofs, centerOf)
-// [in] sdf: number => number. Must be "true" SDF for this to work correctly.
-// [in] offset: offset
-// [in] fn: function(ix, iy, iz) => boolean. If true, stop traversal and return true.
-// returns: boolean. If true, stop traversal and return true.
+/**
+ * Traverse all points that (sdf(p) <= offset), and call fn(ix, iy, iz)
+ * @param {Object} vg VoxelGrid or TrackingVoxelGrid (must implement numX, numY, numZ, res, ofs, centerOf)
+ * @param {Function} sdf number => number. Must be "true" SDF for this to work correctly
+ * @param {number} offset Offset value
+ * @param {Function} fn function(ix, iy, iz) => boolean. If true, stop traversal and return true
+ * @returns {boolean} If true, stop traversal and return true
+ */
 export const traverseAllPointsInside = (vg, sdf, offset, fn) => {
     const blockSize = 8;
     const nbx = Math.floor(vg.numX / blockSize) + 1;
@@ -167,38 +175,52 @@ export const traverseAllPointsInside = (vg, sdf, offset, fn) => {
     return false;
 };
 
-// Returns true if all points (sdf(p) <= offset) are pred(p).
-//
-// [in] vg: VoxelGrid or TrackingVoxelGrid (must implement numX, numY, numZ, res, ofs, centerOf)
-// [in] sdf: number => number
-// [in] offset: offset
-// [in] pred: function(ix, iy, iz) => boolean.
-// returns: boolean. If true, stop traversal and return true.
+/**
+ * Returns true if all points (sdf(p) <= offset) are pred(p)
+ * @param {Object} vg VoxelGrid or TrackingVoxelGrid (must implement numX, numY, numZ, res, ofs, centerOf)
+ * @param {Function} sdf number => number
+ * @param {number} offset Offset value
+ * @param {Function} pred function(ix, iy, iz) => boolean
+ * @returns {boolean} If true, stop traversal and return true
+ */
 export const everyPointInsideIs = (vg, sdf, offset, pred) => {
     return !traverseAllPointsInside(vg, sdf, offset, (ix, iy, iz) => {
         return !pred(ix, iy, iz);
     });
 };
 
+/**
+ * Tests if any point inside satisfies the predicate
+ * @param {Object} vg VoxelGrid or TrackingVoxelGrid (must implement numX, numY, numZ, res, ofs, centerOf)
+ * @param {Function} sdf number => number
+ * @param {number} offset Offset value
+ * @param {Function} pred function(ix, iy, iz) => boolean
+ * @returns {boolean} True if any point satisfies predicate
+ */
 export const anyPointInsideIs = (vg, sdf, offset, pred) => {
     return traverseAllPointsInside(vg, sdf, offset, (ix, iy, iz) => {
         return pred(ix, iy, iz);
     });
 };
 
-
-// Generic voxel grid
-// voxel-local coordinate
-// voxel at (ix, iy, iz):
-// * occupies volume: [i * res, (i + 1) * res)
-// * has center: (i + 0.5) * res
-//
-// loc_world = loc_vx + ofs
+/**
+ * Generic voxel grid
+ * voxel-local coordinate
+ * voxel at (ix, iy, iz):
+ * - occupies volume: [i * res, (i + 1) * res)
+ * - has center: (i + 0.5) * res
+ * 
+ * loc_world = loc_vx + ofs
+ */
 export class VoxelGrid {
-    // [in] res: voxel resolution
-    // [in] numX, numY, numZ: grid dimensions
-    // [in] ofs: voxel grid offset (local to world)
-    // [in] type: "u8" | "f32". Type of cell
+    /**
+     * @param {number} res Voxel resolution
+     * @param {number} numX Grid dimension X
+     * @param {number} numY Grid dimension Y
+     * @param {number} numZ Grid dimension Z
+     * @param {Vector3} [ofs=new Vector3()] Voxel grid offset (local to world)
+     * @param {string} [type="u8"] Type of cell ("u8" | "f32")
+     */
     constructor(res, numX, numY, numZ, ofs = new Vector3(), type = "u8") {
         this.res = res;
         this.numX = numX;
@@ -217,17 +239,22 @@ export class VoxelGrid {
         this.data = new ArrayConstructors[type](numX * numY * numZ);
     }
 
+    /**
+     * Creates a deep copy of this voxel grid
+     * @returns {VoxelGrid} New voxel grid instance
+     */
     clone() {
         const vg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, this.type);
         vg.data.set(this.data);
         return vg;
     }
 
-    // Set cells inside the given shape to val.
-    //
-    // [in] shape: shape
-    // [in] val: value to set to cells
-    // [in] roundMode: "outside", "inside", "nearest"
+    /**
+     * Set cells inside the given shape to val
+     * @param {Object} shape Shape object
+     * @param {number} val Value to set to cells
+     * @param {string} roundMode "outside", "inside", or "nearest"
+     */
     fillShape(shape, val, roundMode) {
         const sdf = createSdf(shape);
         let offset = null;
@@ -246,21 +273,42 @@ export class VoxelGrid {
         });
     }
 
-    /////
-    // read/write
+    /**
+     * Set all cells to given value
+     * @param {number} val Value to fill
+     * @returns {VoxelGrid} this
+     */
     fill(val) {
         this.data.fill(val);
         return this;
     }
 
+    /**
+     * Set value at given coordinates
+     * @param {number} ix X coordinate
+     * @param {number} iy Y coordinate
+     * @param {number} iz Z coordinate
+     * @param {number} val Value to set
+     */
     set(ix, iy, iz, val) {
         this.data[ix + iy * this.numX + iz * this.numX * this.numY] = val;
     }
 
+    /**
+     * Get value at given coordinates
+     * @param {number} ix X coordinate
+     * @param {number} iy Y coordinate
+     * @param {number} iz Z coordinate
+     * @returns {number} Value at coordinates
+     */
     get(ix, iy, iz) {
         return this.data[ix + iy * this.numX + iz * this.numX * this.numY];
     }
 
+    /**
+     * Count number of non-zero cells
+     * @returns {number} Count of non-zero cells
+     */
     count() {
         let cnt = 0;
         for (let i = 0; i < this.data.length; i++) {
@@ -271,6 +319,11 @@ export class VoxelGrid {
         return cnt;
     }
 
+    /**
+     * Count number of cells equal to given value
+     * @param {number} val Value to compare against
+     * @returns {number} Count of matching cells
+     */
     countEq(val) {
         let cnt = 0;
         for (let i = 0; i < this.data.length; i++) {
@@ -281,6 +334,11 @@ export class VoxelGrid {
         return cnt;
     }
 
+    /**
+     * Count number of cells less than given value
+     * @param {number} val Value to compare against
+     * @returns {number} Count of cells less than val
+     */
     countLessThan(val) {
         let cnt = 0;
         for (let i = 0; i < this.data.length; i++) {
@@ -291,6 +349,10 @@ export class VoxelGrid {
         return cnt;
     }
 
+    /**
+     * Get maximum value in grid
+     * @returns {number} Maximum value
+     */
     max() {
         let max = -Infinity;
         for (let i = 0; i < this.data.length; i++) {
@@ -301,13 +363,21 @@ export class VoxelGrid {
         return max;
     }
 
-    //////
-    // spatial op
-
+    /**
+     * Calculate volume of non-zero cells
+     * @returns {number} Volume in cubic units
+     */
     volume() {
         return this.count() * this.res * this.res * this.res;
     }
 
+    /**
+     * Get center coordinates of cell at given index
+     * @param {number} ix X coordinate
+     * @param {number} iy Y coordinate
+     * @param {number} iz Z coordinate
+     * @returns {Vector3} Center point of cell
+     */
     centerOf(ix, iy, iz) {
         return new Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res).add(this.ofs);
     }

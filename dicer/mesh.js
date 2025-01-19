@@ -1,12 +1,17 @@
+/**
+ * Triangle mesh rasterization into voxel grid.
+ */
 import { Vector2, Vector3 } from 'three';
 
-// Voxelize a surface. Sets 255 for fully occupied, 128 for partially occupied, 0 for empty.
-//
-// [in] surf, array of float, triangle soup. [x0, y0, z0, x1, y1, z1, ...]
-// [in] vg, VoxelGrid-like object. Needs to implement ofs, res, numX, numY, numZ, set, count, volume.
-//
-// TODO: this logic still missses tiny features like a screw lead. Need to sample many and reduce later.
-// 0.5mm grid is obviously not enough to capture M1 screw lead mountains.
+/**
+ * Voxelize a surface. Sets 255 for fully occupied, 128 for partially occupied, 0 for empty
+ * TODO: this logic still missses tiny features like a screw lead. Need to sample many and reduce later.
+ * 0.5mm grid is obviously not enough to capture M1 screw lead mountains.
+ * 
+ * @param {Float32Array} surf Array of float, triangle soup. [x0, y0, z0, x1, y1, z1, ...]
+ * @param {Object} vg [out] VoxelGrid-like object. Needs to implement ofs, res, numX, numY, numZ, set, count, volume
+ * @returns {Object} The voxel grid (same as vg)
+ */
 export const diceSurf = (surf, vg) => {
     for (let iz = 0; iz < vg.numZ; iz++) {
         const sliceZ0 = vg.ofs.z + iz * vg.res;
@@ -55,9 +60,11 @@ export const diceSurf = (surf, vg) => {
     return vg;
 };
 
-
-// surfTris: [x0, y0, z0, x1, y1, z1, ...]
-// returns: contour edges
+/**
+ * @param {Float32Array} surfTris Triangle soup [x0, y0, z0, x1, y1, z1, ...]
+ * @param {number} sliceZ Z coordinate of slice plane
+ * @returns {Float32Array} Contour edges
+ */
 const sliceSurfByPlane = (surfTris, sliceZ) => {
     const segs = [];
 
@@ -111,9 +118,11 @@ const sliceSurfByPlane = (surfTris, sliceZ) => {
     return segs;
 };
 
-
-// contEdges: [x0, y0, x1, y1, ...]
-// returns: seg set [x0, x1, x2, ...]
+/**
+ * @param {Float32Array} contEdges [x0, y0, x1, y1, ...]
+ * @param {number} sliceY Y coordinate of slice line
+ * @returns {number[]} Segment set [x0, x1, x2, ...]
+ */
 const sliceContourByLine = (contEdges, sliceY) => {
     const bnds = [];
     const numEdges = contEdges.length / 4;
@@ -168,9 +177,12 @@ const sliceContourByLine = (contEdges, sliceY) => {
     return bndsClean;
 };
 
-// [in] q: query point
-// [in] xs: segment set [x0, x1], [x2, x3], ... (x0 < x1 < x2 < x3 < ...) even number of elements.
-// [out] true if q is inside
+/**
+ * Tests if a value is inside a segment set
+ * @param {number} q Query point
+ * @param {number[]} xs Segment set [x0, x1], [x2, x3], ... (x0 < x1 < x2 < x3 < ...) even number of elements
+ * @returns {boolean} True if q is inside
+ */
 const isValueInside = (q, xs) => {
     if (xs.length % 2 !== 0) {
         throw "Corrupt segment set"; // TODO: may need to handle gracefully.
@@ -189,13 +201,26 @@ const isValueInside = (q, xs) => {
     return false;
 };
 
+/**
+ * Intersect 3D line segment with Z plane
+ * @param {Vector3} p Start point
+ * @param {Vector3} q End point
+ * @param {number} z Z coordinate of plane
+ * @returns {Vector3} Intersection point
+ */
 const isectLine = (p, q, z) => {
     const d = q.z - p.z;
     const t = (d === 0) ? 0.5 : (z - p.z) / d;
     return p.clone().lerp(q, t);
 };
 
-
+/**
+ * Intersect 2D line segment with Y line
+ * @param {Vector2} p Start point
+ * @param {Vector2} q End point
+ * @param {number} y Y coordinate of line
+ * @returns {Vector2} Intersection point
+ */
 const isectLine2 = (p, q, y) => {
     const d = q.y - p.y;
     const t = (d === 0) ? 0.5 : (y - p.y) / d;
