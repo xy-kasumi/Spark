@@ -11,7 +11,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from './N8AO.js';
 import { VoxelGrid } from './voxel.js';
 import { diceSurf } from './mesh.js';
-import { createSdf, createSdfElh, createSdfCylinder, createELHShape, createCylinderShape, anyPointInsideIs, everyPointInsideIs } from './voxel.js';
+import { createSdf, createSdfElh, createSdfCylinder, createELHShape, createCylinderShape, createBoxShape, anyPointInsideIs, everyPointInsideIs } from './voxel.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Basis
@@ -530,7 +530,7 @@ class TrackingVoxelGrid {
     }
 
     /**
-     * Returns true if given shape is blocked by material, conservatively.
+     * Returns true if given shape contains cut-forbidden parts.
      * Conservative: voxels with potential overlaps will be considered for block-detection.
      * @param {Object} shape Shape object, created by {@link createCylinderShape}, {@link createELHShape}, etc.
      * @returns {boolean} true if blocked, false otherwise
@@ -539,7 +539,34 @@ class TrackingVoxelGrid {
         const sdf = createSdf(shape);
         const margin = this.res * 0.5 * Math.sqrt(3);
         return anyPointInsideIs(this, sdf, margin, (ix, iy, iz) => {
-            return this.get(ix, iy, iz) !== C_EMPTY_DONE;
+            const st = this.get(ix, iy, iz);
+            return st === C_FULL_DONE || st === C_PARTIAL_DONE || st === C_PARTIAL_REMAINING;
+        });
+    }
+
+    /**
+     * Returns true if given shape contains work to do. Does not guarantee it's workable (not blocked).
+     * 
+     * @param {Object} shape Shape object, created by {@link createCylinderShape}, {@link createELHShape}, etc.
+     * @returns {boolean} true if has work, false otherwise
+     */
+    queryHasWork(shape) {
+        const sdf = createSdf(shape);
+        return anyPointInsideIs(this, sdf, 0, (ix, iy, iz) => {
+            const st = this.get(ix, iy, iz);
+            return st === C_EMPTY_REMAINING || st === C_PARTIAL_REMAINING;
+        });
+    }
+
+    /**
+     * Returns true if ok to cut given region. Does not check it has meaningful work left. (might be already empty)
+     */
+    queryOkToCut(shape) {
+        const sdf = createSdf(shape);
+        const margin = this.res * 0.5 * Math.sqrt(3);
+        return everyPointInsideIs(this, sdf, 0, (ix, iy, iz) => {
+            const st = this.get(ix, iy, iz);
+            return st === C_EMPTY_DONE || st === C_EMPTY_REMAINING;
         });
     }
 
@@ -547,6 +574,7 @@ class TrackingVoxelGrid {
      * Returns true if given ELH is accessible for work, conservatively.
      * Accessible for work: work won't accidentally destroy protected region && region contains work.
      * 
+     * @deprecated Use queryHasWork(), queryOkToCut() instead
      * @param {THREE.Vector3} p Start point
      * @param {THREE.Vector3} q End point
      * @param {THREE.Vector3} n Direction (p-q must be perpendicular to n). LH is extruded along n+, by h.
@@ -568,6 +596,9 @@ class TrackingVoxelGrid {
         });
     }
 
+    /**
+     * @deprecated Use queryHasWork(), queryOkToCut() instead
+     */
     queryOkToCutCylinder(p, n, r) {
         const sdf = createSdfCylinder(p, n, r);
         const margin = this.res * 0.5 * Math.sqrt(3);
@@ -983,6 +1014,53 @@ const createRotationWithZ = (z) => {
 }
 
 /**
+ * Utility to created a offset point by given vector & coeffcients.
+ * e.g. offset(segBegin, [feedDir, segmentLength * 0.5], [normal, feedDepth * 0.5])
+ * @param {THREE.Vector3} p - Point to offset (readonly)
+ * @param {Array<[THREE.Vector3, number]>} offsets - List of vector & coefficient pairs
+ * @returns {THREE.Vector3} Offset point (new instance)
+ */
+const offsetPoint = (p, ...offsets) => {
+    const ret = p.clone();
+    const temp = new THREE.Vector3();
+    for (const [v, k] of offsets) {
+        ret.add(temp.copy(v).multiplyScalar(k));
+    }
+    return ret;
+};
+
+
+/**
+ * Utility to create box shape from base point and axis specs.
+ * @param {THREE.Vector3} base - Base point
+ * @param {Array<[string, THREE.Vector3, number]>} axisSpecs - List of anchor ("center", "origin") & base vector & k. base vector * k must span full-size of the box.
+ * @returns {Object} Box shape
+ */
+const createBoxShapeFrom = (base, ...axisSpecs) => {
+    if (axisSpecs.length !== 3) {
+        throw "Invalid axis specs";
+    }
+    const center = new THREE.Vector3().copy(base);
+    const halfVecs = [];
+    for (const [anchor, vec, len] of axisSpecs) {
+        const hv = vec.clone().multiplyScalar(len * 0.5);
+        switch (anchor) {
+            case "center":
+                halfVecs.push(hv);
+                break;
+            case "origin":
+                center.add(hv);
+                halfVecs.push(hv);
+                break;
+            default:
+                throw `Invalid anchor: ${anchor}`;
+        }
+    }
+    return createBoxShape(center, ...halfVecs);
+};
+
+
+/**
  * Generate stock visualization.
  * @param {number} [stockRadius=7.5] - Radius of the stock
  * @param {number} [stockHeight=15] - Height of the stock
@@ -1336,52 +1414,35 @@ class Planner {
             // rows : [row]
             // row : [segment]
             // segment : {
-            //   accessOk: bool, // can enter this segment from left.
-            //   workOk: bool, // work is available in this segment, and is not blocked.
+            //   segCenterBot: Vector3
+            //   state: "blocked" | "work" | "empty" // blocked = contains non-cuttable bits, work = cuttable & has non-zero work, empty = accessible and no work
             // }
             const rows = [];
 
-            const feedWidth = toolDiameter / 2;
-            const segmentLength = toolDiameter; //  / 2;
-            const minAllowedDiameter = toolDiameter / 2;
-            // this is very pessimistic, will waste a lot of time & tool.
-            // by making this closer to actual work volume, we can generate faster path that use less tool.
-            // Wasteful parts:
-            // * segment overlap (left, right part)
-            // * row overlap (width)
-            const segmentWorkVolume = feedDepth * (toolDiameter * segmentLength + Math.PI * Math.pow(toolDiameter / 2, 2));
+            const feedWidth = toolDiameter - this.resMm; // create little overlap, to remove undercut artifact caused by conservative minGeom computation.
+            const segmentLength = 1;
+            const discreteToolRadius = Math.ceil(toolDiameter / segmentLength / 2 - 0.5); // spans segments [-r, r].
 
             const numRows = Math.ceil(trvgRadius * 2 / feedWidth);
             const numSegs = Math.ceil(trvgRadius * 2 / segmentLength);
-            const scanOrigin = 
-                trvgCenter.clone().projectOnPlane(normal)
-                    .add(normal.clone().multiplyScalar(offset))
-                    .add(feedDir.clone().multiplyScalar(-trvgRadius))
-                    .add(rowDir.clone().multiplyScalar(-trvgRadius));
+            const scanOrigin = offsetPoint(trvgCenter.clone().projectOnPlane(normal), [normal, offset], [feedDir, -trvgRadius], [rowDir, -trvgRadius]);
+
+            const segCenterBot = (ixRow, ixSeg) => {
+                return offsetPoint(scanOrigin, [rowDir, feedWidth * ixRow], [feedDir, segmentLength * ixSeg], [normal, -feedDepth]);
+            };
             
             sweepVises.length = 0;
             for (let ixRow = 0; ixRow < numRows; ixRow++) {
                 const row = [];
                 for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
-                    const segBegin = scanOrigin.clone()
-                        .add(rowDir.clone().multiplyScalar(feedWidth * ixRow))
-                        .add(feedDir.clone().multiplyScalar(segmentLength * ixSeg));
-                    const segEnd = segBegin.clone().add(feedDir.clone().multiplyScalar(segmentLength));
-
-                    const segBeginBot = segBegin.clone().sub(normal.clone().multiplyScalar(feedDepth));
-                    const segEndBot = segEnd.clone().sub(normal.clone().multiplyScalar(feedDepth));
-                    
-                    const accessOk = !this.trvg.queryBlocked(createCylinderShape(segBeginBot, normal, toolDiameter / 2));
-                    
-                    // notBlocked is required when there's work-remaining overhang; technically the tool can cut the overhang too,
-                    // but should be avoided to localize tool wear.
-                    // const notBlocked = !this.trvg.queryBlocked(createELHShape(segBegin, segEnd, normal, this.toolDiameter / 2, outerRadius));
-                    const notBlocked = true;
-                    const collateralRange = 100;
-                    const okToCut = this.trvg.queryOkToCutELH(segBeginBot, segEndBot, normal, toolDiameter / 2, feedDepth, collateralRange);
-                    
-                    const workOk = notBlocked && okToCut;
-                    row.push({ accessOk, workOk, segBegin, segEnd, segBeginBot, segEndBot, workVolume: segmentWorkVolume });
+                    const segShapeAndAbove = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, trvgRadius * 2], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
+                    const segShape = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, feedDepth], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
+                    // Maybe should check any-non work for above, instead of blocked?
+                    // even if above region is cuttable, it will alter tool state unexpectedly.
+                    const isBlocked = this.trvg.queryBlocked(segShapeAndAbove);
+                    const hasWork = this.trvg.queryHasWork(segShape);
+                    const state = isBlocked ? "blocked" : (hasWork ? "work" : "empty");
+                    row.push(state);
                 }
                 rows.push(row);
             }
@@ -1401,75 +1462,154 @@ class Planner {
                 return Math.sqrt(toolArea / Math.PI) * 2;
             };
 
-            /**
-             * Conservative estimate of work volume after cutting a single segment with minDia.
-             * 
-             * @param {number} minDia - Tool diameter after cutting
-             * @returns {number} Work volume in mm^3
-             */
-            const maxSegWorkVolAfterCut = (minDia) => {
-                const cutVolume = feedDepth * (minDia * segmentLength + Math.PI * Math.pow(minDia / 2, 2));
-                return segmentWorkVolume - cutVolume;
-            };
+            // From segemnts, create "scans".
+            // Scan will end at scanEndBot = apBot + scanDir * scanLen. half-cylinder of toolDiameter will extrude from scanEndBot at max.
+            const scans = []; // {apBot, scanDir, scanLen}
+            for (let ixRow = 0; ixRow < rows.length; ixRow++) {
+                const row = rows[ixRow];
+                const safeGet = (ix) => {
+                    if (ix < 0 || ix >= row.length) {
+                        return "empty";
+                    }
+                    return row[ix];
+                };
+                const isAccessOk = (ix) => {
+                    if (ix < 0 || ix >= row.length) {
+                        return false;
+                    }
+                    for (let dix = -discreteToolRadius; dix <= discreteToolRadius; dix++) {
+                        if (safeGet(ix + dix) !== "empty") {
+                            return false;
+                        }
+                    }
+                    return true;
+                };
+                const isBlockedAround = (ix) => {
+                    for (let dix = -discreteToolRadius; dix <= discreteToolRadius; dix++) {
+                        if (safeGet(ix + dix) === "blocked") {
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+                const findMax = (arr, fn) => {
+                    let val = fn(arr[0]);
+                    let ix = 0;
+                    for (let i = 1; i < arr.length; i++) {
+                        const v = fn(arr[i]);
+                        if (v > val) {
+                            val = v;
+                            ix = i;
+                        }
+                    }
+                    return arr[ix];
+                };
 
-            // Scan each segments.
+                const scanCandidates = [];
+                // gather all valid right-scans.
+                for (let ixBegin = 0; ixBegin < row.length; ixBegin++) {
+                    if (!isAccessOk(ixBegin)) {
+                        continue;
+                    }
+                    
+                    for (let len = 2;; len++) {
+                        const ixEnd = ixBegin + len;
+                        if (ixEnd >= row.length || isBlockedAround(ixEnd)) {
+                            break;
+                        }
+
+                        const workIxs = [];
+                        for (let i = ixBegin + 1; i < ixEnd; i++) {
+                            if (row[i] === "work") {
+                                workIxs.push(i);
+                            }
+                        }
+                        scanCandidates.push({ dir: "+", ixBegin, len, workIxs: new Set(workIxs) });
+                    }
+                }
+                // gather all valid left-scans.
+                // TODO: write
+
+                if (scanCandidates.length === 0) {
+                    continue;
+                }
+
+                // Greedy-pick valid scans that maximizes workIx coverage but minimize total len.
+                let unsatWorkIxs = new Set();
+                for (let ix = 0; ix < row.length; ix++) {
+                    if (row[ix] === "work") {
+                        unsatWorkIxs.add(ix);
+                    }
+                }
+
+                const BIGGER_THAN_ANY_LEN = 1000;
+                const rowScans = [];
+                while (unsatWorkIxs.size > 0) {
+                    const bestScan = findMax(scanCandidates, scan => {
+                        const gain = scan.workIxs.intersection(unsatWorkIxs).size;
+                        const score = gain * BIGGER_THAN_ANY_LEN - scan.len;
+                        return score;
+                    });
+                    if (bestScan.workIxs.intersection(unsatWorkIxs).size === 0) {
+                        break; // best scan adds nothing
+                    }
+                    unsatWorkIxs = unsatWorkIxs.difference(bestScan.workIxs);
+                    rowScans.push(bestScan);
+                }
+
+                for (const rs of rowScans) {
+                    scans.push({
+                        apBot: segCenterBot(ixRow, rs.ixBegin),
+                        scanDir: rs.dir === "+" ? feedDir : feedDir.clone().negate(),
+                        scanLen: rs.len * segmentLength,
+                    });
+                }
+            }
+
+            // Execute scans one by one.
             let toolLength = this.toolLength;
             let toolIx = this.toolIx;
             const maxDiameter = this.toolDiameter;
             let minDiameter = this.toolDiameter;
             const evacuateOffset = normal.clone().multiplyScalar(3);
 
-            for (let ixRow = 0; ixRow < rows.length; ixRow++) {
-                const row = rows[ixRow];
-                let entered = false;
-                for (let ixSeg = 0; ixSeg < row.length; ixSeg++) {
-                    const seg = row[ixSeg];
-                    const nextSeg = ixSeg + 1 < row.length ? row[ixSeg + 1] : null;
+            for (const scan of scans) {
+                sweepPath.nonRemove("move-in", scan.apBot.clone().add(evacuateOffset));
+                sweepPath.nonRemove("move-in", scan.apBot);
+                
+                const endBot = scan.apBot.clone().add(scan.scanDir.clone().multiplyScalar(scan.scanLen));
 
-                    // should enter?
-                    if (!entered) {
-                        if (seg.accessOk && seg.workOk) {
-                            sweepPath.nonRemove("move-in", seg.segBegin.clone().add(evacuateOffset));
-                            sweepPath.nonRemove("move-in", seg.segBeginBot);
-                            entered = true;
+                // TODO: Repeat, consider EWR.
+                //const minDiaAfterScan =
+                sweepPath.removeHorizontal(endBot, 123, maxDiameter, maxDiameter); // TODO: proper tool rotation
+
+                if (false && entered && seg.workOk) {
+                    const minDiaAfterThisSeg = getMinDiaAfterSegWork(seg.workVolume, minDiameter);
+
+                    // refresh tool?
+                    if (minDiaAfterThisSeg < minAllowedDiameter) {
+                        if (minDiameter === toolDiameter) {
+                            // this means tool is already refreshed, but can't "survive" a single segment.
+                            // suggets very high EWR.
+                            // technically, we can continue with smaller segWidth or segLen, but op time will be too long to be useful anyway.
+                            // TODO: This is very unhelpful to user. Compute allowed max EWR beforehand and warn user is much better.
+                            throw "Tool wear too quick (too large EWR). Tool diameter cannot survive a single segment. Cannot continue planar sweep generation.";
                         }
+                        // refresh tool and restart from last access point. (one surely exist at the beginning of the row; no need to revert ixRow)
+                        sweepPath.nonRemove("move-out", seg.segBegin.clone().add(evacuateOffset));
+                        sweepPath.discardToolTip(feedDepth);
+                        minDiameter = toolDiameter;
+                        entered = false;
+                        ixSeg = 0; // TODO: find last access point instead of beginning from the row start, which is faster
+                        continue;
                     }
 
-                    // can work?
-                    if (entered && seg.workOk) {
-                        const minDiaAfterThisSeg = getMinDiaAfterSegWork(seg.workVolume, minDiameter);
-
-                        // refresh tool?
-                        if (minDiaAfterThisSeg < minAllowedDiameter) {
-                            if (minDiameter === toolDiameter) {
-                                // this means tool is already refreshed, but can't "survive" a single segment.
-                                // suggets very high EWR.
-                                // technically, we can continue with smaller segWidth or segLen, but op time will be too long to be useful anyway.
-                                // TODO: This is very unhelpful to user. Compute allowed max EWR beforehand and warn user is much better.
-                                throw "Tool wear too quick (too large EWR). Tool diameter cannot survive a single segment. Cannot continue planar sweep generation.";
-                            }
-                            // refresh tool and restart from last access point. (one surely exist at the beginning of the row; no need to revert ixRow)
-                            sweepPath.nonRemove("move-out", seg.segBegin.clone().add(evacuateOffset));
-                            sweepPath.discardToolTip(feedDepth);
-                            minDiameter = toolDiameter;
-                            entered = false;
-                            ixSeg = 0; // TODO: find last access point instead of beginning from the row start, which is faster
-                            continue;
-                        }
-
-                        sweepPath.removeHorizontal(seg.segEndBot, 123, maxDiameter, minDiaAfterThisSeg); // TODO: proper tool rotation
-                        seg.workVolume = maxSegWorkVolAfterCut(minDiaAfterThisSeg);
-                        minDiameter = minDiaAfterThisSeg;
-                    }
-
-                    // should exit?
-                    if (entered) {
-                        if (!nextSeg?.workOk) {
-                            sweepPath.nonRemove("move-out", seg.segEnd.clone().add(evacuateOffset));
-                            entered = false;
-                        }
-                    }
+                    sweepPath.removeHorizontal(seg.segEndBot, 123, maxDiameter, minDiaAfterThisSeg); // TODO: proper tool rotation
+                    seg.workVolume = maxSegWorkVolAfterCut(minDiaAfterThisSeg);
+                    minDiameter = minDiaAfterThisSeg;
                 }
+
+                sweepPath.nonRemove("move-out", endBot.clone().add(evacuateOffset));
             }
 
             if (sweepPath.getPath().length === 0) {
