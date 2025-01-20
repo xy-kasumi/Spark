@@ -11,7 +11,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from './N8AO.js';
 import { VoxelGrid } from './voxel.js';
 import { diceSurf } from './mesh.js';
-import { createSdf, createSdfElh, createSdfCylinder, createELHShape, createCylinderShape, createBoxShape, anyPointInsideIs, everyPointInsideIs } from './voxel.js';
+import { createSdf, createSdfCylinder, createELHShape, createCylinderShape, createBoxShape, anyPointInsideIs, everyPointInsideIs } from './voxel.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Basis
@@ -301,7 +301,7 @@ class TrackingVoxelGrid {
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
-                    if (excludeProtectedWork && this.protectedWorkBelowZ !== undefined && this.centerOf(ix, iy, iz).z < this.protectedWorkBelowZ) {
+                    if (excludeProtectedWork && this.protectedWorkBelowZ !== undefined && this.centerOf(ix, iy, iz).z < this.protectedWorkBelowZ + this.res) {
                         res.set(ix, iy, iz, 0);
                         continue;
                     }
@@ -323,9 +323,10 @@ class TrackingVoxelGrid {
     /**
      * Extract work volume as voxels. Each cell will contain deviation from target shape.
      * positive value indicates deviation. 0 for perfect finish or inside. -1 for empty regions.
+     * @param {boolean} [excludeProtectedWork=false] If true, exclude protected work.
      * @returns {VoxelGrid} (f32)
      */
-    extractWorkWithDeviation() {
+    extractWorkWithDeviation(excludeProtectedWork = false) {
         // Jump Flood
         const dist = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, "f32"); // -1 means invalid data.
         const seedPosX = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, "f32");
@@ -411,6 +412,10 @@ class TrackingVoxelGrid {
                         // because of triangle inequality.
                         dist.set(ix, iy, iz, d + vxDiag);
                     }
+
+                    if (excludeProtectedWork && this.protectedWorkBelowZ !== undefined && this.centerOf(ix, iy, iz).z < this.protectedWorkBelowZ + this.res) {
+                        dist.set(ix, iy, iz, -1); // protected work -> empty
+                    }
                 }
             }
         }
@@ -445,7 +450,7 @@ class TrackingVoxelGrid {
         const minVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         const maxVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         minShapes.forEach(shape => {
-            minVg.fillShape(shape, 255, ignoreOvercutErrors ? "nearest" : "inside"); // hack to get "clean-looking" work after final cut.
+            minVg.fillShape(shape, 255, "inside");
         });
         maxShapes.forEach(shape => {
             maxVg.fillShape(shape, 255, "outside");
@@ -567,32 +572,6 @@ class TrackingVoxelGrid {
         return everyPointInsideIs(this, sdf, 0, (ix, iy, iz) => {
             const st = this.get(ix, iy, iz);
             return st === C_EMPTY_DONE || st === C_EMPTY_REMAINING;
-        });
-    }
-
-    /**
-     * Returns true if given ELH is accessible for work, conservatively.
-     * Accessible for work: work won't accidentally destroy protected region && region contains work.
-     * 
-     * @deprecated Use queryHasWork(), queryOkToCut() instead
-     * @param {THREE.Vector3} p Start point
-     * @param {THREE.Vector3} q End point
-     * @param {THREE.Vector3} n Direction (p-q must be perpendicular to n). LH is extruded along n+, by h.
-     * @param {number} r Radius (>= 0)
-     * @param {number} hWork Height of work region (>= 0)
-     * @param {number} hCollateral Height of collateral region (>= 0)
-     * @returns {boolean} true if accessible, false otherwise
-     */
-    queryOkToCutELH(p, q, n, r, hWork, hCollateral) {
-        const sdfWork = createSdfElh(p, q, n, r, hWork);
-        const sdfCollateral = createSdfElh(p, q, n, r, hCollateral);
-        const margin = this.res * 0.5 * Math.sqrt(3);
-
-        return everyPointInsideIs(this, sdfCollateral, margin, (ix, iy, iz) => {
-            const st = this.get(ix, iy, iz);
-            return st === C_EMPTY_DONE || st === C_EMPTY_REMAINING;
-        }) && anyPointInsideIs(this, sdfWork, margin, (ix, iy, iz) => {
-            return this.getW(ix, iy, iz) === W_REMAINING;
         });
     }
 
@@ -1162,6 +1141,16 @@ class PartialPath {
     }
 
     /**
+     * Add min-shape without changing path.
+     * This can be used when caller knows min-cut happens due to combination of multiple remove() calls,
+     * but min-cut cannot be easily attributed to individual remove() calls separately.
+     * @param {Object} shape - Shape to add
+     */
+    addMinRemoveShape(shape) {
+        this.minSweepRemoveShapes.push(shape);
+    }
+
+    /**
      * Add material-removing move. (i.e. G1 move) The move must be horizontal.
      * @param {THREE.Vector3} tipPos - Tip position in work coordinates
      * @param {number} toolRotDelta - Tool rotation delta in radians
@@ -1176,7 +1165,9 @@ class PartialPath {
             throw "remove path needs to be horizontal (perpendicular to normal)";
         }
 
-        this.minSweepRemoveShapes.push(createELHShape(this.prevPtTipPos, tipPos, this.normal, minDiameter / 2, 100));
+        if (minDiameter > 0) {
+            this.minSweepRemoveShapes.push(createELHShape(this.prevPtTipPos, tipPos, this.normal, minDiameter / 2, 100));
+        }
         this.maxSweepRemoveShapes.push(createELHShape(this.prevPtTipPos, tipPos, this.normal, maxDiameter / 2, 100));
         this.path.push(this.#withAxisValue("remove-work", {tipPosW: tipPos, toolRotDelta: toolRotDelta}));
         this.prevPtTipPos = tipPos;
@@ -1507,12 +1498,12 @@ class Planner {
                 };
 
                 const scanCandidates = [];
-                // gather all valid right-scans.
                 for (let ixBegin = 0; ixBegin < row.length; ixBegin++) {
                     if (!isAccessOk(ixBegin)) {
                         continue;
                     }
-                    
+                
+                    // gather all valid right-scans.
                     for (let len = 2;; len++) {
                         const ixEnd = ixBegin + len;
                         if (ixEnd >= row.length || isBlockedAround(ixEnd)) {
@@ -1527,9 +1518,23 @@ class Planner {
                         }
                         scanCandidates.push({ dir: "+", ixBegin, len, workIxs: new Set(workIxs) });
                     }
+
+                    // gather all valid left-scans.
+                    for (let len = 2;; len++) {
+                        const ixEnd = ixBegin - len;
+                        if (ixEnd < 0 || isBlockedAround(ixEnd)) {
+                            break;
+                        }
+
+                        const workIxs = [];
+                        for (let i = ixBegin - 1; i > ixEnd; i--) {
+                            if (row[i] === "work") {
+                                workIxs.push(i);
+                            }
+                        }
+                        scanCandidates.push({ dir: "-", ixBegin, len, workIxs: new Set(workIxs) });
+                    }
                 }
-                // gather all valid left-scans.
-                // TODO: write
 
                 if (scanCandidates.length === 0) {
                     continue;
@@ -1563,6 +1568,7 @@ class Planner {
                         apBot: segCenterBot(ixRow, rs.ixBegin),
                         scanDir: rs.dir === "+" ? feedDir : feedDir.clone().negate(),
                         scanLen: rs.len * segmentLength,
+                        workSegNum: rs.workIxs.size,
                     });
                 }
             }
@@ -1570,47 +1576,35 @@ class Planner {
             // Execute scans one by one.
             let toolLength = this.toolLength;
             let toolIx = this.toolIx;
-            const maxDiameter = this.toolDiameter;
-            let minDiameter = this.toolDiameter;
+            let feedDepthWithExtra = feedDepth + this.resMm * 2; // treat a bit of extra is weared to remove any weird effect, both in real machine and min-cut simulation.
             const evacuateOffset = normal.clone().multiplyScalar(3);
 
             for (const scan of scans) {
-                sweepPath.nonRemove("move-in", scan.apBot.clone().add(evacuateOffset));
-                sweepPath.nonRemove("move-in", scan.apBot);
-                
-                const endBot = scan.apBot.clone().add(scan.scanDir.clone().multiplyScalar(scan.scanLen));
+                const endBot = offsetPoint(scan.apBot, [scan.scanDir, scan.scanLen]);
 
-                // TODO: Repeat, consider EWR.
-                //const minDiaAfterScan =
-                sweepPath.removeHorizontal(endBot, 123, maxDiameter, maxDiameter); // TODO: proper tool rotation
+                // When tool rotation=0 and pushed forward, following things happen in order:
+                // 1. Front semi-circle area is consumed first (mostly). During this time, cut diameter is exactly toolDiameter.
+                //      - "mostly": sometimes, even when front semi-circle is available, side of the tool start to erode.
+                // 2. Back semi-circle area is consumed. Cut diameter gradually decreases to 0.
+                // to cut the rectangular work area, we at least need to keep 0.5 (hemi-circle) of tool, when reaching scan end point.
+                const needToKeep = 0.6; // 0.5 is theoretical min. extra will be buffers.
+                const scanWorkArea = scan.workSegNum * segmentLength * toolDiameter;
+                const toolArea = Math.PI * (toolDiameter / 2) ** 2;
+                const numScans = Math.ceil(scanWorkArea * this.ewrMax / toolArea + needToKeep);
+                // console.log(`numScans: ${scanWorkArea * this.ewrMax / toolArea + needToKeep} -> ${numScans}`);
 
-                if (false && entered && seg.workOk) {
-                    const minDiaAfterThisSeg = getMinDiaAfterSegWork(seg.workVolume, minDiameter);
-
-                    // refresh tool?
-                    if (minDiaAfterThisSeg < minAllowedDiameter) {
-                        if (minDiameter === toolDiameter) {
-                            // this means tool is already refreshed, but can't "survive" a single segment.
-                            // suggets very high EWR.
-                            // technically, we can continue with smaller segWidth or segLen, but op time will be too long to be useful anyway.
-                            // TODO: This is very unhelpful to user. Compute allowed max EWR beforehand and warn user is much better.
-                            throw "Tool wear too quick (too large EWR). Tool diameter cannot survive a single segment. Cannot continue planar sweep generation.";
-                        }
-                        // refresh tool and restart from last access point. (one surely exist at the beginning of the row; no need to revert ixRow)
-                        sweepPath.nonRemove("move-out", seg.segBegin.clone().add(evacuateOffset));
-                        sweepPath.discardToolTip(feedDepth);
-                        minDiameter = toolDiameter;
-                        entered = false;
-                        ixSeg = 0; // TODO: find last access point instead of beginning from the row start, which is faster
-                        continue;
-                    }
-
-                    sweepPath.removeHorizontal(seg.segEndBot, 123, maxDiameter, minDiaAfterThisSeg); // TODO: proper tool rotation
-                    seg.workVolume = maxSegWorkVolAfterCut(minDiaAfterThisSeg);
-                    minDiameter = minDiaAfterThisSeg;
+                // This is most basic path.
+                // In reality, we don't need to go back to beginning nor go to end every time.
+                // We can also continue using weared tool in next scan w/o refresh.
+                for (let i = 0; i < numScans; i++) {
+                    sweepPath.nonRemove("move-in", scan.apBot.clone().add(evacuateOffset));
+                    sweepPath.nonRemove("move-in", scan.apBot);
+                    sweepPath.removeHorizontal(endBot, 0, this.toolDiameter, 0); // we don't know min-cut during repeated scan.
+                    sweepPath.nonRemove("move-out", endBot.clone().add(evacuateOffset));
+                    sweepPath.discardToolTip(feedDepthWithExtra);
                 }
-
-                sweepPath.nonRemove("move-out", endBot.clone().add(evacuateOffset));
+                // after enough number of scans, we know min-cut covers rectangular region.
+                sweepPath.addMinRemoveShape(createBoxShapeFrom(scan.apBot, ["origin", normal, feedDepthWithExtra], ["origin", scan.scanDir, scan.scanLen], ["center", rowDir, toolDiameter]));
             }
 
             if (sweepPath.getPath().length === 0) {
