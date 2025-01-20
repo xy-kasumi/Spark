@@ -989,15 +989,21 @@ class PartialPath {
      * @param {number} sweepIx - Sweep index
      * @param {string} group - Group name
      * @param {THREE.Vector3} normal - Normal vector
+     * @param {number} minToolLength - Minimum tool length required for this partial path.
      * @param {number} toolIx - Tool index at partial path creation time
      * @param {number} toolLength - Tool length at partial path creation time
      * @param {Function} solveIk - #solveIk() function
      * @param {number} toolNaturalLength - Tool natural length
      */
-    constructor(sweepIx, group, normal, toolIx, toolLength, solveIk, toolNaturalLength) {
+    constructor(sweepIx, group, normal, minToolLength, toolIx, toolLength, solveIk, toolNaturalLength) {
+        if (this.toolNaturalLength < this.minToolLength) {
+            throw "required min tool length impossible";
+        }
+        
         this.sweepIx = sweepIx;
         this.group = group;
         this.normal = normal;
+        this.minToolLength = minToolLength;
         this.minSweepRemoveShapes = [];
         this.maxSweepRemoveShapes = [];
         this.path = [];
@@ -1006,6 +1012,12 @@ class PartialPath {
         this.toolIx = toolIx;
         this.toolLength = toolLength;
         this.toolNaturalLength = toolNaturalLength;
+
+        if (this.toolLength < this.minToolLength) {
+            // TODO: generate tool change motion
+            this.toolIx++;
+            this.toolLength = this.toolNaturalLength;
+        }
     }
 
     #withAxisValue(type, pt) {
@@ -1025,17 +1037,17 @@ class PartialPath {
 
     /**
      * Discard given length of the tool. Replace to a new tool if necessary.
-     * @param {number} length - Length of the tool to discard
+     * @param {number} discardLength - Length of the tool to discard
      */
-    discardToolTip(length) {
-        // TODO: Need to get "required next length". Tool become useless if length after discard is close to zero.
-        if (length > this.toolLength) {
+    discardToolTip(discardLength) {
+        const toolLenAfter = this.toolLength - discardLength;
+        if (toolLenAfter < this.minToolLength) {
             // TODO: generate tool change motion
             this.toolIx++;
             this.toolLength = this.toolNaturalLength;
         } else {
             // TODO: generate tool grind motion
-            this.toolLength -= length;
+            this.toolLength -= discardLength;
         }
     }
 
@@ -1314,7 +1326,13 @@ class Planner {
          * @returns {{partialPath: PartialPath, ignoreOvercutErrors: boolean} | null} null if impossible
          */
         const genPlanarSweep = (normal, offset, toolDiameter) => {
-            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, this.toolIx, this.toolLength, ikFunc, this.toolNaturalLength);
+            const workOffset = this.trvg.queryWorkOffset(normal);
+            if (workOffset < offset) {
+                throw "contradicting offset for genPlanarSweep";
+            }
+            const minToolLength = (workOffset - offset) + feedDepth;
+            console.log(`minToolLength: ${minToolLength}`);
+            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, minToolLength, this.toolIx, this.toolLength, ikFunc, this.toolNaturalLength);
 
             const rot = createRotationWithZ(normal);
             const feedDir = new THREE.Vector3(1, 0, 0).transformDirection(rot);
@@ -1527,15 +1545,17 @@ class Planner {
          * @returns {{partialPath: PartialPath, ignoreOvercutErrors: boolean} | null} null if impossible
          */
         const genDrillSweep = (normal, toolDiameter) => {
-            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, this.toolIx, this.toolLength, ikFunc, this.toolNaturalLength);
+            const halfDiagVec = new THREE.Vector3(this.trvg.numX, this.trvg.numY, this.trvg.numZ).multiplyScalar(this.trvg.res * 0.5);
+            const trvgCenter = this.trvg.ofs.clone().add(halfDiagVec);
+            const trvgRadius = halfDiagVec.length(); // TODO: proper bounds
+
+            const minToolLength = trvgRadius * 2;
+            console.log(`minToolLength: ${minToolLength}`);
+            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, minToolLength, this.toolIx, this.toolLength, ikFunc, this.toolNaturalLength);
 
             const rot = createRotationWithZ(normal);
             const scanDir0 = new THREE.Vector3(1, 0, 0).transformDirection(rot);
             const scanDir1 = new THREE.Vector3(0, 1, 0).transformDirection(rot);
-
-            const halfDiagVec = new THREE.Vector3(this.trvg.numX, this.trvg.numY, this.trvg.numZ).multiplyScalar(this.trvg.res * 0.5);
-            const trvgCenter = this.trvg.ofs.clone().add(halfDiagVec);
-            const trvgRadius = halfDiagVec.length(); // TODO: proper bounds
 
             const scanRes = .5;
             const numScan0 = Math.ceil(trvgRadius * 2 / scanRes);
@@ -1595,12 +1615,15 @@ class Planner {
             const normal = new THREE.Vector3(1, 0, 0);
             const cutDir = new THREE.Vector3(0, 1, 0);
 
-            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, this.toolIx, this.toolLength, ikFunc, this.toolNaturalLength);
-
             const ctMin = this.trvg.queryWorkOffset(cutDir.clone().multiplyScalar(-1));
             const ctMax = this.trvg.queryWorkOffset(cutDir);
             const nrMin = this.trvg.queryWorkOffset(normal.clone().multiplyScalar(-1));
+            const nrMax = this.trvg.queryWorkOffset(normal);
             const cutOffset = new THREE.Vector3(0, 0, -this.stockCutWidth * 0.5); // center of cut path
+
+            const minToolLength = nrMin + nrMax;
+            console.log(`minToolLength: ${minToolLength}`);
+            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, minToolLength, this.toolIx, this.toolLength, ikFunc, this.toolNaturalLength);
 
             const ptBeginBot = offsetPoint(cutOffset, [cutDir, -ctMin], [normal, -nrMin]);
             const ptEndBot = offsetPoint(cutOffset, [cutDir, ctMax], [normal, -nrMin]);
