@@ -445,7 +445,7 @@ class TrackingVoxelGrid {
         const minVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         const maxVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         minShapes.forEach(shape => {
-            minVg.fillShape(shape, 255, ignoreOvercutErrors ? "outside" : "inside"); // hack to get "clean-looking" work after final cut.
+            minVg.fillShape(shape, 255, ignoreOvercutErrors ? "nearest" : "inside"); // hack to get "clean-looking" work after final cut.
         });
         maxShapes.forEach(shape => {
             maxVg.fillShape(shape, 255, "outside");
@@ -1439,6 +1439,7 @@ class Planner {
                     const segShape = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, feedDepth], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
                     // Maybe should check any-non work for above, instead of blocked?
                     // even if above region is cuttable, it will alter tool state unexpectedly.
+                    // Current logic only works correctly if scan pattern is same for different offset.
                     const isBlocked = this.trvg.queryBlocked(segShapeAndAbove);
                     const hasWork = this.trvg.queryHasWork(segShape);
                     const state = isBlocked ? "blocked" : (hasWork ? "work" : "empty");
@@ -1717,7 +1718,7 @@ class Planner {
             const toolIx = this.toolIx;
 
             sweepPath.nonRemove("move-in", ptBeginBot);
-            sweepPath.removeHorizontal(ptEndBot, 123, this.toolDiameter, this.toolDiameter);
+            sweepPath.removeHorizontal(ptEndBot, 123, this.stockCutWidth, this.stockCutWidth);
 
             return {
                 partialPath: sweepPath,
