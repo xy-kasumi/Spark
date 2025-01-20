@@ -28,6 +28,17 @@ export const createELHShape = (p, q, n, r, h) => {
 };
 
 /**
+ * @param {Vector3} center Center of the box
+ * @param {Vector3} halfVec0 Half vector of the box (must be perpendicular to halfVec1 & halfVec2)
+ * @param {Vector3} halfVec1 Half vector of the box (must be perpendicular to halfVec0 & halfVec2)
+ * @param {Vector3} halfVec2 Half vector of the box (must be perpendicular to halfVec0 & halfVec1)
+ * @returns {Object} Shape
+ */
+export const createBoxShape = (center, halfVec0, halfVec1, halfVec2) => {
+    return {type: "box", center, halfVec0, halfVec1, halfVec2};
+}
+
+/**
  * Returns a SDF for a shape.
  * @param {Object} shape Shape object, created by {@link createCylinderShape}, {@link createELHShape}, etc.
  * @returns {Function} SDF: Vector3 -> number (+: outside, 0: surface, -: inside)
@@ -38,6 +49,8 @@ export const createSdf = (shape) => {
             return createSdfCylinder(shape.p, shape.n, shape.r);
         case "ELH":
             return createSdfElh(shape.p, shape.q, shape.n, shape.r, shape.h);
+        case "box":
+            return createSdfBox(shape.center, shape.halfVec0, shape.halfVec1, shape.halfVec2);
         default:
             throw `Unknown shape type: ${shape.type}`;
     }
@@ -115,6 +128,37 @@ export const createSdfElh = (p, q, n, r, h) => {
 
         // Combine 1D + 2D distances.
         return Math.min(Math.max(d1, d2), 0) + Math.hypot(Math.max(d1, 0), Math.max(d2, 0));
+    };
+    return sdf;
+};
+
+/**
+ * @param {Vector3} center Center of the box
+ * @param {Vector3} halfVec0 Half vector of the box (must be perpendicular to halfVec1 & halfVec2)
+ * @param {Vector3} halfVec1 Half vector of the box (must be perpendicular to halfVec0 & halfVec2)
+ * @param {Vector3} halfVec2 Half vector of the box (must be perpendicular to halfVec0 & halfVec1)
+ * @returns {Function} SDF: Vector3 -> number (+: outside, 0: surface, -: inside)
+ */
+export const createSdfBox = (center, halfVec0, halfVec1, halfVec2) => {
+    if (halfVec0.dot(halfVec1) !== 0 || halfVec0.dot(halfVec2) !== 0 || halfVec1.dot(halfVec2) !== 0) {
+        throw "Half vectors must be perpendicular to each other";
+    }
+
+    const unitVec0 = halfVec0.clone().normalize();
+    const unitVec1 = halfVec1.clone().normalize();
+    const unitVec2 = halfVec2.clone().normalize();
+    const halfSize = new Vector3(halfVec0.length(), halfVec1.length(), halfVec2.length());
+
+    const temp = new Vector3();
+    const temp2 = new Vector3();
+    const sdf = p => {
+        let dp = temp.copy(p).sub(center);
+        dp = temp.set(Math.abs(dp.dot(unitVec0)), Math.abs(dp.dot(unitVec1)), Math.abs(dp.dot(unitVec2)));
+        dp.sub(halfSize);
+
+        const dInside = Math.min(0, Math.max(dp.x, dp.y, dp.z));
+        const dOutside = temp2.set(Math.max(0, dp.x), Math.max(0, dp.y), Math.max(0, dp.z)).length();
+        return dInside + dOutside;
     };
     return sdf;
 };

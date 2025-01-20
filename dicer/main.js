@@ -1342,7 +1342,7 @@ class Planner {
             const rows = [];
 
             const feedWidth = toolDiameter / 2;
-            const segmentLength = toolDiameter / 2;
+            const segmentLength = toolDiameter; //  / 2;
             const minAllowedDiameter = toolDiameter / 2;
             // this is very pessimistic, will waste a lot of time & tool.
             // by making this closer to actual work volume, we can generate faster path that use less tool.
