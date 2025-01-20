@@ -989,10 +989,12 @@ class PartialPath {
      * @param {number} sweepIx - Sweep index
      * @param {string} group - Group name
      * @param {THREE.Vector3} normal - Normal vector
+     * @param {number} toolIx - Tool index at partial path creation time
+     * @param {number} toolLength - Tool length at partial path creation time
      * @param {Function} solveIk - #solveIk() function
-     * @param {number} toolLength - Length of the tool
+     * @param {number} toolNaturalLength - Tool natural length
      */
-    constructor(sweepIx, group, normal, solveIk, toolLength) {
+    constructor(sweepIx, group, normal, toolIx, toolLength, solveIk, toolNaturalLength) {
         this.sweepIx = sweepIx;
         this.group = group;
         this.normal = normal;
@@ -1001,7 +1003,9 @@ class PartialPath {
         this.path = [];
         this.prevPtTipPos = null;
         this.solveIk = solveIk;
+        this.toolIx = toolIx;
         this.toolLength = toolLength;
+        this.toolNaturalLength = toolNaturalLength;
     }
 
     #withAxisValue(type, pt) {
@@ -1024,8 +1028,15 @@ class PartialPath {
      * @param {number} length - Length of the tool to discard
      */
     discardToolTip(length) {
-        // TODO: implement
-        console.log("discardToolTip");
+        // TODO: Need to get "required next length". Tool become useless if length after discard is close to zero.
+        if (length > this.toolLength) {
+            // TODO: generate tool change motion
+            this.toolIx++;
+            this.toolLength = this.toolNaturalLength;
+        } else {
+            // TODO: generate tool grind motion
+            this.toolLength -= length;
+        }
     }
 
     /**
@@ -1099,6 +1110,14 @@ class PartialPath {
         return this.path;
     }
 
+    getToolIx() {
+        return this.toolIx;
+    }
+
+    getToolLength() {
+        return this.toolLength;
+    }
+
     getMaxRemoveShapes() {
         return this.maxSweepRemoveShapes;
     }
@@ -1106,7 +1125,6 @@ class PartialPath {
     getMinRemoveShapes() {
         return this.minSweepRemoveShapes;
     }
-
 }
 
 
@@ -1127,15 +1145,15 @@ class Planner {
         this.setVisVisibility = setVisVisibility;
 
         // machine geometries
-        this.toolDiameter = 3;
-        this.toolLength = 25;
+        this.toolNaturalDiameter = 3;
+        this.toolNaturalLength = 25;
 
         this.workOffset = new THREE.Vector3(20, 40, 20); // in machine coords
         this.wireCenter = new THREE.Vector3(30, 15, 30);
         this.stockCenter = new THREE.Vector3(10, 10, 10);
 
         // tool vis
-        this.updateVisTransforms(new THREE.Vector3(-15, -15, 5), new THREE.Vector3(0, 0, 1), this.toolLength);
+        this.updateVisTransforms(new THREE.Vector3(-15, -15, 5), new THREE.Vector3(0, 0, 1), this.toolNaturalLength);
 
         // configuration
         this.ewrMax = 0.3;
@@ -1158,6 +1176,7 @@ class Planner {
         this.remainingVol = 0;
         this.deviation = 0;
         this.toolIx = 0;
+        this.toolLength = this.toolNaturalLength;
         this.showSweepVis = false;
         this.showPlanPath = true;
         this.highlightSweep = 2;
@@ -1248,6 +1267,7 @@ class Planner {
         this.numSweeps = 0;
         this.removedVol = 0;
         this.toolIx = 0;
+        this.toolLength = this.toolNaturalLength;
 
         const simStockLength = this.stockCutWidth + this.simWorkBuffer + this.aboveWorkSize;
         const stockGeom = generateStockGeom(this.stockDiameter / 2, simStockLength);
@@ -1270,15 +1290,19 @@ class Planner {
 
         ////////////////////////////////////////
         // Sweep generators
+        // Plan consists of sweeps. Sweep is a composable set of operation that contains actual movements (path).
+        // No movements exists outside of sweeps.
+        //
+        // For sweep to have nice composability, we have following pre/post-condition for every sweep:
+        // * Tool is not touching work nor grinder
+        // * De-energized
+        // * Tool shape is prestine (have original tool diameter). Tool length can differ from original.
 
-        // Pre/post-condition of sweep:
-        // * tool is not touching work nor grinder
-        // * de-energized
-        // returns: true if sweep is committed, false if not
-
-        // Sweep hyperparams
+        // Global sweep hyperparams
         const feedDepth = 1; // TODO: reduce later. current values allow fast debug, but too big for actual use.
         const sweepVises = [];
+
+        const ikFunc = (tipPos, tipNormalW, toolLength, isPosW) => this.#solveIk(tipPos, tipNormalW, toolLength, isPosW);
 
         /**
          * Generate "planar sweep", directly below given plane.
@@ -1286,11 +1310,11 @@ class Planner {
          * 
          * @param {THREE.Vector3} normal Normal vector, in work coords. = tip normal
          * @param {number} offset Offset from the plane. offset * normal forms the plane.
-         * @param {number} toolDiameter Tool diameter
-         * @returns {{partialPath: PartialPath, toolIx: number, toolLength: number, ignoreOvercutErrors: boolean} | null} null if impossible
+         * @param {number} toolDiameter Tool diameter to use for this sweep.
+         * @returns {{partialPath: PartialPath, ignoreOvercutErrors: boolean} | null} null if impossible
          */
         const genPlanarSweep = (normal, offset, toolDiameter) => {
-            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, (tipPos, tipNormalW, toolLength, isPosW) => this.#solveIk(tipPos, tipNormalW, toolLength, isPosW), this.toolLength);
+            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, this.toolIx, this.toolLength, ikFunc, this.toolNaturalLength);
 
             const rot = createRotationWithZ(normal);
             const feedDir = new THREE.Vector3(1, 0, 0).transformDirection(rot);
@@ -1457,9 +1481,7 @@ class Planner {
             }
 
             // Execute scans one by one.
-            let toolLength = this.toolLength;
-            let toolIx = this.toolIx;
-            let feedDepthWithExtra = feedDepth + this.resMm * 2; // treat a bit of extra is weared to remove any weird effect, both in real machine and min-cut simulation.
+            const feedDepthWithExtra = feedDepth + this.resMm * 2; // treat a bit of extra is weared to remove any weird effect, both in real machine and min-cut simulation.
             const evacuateOffset = normal.clone().multiplyScalar(3);
 
             for (const scan of scans) {
@@ -1482,7 +1504,7 @@ class Planner {
                 for (let i = 0; i < numScans; i++) {
                     sweepPath.nonRemove("move-in", scan.apBot.clone().add(evacuateOffset));
                     sweepPath.nonRemove("move-in", scan.apBot);
-                    sweepPath.removeHorizontal(endBot, 0, this.toolDiameter, 0); // we don't know min-cut during repeated scan.
+                    sweepPath.removeHorizontal(endBot, 0, toolDiameter, 0); // we don't know min-cut during repeated scan.
                     sweepPath.nonRemove("move-out", endBot.clone().add(evacuateOffset));
                     sweepPath.discardToolTip(feedDepthWithExtra);
                 }
@@ -1495,19 +1517,17 @@ class Planner {
             }
             return {
                 partialPath: sweepPath,
-                toolIx: toolIx,
-                toolLength: toolLength,
             };
         };
 
         /**
          * Generate "drill sweep", axis=normal.
          * @param {THREE.Vector3} normal Normal vector, in work coords. = tip normal
-         * @param {number} toolDiameter Tool diameter
-         * @returns {{partialPath: PartialPath, toolIx: number, toolLength: number, ignoreOvercutErrors: boolean} | null} null if impossible
+         * @param {number} toolDiameter Tool diameter to use for this sweep.
+         * @returns {{partialPath: PartialPath, ignoreOvercutErrors: boolean} | null} null if impossible
          */
         const genDrillSweep = (normal, toolDiameter) => {
-            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, (tipPos, tipNormalW, toolLength, isPosW) => this.#solveIk(tipPos, tipNormalW, toolLength, isPosW), this.toolLength);
+            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, this.toolIx, this.toolLength, ikFunc, this.toolNaturalLength);
 
             const rot = createRotationWithZ(normal);
             const scanDir0 = new THREE.Vector3(1, 0, 0).transformDirection(rot);
@@ -1547,14 +1567,11 @@ class Planner {
                     }
                 }
             }
-            console.log("drillHoles", drillHoles);
             if (drillHoles.length === 0) {
                 return null;
             }
 
             // Generate paths
-            let toolLength = this.toolLength;
-            let toolIx = this.toolIx;
             const evacuateOffset = normal.clone().multiplyScalar(3);
 
             drillHoles.forEach(hole => {
@@ -1565,14 +1582,12 @@ class Planner {
             
             return {
                 partialPath: sweepPath,
-                toolIx: toolIx,
-                toolLength: toolLength,
             };
         };
 
         /**
          * Generate "part off" sweep.
-         * @returns {{partialPath: PartialPath, toolIx: number, toolLength: number, ignoreOvercutErrors: boolean}}
+         * @returns {{partialPath: PartialPath, ignoreOvercutErrors: boolean}}
          */
         const genPartOffSweep = () => {
             // TODO: use rectangular tool for efficiency.
@@ -1580,7 +1595,7 @@ class Planner {
             const normal = new THREE.Vector3(1, 0, 0);
             const cutDir = new THREE.Vector3(0, 1, 0);
 
-            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, (tipPos, tipNormalW, toolLength, isPosW) => this.#solveIk(tipPos, tipNormalW, toolLength, isPosW), this.toolLength);
+            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, this.toolIx, this.toolLength, ikFunc, this.toolNaturalLength);
 
             const ctMin = this.trvg.queryWorkOffset(cutDir.clone().multiplyScalar(-1));
             const ctMax = this.trvg.queryWorkOffset(cutDir);
@@ -1590,16 +1605,11 @@ class Planner {
             const ptBeginBot = offsetPoint(cutOffset, [cutDir, -ctMin], [normal, -nrMin]);
             const ptEndBot = offsetPoint(cutOffset, [cutDir, ctMax], [normal, -nrMin]);
 
-            const toolLength = this.toolLength;
-            const toolIx = this.toolIx;
-
             sweepPath.nonRemove("move-in", ptBeginBot);
             sweepPath.removeHorizontal(ptEndBot, 123, this.stockCutWidth, this.stockCutWidth);
 
             return {
                 partialPath: sweepPath,
-                toolIx: toolIx,
-                toolLength: toolLength,
                 ignoreOvercutErrors: true,
             };
         };
@@ -1616,8 +1626,11 @@ class Planner {
             new THREE.Vector3(0, 0, 1),
         ];
 
-        // Verify and commit sweep.
-        // returns: true if committed, false if rejected.
+        /**
+         * Verify and commit sweep.
+         * @param {{partialPath: PartialPath, ignoreOvercutErrors: boolean}} sweep - Sweep to commit
+         * @returns {boolean} true if committed, false if rejected.
+         */
         const tryCommitSweep = (sweep) => {
             // update sweep vis regardless of commit result
             this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
@@ -1636,8 +1649,8 @@ class Planner {
                 this.removedVol += volRemoved;
                 this.remainingVol = this.trvg.getRemainingWorkVol();
                 this.planPath.push(...sweep.partialPath.getPath());
-                this.toolIx = sweep.toolIx;
-                this.toolLength = sweep.toolLength;
+                this.toolIx = sweep.partialPath.getToolIx();
+                this.toolLength = sweep.partialPath.getToolLength();
                 this.numSweeps++;
                 this.highlightGui.max(this.numSweeps - 1); // ugly...
                 this.highlightSweep = this.numSweeps - 1;
@@ -1660,7 +1673,7 @@ class Planner {
             let offset = this.trvg.queryWorkOffset(normal);
 
             while (true) {
-                const sweep = genPlanarSweep(normal, offset, this.toolDiameter);
+                const sweep = genPlanarSweep(normal, offset, this.toolNaturalDiameter);
                 if (!sweep) {
                     break;
                 }
@@ -1674,7 +1687,7 @@ class Planner {
 
         // rough drills
         for (const normal of candidateNormals) {
-            const sweep = genDrillSweep(normal, this.toolDiameter / 4);
+            const sweep = genDrillSweep(normal, this.toolNaturalDiameter / 4);
             this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
             if (sweep) {
                 if (tryCommitSweep(sweep)) {
@@ -1756,7 +1769,7 @@ class Planner {
     }
 
     updateVisTransforms(tipPos, tipNormal, toolLength) {
-        const tool = generateTool(toolLength, this.toolDiameter);
+        const tool = generateTool(toolLength, this.toolNaturalDiameter);
         this.updateVis("tool", [tool], false);
 
         tool.position.copy(tipPos);
