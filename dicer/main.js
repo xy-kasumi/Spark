@@ -11,7 +11,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from './N8AO.js';
 import { VoxelGrid } from './voxel.js';
 import { diceSurf } from './mesh.js';
-import { createSdf, createSdfCylinder, createELHShape, createCylinderShape, createBoxShape, anyPointInsideIs, everyPointInsideIs } from './voxel.js';
+import { createSdf, createELHShape, createCylinderShape, createBoxShape, anyPointInsideIs, everyPointInsideIs } from './voxel.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Basis
@@ -88,82 +88,6 @@ const createTextVis = (p, text, size=0.25, color="#222222") => {
     const textMesh = new THREE.Mesh(textGeom, new THREE.MeshBasicMaterial({ color }));
     textMesh.position.copy(p);
     return textMesh;
-};
-
-
-/**
- * Creates rotational axis visualizer (ring+axis)
- * @param {THREE.Vector3} axis Rotates around this axis in CCW
- * @param {number} [size=1] Feature size (typically ring radius)
- * @param {THREE.Color} [color=axisColorA] Color
- * @returns {THREE.Object3D} Axis visualization object
- */
-const createRotationAxisHelper = (axis, size = 1, color = axisColorA) => {
-    const NUM_RING_PTS = 32;
-
-    /////
-    // contsutuct axis & ring out of line segments
-
-    // Generate as Z+ axis, scale=1 and rotate & re-scale later.
-    const buffer = new THREE.BufferGeometry();
-    const pts = [];
-    // add axis
-    pts.push(0, 0, -1);
-    pts.push(0, 0, 1);
-    // add ring
-    for (let i = 0; i < NUM_RING_PTS; i++) {
-        const angle0 = 2 * Math.PI * i / NUM_RING_PTS;
-        const angle1 = 2 * Math.PI * (i + 1) / NUM_RING_PTS;
-        pts.push(Math.cos(angle0), Math.sin(angle0), 0);
-        pts.push(Math.cos(angle1), Math.sin(angle1), 0);
-    }
-    buffer.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
-    const lineSegs = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color }));
-
-    /////
-    // construct direction cones
-    const geom = new THREE.ConeGeometry(0.1, 0.2);
-    const coneMat = new THREE.MeshBasicMaterial({ color });
-    const cone0 = new THREE.Mesh(geom, coneMat);
-    const cone1 = new THREE.Mesh(geom, coneMat);
-    
-    const localHelper = new THREE.Object3D();
-    localHelper.add(lineSegs);
-    localHelper.add(cone0);
-    cone0.position.set(0.99, 0, 0);
-
-    localHelper.add(cone1);
-    cone1.scale.set(1, -1, 1);
-    cone1.position.set(-0.99, 0, 0);
-
-    ///// 
-    // scale & rotate
-
-    // create orthonormal basis for rotation.
-    const basisZ = axis.normalize();
-    let basisY;
-    const b0 = new THREE.Vector3(1, 0, 0);
-    const b1 = new THREE.Vector3(0, 1, 0);
-    if (b0.clone().cross(basisZ).length() > 0.3) {
-        basisY = b0.clone().cross(basisZ).normalize();
-    } else {
-        basisY = b1.clone().cross(basisZ).normalize();
-    }
-    const basisX = basisY.clone().cross(basisZ).normalize();
-
-    // init new grid
-    const lToWMat3 = new THREE.Matrix3(
-        basisX.x, basisY.x, basisZ.x,
-        basisX.y, basisY.y, basisZ.y,
-        basisX.z, basisY.z, basisZ.z,
-    );
-
-    const helper = new THREE.Object3D();
-    helper.add(localHelper);
-
-    localHelper.scale.set(size, size, size);
-    localHelper.applyMatrix4(new THREE.Matrix4().identity().setFromMatrix3(lToWMat3));
-    return helper;
 };
 
 
@@ -560,33 +484,6 @@ class TrackingVoxelGrid {
         return anyPointInsideIs(this, sdf, 0, (ix, iy, iz) => {
             const st = this.get(ix, iy, iz);
             return st === C_EMPTY_REMAINING || st === C_PARTIAL_REMAINING;
-        });
-    }
-
-    /**
-     * Returns true if ok to cut given region. Does not check it has meaningful work left. (might be already empty)
-     */
-    queryOkToCut(shape) {
-        const sdf = createSdf(shape);
-        const margin = this.res * 0.5 * Math.sqrt(3);
-        return everyPointInsideIs(this, sdf, 0, (ix, iy, iz) => {
-            const st = this.get(ix, iy, iz);
-            return st === C_EMPTY_DONE || st === C_EMPTY_REMAINING;
-        });
-    }
-
-    /**
-     * @deprecated Use queryHasWork(), queryOkToCut() instead
-     */
-    queryOkToCutCylinder(p, n, r) {
-        const sdf = createSdfCylinder(p, n, r);
-        const margin = this.res * 0.5 * Math.sqrt(3);
-
-        return everyPointInsideIs(this, sdf, margin, (ix, iy, iz) => {
-            const st = this.get(ix, iy, iz);
-            return st === C_EMPTY_DONE || st === C_EMPTY_REMAINING;
-        }) && anyPointInsideIs(this, sdf, margin, (ix, iy, iz) => {
-            return this.getW(ix, iy, iz) === W_REMAINING;
         });
     }
 
@@ -1128,6 +1025,7 @@ class PartialPath {
      */
     discardToolTip(length) {
         // TODO: implement
+        console.log("discardToolTip");
     }
 
     /**
@@ -1439,21 +1337,6 @@ class Planner {
                 rows.push(row);
             }
 
-            /**
-             * Calculates how tool diameter shrinks after cutting a single segment of given remaining work volume.
-             * This function does not check if diameter is too small to cut the work.
-             * 
-             * @param {number} workVol - Remaining work volume in mm^3. Needs to be max estimate to be correct.
-             * @param {number} diaBefore - Tool diameter before cutting
-             * @returns {number} Tool diameter after cutting
-             */
-            const getMinDiaAfterSegWork = (workVol, diaBefore) => {
-                let maxToolWearVol = workVol * this.ewrMax;
-                let toolArea = Math.PI * (diaBefore / 2) ** 2;
-                toolArea = Math.max(0, toolArea - maxToolWearVol / feedDepth);
-                return Math.sqrt(toolArea / Math.PI) * 2;
-            };
-
             // From segemnts, create "scans".
             // Scan will end at scanEndBot = apBot + scanDir * scanLen. half-cylinder of toolDiameter will extrude from scanEndBot at max.
             const scans = []; // {apBot, scanDir, scanLen}
@@ -1637,7 +1520,7 @@ class Planner {
             const scanRes = .5;
             const numScan0 = Math.ceil(trvgRadius * 2 / scanRes);
             const numScan1 = Math.ceil(trvgRadius * 2 / scanRes);
-            const scanOrigin = trvgCenter.clone().sub(scanDir0.clone().multiplyScalar(trvgRadius)).sub(scanDir1.clone().multiplyScalar(trvgRadius));
+            const scanOrigin = offsetPoint(trvgCenter, [scanDir0, -trvgRadius], [scanDir1, -trvgRadius]);
 
             const holeDiameter = toolDiameter * 1.1;
 
@@ -1646,13 +1529,12 @@ class Planner {
             const drillHoles = [];
             for (let ixScan0 = 0; ixScan0 < numScan0; ixScan0++) {
                 for (let ixScan1 = 0; ixScan1 < numScan1; ixScan1++) {
-                    const scanPt = scanOrigin.clone()
-                        .add(scanDir0.clone().multiplyScalar(scanRes * ixScan0))
-                        .add(scanDir1.clone().multiplyScalar(scanRes * ixScan1));
+                    const scanPt = offsetPoint(scanOrigin.clone(), [scanDir0, scanRes * ixScan0], [scanDir1, scanRes * ixScan1]);
                     
-                    const holeBot = scanPt.clone().sub(normal.clone().multiplyScalar(trvgRadius));
-                    const holeTop = holeBot.clone().add(normal.clone().multiplyScalar(trvgRadius * 2));
-                    const ok = this.trvg.queryOkToCutCylinder(holeBot, normal, holeDiameter / 2);
+                    const holeBot = offsetPoint(scanPt, [normal, -trvgRadius]);
+                    const holeTop = offsetPoint(holeBot, [normal, trvgRadius * 2]);
+                    const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2);
+                    const ok = this.trvg.queryHasWork(holeShape) && !this.trvg.queryBlocked(holeShape);
                     if (ok) {
                         //debug.vlogE(createErrorLocVis(holeBot, "red"));
                         drillHoles.push({
@@ -1705,8 +1587,8 @@ class Planner {
             const nrMin = this.trvg.queryWorkOffset(normal.clone().multiplyScalar(-1));
             const cutOffset = new THREE.Vector3(0, 0, -this.stockCutWidth * 0.5); // center of cut path
 
-            const ptBeginBot = cutOffset.clone().add(cutDir.clone().multiplyScalar(-ctMin)).add(normal.clone().multiplyScalar(-nrMin));
-            const ptEndBot = cutOffset.clone().add(cutDir.clone().multiplyScalar(ctMax)).add(normal.clone().multiplyScalar(-nrMin));
+            const ptBeginBot = offsetPoint(cutOffset, [cutDir, -ctMin], [normal, -nrMin]);
+            const ptEndBot = offsetPoint(cutOffset, [cutDir, ctMax], [normal, -nrMin]);
 
             const toolLength = this.toolLength;
             const toolIx = this.toolIx;
