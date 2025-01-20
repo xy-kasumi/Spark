@@ -1502,6 +1502,7 @@ class Planner {
             const feedDepthWithExtra = feedDepth + this.resMm * 2; // treat a bit of extra is weared to remove any weird effect, both in real machine and min-cut simulation.
             const evacuateOffset = normal.clone().multiplyScalar(3);
 
+            let remainingToolArea = 1; // keep remaining bit of tool for next scan.
             for (const scan of scans) {
                 const endBot = offsetPoint(scan.apBot, [scan.scanDir, scan.scanLen]);
 
@@ -1513,21 +1514,41 @@ class Planner {
                 const needToKeep = 0.6; // 0.5 is theoretical min. extra will be buffers.
                 const scanWorkArea = scan.workSegNum * segmentLength * toolDiameter;
                 const toolArea = Math.PI * (toolDiameter / 2) ** 2;
-                const numScans = Math.ceil(scanWorkArea * this.ewrMax / toolArea + needToKeep);
-                // console.log(`numScans: ${scanWorkArea * this.ewrMax / toolArea + needToKeep} -> ${numScans}`);
+                let areaConsumption = scanWorkArea * this.ewrMax / toolArea + needToKeep;
+                const numScans = Math.ceil(areaConsumption);
 
                 // This is most basic path.
                 // In reality, we don't need to go back to beginning nor go to end every time.
                 // We can also continue using weared tool in next scan w/o refresh.
                 for (let i = 0; i < numScans; i++) {
+                    // Ensure scan is done with full tool.
+                    if (remainingToolArea < 1) {
+                        sweepPath.discardToolTip(feedDepthWithExtra);
+                        remainingToolArea = 1;
+                    }
+
                     sweepPath.nonRemove("move-in", scan.apBot.clone().add(evacuateOffset));
                     sweepPath.nonRemove("move-in", scan.apBot);
                     sweepPath.removeHorizontal(endBot, 0, toolDiameter, 0); // we don't know min-cut during repeated scan.
                     sweepPath.nonRemove("move-out", endBot.clone().add(evacuateOffset));
-                    sweepPath.discardToolTip(feedDepthWithExtra);
+
+                    if (areaConsumption > 1) {
+                        remainingToolArea--;
+                        areaConsumption--;
+                    } else {
+                        remainingToolArea -= areaConsumption;
+                        areaConsumption = 0;
+                    }
+                }
+                if (areaConsumption > 0) {
+                    throw "numScan computation bug";
                 }
                 // after enough number of scans, we know min-cut covers rectangular region.
                 sweepPath.addMinRemoveShape(createBoxShapeFrom(scan.apBot, ["origin", normal, feedDepthWithExtra], ["origin", scan.scanDir, scan.scanLen], ["center", rowDir, toolDiameter]));
+            }
+            // clean tool to prestine state to satisfy sweep composability.
+            if (remainingToolArea < 0) {
+                sweepPath.discardToolTip(feedDepthWithExtra);
             }
 
             if (sweepPath.getPath().length === 0) {
