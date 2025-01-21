@@ -980,6 +980,81 @@ const generateTool = (toolLength, toolDiameter) => {
     return toolOrigin;
 };
 
+/**
+ * Spark WG1 machine physical configuration.
+ */
+const sparkWg1Config = {
+    toolNaturalDiameter: 3,
+    toolNaturalLength: 25,
+
+    workOffset: new THREE.Vector3(20, 40, 20), // in machine coords
+    wireCenter: new THREE.Vector3(30, 15, 30),
+    stockCenter: new THREE.Vector3(10, 10, 10),
+
+
+    /**
+     * Computes tool base & work table pos from tip target.
+     *
+     * @param {THREE.Vector3} tipPos - Tip position in work or machine coordinates (determined by isPosW)
+     * @param {THREE.Vector3} tipNormalW - Tip normal in work coordinates. Tip normal corresponds to work surface, and points towards tool holder
+     * @param {number} toolLength - Tool length
+     * @param {boolean} isPosW - True if tipPos is in work coordinates, false if in machine coordinates
+     * @returns {{vals: {x: number, y: number, z: number, b: number, c: number}, tipPosM: THREE.Vector3, tipPosW: THREE.Vector3}}
+     *   - vals: Machine instructions for moving work table & tool base
+     *   - tipPosM: Tip position in machine coordinates
+     *   - tipPosW: Tip position in work coordinates
+     */
+    solveIk(tipPos, tipNormalW, toolLength, isPosW) {
+        // Order of determination ("IK")
+        // 1. Determine B,C axis
+        // 2. Determine X,Y,Z axis
+        // TODO: A-axis
+        // (X,Y,Z) -> B * toolLen = tipPt
+
+        const EPS_ANGLE = 1e-3 / 180 * Math.PI; // 1/1000 degree
+
+        const n = tipNormalW.clone();
+        if (n.z < 0) {
+            console.error("Impossible tool normal; path will be invalid", n);
+        }
+
+        n.z = 0;
+        const bAngle = Math.asin(n.length());
+        let cAngle = 0;
+        if (bAngle < EPS_ANGLE) {
+            // Pure Z+. Prefer neutral work rot.
+            cAngle = 0;
+        } else {
+            cAngle = -Math.atan2(n.y, n.x);
+        }
+        
+        const tipPosM = tipPos.clone();
+        const tipPosW = tipPos.clone();
+        if (isPosW) {
+            tipPosM.applyAxisAngle(new THREE.Vector3(0, 0, 1), cAngle);
+            tipPosM.add(this.workOffset);
+        } else {
+            tipPosW.sub(this.workOffset);
+            tipPosW.applyAxisAngle(new THREE.Vector3(0, 0, 1), -cAngle);
+        }
+
+        const offsetBaseToTip = new THREE.Vector3(-Math.sin(bAngle), 0, -Math.cos(bAngle)).multiplyScalar(toolLength);
+        const tipBasePosM = tipPosM.clone().sub(offsetBaseToTip);
+
+        return {
+            vals: {
+                x: tipBasePosM.x,
+                y: tipBasePosM.y,
+                z: tipBasePosM.z,
+                b: bAngle,
+                c: cAngle,
+            },
+            tipPosM: tipPosM,
+            tipPosW: tipPosW,
+        };
+    }
+};
+
 
 /**
  * Utility to accumulate correct path for short-ish tool paths. (e.g. single sweep or part of it)
@@ -989,14 +1064,14 @@ class PartialPath {
      * @param {number} sweepIx - Sweep index
      * @param {string} group - Group name
      * @param {THREE.Vector3} normal - Normal vector
-     * @param {number} minToolLength - Minimum tool length required for this partial path.
-     * @param {number} toolIx - Tool index at partial path creation time
-     * @param {number} toolLength - Tool length at partial path creation time
-     * @param {Function} solveIk - #solveIk() function
-     * @param {number} toolNaturalLength - Tool natural length
+     * @param {number} minToolLength - Minimum tool length required
+     * @param {number} toolIx - Tool index
+     * @param {number} toolLength - Current tool length
+     * @param {Object} machineConfig - Holds solveIk() and .toolNaturalLength
      */
-    constructor(sweepIx, group, normal, minToolLength, toolIx, toolLength, solveIk, toolNaturalLength) {
-        if (this.toolNaturalLength < this.minToolLength) {
+    constructor(sweepIx, group, normal, minToolLength, toolIx, toolLength, machineConfig) {
+        this.machineConfig = machineConfig;
+        if (this.machineConfig.toolNaturalLength < this.minToolLength) {
             throw "required min tool length impossible";
         }
         
@@ -1004,14 +1079,12 @@ class PartialPath {
         this.group = group;
         this.normal = normal;
         this.minToolLength = minToolLength;
+        this.toolIx = toolIx;
+        this.toolLength = toolLength;
         this.minSweepRemoveShapes = [];
         this.maxSweepRemoveShapes = [];
         this.path = [];
         this.prevPtTipPos = null;
-        this.solveIk = solveIk;
-        this.toolIx = toolIx;
-        this.toolLength = toolLength;
-        this.toolNaturalLength = toolNaturalLength;
 
         if (this.toolLength < this.minToolLength) {
             this.#changeTool();
@@ -1022,10 +1095,10 @@ class PartialPath {
 
     #withAxisValue(type, pt) {
         const isPosW = pt.tipPosW !== undefined;
-        const ikResult = this.solveIk(isPosW ? pt.tipPosW : pt.tipPosM, this.normal, this.toolLength, isPosW);
+        const ikResult = this.machineConfig.solveIk(isPosW ? pt.tipPosW : pt.tipPosM, this.normal, this.toolLength, isPosW);
         return {
             ...pt,
-            type: type,
+            type,
             tipPosM: ikResult.tipPosM,
             tipPosW: ikResult.tipPosW,
             axisValues: ikResult.vals,
@@ -1044,7 +1117,7 @@ class PartialPath {
         if (toolLenAfter < this.minToolLength) {
             this.#changeTool();
             this.toolIx++;
-            this.toolLength = this.toolNaturalLength;
+            this.toolLength = this.machineConfig.toolNaturalLength;
         } else {
             this.#grindTool(discardLength);
             this.toolLength -= discardLength;
@@ -1063,6 +1136,9 @@ class PartialPath {
         // go "tool bank" location with new tool ix
         // exec "tool-insert" movement
         // evacuate to nearest neutral space
+
+        // concept of "space"
+        // work-space, grinder-space, tool-bank-space, tool-remover-space, neutral-space
     }
 
     /**
@@ -1181,13 +1257,7 @@ class Planner {
         this.updateVis = updateVis;
         this.setVisVisibility = setVisVisibility;
 
-        // machine geometries
-        this.toolNaturalDiameter = 3;
-        this.toolNaturalLength = 25;
-
-        this.workOffset = new THREE.Vector3(20, 40, 20); // in machine coords
-        this.wireCenter = new THREE.Vector3(30, 15, 30);
-        this.stockCenter = new THREE.Vector3(10, 10, 10);
+        this.machineConfig = sparkWg1Config; // in future, there will be multiple options.
 
         // tool vis
         this.updateVisTransforms(new THREE.Vector3(-15, -15, 5), new THREE.Vector3(0, 0, 1), this.toolNaturalLength);
@@ -1304,7 +1374,7 @@ class Planner {
         this.numSweeps = 0;
         this.removedVol = 0;
         this.toolIx = 0;
-        this.toolLength = this.toolNaturalLength;
+        this.toolLength = this.machineConfig.toolNaturalLength;
 
         const simStockLength = this.stockCutWidth + this.simWorkBuffer + this.aboveWorkSize;
         const stockGeom = generateStockGeom(this.stockDiameter / 2, simStockLength);
@@ -1339,8 +1409,6 @@ class Planner {
         const feedDepth = 1; // TODO: reduce later. current values allow fast debug, but too big for actual use.
         const sweepVises = [];
 
-        const ikFunc = (tipPos, tipNormalW, toolLength, isPosW) => this.#solveIk(tipPos, tipNormalW, toolLength, isPosW);
-
         /**
          * Generate "planar sweep", directly below given plane.
          * Planer sweep only uses horizontal cuts.
@@ -1357,7 +1425,7 @@ class Planner {
             }
             const minToolLength = (workOffset - offset) + feedDepth;
             console.log(`minToolLength: ${minToolLength}`);
-            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, minToolLength, this.toolIx, this.toolLength, ikFunc, this.toolNaturalLength);
+            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, minToolLength, this.toolIx, this.toolLength, this.machineConfig);
 
             const rot = createRotationWithZ(normal);
             const feedDir = new THREE.Vector3(1, 0, 0).transformDirection(rot);
@@ -1597,7 +1665,7 @@ class Planner {
 
             const minToolLength = trvgRadius * 2;
             console.log(`minToolLength: ${minToolLength}`);
-            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, minToolLength, this.toolIx, this.toolLength, ikFunc, this.toolNaturalLength);
+            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, minToolLength, this.toolIx, this.toolLength, this.machineConfig);
 
             const rot = createRotationWithZ(normal);
             const scanDir0 = new THREE.Vector3(1, 0, 0).transformDirection(rot);
@@ -1669,7 +1737,7 @@ class Planner {
 
             const minToolLength = nrMin + nrMax;
             console.log(`minToolLength: ${minToolLength}`);
-            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, minToolLength, this.toolIx, this.toolLength, ikFunc, this.toolNaturalLength);
+            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, minToolLength, this.toolIx, this.toolLength, this.machineConfig);
 
             const ptBeginBot = offsetPoint(cutOffset, [cutDir, -ctMin], [normal, -nrMin]);
             const ptEndBot = offsetPoint(cutOffset, [cutDir, ctMax], [normal, -nrMin]);
@@ -1742,7 +1810,7 @@ class Planner {
             let offset = this.trvg.queryWorkOffset(normal);
 
             while (true) {
-                const sweep = genPlanarSweep(normal, offset, this.toolNaturalDiameter);
+                const sweep = genPlanarSweep(normal, offset, this.machineConfig.toolNaturalDiameter);
                 if (!sweep) {
                     break;
                 }
@@ -1756,7 +1824,7 @@ class Planner {
 
         // rough drills
         for (const normal of candidateNormals) {
-            const sweep = genDrillSweep(normal, this.toolNaturalDiameter / 4);
+            const sweep = genDrillSweep(normal, this.machineConfig.toolNaturalDiameter / 4);
             this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
             if (sweep) {
                 if (tryCommitSweep(sweep)) {
@@ -1775,70 +1843,9 @@ class Planner {
         console.log(`possible sweep exhausted after ${(performance.now() - t0) / 1e3}sec`);
     }
 
-    /**
-     * Computes tool base & work table pos from tip target.
-     *
-     * @param {THREE.Vector3} tipPos - Tip position in work or machine coordinates (determined by isPosW)
-     * @param {THREE.Vector3} tipNormalW - Tip normal in work coordinates. Tip normal corresponds to work surface, and points towards tool holder
-     * @param {number} toolLength - Tool length
-     * @param {boolean} isPosW - True if tipPos is in work coordinates, false if in machine coordinates
-     * @returns {{vals: {x: number, y: number, z: number, b: number, c: number}, tipPosM: THREE.Vector3, tipPosW: THREE.Vector3}}
-     *   - vals: Machine instructions for moving work table & tool base
-     *   - tipPosM: Tip position in machine coordinates
-     *   - tipPosW: Tip position in work coordinates
-     */
-    #solveIk(tipPos, tipNormalW, toolLength, isPosW) {
-        // Order of determination ("IK")
-        // 1. Determine B,C axis
-        // 2. Determine X,Y,Z axis
-        // TODO: A-axis
-        // (X,Y,Z) -> B * toolLen = tipPt
-
-        const EPS_ANGLE = 1e-3 / 180 * Math.PI; // 1/1000 degree
-
-        const n = tipNormalW.clone();
-        if (n.z < 0) {
-            console.error("Impossible tool normal; path will be invalid", n);
-        }
-
-        n.z = 0;
-        const bAngle = Math.asin(n.length());
-        let cAngle = 0;
-        if (bAngle < EPS_ANGLE) {
-            // Pure Z+. Prefer neutral work rot.
-            cAngle = 0;
-        } else {
-            cAngle = -Math.atan2(n.y, n.x);
-        }
-        
-        const tipPosM = tipPos.clone();
-        const tipPosW = tipPos.clone();
-        if (isPosW) {
-            tipPosM.applyAxisAngle(new THREE.Vector3(0, 0, 1), cAngle);
-            tipPosM.add(this.workOffset);
-        } else {
-            tipPosW.sub(this.workOffset);
-            tipPosW.applyAxisAngle(new THREE.Vector3(0, 0, 1), -cAngle);
-        }
-
-        const offsetBaseToTip = new THREE.Vector3(-Math.sin(bAngle), 0, -Math.cos(bAngle)).multiplyScalar(toolLength);
-        const tipBasePosM = tipPosM.clone().sub(offsetBaseToTip);
-
-        return {
-            vals: {
-                x: tipBasePosM.x,
-                y: tipBasePosM.y,
-                z: tipBasePosM.z,
-                b: bAngle,
-                c: cAngle,
-            },
-            tipPosM: tipPosM,
-            tipPosW: tipPosW,
-        };
-    }
 
     updateVisTransforms(tipPos, tipNormal, toolLength) {
-        const tool = generateTool(toolLength, this.toolNaturalDiameter);
+        const tool = generateTool(toolLength, this.machineConfig.toolNaturalDiameter);
         this.updateVis("tool", [tool], false);
 
         tool.position.copy(tipPos);
