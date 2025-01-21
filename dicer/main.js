@@ -1014,7 +1014,7 @@ class PartialPath {
         this.toolNaturalLength = toolNaturalLength;
 
         if (this.toolLength < this.minToolLength) {
-            // TODO: generate tool change motion
+            this.#changeTool();
             this.toolIx++;
             this.toolLength = this.toolNaturalLength;
         }
@@ -1042,13 +1042,38 @@ class PartialPath {
     discardToolTip(discardLength) {
         const toolLenAfter = this.toolLength - discardLength;
         if (toolLenAfter < this.minToolLength) {
-            // TODO: generate tool change motion
+            this.#changeTool();
             this.toolIx++;
             this.toolLength = this.toolNaturalLength;
         } else {
-            // TODO: generate tool grind motion
+            this.#grindTool(discardLength);
             this.toolLength -= discardLength;
         }
+    }
+
+    /**
+     * Add tool-change movement.
+     */
+    #changeTool() {
+        // TODO: implement
+        //
+        // go "tool remover" location
+        // exec "tool-pull" movement
+        //
+        // go "tool bank" location with new tool ix
+        // exec "tool-insert" movement
+        // evacuate to nearest neutral space
+    }
+
+    /**
+     * Add tool-grind movement.
+     */
+    #grindTool(discardLength) {
+        // TODO: implement
+        //
+        // go "grinder" bottom
+        // feed up, rotating and feeding wire
+        // evacuate to nearest neutral space
     }
 
     /**
