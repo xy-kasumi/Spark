@@ -989,6 +989,8 @@ const sparkWg1Config = {
 
     workOffset: new THREE.Vector3(20, 40, 20), // in machine coords
     wireCenter: new THREE.Vector3(30, 15, 30),
+    toolRemoverCenter: new THREE.Vector3(40, 10, 30),
+    toolBankOrigin: new THREE.Vector3(20, 20, 15),
     stockCenter: new THREE.Vector3(10, 10, 10),
 
 
@@ -1067,7 +1069,7 @@ class PartialPath {
      * @param {number} minToolLength - Minimum tool length required
      * @param {number} toolIx - Tool index
      * @param {number} toolLength - Current tool length
-     * @param {Object} machineConfig - Holds solveIk() and .toolNaturalLength
+     * @param {Object} machineConfig - Target machine's physical configuration
      */
     constructor(sweepIx, group, normal, minToolLength, toolIx, toolLength, machineConfig) {
         this.machineConfig = machineConfig;
@@ -1084,11 +1086,10 @@ class PartialPath {
         this.minSweepRemoveShapes = [];
         this.maxSweepRemoveShapes = [];
         this.path = [];
-        this.prevPtTipPos = null;
+        this.prevPtTipPos = null; // work-coords
 
         if (this.toolLength < this.minToolLength) {
             this.#changeTool();
-            this.toolIx++;
             this.toolLength = this.toolNaturalLength;
         }
     }
@@ -1128,28 +1129,58 @@ class PartialPath {
      * Add tool-change movement.
      */
     #changeTool() {
-        // TODO: implement
-        //
-        // go "tool remover" location
-        // exec "tool-pull" movement
-        //
-        // go "tool bank" location with new tool ix
-        // exec "tool-insert" movement
-        // evacuate to nearest neutral space
+        // TODO: proper collision avoidance
+        // TODO: emit RICH_STATE
 
-        // concept of "space"
-        // work-space, grinder-space, tool-bank-space, tool-remover-space, neutral-space
+        // Remove current tool.
+        {
+            // go to tool remover
+            this.path.push(this.#withAxisValue("move", {
+                tipPosM: this.machineConfig.toolRemoverCenter,
+            }));
+            // execute "remove-tool" movement
+            const pull = new THREE.Vector3(0, 0, 5);
+            this.path.push(this.#withAxisValue("move", {
+                tipPosM: offsetPoint(this.machineConfig.toolRemoverCenter, [pull, 1]),
+            }));
+        }
+
+        this.toolIx++;
+
+        // Get new tool.
+        {
+            // goto tool bank
+            const bankToolDir = new THREE.Vector3(6, 0, 0);
+            const bankPos = offsetPoint(this.machineConfig.toolBankOrigin, [bankToolDir, this.toolIx]);
+            this.path.push(this.#withAxisValue("move", {
+                tipPosM: bankPos,
+            }));
+
+            // execute "tool-insert" movement
+            const push = new THREE.Vector3(0, 0, -5);
+            this.path.push(this.#withAxisValue("move", {
+                tipPosM: offsetPoint(bankPos, [push, 1]),
+            }));
+        }
     }
 
     /**
      * Add tool-grind movement.
      */
     #grindTool(discardLength) {
-        // TODO: implement
-        //
-        // go "grinder" bottom
-        // feed up, rotating and feeding wire
-        // evacuate to nearest neutral space
+        // TODO: proper collision avoidance
+        // TODO: offset by discardLength
+        // TODO: emit RICH_STATE
+        const up = new THREE.Vector3(1, 0, 0);
+        
+        // move below grinder 
+        this.path.push(this.#withAxisValue("move", {
+            tipPosM: offsetPoint(this.machineConfig.wireCenter, [up, -3]),
+        }));
+        // cut off the tool
+        this.path.push(this.#withAxisValue("remove-tool", {
+            tipPosM: offsetPoint(this.machineConfig.wireCenter, [up, 3]),
+        }));
     }
 
     /**
@@ -2093,7 +2124,7 @@ class View3D {
                     lines.push(`M4 GV-100`);
                 }
                 gcode.push("G1");
-            } else if (pt.type === "move-out" || pt.type === "move-in") {
+            } else if (pt.type === "move-out" || pt.type === "move-in" || pt.type === "move") {
                 if (prevType !== pt.type) {
                     lines.push(`M5`);
                 }

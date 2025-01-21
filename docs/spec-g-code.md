@@ -65,12 +65,52 @@ Unless de-energized (M5), none of them is safe to touch regardless of voltage va
   * model_name must be `[a-zA-Z0-9-.]+`
   * e.g. `M16 SPARK-WG1`
 
+* M73 P[percent]
+  * Set progress percentage (integer, from 0 to 100).
+  * Firmware should show progress on the UI. Optionally, it can also calculate time estimate.
+  * e.g. `M73 P34` (34% done)
+
 * M100: fill tank (stalls until tank is full)
 * M101: drain tank (stalls until tank is empty)
 * M102: turn on continuous filtering (instant)
 * M103: turn off continuous filtering (instant)
 
+## Software-only extensions
+JSON-based metadata is available for visualization and simulation in software.
+Firmware does not (and probably should not) parse this metadata.
+
+```
+; RICH_STATE <json-string>
+```
+This tells a simulator that current state of the machine is described by the JSON value.
+RICH_STATE should be on it's own line without M or G codes, to avoid confusion of ordering.
+
+JSON value spec
+```json
+{
+  "work": {
+    "D": 20,
+    "L": 30
+  },
+  "tool": {
+    "L": 25
+  }
+}
+```
+
+* D: diameter (mm)
+* L: length (mm)
+
+These parameters represent cylidner shape of work and tool.
+Actual work or tool shape is more complicated, but they must fit within the shape described by RICH_STATE.
+
+Example
+```
+; RICH_STATE {"work":{"D":20,"L":30},"tool":{"L":25}}
+```
+
+
 ## Reservation for future use
 
-Special characters like `+#,_()[]{}!"'` are explicitly reserved for future use, and should not be used anywhere.
+Special characters like `+#,_()[]{}!"'` are explicitly reserved for future use, and should not be used outside of RICH_STATE.
 This especially applies to M-codes, where parameters are much more flexible than G-codes.
