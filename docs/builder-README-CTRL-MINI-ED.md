@@ -27,7 +27,7 @@ That way touching heatsink won't electrocute you.
 ## Test procedures
 
 (Before tests)
-Install external parts: current sense resistor, thermistor, heatsink, fan.
+Install external parts: current sense resistor, thermistor, heatsink, fan, Pico 2.
 
 You should execute test groups sequentially. (i.e. execute _noconn only after _nofw is PASS)
 Some tests don't make sense, or even dangerous, without preceding test groups.
@@ -37,12 +37,12 @@ Connect to 36V supply.
 
 Tests:
 * _nofw_led: LEDs = OFF
-* _nofw_smoke: No smoke, no hot regions in thermal image
+* _nofw_smoke: No smoke, max temp in thermography < 70℃ (Tamb<30℃) after 1 min
 * _nofw_fan: fan = ON
 * _nofw_pow: Power line voltages are nominal for:
-  * _nofw_pow_uc: 1.1V, 3.3V
-  * _nofw_pow_dchg: 18V, 24V, 36V, 100V
-* _nofw_curr: Board current draw = (TBD) A
+  * _nofw_pow_uc: 5±0.5V (TP6), 3.3±0.5V (TP7)
+  * _nofw_pow_dchg: 12±1V (TP5), 36±2V (TP26), 100±3V (TP25)
+* _nofw_curr: Board current draw = 0.08±0.01A
 * _nofw_out: GRINDER, WORK, TOOL = High-Z
 
 ### _noconn (No host connection)
