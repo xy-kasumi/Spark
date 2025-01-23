@@ -1,7 +1,7 @@
 # CTRL-MINI-ED User Manual
 
 This doc is for users of the CTRL-MINI-ED board.
-Basically a datasheet + operating manual.
+It basically serves as both a datasheet and an operating manual.
 
 ## ⚠️ Safety warning ⚠️
 Improper use of CTRL-MINI-ED may cause death, fire, or damage to nearby devices.
@@ -22,11 +22,11 @@ CTRL-MINI-ED is an EDM discharge board, controllable via digital IOs and I2C.
 * Pulse current, detection threshold, polarity control, temperature monitoring via I2C
 
 ### Power Supply
-Screw-terminal on the left side
+Screw terminal on the left side
 * DC 36V, 4.2A minimum
 
-If below 4.2A, uC might reset accidentally at high-power setting.
-Above 4.2A should be fine, but too much output (e.g. 10A) will increase the damage in case of firmware bug.
+If the power supply is below 4.2 A, the microcontroller might reset accidentally at high-power setting.
+Above 4.2 A should be fine, but too much output (e.g. 10 A) will increase the damage in case of firmware bug.
 
 ### Indicators
 
@@ -118,20 +118,28 @@ Write command writes to a single register, Read command read from a single regis
 
 ### Logical layer
 
-**GATE/DETECT**
+### GATE/DETECT
 Host can initiate a single pulse by setting GATE to HIGH.
 If the discharge condition is good, discharge will happen after random Tig (ignition time).
-Tig is inherently random, but typically 1us~500us, and shorter if the gap is narrower.
+Tig is inherently random, but typically 10us~500us, and shorter if the gap is narrower.
+
+If DETECT become HIGH very quickly (within 5 μs), it is highly likely that discharge gap is short-circuit.
+In that case, the host should set GATE to LOW immediately.
+
+Generally, GATE can be thought of as directly driving MOSFET gate. However, for safety and device longevity,
+actual driving can be suppressed. See "Timing wrt. GATE/DETECT" section for details.
 
 DETECT become HIGH whenever discharge current is detected.
 The host is responsible for monitoring DETECT, and set GATE to LOW after desired pulse duration time.
+Current detection threshold is auto-set to 25% of pulse current by ED board.
 
 ![photo](./CTRL-MINI-ED-GD-signal-timing.png)
 
-Current detection threshold is auto-set to 25% of pulse current by ED board.
+There is a constraint for combination of pulse time, pulse current, and duty factor.
+See "Pulse Shaping" section for details.
 
 
-**Control Registers**
+### Control Registers
 |Address| Register      | Access | Resets to | Description |
 |-------|---------------|--------|-----------|-------------|
 | 0x01  | POLARITY      | RW     | 0         | 0: OFF, 1~4: energize with certain polarity. |
@@ -147,11 +155,41 @@ Invalid value writes are:
 * set to nearest valid value (e.g. PULSE_CURRENT, DETECT_THRESH)
 * ignored for read-only or unused registers
 
-Change to PULSE_CURRENT takes up to 1ms to fully take effect.
-Avoid turning on GATE during that period.
+#### Timing wrt. GATE/DETECT
 
-Actual drive current would reach specified current within 5us of write completion.
-However, detection threshold change can take up to 1ms.
-This means during or just before pulse,
-* lowering PULSE_CURRENT: Rise of DETECT can be delayed by up to 1ms
-* raising PULSE_CURRENT: Premature DETECT rise, due to increased noise sensitivity
+Writes to POLARITY & PULSE_CURRENT immediately updates the register.
+However, when register is changed during GATE is HIGH,
+* change will take effect from the next pulse (once GATE become LOW)
+* actual EDM driver will be suppressed for 1ms (PULSE_CURRENT change) and 20ms (POLARITY change)
+  * this will lead to very large observed DETECT from the host
+
+As an exception to the delay above, setting POLARITY to OFF immediately shutdown EDM driver.
+
+
+#### POLARITY
+
+* 0: OFF
+* 1: TPWN (Tool+, Work-)
+* 2: TNWP (Tool-, Work+)
+* 3: TPGN (Tool+, Grinder-)
+* 4: TNGP (Tool-, Grinder+)
+
+
+### Pulse Shaping
+
+Pulse current is limited to due to internal capacitor bank.
+* always: Ip <= 8A (enforced by register)
+* when Ip >= 4A: Tp <= 8mC / Ip
+  * Tp (max) = 1ms @ Ip = 8A
+  * Tp (max) = 1.3ms @ Ip = 6A
+* when Ip >= 4A: Ip * DF <= 4A
+  * DF (max) = 50% @ Ip = 8A
+
+If DF or pulse duration exceeds these values, discharge current will dwindle to 4A (power supply current)or cause abrupt voltage drop.
+
+ED board driver is optimized for EDM. It uses combination of
+* 100V low-capacity "ignition supply"
+* 36V high-capacity "discharge supply"
+
+This is possible because EDM discharge voltage, once ignited, become about 20V (up to 30-ish V, depending on discharge conditions).
+This dual supply driver is power-efficient, but produce unexpected behavior when connected to non discharge gap load.
