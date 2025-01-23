@@ -94,6 +94,8 @@ Note: Type-A (terminals on same-side) means cross-cable. Thus, pinout at host an
 Within the device, there are registers with 1-byte address and 1-byte data.
 Write command writes to a single register, Read command read from a single register.
 
+They involve internal pointer. They don't auto-increment.
+
 **Write**
 * M: START
 * M: Device Addr (7bit; 0x3B) + Write flag (1bit; 0)
@@ -101,15 +103,21 @@ Write command writes to a single register, Read command read from a single regis
 * M: Register Addr (8bit)
 * S: ACK
 * M: Data (8bit)
-* S: NACK
+* S: ACK
 * M: STOP
 
+This also sets the internal pointer to Register Addr.
+
 **Read**
+(write pointer)
 * M: START
-* M: Device Addr (7bit; 0x3B) + Read flag (1bit; 1)
+* M: Device Addr (7bit; 0x3B) + Write flag (1bit; 1)
 * S: ACK
 * M: Register Addr (8bit)
 * S: ACK
+(read data from pointer)
+* M: Repeated START
+* M: Device Addr (7bit; 0x3B) + Read flag (1bit; 1)
 * S: Data (8bit)
 * M: NACK
 * M: STOP
