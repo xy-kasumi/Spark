@@ -13,9 +13,10 @@ Directories are roughly divided into two groups.
 
 ### Build & Use
 * docs: contains assembly manuals and specs
-* discharge-board: KiCad files for PCBA
-* discharge-firmware: C firmware code for the boards
 * dicer: main software that generates G-code from STL for the machine
+* firmware: C firmware code for the boards
+* pcb: KiCad files for PCBA
+* mech (TBD): CAD files for the machine
 
 These are necessary for building, testing, and using the machine.
 
@@ -26,7 +27,7 @@ These are necessary for building, testing, and using the machine.
   * purpose: validate & iterate on "sweep" patterns without physical experiments
 * sim-3PRR: 3PRR mechanism simulator
   * purpose: validate 3PRR mechanism design
-* identity: contains project's visual identity such as logo
+* brand: contains project's visual identity such as logo
 
 These are useful resources to further the development of the machine and/or the Spark project.
 

@@ -269,20 +269,30 @@ const lerpVals = (a, b, t) => {
 // 3D view
 
 /**
- * Scene is in mm unit. Right-handed, Z+ up.
+ * Scene is in mm unit. Right-handed, X+ up, machine coords.
  */
 class View3D {
     constructor() {
         this.init();
 
         // machine geometries
-        this.workOffset = new THREE.Vector3(20, 40, 20); // in machine coords
+        this.workOffset = new THREE.Vector3(20, 40, 20);
         this.wireCenter = new THREE.Vector3(30, 15, 30);
         this.stockCenter = new THREE.Vector3(10, 10, 10);
+        this.toolRemoverCenter = new THREE.Vector3(40, 10, 30);
+        this.toolBankOrigin = new THREE.Vector3(20, 20, 15);
 
         // machine setup
         const opBox = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3(70, 100, 60));
         this.scene.add(new THREE.Box3Helper(opBox, new THREE.Color(0x000000)));
+
+        const removerBox = new THREE.Box3();
+        removerBox.setFromCenterAndSize(this.toolRemoverCenter, new THREE.Vector3(10, 10, 20));
+        this.scene.add(new THREE.Box3Helper(removerBox, new THREE.Color(0x000000)));
+
+        const toolBankBox = new THREE.Box3();
+        toolBankBox.setFromCenterAndSize(this.toolBankOrigin, new THREE.Vector3(30, 30, 30));
+        this.scene.add(new THREE.Box3Helper(toolBankBox, new THREE.Color(0x000000)));
 
         const wireBox = new THREE.Box3();
         wireBox.setFromCenterAndSize(this.wireCenter, new THREE.Vector3(1, 20, 1));

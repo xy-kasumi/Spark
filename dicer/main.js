@@ -1450,6 +1450,7 @@ class Planner {
          * @returns {{partialPath: PartialPath, ignoreOvercutErrors: boolean} | null} null if impossible
          */
         const genPlanarSweep = (normal, offset, toolDiameter) => {
+            console.log(`genPlanarSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), offset: ${offset}, toolDiameter: ${toolDiameter}`);
             const workOffset = this.trvg.queryWorkOffset(normal);
             if (workOffset < offset) {
                 throw "contradicting offset for genPlanarSweep";
@@ -1840,7 +1841,8 @@ class Planner {
         for (const normal of candidateNormals) {
             let offset = this.trvg.queryWorkOffset(normal);
 
-            while (true) {
+            // TODO: better termination condition
+            while (offset > -50) {
                 const sweep = genPlanarSweep(normal, offset, this.machineConfig.toolNaturalDiameter);
                 if (!sweep) {
                     break;
@@ -1893,7 +1895,7 @@ class Planner {
 
 /**
  * Provides basic UI framework, 3D scene, and mesh/gcode I/O UI.
- * Scene is in mm unit. Right-handed, Z+ up. Work-coordinates.
+ * Scene is in mm unit. Right-handed, X+ up. Work-coordinates.
  */
 class View3D {
     constructor() {
