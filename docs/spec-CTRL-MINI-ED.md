@@ -55,11 +55,11 @@ Main MOSFET current flow
 
 Voltage at FB is used for current feedback control of MOSFET driving, and also for current detection.
 
-| ΔIp or Ip | FB |
-|-----------|----|
-| ΔIp = 100mA | ΔFB = 22mV (min: 21mV, max: 23mV) |
-| Ip = 1A | FB = 0.22V (min: 0.21V, max: 0.23V) |
-| Ip = 8A | FB = 1.76V (min: 1.67V, max: 1.85V) |
+| ΔIp or Ip | FB | GATE | Approx |
+|-----------|----|------|--------|
+| ΔIp = 100mA | ΔFB = 22mV (min: 21mV, max: 23mV) | ΔGATE = 37mV | 1/89 x 3.3V |
+| Ip = 1A | FB = 0.22V (min: 0.21V, max: 0.23V) | GATE = 0.37V | 10/89 x 3.3V |
+| Ip = 8A | FB = 1.76V (min: 1.67V, max: 1.85V) | GATE = 2.98V | 80/89 x 3.3V |
 
 #### Current / voltage control
 ```
@@ -134,7 +134,6 @@ This graph/table shows relationship within 5℃ accuracy.
 
 TEMP_HS(V) | Temp(°C)
 -----|-----
-0.07 | -30
 0.29 | -5
 0.89 | 20
 1.97 | 50
