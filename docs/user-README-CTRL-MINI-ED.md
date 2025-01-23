@@ -1,4 +1,4 @@
-# CTRL-MINI-ED User Manual
+# CTRL-MINI-ED (r1) User Manual
 
 This doc is for users of the CTRL-MINI-ED board.
 It basically serves as both a datasheet and an operating manual.
@@ -20,6 +20,7 @@ CTRL-MINI-ED is an EDM discharge board, controllable via digital IOs and I2C.
   * Disconnected
 * Single-pulse discharge timing control, and pulse current detection via GATE/DETECT digital IOs
 * Pulse current, detection threshold, polarity control, temperature monitoring via I2C
+
 
 ### Power Supply
 Screw terminal on the left side
@@ -137,6 +138,14 @@ Current detection threshold is auto-set to 25% of pulse current by ED board.
 
 There is a constraint for combination of pulse time, pulse current, and duty factor.
 See "Pulse Shaping" section for details.
+
+Safety note: electrodes are **energized even when GATE is LOW**
+
+Setting GATE to LOW merely means turn down the current close to 0.
+However, open voltage of 100V is still present on the electrodes,
+and driver will allow more than 10mA current to flow, which is enough to kill you.
+
+Turn actually turn them off, you need to set POLARITY to OFF.
 
 
 ### Control Registers
