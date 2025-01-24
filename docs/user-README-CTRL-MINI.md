@@ -1,21 +1,86 @@
 # CTRL-MINI (r0) User Manual
 
-## Basic setup
+This doc is for users of the CTRL-MINI board.
+It serves as both a datasheet and an operating manual.
 
-CTRL-MINI board is
-* connected to CTRL-MINI-ED via Type-A (cross) flat cable
-* connected to host (typically a PC) via RasPi Probe
-  * Use "CR" for both TX/RC line coding
-  * baud rate is 115200
+## Overview
 
-## Commands
+![photo](./CTRL-MINI-r0-photo.jpeg)
 
-Over the serial connection to the host, you can type commands and get results.
-Also, CTRL-MINI emits logs (like startup log) without command inputs.
+CTRL-MINI is the main board of a Spark machine.
+In the current prototype phase, it serves as an experimental hub.
+Major revisions are expected in future iterations.
 
-* Each command is issued as a single line. No multi-line support.
-* `Ctrl-C` or `Ctrl-K` during input: Cancels the current command input.
-  * Other Ctrl commands, backspace, arrow keys, delete etc are not supported.
+It features the following functionality:
+- Terminal-like interface for human operator via RasPi probe
+- 3-axis bipolar stepper motor driver with swappable child boards (CTRL-MINI-MD)
+  - 12V, 0.4-ish A per phase
+  - Features Trinamic TMC2130 driver with 1/256 microstepping capability
+- Connectivity to CTRL-MINI-ED board
+
+Note: The architectural relationship between CTRL-MINI and CTRL-MINI-ED (whether as a sub-component or separate board) is TBD. This document treats it as a separate board.
+
+### Power Supply
+
+Screw terminal on the left side:
+- Input: 12VDC
+- Current: 2A minimum recommended
+  - 1A minimum if using reduced motor current
+  - Higher current ratings are OK
+
+### Connections
+
+Right edge: Motors
+- 3x XH connectors
+  - Pin configuration (top to bottom):
+    1: A1
+    2: A2
+    3: B1
+    4: B2
+
+Bottom edge: CTRL-MINI-ED connection
+- Upright connector for FFC (Flat Flexible Cable)
+  - Type-A, pitch 1mm, 8 pins
+  - Terminal thickness: 0.3mm
+
+Top edge: RasPi Probe (Serial Communication)
+- QI female 3-pin connector
+  1: TX
+  2: RX
+  3: GND
+
+### Mechanical
+Reference orientation: "Spark" text on board facing up
+
+**General**
+* Outer dimensions: 115mm (width) x 75mm (height) x 25mm (depth)
+* Mass: to-be-measured
+
+**Mounting**
+Board dimensions: 115mm (width) x 75mm (height)
+- 4x mounting holes:
+  - Coordinates: (5mm, 5mm), (5mm, 70mm), (110mm, 5mm), (110mm, 70mm)
+  - Hole diameter: 3.3mm
+  - Clearance for screw head/spacer: 8mm diameter
+  - Mounting areas are electrically isolated
+
+## Terminal Interface
+
+Connect the RasPi probe's serial port to the 3-pin QI connector.
+Use any terminal emulator software on the host computer.
+
+Required configuration:
+- Baud rate: 115200
+
+Recommended configuration:
+- Line ending: CR (for both TX/RX)
+- Local echo: ON
+
+Interface behavior:
+- Commands are single-line only (no multi-line support)
+- Input control:
+  - `Ctrl-C` or `Ctrl-K`: Cancel current command
+  - Other control keys are not supported (backspace, arrows, delete)
 
 ### High-Level Commands
 
@@ -24,9 +89,9 @@ Also, CTRL-MINI emits logs (like startup log) without command inputs.
 
 #### `edparam <pulse_us> <duty>`
 * **Description:** Configures the default value of discharge pulse and duty ratio. Will affect `drill` command.
-* **Parameter:**
-  * `pulse_us`: integer, pulse duration in microseconds (5 o 10000)
-  * `duty`: integer, max duty ratio in percent (1 to 50)
+* **Parameters:**
+  * `pulse_us`: integer, pulse duration in microseconds (range: 5 to 10000)
+  * `duty`: integer, max duty ratio in percent (range: 1 to 50)
 
 #### `move <board_ix> <distance>`
 * **Description:** Moves the specified board by a given distance (in millimeters).
@@ -49,22 +114,21 @@ Also, CTRL-MINI emits logs (like startup log) without command inputs.
   * `board_ix`: 0, 1, or 2
   * `distance`: float (in mm)
 
-
 ### Motor Driver (MD) Commands
 
 #### `step <board_ix> <step> <wait>`
 * **Description:** Steps one motor in one direction at a constant speed.
 * **Parameters:**
   * `board_ix`: 0, 1, or 2
-  * `step`: integer (can be negative or positive), in microsteps
-  * `wait`: integer, wait time in microseconds after each microstep
+  * `step`: integer (negative or positive), in microsteps
+  * `wait`: integer, wait time after each microstep, in microseconds
 
 #### `home <board_ix> <direction> <timeout_ms>`
 * **Description:** Moves the motor to the home position (where it stalls).
 * **Parameters:**
   * `board_ix`: 0, 1, or 2
   * `direction`: `-` or `+`
-  * `timeout_ms`: integer (timeout in milliseconds)
+  * `timeout_ms`: integer, timeout in milliseconds
 
 #### `regread <board_ix> <addr>`
 * **Description:** Reads a register from the motor driver.
