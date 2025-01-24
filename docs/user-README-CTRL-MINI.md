@@ -1,4 +1,4 @@
-# CTRL-MINI User Manual
+# CTRL-MINI (r0) User Manual
 
 ## Basic setup
 
@@ -86,25 +86,3 @@ Also, CTRL-MINI emits logs (like startup log) without command inputs.
 
 #### `edoff`
 * **Description:** Switches the ED to sense mode.
-
-#### `edexec <duration_ms> <pulse_dur_us> <current_ma> <duty>`
-* **Description:** Executes a discharge operation with specified parameters.
-* **Parameters:**
-  * `duration_ms`: integer, duration of discharge in milliseconds
-  * `pulse_dur_us`: integer, pulse duration in microseconds
-  * `current_ma`: integer, current in mA (up to 2000)
-  * `duty`: integer, max duty ratio in percent (1 to 80)
-
-#### `edthot`
-* **Description:** Executes a hot disconnect test and then switches to sense mode.  
-* **Note:** Will shorten relay life.
-
-#### `edtsweep <numsteps>`
-* **Description:** Executes a current sweep pulsing test.
-* **Parameters:**
-  * `numsteps`: integer, number of steps
-
-#### `prox <timeout_ms>`
-* **Description:** Senses proximity in sense mode, dumping the proximity value periodically until timeout.
-* **Parameters:**
-  * `timeout_ms`: integer, timeout in milliseconds

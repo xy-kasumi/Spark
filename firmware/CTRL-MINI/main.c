@@ -126,24 +126,6 @@ void exec_command_regwrite(uint8_t md_ix, uint8_t addr, uint32_t data) {
   printf("board %d: reg 0x%02x set to 0x%08x\n", md_ix, addr, data);
 }
 
-void exec_command_prox(uint32_t timeout_ms) {
-  int64_t timeout_us = timeout_ms * 1000;
-
-  absolute_time_t t0 = get_absolute_time();
-  int i = 0;
-  while (true) {
-    absolute_time_t t1 = get_absolute_time();
-    int64_t elapsed_us = absolute_time_diff_us(t0, t1);
-    if (elapsed_us >= timeout_us) {
-      break;
-    }
-
-    int value = ed_proximity();
-    printf("prox: %d\n", value);
-    sleep_ms(100);
-  }
-}
-
 void exec_command_edon() {
   ed_to_discharge();
   printf("ED: switched to DISCHARGE\n");
@@ -814,12 +796,6 @@ void try_exec_command(char* buf, ctrl_config_t* config) {
       return;
     }
     exec_command_regwrite(md_ix, addr, data);
-  } else if (strcmp(command, "prox") == 0) {
-    uint32_t timeout_ms = parse_int(&parser, 0, 1000000);
-    if (!parser.success) {
-      return;
-    }
-    exec_command_prox(timeout_ms);
   } else if (strcmp(command, "edon") == 0) {
     exec_command_edon();
   } else if (strcmp(command, "edoff") == 0) {
@@ -838,23 +814,6 @@ void try_exec_command(char* buf, ctrl_config_t* config) {
       return;
     }
     exec_command_drill(md_ix, distance, config);
-  } else if (strcmp(command, "edexec") == 0) {
-    uint32_t duration_ms = parse_int(&parser, 1, 1000000);
-    uint16_t pulse_dur_us = parse_int(&parser, 1, 10000);
-    uint16_t current_ma = parse_int(&parser, 1, 2000);
-    uint8_t duty_pct = parse_int(&parser, 0, 80);
-    if (!parser.success) {
-      return;
-    }
-    exec_command_edeexec(duration_ms, pulse_dur_us, current_ma, duty_pct);
-  } else if (strcmp(command, "edthot") == 0) {
-    ed_test_hot_disconnect();
-  } else if (strcmp(command, "edtsweep") == 0) {
-    uint32_t numsteps = parse_int(&parser, 0, 1000000);
-    if (!parser.success) {
-      return;
-    }
-    ed_test_sweep(numsteps);
   } else {
     printf("unknown command\n");
   }

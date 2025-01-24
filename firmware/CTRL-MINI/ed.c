@@ -104,37 +104,6 @@ bool ed_available() {
   return mode != ED_UNKNOWN;
 }
 
-int ed_proximity() {
-  const int64_t MAX_WAIT_US = 100 * 1000 * 1000;  // 100s
-  if (mode != ED_SENSE) {
-    return -1;
-  }
-
-  absolute_time_t t0 = get_absolute_time();
-  gpio_put(CTRL_ED_SENSE_GATE_PIN, true);
-
-  int delay;
-  while (true) {
-    // bool sense = gpio_get(CTRL_ED_SENSE_CURR_PIN);
-    absolute_time_t t1 = get_absolute_time();
-
-    sleep_us(5);
-    gpio_put(CTRL_ED_SENSE_GATE_PIN, false);
-    sleep_us(1);
-    gpio_put(CTRL_ED_SENSE_GATE_PIN, true);
-
-    delay = absolute_time_diff_us(t0, t1);
-    if (delay >= MAX_WAIT_US) {
-      break;
-    }
-  }
-
-  gpio_put(CTRL_ED_SENSE_GATE_PIN, false);
-  sleep_us(100);  // wait so that next measurement will be accurate
-
-  return delay;
-}
-
 void ed_to_discharge() {
   if (mode == ED_UNKNOWN) {
     return;
@@ -204,48 +173,6 @@ bool ed_unsafe_get_detect() {
     return false;
   }
   return gpio_get(CTRL_ED_DCHG_DETECT);
-}
-
-void ed_test_sweep(uint32_t numsteps) {
-  for (int step = 0; step < numsteps; step++) {
-    // 10 ms x 100 = 1000 ms sweep
-    // 10% duty. So max power consumption should be 20W.
-    for (int i = 0; i <= 100; i++) {
-      ed_set_dchg_current(i);
-      sleep_ms(1);  // wait for stabilize
-
-      gpio_put(CTRL_ED_DCHG_GATE_PIN, true);   // discharge ON
-      sleep_ms(1);                             // discharge time
-      gpio_put(CTRL_ED_DCHG_GATE_PIN, false);  // discharge OFF
-
-      sleep_ms(8);  // cooldown time. total 10ms
-    }
-  }
-  ed_set_dchg_current(0);
-}
-
-// this will shorten relay life, don't do often.
-// this test is intended to be used with low resistance or short circuit in
-// E+/E-.
-void ed_test_hot_disconnect() {
-  if (mode != ED_DISCHARGE) {
-    return;
-  }
-
-  ed_set_dchg_current(100);
-  sleep_ms(1);                            // wait for stabilize
-  gpio_put(CTRL_ED_DCHG_GATE_PIN, true);  // discharge ON
-  sleep_ms(10);                           // discharge time
-
-  // FORCE DISCONNECT RELAY DURING DISCHARGE.
-  gpio_put(CTRL_ED_MODE_PIN, false);
-  sleep_ms(50);  // wait relay to settle
-
-  // cleanup
-  gpio_put(CTRL_ED_DCHG_GATE_PIN, false);  // discharge OFF
-  ed_set_dchg_current(0);
-
-  mode = ED_SENSE;
 }
 
 void ed_to_sense() {

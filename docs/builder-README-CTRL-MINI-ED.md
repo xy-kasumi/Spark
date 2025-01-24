@@ -50,7 +50,7 @@ Install firmware.
 
 Tests:
 * _noconn_led: Status LED = ON, Power LED = OFF
-* _noconn_smoke: No smoke, no hot regions in thermal image
+* _noconn_smoke: No smoke, max temp in thermography < 70℃ (Tamb<30℃) after 1 min
 * _noconn_pow: repeat _nofw_pow
 * _noconn_curr: Board current draw = (TBD) A
 * _noconn_conn: Connector pin voltages
