@@ -10,7 +10,7 @@
 #define LED_ERR_BLINK_ON_MS 250
 
 #define I2C_DEV_ADDR 0x3b  // I2C Device Address
-#define I2C_BAUD 1000000 // I2C target baud (Hz)
+#define I2C_BAUD 100000 // I2C target baud (Hz)
 
 #define MAX_ALLOWED_TEMP 80 // degree celcius
 

@@ -182,20 +182,25 @@ static uint8_t i2c_reg_ptr = 0;
 void write_reg(uint8_t reg, uint8_t val) {
   switch (reg) {
   case REG_POLARITY:
-    if (POL_OFF <= val && val <= POL_TNGP) {
-      critical_section_enter_blocking(&csec_pulse);
-      csec_pulse_pol = val;
-      critical_section_exit(&csec_pulse);
+    if (val > POL_TNGP) {
+      val = POL_OFF; // treat unknown value as OFF for safety.
     }
+    critical_section_enter_blocking(&csec_pulse);
+    csec_pulse_pol = val;
+    critical_section_exit(&csec_pulse);
     break;
   case REG_PULSE_CURRENT:
-    if (1 <= val && val <= 80) {
-      uint8_t cyc = compute_th_on_cyc(val);
-      critical_section_enter_blocking(&csec_pulse);
-      csec_pulse_pcurr = val;
-      csec_pulse_th_on_cyc = cyc;
-      critical_section_exit(&csec_pulse);
+    // Truncate to valid range.
+    if (val < 1) {
+      val = 1;
+    } else if (val > 80) {
+      val = 80;
     }
+    uint8_t cyc = compute_th_on_cyc(val);
+    critical_section_enter_blocking(&csec_pulse);
+    csec_pulse_pcurr = val;
+    csec_pulse_th_on_cyc = cyc;
+    critical_section_exit(&csec_pulse);
     break;
   }
 }
