@@ -79,14 +79,16 @@ pico_sdk_init()
 
 add_executable(ctrl_ed_fw
     main.c
-    ed.c
-    md.c
     )
 
 # pull in common dependencies
 target_link_libraries(ctrl_ed_fw pico_stdlib)
-target_link_libraries(ctrl_ed_fw hardware_spi)
+target_link_libraries(ctrl_ed_fw pico_i2c_slave)
 target_link_libraries(ctrl_ed_fw hardware_pwm)
+target_link_libraries(ctrl_ed_fw hardware_i2c)
+target_link_libraries(ctrl_ed_fw hardware_adc)
+target_link_libraries(ctrl_ed_fw pico_multicore)
+
 
 if (PICO_CYW43_SUPPORTED)
     target_link_libraries(ctrl_ed_fw pico_cyw43_arch_none)

@@ -3,6 +3,16 @@
 This document specifies the PCB hardware interface needed for firmware development,
 to meet the requirements defined in [user-README-CTRL-MINI-ED.md](user-README-CTRL-MINI-ED.md).
 
+
+## Conditions to consider
+
+* Host is not working
+  * Control connector is disconnected
+  * Host turned off, blank firmware, initializing
+* Thermistor wire is broken
+
+Firmware must map these state to well-defined safe behavior.
+
 ## uC Overview
 
 uC is Raspberry Pi Pico 2 board.
@@ -36,9 +46,9 @@ uC operating environment
 |GP15| -           | N/C | |
 |GP16| GPIO (IN)   | CURR_TRIGGER | 3.3V output from Comparator U5 |
 |GP17| -           | N/C | |
-|GP18| PWM or PIO (OUT)| CURR_GATE_PWM | analog filter; see below |
+|GP18| PWM1A (OUT) | CURR_GATE_PWM | analog filter; see below |
 |GP19| -           | N/C | |
-|GP20| PWM (OUT)    | CURR_THRESH_PWM | analog filter; see below |
+|GP20| PWM2A (OUT) | CURR_THRESH_PWM | analog filter; see below |
 |GP21| -           | N/C | |
 |GP22| -           | N/C | |
 |GP26| ADC0        | TEMP_HS | Thermistor - resistor voltage divider |

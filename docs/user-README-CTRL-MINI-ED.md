@@ -142,6 +142,9 @@ DETECT become HIGH whenever discharge current is detected.
 The host is responsible for monitoring DETECT, and set GATE to LOW after desired pulse duration time.
 Current detection threshold is auto-set to 25% of pulse current by ED board.
 
+When POLARITY or PULSE_CURRENT is updated, DETECT can become LOW even when actual discharge
+current is still flowing.
+
 ![photo](./CTRL-MINI-ED-GD-signal-timing.png)
 
 There is a constraint for combination of pulse time, pulse current, and duty factor.
@@ -161,7 +164,7 @@ Turn actually turn them off, you need to set POLARITY to OFF.
 |-------|---------------|--------|-----------|-------------|
 | 0x01  | POLARITY      | RW     | 0         | 0: OFF, 1~4: energize with certain polarity. |
 | 0x02  | PULSE_CURRENT | RW     | 10        | pulse current in 100mA step. 1 (100mA) ~ 80 (8A) is allowed. |
-| 0x03  | TEMPERATURE   | R      | N/A       | current heatsink temperature in ℃. 80 means 80℃. |
+| 0x03  | TEMPERATURE   | R      | N/A       | current heatsink temperature in ℃. 80 means 80℃. 255 means temp reading is unavailable due to severe issue. |
 
 Register access:
 * RW: read-write
