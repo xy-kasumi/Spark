@@ -1,9 +1,7 @@
 #pragma once
 
-#include <stdint.h>
-
-#include "hardware/sync.h"
 #include "hardware/pwm.h"
+#include <stdint.h>
 
 /**
  * Externally observable parameters.
@@ -38,44 +36,8 @@ static const uint8_t PWM_CHAN_CURR_THRESH_PWM = PWM_CHAN_A;
 static const uint8_t PIN_TEMP_HS = 26; // ADC0
 static const uint8_t ADC_TEMP_HS = 0; // ADC0
 
+#define HOST_I2C i2c0
 
 #define RELAY_MAX_SETTLE_TIME_MS 20 // 15ms + safety buffer
 #define DISCHARGE_MAX_SETTLE_TIME_US 5 // PWM delay + MOSFET delay
 #define THRESH_MAX_SETTLE_TIME_MS 1 // PWM delay
-
-
-/**
- * Peripheral configurations
- */
-#define HOST_I2C i2c0
-
-inline static void wait_25ns() {
-    // 4 nops, assuming 150MHz
-    __nop();
-    __nop();
-    __nop();
-    __nop();
-}
-
-inline static void wait_100ns() {
-    // 16 nops, assuming 150MHz
-    __nop();
-    __nop();
-    __nop();
-    __nop();
-    __nop();
-
-    __nop();
-    __nop();
-    __nop();
-    __nop();
-    __nop();
-
-    __nop();
-    __nop();
-    __nop();
-    __nop();
-    __nop();
-
-    __nop();
-}

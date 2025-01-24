@@ -5,7 +5,7 @@
  * Once Core0 finishes initialization and passed self-check,
  * Core1 is launched and Core0 relinquishes control over these pins.
  *
- * Core0: slow, complex (IRQ allowed)
+ * Core0: slow, complex (IRQ, float-compute allowed)
  * - PIN_I2C_SDA, PIN_I2C_SCL
  * - PIN_LED_STATUS
  * - PIN_TEMP_HS
@@ -16,9 +16,10 @@
  * - PIN_LED_POWER
  * - PIN_CURR_THRESH_PWM
  * - PIN_MUX_EN, PIN_MUX_POL, PIN_MUX_WG
- * 
+ *
  * Core0 and Core1 share global error_mode flag. Both core can raise error.
- * Core0 passes "pulse config" to Core1. No Core1->Core0 data flow (other than error).
+ * Core0 write to a critical section csec_pulse, and Core1 read it.
+ * No Core1->Core0 data flow (other than global error).
  */
 #include "hardware/adc.h"
 #include "hardware/gpio.h"
@@ -27,45 +28,86 @@
 #include "pico/i2c_slave.h"
 #include "pico/multicore.h"
 #include "pico/sync.h"
-#include <ctype.h>
 #include <inttypes.h>
 #include <stdatomic.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "config.h"
 
-static const uint8_t REG_POLARITY = 0x01;
-static const uint8_t REG_PULSE_CURRENT = 0x02;
-static const uint8_t REG_TEMPERATURE = 0x03;
+// core0, core1 shared
+static _Atomic bool error_mode = false; // reading & writing true is allowed. never write false.
 
-static const uint8_t POL_OFF = 0;
-static const uint8_t POL_TPWN = 1;  // Tool+, Work-
-static const uint8_t POL_TNWP = 2;  // Tool-, Work+
-static const uint8_t POL_TPGN = 3;  // Tool+, Grinder-
-static const uint8_t POL_TNGP = 4;  // Tool-, Grinder+
+// core0, core1 shared, only accessed in csec_pulse section or initialization.
+static critical_section_t csec_pulse;
+static uint8_t csec_pulse_pol;
+static uint8_t csec_pulse_pcurr;
+static uint8_t csec_pulse_th_on_cyc;
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Core1: Gate & current threshold PWM driving and computation.
 
 static const uint8_t PCURR_ON_RESET = 10; // 1A
 
-static const uint8_t PWM_GATE_NUM_CYCLE = 89; // See spec-CTRL-MINI-ED
-static const uint8_t PWM_THRESH_NUM_CYCLE = 150; // See spec-CTRL-MINI-ED
+static const uint8_t PWM_GATE_NUM_CYCLE = 89;
+static const uint8_t PWM_THRESH_NUM_CYCLE = 150;
 
-// core0,core1 shared
-static _Atomic bool error_mode = false; // reading & writing true is allowed. never write false.
+void init_out_pwm() {
+  gpio_set_function(PIN_CURR_GATE_PWM, GPIO_FUNC_PWM);
+  pwm_set_wrap(PWM_CURR_GATE_PWM, PWM_GATE_NUM_CYCLE - 1);
+  pwm_set_chan_level(PWM_CURR_GATE_PWM, PWM_CHAN_CURR_GATE_PWM, 0);
+  pwm_set_enabled(PWM_CURR_GATE_PWM, true);
+}
 
-// core0,core1 shared, under csec_pulse.
-static critical_section_t csec_pulse;
-static uint8_t csec_pulse_pol = POL_OFF;
-static uint8_t csec_pulse_pcurr = PCURR_ON_RESET;
-static uint8_t csec_pulse_th_on_cyc = 0;
-
-// core0: global state
-static const int16_t TEMP_INVALID = -1000;
-static int16_t current_temp = TEMP_INVALID;
-static bool i2c_ptr_written = false;
-static uint8_t i2c_reg_ptr = 0;
+// Sets current output level.
+// level: 0~80 (0A~8A, 100mA/level)
+void set_out_level(uint8_t level) {
+  pwm_set_chan_level(PWM_CURR_GATE_PWM, PWM_CHAN_CURR_GATE_PWM, level);
+}
 
 // core0
+// cyc: whatever value determined by compute_th_on_cyc(), 0, or
+// PWM_THRESH_NUM_CYCLE.
+void init_thresh_pwm(uint8_t cyc) {
+  gpio_set_function(PIN_CURR_THRESH_PWM, GPIO_FUNC_PWM);
+  pwm_set_wrap(PWM_CURR_THRESH_PWM, PWM_THRESH_NUM_CYCLE - 1);
+  pwm_set_chan_level(PWM_CURR_THRESH_PWM, PWM_CHAN_CURR_THRESH_PWM, 0);
+  pwm_set_enabled(PWM_CURR_THRESH_PWM, true);
+}
+
+// Sets current threshold level.
+// cyc: whatever value determined by compute_th_on_cyc(), 0, or
+// PWM_THRESH_NUM_CYCLE.
+void set_thresh_level(uint8_t cyc) {
+  pwm_set_chan_level(PWM_CURR_THRESH_PWM, PWM_CHAN_CURR_THRESH_PWM, cyc);
+}
+
+// core0
+// Compute final thresh PWM on cycles, that works well for pcurr (1~80;
+// 100mA~8A).
+uint8_t compute_th_on_cyc(uint8_t pcurr) {
+  const float PCURR_TO_FB_VOLT =
+      0.1 * 0.22; // *0.1: pcurr value to Ip(A). *0.22: FB resistor 220mOhm.
+  const float PCURR_TO_THRESH_VOLT =
+      PCURR_TO_FB_VOLT * 0.25; // target 25% threshold.
+  const float PCURR_TO_THRESH_ON_CYC =
+      PCURR_TO_FB_VOLT *
+      ((1 / 3.3) * PWM_THRESH_NUM_CYCLE); // /3.3: volt to duty factor.
+
+  float on_cyc = pcurr * PCURR_TO_THRESH_ON_CYC;
+  if (on_cyc >= PWM_THRESH_NUM_CYCLE) {
+    return PWM_THRESH_NUM_CYCLE;
+  } else {
+    return (uint8_t)on_cyc;
+  }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Core0: Temperature sensor
+
+static const int16_t TEMP_INVALID = -1000;
+static int16_t current_temp = TEMP_INVALID;
+
 // Convert raw ADC value to temperature in Celsius.
 // Returns TEMP_INVALID if it's suspected the device is broken or in extreme
 // condition.
@@ -75,7 +117,7 @@ int16_t convert_hs_temp(uint16_t raw_adc_value) {
 
   // Based on voltage-temp table from spec:
   // 0.29V -> -5°C
-  // 0.89V -> 20°C 
+  // 0.89V -> 20°C
   // 1.97V -> 50°C
   // 2.65V -> 75°C
   // 3.01V -> 100°C
@@ -103,22 +145,40 @@ int16_t convert_hs_temp(uint16_t raw_adc_value) {
   }
 }
 
-// core0
-// Compute final thresh PWM on cycles, that works well for pcurr (1~80; 100mA~8A).
-uint8_t compute_th_on_cyc(uint8_t pcurr) {
-  const float PCURR_TO_FB_VOLT = 0.1 * 0.22; // *0.1: pcurr value to Ip(A). *0.22: FB resistor 220mOhm.
-  const float PCURR_TO_THRESH_VOLT = PCURR_TO_FB_VOLT * 0.25; // target 25% threshold.
-  const float PCURR_TO_THRESH_ON_CYC = PCURR_TO_FB_VOLT * ((1 / 3.3) * PWM_THRESH_NUM_CYCLE); // /3.3: volt to duty factor.
 
-  float on_cyc = pcurr * PCURR_TO_THRESH_ON_CYC;
-  if (on_cyc >= PCURR_TO_THRESH_ON_CYC) {
-    return PCURR_TO_THRESH_ON_CYC;
-  } else {
-    return (uint8_t) on_cyc;
-  }
+// Update current_temp by doing ADC read.
+void update_temp_blocking() {
+  current_temp = convert_hs_temp(adc_read());
 }
 
-// core0: write to register. ignores invalid reg address.
+// returns: true if ok, false if bad.
+bool init_temp_sensor_and_check_sanity() {
+  adc_init();
+  adc_gpio_init(PIN_TEMP_HS);
+  adc_select_input(ADC_TEMP_HS);
+
+  update_temp_blocking();
+  return current_temp != TEMP_INVALID && current_temp <= MAX_ALLOWED_TEMP;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Core0: Register read/write & I2C
+
+static const uint8_t REG_POLARITY = 0x01;
+static const uint8_t REG_PULSE_CURRENT = 0x02;
+static const uint8_t REG_TEMPERATURE = 0x03;
+
+static const uint8_t POL_OFF = 0;
+static const uint8_t POL_TPWN = 1; // Tool+, Work-
+static const uint8_t POL_TNWP = 2; // Tool-, Work+
+static const uint8_t POL_TPGN = 3; // Tool+, Grinder-
+static const uint8_t POL_TNGP = 4; // Tool-, Grinder+
+
+static bool i2c_ptr_written = false;
+static uint8_t i2c_reg_ptr = 0;
+
+// write to register. ignores invalid reg address.
 void write_reg(uint8_t reg, uint8_t val) {
   switch (reg) {
   case REG_POLARITY:
@@ -140,7 +200,7 @@ void write_reg(uint8_t reg, uint8_t val) {
   }
 }
 
-// core0: read register. return0 for invalid reg address.
+// read register. return0 for invalid reg address.
 uint8_t read_reg(uint8_t reg) {
   switch (reg) {
   case REG_POLARITY:
@@ -161,17 +221,7 @@ uint8_t read_reg(uint8_t reg) {
   return 0;
 }
 
-// level: 0~80 (0A~8A, 100mA/level)
-void set_out_level(uint8_t level) {
-  pwm_set_chan_level(PWM_CURR_GATE_PWM, PWM_CHAN_CURR_GATE_PWM, level);
-}
-
-// cyc: whatever value determined by compute_th_on_cyc(), 0, or PWM_THRESH_NUM_CYCLE.
-void set_thresh_level(uint8_t cyc) {
-  pwm_set_chan_level(PWM_CURR_THRESH_PWM, PWM_CHAN_CURR_THRESH_PWM, cyc);
-}
-
-// core0: handle I2C requests.
+// handle I2C requests.
 static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event) {
   switch (event) {
   case I2C_SLAVE_RECEIVE:
@@ -192,6 +242,17 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event) {
     break;
   }
 }
+
+void init_reg_rw_i2c() {
+  gpio_set_function(PIN_I2C_SCL, GPIO_FUNC_I2C);
+  gpio_set_function(PIN_I2C_SDA, GPIO_FUNC_I2C);
+  i2c_init(HOST_I2C, I2C_BAUD);
+  i2c_slave_init(HOST_I2C, I2C_DEV_ADDR, &i2c_slave_handler);
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Main loops for each core.
 
 void core1_main() {
   bool prev_gate = false;
@@ -232,7 +293,10 @@ void core1_main() {
       set_out_level(0);
       sleep_us(DISCHARGE_MAX_SETTLE_TIME_US);
       if (prev_pol != new_pol) {
-        gpio_put(PIN_MUX_EN, new_pol != POL_OFF);
+        // Since POL_OFF case is already handled, new_pol must be one of four ON
+        // configs.
+        gpio_put(PIN_LED_POWER, true);
+        gpio_put(PIN_MUX_EN, true);
         gpio_put(PIN_MUX_WG, new_pol == POL_TPGN || new_pol == POL_TNGP);
         gpio_put(PIN_MUX_POL, new_pol == POL_TPWN || new_pol == POL_TPGN);
         sleep_ms(RELAY_MAX_SETTLE_TIME_MS);
@@ -268,7 +332,8 @@ fatal_error:
   // De-energize safely.
   set_out_level(0);
   sleep_us(DISCHARGE_MAX_SETTLE_TIME_US);
-  gpio_put(PIN_MUX_EN, 0); // this is critical. Others are for saving relay themselves.
+  gpio_put(PIN_MUX_EN,
+           0); // this is critical. Others are for saving relay themselves.
   gpio_put(PIN_MUX_POL, 0);
   gpio_put(PIN_MUX_WG, 0);
   sleep_ms(RELAY_MAX_SETTLE_TIME_MS);
@@ -285,6 +350,12 @@ fatal_error:
 
 // core0
 int main() {
+  // Init compute.
+  uint8_t th_cyc_on_reset = compute_th_on_cyc(PCURR_ON_RESET);
+  csec_pulse_pol = POL_OFF;
+  csec_pulse_pcurr = PCURR_ON_RESET;
+  csec_pulse_th_on_cyc = th_cyc_on_reset;
+
   // Init I/O to safe state.
   const uint32_t output_mask =
       (1 << PIN_LED_STATUS) | (1 << PIN_LED_POWER) | (1 << PIN_I2C_SDA) |
@@ -300,42 +371,19 @@ int main() {
   gpio_clr_mask(output_mask);
   gpio_pull_down(PIN_GATE); // for safety when host is unavailable
 
-  // Sanity check; master must not be driving GATE high when turning on ED.
+  ////////////////////////////////////////////////////////////
+  // Initialize "modules" with sanity checks, starting from safe ones.
+  
   if (gpio_get(PIN_GATE)) {
+    // Sanity check; master must not be driving GATE high when turning on ED.
     goto fatal_error;
   }
-
-  // Init ADC for heatsink temperature monitoring & check value sanity.
-  adc_init();
-  adc_gpio_init(PIN_TEMP_HS);
-  adc_select_input(ADC_TEMP_HS);
-  adc_run(true);
-
-  while (adc_fifo_is_empty()) {
-  }
-  current_temp = convert_hs_temp(adc_fifo_get());
-  if (current_temp == TEMP_INVALID || current_temp > MAX_ALLOWED_TEMP) {
+  if (!init_temp_sensor_and_check_sanity()) {
     goto fatal_error;
   }
-
-  // Start PWMs.
-  gpio_set_function(PIN_CURR_GATE_PWM, GPIO_FUNC_PWM);
-  gpio_set_function(PIN_CURR_THRESH_PWM, GPIO_FUNC_PWM);
-  pwm_set_wrap(PWM_CURR_GATE_PWM, PWM_GATE_NUM_CYCLE - 1);
-  set_out_level(0);
-  pwm_set_enabled(PWM_CURR_GATE_PWM, true);
-
-  pwm_set_wrap(PWM_CURR_THRESH_PWM, PWM_THRESH_NUM_CYCLE - 1);
-  set_thresh_level(compute_th_on_cyc(PCURR_ON_RESET));
-  pwm_set_enabled(PWM_CURR_THRESH_PWM, true);
-
-  // Enable I2C slave mode.
-  gpio_set_function(PIN_I2C_SCL, GPIO_FUNC_I2C);
-  gpio_set_function(PIN_I2C_SDA, GPIO_FUNC_I2C);
-  i2c_init(HOST_I2C, I2C_BAUD);
-  i2c_slave_init(HOST_I2C, I2C_DEV_ADDR, &i2c_slave_handler);
-
-  // Start receiving GATE signals.
+  init_out_pwm();
+  init_thresh_pwm(th_cyc_on_reset);
+  init_reg_rw_i2c();
   multicore_launch_core1(core1_main);
 
   ////////////////////////////////////////////////////////////
@@ -348,11 +396,9 @@ int main() {
       goto fatal_error;
     }
 
-    if (!adc_fifo_is_empty()) {
-      current_temp = convert_hs_temp(adc_fifo_get());
-      if (current_temp == TEMP_INVALID || current_temp > MAX_ALLOWED_TEMP) {
-        goto fatal_error;
-      }
+    update_temp_blocking();
+    if (current_temp == TEMP_INVALID || current_temp > MAX_ALLOWED_TEMP) {
+      goto fatal_error;
     }
   }
 
