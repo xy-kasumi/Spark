@@ -128,35 +128,35 @@ This also sets the internal pointer to Register Addr.
 ### Logical layer
 
 ### GATE/DETECT
-Host can initiate a single pulse by setting GATE to HIGH.
-If the discharge condition is good, discharge will happen after random Tig (ignition time).
-Tig is inherently random, but typically 10us~500us, and shorter if the gap is narrower.
+The host can initiate a single pulse by setting GATE to HIGH.
+If the discharge condition is good, discharge will happen after a random Tig (ignition time).
+Tig is inherently random, but typically ranges from 10μs to 500μs, and becomes shorter if the gap is narrower.
 
-If DETECT become HIGH very quickly (within 5 μs), it is highly likely that discharge gap is short-circuit.
+If DETECT becomes HIGH very quickly (within 5μs), it is highly likely that the discharge gap is short-circuited.
 In that case, the host should set GATE to LOW immediately.
 
-Generally, GATE can be thought of as directly driving MOSFET gate. However, for safety and device longevity,
-actual driving can be suppressed. See "Timing wrt. GATE/DETECT" section for details.
+Generally, GATE can be thought of as directly driving the MOSFET gate. However, for safety and device longevity,
+actual driving can be suppressed. See the "Timing wrt. GATE/DETECT" section for details.
 
-DETECT become HIGH whenever discharge current is detected.
-The host is responsible for monitoring DETECT, and set GATE to LOW after desired pulse duration time.
-Current detection threshold is auto-set to 25% of pulse current by ED board.
+DETECT becomes HIGH whenever discharge current is detected.
+The host is responsible for monitoring DETECT and setting GATE to LOW after the desired pulse duration time.
+The current detection threshold is auto-set to 25% of pulse current by the ED board.
 
 When POLARITY or PULSE_CURRENT is updated, DETECT can become LOW even when actual discharge
 current is still flowing.
 
 ![photo](./CTRL-MINI-ED-GD-signal-timing.png)
 
-There is a constraint for combination of pulse time, pulse current, and duty factor.
-See "Pulse Shaping" section for details.
+There is a constraint for combinations of pulse time, pulse current, and duty factor.
+See the "Pulse Shaping" section for details.
 
 Safety note: electrodes are **energized even when GATE is LOW**
 
-Setting GATE to LOW merely means turn down the current close to 0.
+Setting GATE to LOW merely means turning down the current close to 0.
 However, open voltage of 100V is still present on the electrodes,
-and driver will allow more than 10mA current to flow, which is enough to kill you.
+and the driver will allow more than 10mA current to flow, which is enough to kill you.
 
-Turn actually turn them off, you need to set POLARITY to OFF.
+To actually turn them off, you need to set POLARITY to OFF.
 
 
 ### Control Registers
@@ -197,19 +197,19 @@ As an exception to the delay above, setting POLARITY to OFF immediately shutdown
 
 ### Pulse Shaping
 
-Pulse current is limited to due to internal capacitor bank.
-* always: Ip <= 8A (enforced by register)
-* when Ip >= 4A: Tp <= 8mC / Ip
+Pulse current is limited due to the internal capacitor bank.
+* Always: Ip <= 8A (enforced by register)
+* When Ip >= 4A: Tp <= 8mC / Ip
   * Tp (max) = 1ms @ Ip = 8A
   * Tp (max) = 1.3ms @ Ip = 6A
-* when Ip >= 4A: Ip * DF <= 4A
+* When Ip >= 4A: Ip * DF <= 4A
   * DF (max) = 50% @ Ip = 8A
 
-If DF or pulse duration exceeds these values, discharge current will dwindle to 4A (power supply current)or cause abrupt voltage drop.
+If DF or pulse duration exceeds these values, discharge current will dwindle to 4A (power supply current) or cause an abrupt voltage drop.
 
-ED board driver is optimized for EDM. It uses combination of
+The ED board driver is optimized for EDM. It uses a combination of:
 * 100V low-capacity "ignition supply"
 * 36V high-capacity "discharge supply"
 
-This is possible because EDM discharge voltage, once ignited, become about 20V (up to 30-ish V, depending on discharge conditions).
-This dual supply driver is power-efficient, but produce unexpected behavior when connected to non discharge gap load.
+This is possible because the gap voltage, once ignited, becomes about 20V (up to ~30V, depending on conditions).
+This dual supply driver is power-efficient but produces unexpected behavior when connected to non-discharging loads.

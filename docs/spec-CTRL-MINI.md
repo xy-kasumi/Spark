@@ -9,11 +9,11 @@ to meet the requirements defined in [user-README-CTRL-MINI.md](user-README-CTRL-
 * MD boards are (partially) unavailable
 * ED board is unavailable
 
-Firmware must map these state to well-defined safe behavior.
+Firmware must map these states to well-defined safe behaviors.
 
 ## uC Overview
 
-uC is Raspberry Pi Pico 2 board.
+The uC is a Raspberry Pi Pico 2 board.
 * [Pico 2 board datasheet](https://datasheets.raspberrypi.com/pico/pico-2-datasheet.pdf)
 * [RP2350 chip datasheet](https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf)
 
@@ -60,17 +60,19 @@ MD r0, ED r0 is assumed.
 
 ## MD boards
 
-MD board is a 14-pin child board, taking 3.3V logic power and 12V power input.
+The MD board is a 14-pin child board, taking 3.3V logic power and 12V power input.
 
 Each MD board has:
-* single TMCxxxx stepper driver motor
-* on-PCB configuration jumper (phase current (0.2A vs 0.4) and power voltage (5V vs 12V))
+* A single TMCxxxx stepper driver motor
+* On-PCB configuration jumpers for:
+  * Phase current (0.2A vs 0.4A)
+  * Power voltage (5V vs 12V)
 
 They're controlled by SPI & "STEP/DIR" interface.
-SPI is connect to uC in bus fashion.
+SPI bus connects uC and 3 MD boards.
 
 To address each chip individually, CSN pins are used.
-CSNs are GPIO, so fw need to manually toggle them when doing SPI transaction.
+CSNs are GPIO pins, so firmware needs to manually toggle them when doing SPI transactions.
 
 # ED board
 
