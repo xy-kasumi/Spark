@@ -119,14 +119,32 @@ void exec_command_home(uint8_t md_ix, bool dir_plus, int timeout_ms) {
   printf("home: DONE\n");
 }
 
-void exec_command_regread(uint8_t md_ix, uint8_t addr) {
-  uint32_t value = md_read_register(md_ix, addr);
-  printf("board %d: reg 0x%02x = 0x%08x\n", md_ix, addr, value);
+void exec_command_regread(char board_id, uint8_t addr) {
+  if (board_id == 'E') {
+    if (!ed_available()) {
+      printf("ED: NO_BOARD\n");
+      return;
+    }
+    uint8_t value = ed_read_register(addr);
+    printf("board E: reg 0x%02x = 0x%02x\n", addr, value);
+  } else {
+    uint32_t value = md_read_register(board_id - '0', addr);
+    printf("board %c: reg 0x%02x = 0x%08x\n", board_id, addr, value);
+  }
 }
 
-void exec_command_regwrite(uint8_t md_ix, uint8_t addr, uint32_t data) {
-  md_write_register(md_ix, addr, data);
-  printf("board %d: reg 0x%02x set to 0x%08x\n", md_ix, addr, data);
+void exec_command_regwrite(char board_id, uint8_t addr, uint32_t data) {
+  if (board_id == 'E') {
+    if (!ed_available()) {
+      printf("ED: NO_BOARD\n");
+      return;
+    }
+    ed_write_register(addr, (uint8_t)data);
+    printf("board E: reg 0x%02x set to 0x%02x\n", addr, (uint8_t)data);
+  } else {
+    md_write_register(board_id - '0', addr, data);
+    printf("board %c: reg 0x%02x set to 0x%08x\n", board_id, addr, data);
+  }
 }
 
 void exec_command_edon() {
@@ -736,6 +754,35 @@ float parse_float(parser_t* parser) {
   return res;
 }
 
+char parse_board_id(parser_t* parser) {
+  if (!parser->success) {
+    return 'X';
+  }
+
+  char* str = strtok(NULL, " ");
+  if (str == NULL) {
+    printf("arg%d missing: expecting board_id (0/1/2/E)", parser->ix);
+    parser->success = false;
+    return 'X';
+  }
+
+  if (strlen(str) >= 2) {
+    printf("arg%d invalid board_id", parser->ix);
+    parser->success = false;
+    return 'X';
+  }
+
+  char ch = str[0];
+  if (ch != '0' && ch != '1' && ch != '2' && ch != 'E') {
+    printf("arg%d invalid board_id", parser->ix);
+    parser->success = false;
+    return 'X';
+  }
+
+  parser->ix++;
+  return ch;
+}
+
 /**
  * Tries to execute a single command. Errors will be printed to stdout.
  * @param buf command string, without newlines. will be modified during parsing.
@@ -777,20 +824,20 @@ void try_exec_command(char* buf, ctrl_config_t* config) {
     }
     exec_command_edparam(pulse_dur_us, duty_pct, config);
   } else if (strcmp(command, "regread") == 0) {
-    uint8_t md_ix = parse_int(&parser, 0, MD_NUM_BOARDS - 1);
+    char board_id = parse_board_id(&parser);
     uint8_t addr = parse_hex(&parser, 0x7f);
     if (!parser.success) {
       return;
     }
-    exec_command_regread(md_ix, addr);
+    exec_command_regread(board_id, addr);
   } else if (strcmp(command, "regwrite") == 0) {
-    uint8_t md_ix = parse_int(&parser, 0, MD_NUM_BOARDS - 1);
+    char board_id = parse_board_id(&parser);
     uint8_t addr = parse_hex(&parser, 0x7f);
     uint32_t data = parse_hex(&parser, 0xffffffff);
     if (!parser.success) {
       return;
     }
-    exec_command_regwrite(md_ix, addr, data);
+    exec_command_regwrite(board_id, addr, data);
   } else if (strcmp(command, "edon") == 0) {
     exec_command_edon();
   } else if (strcmp(command, "edoff") == 0) {

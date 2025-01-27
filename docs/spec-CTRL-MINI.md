@@ -64,7 +64,7 @@ ED r0 pin notes are left for historical reference.
 The MD board is a 14-pin child board, taking 3.3V logic power and 12V power input.
 
 Each MD board has:
-* A single TMCxxxx stepper driver motor
+* A single TMC2130 stepper driver motor
 * On-PCB configuration jumpers for:
   * Phase current (0.2A vs 0.4A)
   * Power voltage (5V vs 12V)

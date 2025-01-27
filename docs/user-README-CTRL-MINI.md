@@ -130,18 +130,21 @@ Interface behavior:
   * `direction`: `-` or `+`
   * `timeout_ms`: integer, timeout in milliseconds
 
-#### `regread <board_ix> <addr>`
-* **Description:** Reads a register from the motor driver.
+#### `regread <board_id> <addr>`
+* **Description:** Reads a register from peripheral boards.
 * **Parameters:**
-  * `board_ix`: 0, 1, or 2
+  * `board_id`: 0, 1, 2, E
   * `addr`: hexadecimal value from `00` to `7f`
 
-#### `regwrite <board_ix> <addr> <data>`
-* **Description:** Writes to a register on the motor driver.
+#### `regwrite <board_id> <addr> <data>`
+* **Description:** Writes to a register on the peripheral boards.
 * **Parameters:**
-  * `board_ix`: 0, 1, or 2
+  * `board_id`: 0, 1, 2, E
   * `addr`: hexadecimal value from `00` to `7f`
-  * `data`: hexadecimal value from `00000000` to `ffffffff`
+  * `data`: hexadecimal, 1-byte for E, 4-byte for 0,1,2
+* **Examples:**
+  * `regwrite E 02 01`
+  * `regwrite 0 10 1f10`
 
 ### ED (Electro-Discharge) Commands
 

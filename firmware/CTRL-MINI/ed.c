@@ -159,3 +159,21 @@ bool ed_unsafe_get_detect() {
   }
   return gpio_get(PIN_ED_DETECT);
 }
+
+uint8_t ed_read_register(uint8_t reg_addr) {
+  if (mode != ED_OK) {
+    return 0;
+  }
+  uint8_t val;
+  if (!read_reg(reg_addr, &val)) {
+    return 0;
+  }
+  return val;
+}
+
+void ed_write_register(uint8_t reg_addr, uint8_t data) {
+  if (mode != ED_OK) {
+    return;
+  }
+  write_reg(reg_addr, data);
+}

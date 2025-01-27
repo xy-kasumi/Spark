@@ -37,3 +37,15 @@ bool ed_unsafe_get_detect();
  * UINT16_MAX if pulse didn't happen.
  */
 uint16_t ed_single_pulse(uint16_t pulse_us, uint16_t max_wait_us);
+
+/**
+ * Read single byte from the specified register.
+ * Returns 0 if read failed.
+ */
+uint8_t ed_read_register(uint8_t reg_addr);
+
+/**
+ * Write single byte to the specified register.
+ */
+void ed_write_register(uint8_t reg_addr, uint8_t data);
+
