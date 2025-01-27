@@ -1,10 +1,10 @@
+#include "hardware/gpio.h"
+#include "pico/stdlib.h"
 #include <ctype.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "hardware/gpio.h"
-#include "pico/stdlib.h"
 
 #include "config.h"
 #include "ed.h"
@@ -20,9 +20,7 @@ void pico_led_init() {
   gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
 }
 
-void pico_led_set(bool on) {
-  gpio_put(PICO_DEFAULT_LED_PIN, on);
-}
+void pico_led_set(bool on) { gpio_put(PICO_DEFAULT_LED_PIN, on); }
 
 // flash led off for a short time.
 void pico_led_flash() {
@@ -45,21 +43,26 @@ void exec_command_status(ctrl_config_t* config) {
 
     printf("MD %d: ", i);
     switch (status) {
-      case MD_OK:
-        printf("OK");
-        break;
-      case MD_NO_BOARD:
-        printf("NO_BOARD");
-        break;
-      case MD_OVERTEMP:
-        printf("OVERTEMP");
-        break;
+    case MD_OK:
+      printf("OK");
+      break;
+    case MD_NO_BOARD:
+      printf("NO_BOARD");
+      break;
+    case MD_OVERTEMP:
+      printf("OVERTEMP");
+      break;
     }
     printf("\n");
   }
 
   if (ed_available()) {
-    printf("ED: OK\n");
+    uint8_t temp = ed_temp();
+    if (temp == 255) {
+      printf("ED: TEMP SENSOR ERROR\n");
+    } else {
+      printf("ED: OK (temp=%u C)\n", temp);
+    }
   } else {
     printf("ED: NO_BOARD\n");
   }
@@ -80,7 +83,7 @@ void exec_command_step(uint8_t md_ix, int step, uint32_t wait) {
 void exec_command_home(uint8_t md_ix, bool dir_plus, int timeout_ms) {
   int64_t timeout_us = timeout_ms * 1000;
   const int WAIT_US =
-      25;  // about 1 rotation/sec, assuming 1.8deg/step & 256 microstep.
+      25; // about 1 rotation/sec, assuming 1.8deg/step & 256 microstep.
 
   absolute_time_t t0 = get_absolute_time();
   int i = 0;
@@ -142,7 +145,7 @@ void exec_command_find(uint8_t md_ix, float distance) {
   int32_t steps = abs((int32_t)(MD_STEPS_PER_MM * distance));
   bool is_plus = distance > 0;
 
-  ed_set_current(2000);
+  ed_set_current(100);
   ed_unsafe_set_gate(true);
   int32_t ix = 0;
   bool found = false;
@@ -161,7 +164,7 @@ void exec_command_find(uint8_t md_ix, float distance) {
       t_prev_step = t1;
     }
   }
-  ed_unsafe_set_gate(false);  // immediate turn off to avoid work damage
+  ed_unsafe_set_gate(false); // immediate turn off to avoid work damage
 
   print_time();
   if (found) {
@@ -227,10 +230,10 @@ typedef struct {
 } drill_stats_t;
 
 static const uint32_t MD_FEED_MAX_WAIT_US =
-    10000;  // 0.01mm/sec (0.6mm/min ~ 1.0mm^3/min for D1.5 electrode drill)
+    10000; // 0.01mm/sec (0.6mm/min ~ 1.0mm^3/min for D1.5 electrode drill)
 static const uint32_t MD_FEED_MIN_WAIT_US =
-    1000;  // empirically found stable value
-static const uint32_t MD_MOVE_MIN_WAIT_US = 25;  // 0.78mm/sec
+    1000; // empirically found stable value
+static const uint32_t MD_MOVE_MIN_WAIT_US = 25; // 0.78mm/sec
 static const uint16_t ED_IG_US_TARGET = 200;
 
 void reset_ig_delay(drill_stats_t* stats) {
@@ -262,9 +265,7 @@ void record_ig_delay(drill_stats_t* stats, uint16_t ig_delay) {
 }
 
 /** Must be called when ed.state == MD_DRILL_OK. */
-void md_to_pullpush(md_drill_t* md,
-                    int32_t pull_steps,
-                    int32_t push_steps,
+void md_to_pullpush(md_drill_t* md, int32_t pull_steps, int32_t push_steps,
                     uint32_t wait_us) {
   md->state = MD_DRILL_PULL;
   md->pullpush_curr_steps = 0;
@@ -276,7 +277,7 @@ void md_to_pullpush(md_drill_t* md,
 
 void init_md_drill(md_drill_t* md, uint8_t md_ix, float distance) {
   // MD constants
-  const float MD_INITIAL_FEED_RATE = 0.05;  // mm/sec
+  const float MD_INITIAL_FEED_RATE = 0.05; // mm/sec
 
   const uint32_t md_initial_wait_us =
       1e6 / (MD_INITIAL_FEED_RATE * MD_STEPS_PER_MM);
@@ -293,36 +294,36 @@ void init_md_drill(md_drill_t* md, uint8_t md_ix, float distance) {
 
 void tick_md_drill(md_drill_t* md, drill_stats_t* stats) {
   switch (md->state) {
-    case MD_DRILL_OK:
-      if (md->timer >= md->wait_us) {
-        md_step(md->board_ix, md->is_plus);
-        md->timer = 0;
-        md->pos++;
-      }
-      break;
-    case MD_DRILL_PULL:
-      if (md->pullpush_curr_steps >= md->pull_target_steps) {
-        md->state = MD_DRILL_PUSH;
-        md->timer = 0;
-        md->pullpush_curr_steps = 0;
-      } else if (md->timer >= md->pullpush_wait_us) {
-        md_step(md->board_ix, !md->is_plus);
-        md->timer = 0;
-        md->pos--;
-        md->pullpush_curr_steps++;
-      }
-      break;
-    case MD_DRILL_PUSH:
-      if (md->pullpush_curr_steps >= md->push_target_steps) {
-        md->state = MD_DRILL_OK;
-        md->timer = 0;
-      } else if (md->timer >= md->pullpush_wait_us) {
-        md_step(md->board_ix, md->is_plus);
-        md->timer = 0;
-        md->pos++;
-        md->pullpush_curr_steps++;
-      }
-      break;
+  case MD_DRILL_OK:
+    if (md->timer >= md->wait_us) {
+      md_step(md->board_ix, md->is_plus);
+      md->timer = 0;
+      md->pos++;
+    }
+    break;
+  case MD_DRILL_PULL:
+    if (md->pullpush_curr_steps >= md->pull_target_steps) {
+      md->state = MD_DRILL_PUSH;
+      md->timer = 0;
+      md->pullpush_curr_steps = 0;
+    } else if (md->timer >= md->pullpush_wait_us) {
+      md_step(md->board_ix, !md->is_plus);
+      md->timer = 0;
+      md->pos--;
+      md->pullpush_curr_steps++;
+    }
+    break;
+  case MD_DRILL_PUSH:
+    if (md->pullpush_curr_steps >= md->push_target_steps) {
+      md->state = MD_DRILL_OK;
+      md->timer = 0;
+    } else if (md->timer >= md->pullpush_wait_us) {
+      md_step(md->board_ix, md->is_plus);
+      md->timer = 0;
+      md->pos++;
+      md->pullpush_curr_steps++;
+    }
+    break;
   }
   md->timer++;
 }
@@ -349,64 +350,62 @@ void tick_ed_drill(ed_drill_t* ed, drill_stats_t* stats, uint16_t* ig_time) {
 
   *ig_time = -1;
   switch (ed->state) {
-    case ED_DRILL_WAITING_IGNITION:
-      ed_unsafe_set_gate(true);
+  case ED_DRILL_WAITING_IGNITION:
+    ed_unsafe_set_gate(true);
 
-      if (ed->timer >= ED_IG_US_MAX_WAIT) {
-        // too long; reset
-        ed->state = ED_DRILL_WAITING_IGNITION;
+    if (ed->timer >= ED_IG_US_MAX_WAIT) {
+      // too long; reset
+      ed->state = ED_DRILL_WAITING_IGNITION;
+      ed->timer = 0;
+      ed->successive_shorts = 0;
+      *ig_time = 10000; // timeout
+    } else if (ed_unsafe_get_detect()) {
+      *ig_time = ed->timer;
+      if (ed->timer <= ED_IG_US_SHORT_THRESH) {
+        // short detected; immediately enter cooldown
+        ed->state = ED_DRILL_SHORT_COOLDOWN;
+        ed->timer = 0;
+        ed->successive_shorts++;
+        if (ed->successive_shorts > stats->max_successive_short) {
+          stats->max_successive_short = ed->successive_shorts;
+        }
+        stats->n_short++;
+      } else {
+        // normal discharge
+        ed->state = ED_DRILL_DISCHARGING;
         ed->timer = 0;
         ed->successive_shorts = 0;
-        *ig_time = 10000;  // timeout
-      } else if (ed_unsafe_get_detect()) {
-        *ig_time = ed->timer;
-        if (ed->timer <= ED_IG_US_SHORT_THRESH) {
-          // short detected; immediately enter cooldown
-          ed->state = ED_DRILL_SHORT_COOLDOWN;
-          ed->timer = 0;
-          ed->successive_shorts++;
-          if (ed->successive_shorts > stats->max_successive_short) {
-            stats->max_successive_short = ed->successive_shorts;
-          }
-          stats->n_short++;
-        } else {
-          // normal discharge
-          ed->state = ED_DRILL_DISCHARGING;
-          ed->timer = 0;
-          ed->successive_shorts = 0;
-          stats->n_pulse++;
-          record_ig_delay(stats, *ig_time);
-        }
+        stats->n_pulse++;
+        record_ig_delay(stats, *ig_time);
       }
-      break;
-    case ED_DRILL_DISCHARGING:
-      ed_unsafe_set_gate(true);
-      if (ed->timer >= ed->pulse_dur_us) {
-        ed->state = ED_DRILL_COOLDOWN;
-        ed->timer = 0;
-      }
-      break;
-    case ED_DRILL_COOLDOWN:
-      ed_unsafe_set_gate(false);
-      if (ed->timer >= ed->cooldown_us) {
-        ed->state = ED_DRILL_WAITING_IGNITION;
-        ed->timer = 0;
-      }
-      break;
-    case ED_DRILL_SHORT_COOLDOWN:
-      ed_unsafe_set_gate(false);
-      if (ed->timer >= ED_SHORT_COOLDOWN_US) {
-        ed->state = ED_DRILL_WAITING_IGNITION;
-        ed->timer = 0;
-      }
-      break;
+    }
+    break;
+  case ED_DRILL_DISCHARGING:
+    ed_unsafe_set_gate(true);
+    if (ed->timer >= ed->pulse_dur_us) {
+      ed->state = ED_DRILL_COOLDOWN;
+      ed->timer = 0;
+    }
+    break;
+  case ED_DRILL_COOLDOWN:
+    ed_unsafe_set_gate(false);
+    if (ed->timer >= ed->cooldown_us) {
+      ed->state = ED_DRILL_WAITING_IGNITION;
+      ed->timer = 0;
+    }
+    break;
+  case ED_DRILL_SHORT_COOLDOWN:
+    ed_unsafe_set_gate(false);
+    if (ed->timer >= ED_SHORT_COOLDOWN_US) {
+      ed->state = ED_DRILL_WAITING_IGNITION;
+      ed->timer = 0;
+    }
+    break;
   }
   ed->timer++;
 }
 
-void drill_print_stats(int64_t tick,
-                       md_drill_t* md,
-                       ed_drill_t* ed,
+void drill_print_stats(int64_t tick, md_drill_t* md, ed_drill_t* ed,
                        drill_stats_t* stats) {
   print_time();
   int32_t avg_ig = -1;
@@ -417,8 +416,7 @@ void drill_print_stats(int64_t tick,
     min_ig = stats->min_ig_delay;
     max_ig = stats->max_ig_delay;
   }
-  printf("drill: tick=%" PRId64
-         " step=%d wait=%d #pulse=%d #short=%d "
+  printf("drill: tick=%" PRId64 " step=%d wait=%d #pulse=%d #short=%d "
          "#retract=%d / max_short=%d avg_ig=%d min_ig=%d max_ig=%d\n",
          tick, md->pos, md->wait_us, stats->n_pulse, stats->n_short,
          stats->n_retract, stats->max_successive_short, avg_ig, min_ig, max_ig);
@@ -430,7 +428,7 @@ void drill_print_stats(int64_t tick,
 }
 
 void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
-  const uint32_t MD_RETRACT_DIST_STEPS = 10e-3 * MD_STEPS_PER_MM;  // 10um
+  const uint32_t MD_RETRACT_DIST_STEPS = 10e-3 * MD_STEPS_PER_MM; // 10um
 
   md_drill_t md;
   init_md_drill(&md, md_ix, distance);
@@ -449,12 +447,12 @@ void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
   drill_stats_t stats;
   init_drill_stats(&stats);
 
-  ed_set_current(2000);  // 2A
+  ed_set_current(2000); // 2A
   while (md.pos < md.steps) {
     /* Exec */
     uint16_t ig_time;
-    tick_ed_drill(&ed, &stats, &ig_time);  // < 200ns
-    tick_md_drill(&md, &stats);            // < 350ns
+    tick_ed_drill(&ed, &stats, &ig_time); // < 200ns
+    tick_md_drill(&md, &stats);           // < 350ns
 
     /* Compute */
     if (ed.successive_shorts >= 1000) {
@@ -507,7 +505,7 @@ void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
       int64_t new_tick = absolute_time_diff_us(t0, get_absolute_time());
       if (new_tick > tick) {
         if (new_tick > tick + 1) {
-          stats.n_tick_miss++;  // when processing takes more than 1us.
+          stats.n_tick_miss++; // when processing takes more than 1us.
         }
         tick = new_tick;
         break;
@@ -515,17 +513,15 @@ void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
     }
   }
 
-  ed_unsafe_set_gate(false);  // turn off
+  ed_unsafe_set_gate(false); // turn off
   print_time();
   printf("drill: done\n");
   drill_print_stats(tick, &md, &ed, &stats);
   printf("drill: #tmiss=%d\n", stats.n_tick_miss);
 }
 
-void exec_command_edeexec(uint32_t duration_ms,
-                          uint16_t pulse_dur_us,
-                          uint16_t current_ma,
-                          uint8_t duty_pct) {
+void exec_command_edeexec(uint32_t duration_ms, uint16_t pulse_dur_us,
+                          uint16_t current_ma, uint8_t duty_pct) {
   const uint32_t NUM_BUCKETS = 100;
 
   uint32_t wait_time_us = ((uint32_t)pulse_dur_us) * 100 / duty_pct;
@@ -563,8 +559,8 @@ void exec_command_edeexec(uint32_t duration_ms,
       hist_ig_delay[bucket_key]++;
     }
 
-    sleep_us(wait_time_us);  // defensive; can subtract ignition_delay to
-                             // maximize power output.
+    sleep_us(wait_time_us); // defensive; can subtract ignition_delay to
+                            // maximize power output.
   }
 
   printf("pulse count: %u success, %u timeout\n", count_pulse_success,
@@ -588,8 +584,7 @@ void exec_command_edeexec(uint32_t duration_ms,
   printf("ED: exec done\n");
 }
 
-void exec_command_edparam(uint32_t pulse_dur_us,
-                          uint8_t duty_pct,
+void exec_command_edparam(uint32_t pulse_dur_us, uint8_t duty_pct,
                           ctrl_config_t* config) {
   config->pulse_dur_us = pulse_dur_us;
   config->duty_pct = duty_pct;
@@ -608,7 +603,7 @@ bool stdio_getline(char* buf, size_t buf_size) {
   while (ix < buf_size - 1) {
     char ch = stdio_getchar();
     if (ch == 3 || ch == 11) {
-      return false;  // cancel waiting
+      return false; // cancel waiting
     } else if (ch == '\n' || ch == '\r') {
       buf[ix] = 0;
       return true;
@@ -825,11 +820,11 @@ int main() {
 
   // init I/O
   pico_led_init();
-  ed_init();  // in r0, MD noise disrupts ED SENSE_CURR, thus detection of the
-              // ED board. Thus, ed must be initialized before MD.
+  ed_init(); // in r0, MD noise disrupts ED SENSE_CURR, thus detection of the
+             // ED board. Thus, ed must be initialized before MD.
   md_init();
 
-  pico_led_set(true);  // I/O init complete
+  pico_led_set(true); // I/O init complete
   print_time();
 
   // init system config

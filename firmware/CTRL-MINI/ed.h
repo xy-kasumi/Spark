@@ -11,6 +11,12 @@ void ed_init();
  * be ignored for safety. */
 bool ed_available();
 
+/**
+ * Returns tmperature (degree Celsius) of the board.
+ * Returns 255 if temperature reading was not possible.
+ */
+uint8_t ed_temp();
+
 void ed_set_energize(bool on);
 
 void ed_set_current(uint16_t current_ma);

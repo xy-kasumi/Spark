@@ -7,6 +7,22 @@
 
 #include "config.h"
 
+static const uint8_t REG_POLARITY = 0x01;
+static const uint8_t REG_PULSE_CURRENT = 0x02;
+static const uint8_t REG_TEMPERATURE = 0x03;
+
+static const uint8_t POLARITY_OFF = 0;
+static const uint8_t POLARITY_TPWN = 1;  // Tool+, Work-
+static const uint8_t POLARITY_TNWP = 2;  // Tool-, Work+
+static const uint8_t POLARITY_TPGN = 3;  // Tool+, Grinder-
+static const uint8_t POLARITY_TNGP = 4;  // Tool-, Grinder+
+
+static const uint8_t TEMP_INVALID_VALUE = 255;
+
+static const uint16_t WAIT_PULSE_CURRENT_US = 1000;
+static const uint16_t WAIT_POLARITY_US = 20000;
+
+
 // Discharge current level PWM control
 // must be higher than 100kHz because of CTRL-ED filter circuit
 //
@@ -22,6 +38,25 @@ typedef enum {
 
 static ed_mode_t mode = ED_UNKNOWN;
 
+// Read single byte from the specified register, with reasonable timeout.
+// Returns true if successful, false if timeout or error.
+bool read_reg(uint8_t reg_addr, uint8_t* val) {
+  if (i2c_write_timeout_us(ED_I2C, ED_I2C_ADDR, &reg_addr, 1, true, ED_I2C_MAX_TX_US) != 1) {
+    return false;
+  }
+  if (i2c_read_timeout_us(ED_I2C, ED_I2C_ADDR, val, 1, false, ED_I2C_MAX_TX_US) != 1) {
+    return false;
+  }
+  return true;
+}
+
+// Write single byte to the specified register, with reasonable timeout.
+// Returns true if successful, false if timeout or error.
+bool write_reg(uint8_t reg_addr, uint8_t val) {
+  uint8_t buffer[2] = {reg_addr, val};
+  return i2c_write_timeout_us(ED_I2C, ED_I2C_ADDR, buffer, 2, false, ED_I2C_MAX_TX_US) == 2;
+}
+
 void ed_init() {
   gpio_init_mask((1 << PIN_ED_GATE) | (1 << PIN_ED_DETECT) | (1 << PIN_ED_I2C_SCL) | (1 << PIN_ED_I2C_SDA));
   gpio_set_dir(PIN_ED_DETECT, GPIO_IN);
@@ -32,26 +67,46 @@ void ed_init() {
   gpio_set_function(PIN_ED_I2C_SDA, GPIO_FUNC_I2C);
   gpio_set_function(PIN_ED_I2C_SCL, GPIO_FUNC_I2C);
 
-  // TODO: do temperature read to check if board is connected.
-
+  // Check temperature sanity.
+  uint8_t temp;
+  if (read_reg(REG_TEMPERATURE, &temp)) {
+    if (temp == TEMP_INVALID_VALUE) {
+      return; // temp sensor not working
+    }
+    if (temp > 80) {
+      return; // too hot for start condition
+    }
+    mode = ED_OK;
+  }
 }
 
 bool ed_available() {
-  return mode != ED_UNKNOWN;
+  return mode == ED_OK;
+}
+
+uint8_t ed_temp() {
+  if (mode != ED_OK) {
+    return 255;
+  }
+  uint8_t temp;
+  if (!read_reg(REG_TEMPERATURE, &temp)) {
+    return 255;
+  }
+  return temp;
 }
 
 void ed_set_current(uint16_t current_ma) {
   if (mode != ED_OK) {
     return;
   }
-  // TODO: do I2C to set PULSE_CURRENT
+  write_reg(REG_PULSE_CURRENT, current_ma / 100);
+  sleep_us(WAIT_PULSE_CURRENT_US);
 }
 
 void ed_unsafe_set_gate(bool on) {
   if (mode != ED_OK) {
     return;
   }
-
   gpio_put(PIN_ED_GATE, on);
 }
 
@@ -94,7 +149,8 @@ void ed_set_energize(bool on) {
     return;
   }
 
-  // TODO: do something
+  write_reg(REG_POLARITY, POLARITY_TNWP);
+  sleep_us(WAIT_POLARITY_US);
 }
 
 bool ed_unsafe_get_detect() {

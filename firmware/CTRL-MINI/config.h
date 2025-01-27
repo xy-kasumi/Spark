@@ -10,8 +10,10 @@
 #define LED_INTERVAL_MS 1000
 #define LED_FLASH_MS 50
 
-#define ED_ADDR 0x3b  // I2C Device Address
-#define ED_I2C_BAUD 100000 // I2C target baud (Hz)
+static const uint8_t ED_I2C_ADDR = 0x3b;  // I2C Device Address
+static const uint ED_I2C_BAUD = 100000; // I2C target baud (Hz)
+static const uint ED_I2C_MAX_TX_US = 1000; // Max time for I2C transaction
+
 
 /**
  * GPIO pin definitions & internal parts-specific parameters.
