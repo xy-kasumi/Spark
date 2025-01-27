@@ -127,13 +127,13 @@ void exec_command_regwrite(uint8_t md_ix, uint8_t addr, uint32_t data) {
 }
 
 void exec_command_edon() {
-  ed_to_discharge();
-  printf("ED: switched to DISCHARGE\n");
+  ed_set_energize(true);
+  printf("ED: ENERGIZED\n");
 }
 
 void exec_command_edoff() {
-  ed_to_sense();
-  printf("ED: switched to sense\n");
+  ed_set_energize(false);
+  printf("ED: de-energized\n");
 }
 
 void exec_command_find(uint8_t md_ix, float distance) {

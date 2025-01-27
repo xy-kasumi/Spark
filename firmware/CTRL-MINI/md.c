@@ -21,19 +21,19 @@ void md_bus_init() {
 
   // SPI pins. Keep CSN pins high (select no chip).
   uint32_t spi_mask =
-      (1 << CTRL_MD_SCK) | (1 << CTRL_MD_SDI) | (1 << CTRL_MD_SDO);
+      (1 << PIN_MD_SCK) | (1 << PIN_MD_SDI) | (1 << PIN_MD_SDO);
   gpio_init_mask(spi_mask);
   gpio_set_function_masked(spi_mask, GPIO_FUNC_SPI);
 
-  uint32_t csn_mask = (1 << CTRL_MD_CSN0_PIN) | (1 << CTRL_MD_CSN1_PIN) |
-                      (1 << CTRL_MD_CSN2_PIN);
+  uint32_t csn_mask = (1 << PIN_MD_CSN0) | (1 << PIN_MD_CSN1) |
+                      (1 << PIN_MD_CSN2);
   gpio_init_mask(csn_mask);
   gpio_set_dir_masked(csn_mask, 0xffffffff);
   gpio_put_masked(csn_mask, 0xffffffff);
 
   // STEP/DIR pins
-  uint32_t step_dir_mask = (1 << CTRL_MD_DIR_PIN) | (1 << CTRL_MD_STEP0_PIN) |
-                           (1 << CTRL_MD_STEP1_PIN) | (1 << CTRL_MD_STEP2_PIN);
+  uint32_t step_dir_mask = (1 << PIN_MD_DIR) | (1 << PIN_MD_STEP0) |
+                           (1 << PIN_MD_STEP1) | (1 << PIN_MD_STEP2);
   gpio_init_mask(step_dir_mask);
   gpio_set_dir_masked(step_dir_mask, 0xffffffff);
   gpio_put_masked(step_dir_mask, 0);
@@ -55,9 +55,9 @@ void md_bus_init() {
  * data, result: both are big-endian (MSB is sent/received first).
  */
 void md_send_datagram_blocking(uint8_t md_index,
-                               uint8_t addr,
+                                     uint8_t addr,
                                bool write,
-                               uint32_t data,
+                                     uint32_t data,
                                uint32_t* result) {
   // validate
   if (addr >= 0x80) {
@@ -66,13 +66,13 @@ void md_send_datagram_blocking(uint8_t md_index,
   int gpio_csn;
   switch (md_index) {
     case 0:
-      gpio_csn = CTRL_MD_CSN0_PIN;
+      gpio_csn = PIN_MD_CSN0;
       break;
     case 1:
-      gpio_csn = CTRL_MD_CSN1_PIN;
+      gpio_csn = PIN_MD_CSN1;
       break;
     case 2:
-      gpio_csn = CTRL_MD_CSN2_PIN;
+      gpio_csn = PIN_MD_CSN2;
       break;
     default:
       return;  // non-existent board
@@ -196,19 +196,19 @@ void md_step(uint8_t md_index, bool plus) {
   int gpio_step_pin;
   switch (md_index) {
     case 0:
-      gpio_step_pin = CTRL_MD_STEP0_PIN;
+      gpio_step_pin = PIN_MD_STEP0;
       break;
     case 1:
-      gpio_step_pin = CTRL_MD_STEP1_PIN;
+      gpio_step_pin = PIN_MD_STEP1;
       break;
     case 2:
-      gpio_step_pin = CTRL_MD_STEP2_PIN;
+      gpio_step_pin = PIN_MD_STEP2;
       break;
     default:
       return;
   }
 
-  gpio_put(CTRL_MD_DIR_PIN, !plus);
+  gpio_put(PIN_MD_DIR, !plus);
   wait_25ns();  // wait tDSU = 20ns
 
   gpio_put(gpio_step_pin, true);  // rising edge triggers step

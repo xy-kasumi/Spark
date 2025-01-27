@@ -11,9 +11,7 @@ void ed_init();
  * be ignored for safety. */
 bool ed_available();
 
-void ed_to_discharge();
-
-void ed_to_sense();
+void ed_set_energize(bool on);
 
 void ed_set_current(uint16_t current_ma);
 

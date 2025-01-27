@@ -31,11 +31,11 @@ uC operating environment
 | GP2  | SPI0 SCK      | MD (all)         | |
 | GP3  | SPI0 SDI      | MD (all)         | |
 | GP4  | SPI0 SDO      | MD (all)         | |
-| GP5  | GPIO (OUT)    | ED/MODE          | Pin 3 in ED Control Connector |
-| GP6  | GPIO (OUT)    | ED/SENSE_GATE    | Pin 4 in ED Control Connector |
-| GP7  | GPIO (OUT)    | ED/DCHG_TARG_PWM | Pin 6 in ED Control Connector |
-| GP8  | GPIO (OUT)    | ED/DCHG_GATE     | Pin 7 in ED Control Connector |
-| GP9  | GPIO (IN)     | ED/DCHG_DETECT   | Pin 8 in ED Control Connector |
+| GP5  | -             | ED Conn Pin 3    | N/C (r1), MODE (r0) |
+| GP6  | I2C1 SDA      | ED Conn Pin 4    | I2C SDA (r1), SENSE_GATE (r0) |
+| GP7  | I2C1 SCL      | ED Conn Pin 6    | I2C SCL (r1), DCHG_TARG_PWM (r0) |
+| GP8  | GPIO (OUT)    | ED Conn Pin 7    | GATE (r1), DCHG_GATE (r0) |
+| GP9  | GPIO (IN)     | ED Conn Pin 8    | DETECT (r1), DCHG_DETECT (r0) |
 | GP10 | -             | N/C              | |
 | GP11 | -             | N/C              | |
 | GP12 | -             | N/C              | |
@@ -49,13 +49,14 @@ uC operating environment
 | GP20 | GPIO (OUT)    | MD (0) CSN       | |
 | GP21 | GPIO (OUT)    | MD (1) CSN       | |
 | GP22 | GPIO (OUT)    | MD (2) CSN       | |
-| GP26 | ADC3          | ED/SENSE_CURR    | Pin 5 in ED Control Connector |
+| GP26 | -             | ED Conn Pin 5    | N/C (r1), SENSE_CURR (r0) |
 | GP27 | -             | N/C              | |
 | GP28 | -             | N/C              | |
 
 * N/C: No Connection
 
-MD r0, ED r0 is assumed.
+MD r0, ED r1 is assumed.
+ED r0 pin notes are left for historical reference.
 
 
 ## MD boards

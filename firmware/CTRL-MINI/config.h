@@ -4,34 +4,39 @@
 
 #include "hardware/sync.h"
 
+/**
+ * Externally observable parameters.
+ */
 #define LED_INTERVAL_MS 1000
 #define LED_FLASH_MS 50
 
-/**
- * GPIO pin definitions
- */
-static const uint8_t CTRL_ED_MODE_PIN = 5;
-static const uint8_t CTRL_ED_SENSE_GATE_PIN = 6;
-static const uint8_t CTRL_ED_SENSE_CURR_PIN = 26;
-static const uint8_t CTRL_ED_DCHG_TARG_PWM_PIN = 7;
-static const uint8_t CTRL_ED_DCHG_GATE_PIN = 8;
-static const uint8_t CTRL_ED_DCHG_DETECT = 9;
-
-static const uint8_t CTRL_MD_SCK = 2;  // SPI0
-static const uint8_t CTRL_MD_SDI = 3;  // SPI0
-static const uint8_t CTRL_MD_SDO = 4;  // SPI0
-static const uint8_t CTRL_MD_DIR_PIN = 16;
-static const uint8_t CTRL_MD_STEP0_PIN = 17;
-static const uint8_t CTRL_MD_STEP1_PIN = 18;
-static const uint8_t CTRL_MD_STEP2_PIN = 19;
-static const uint8_t CTRL_MD_CSN0_PIN = 20;
-static const uint8_t CTRL_MD_CSN1_PIN = 21;
-static const uint8_t CTRL_MD_CSN2_PIN = 22;
+#define ED_ADDR 0x3b  // I2C Device Address
+#define ED_I2C_BAUD 100000 // I2C target baud (Hz)
 
 /**
- * Peripheral configurations
+ * GPIO pin definitions & internal parts-specific parameters.
  */
+static const uint8_t PIN_UART_TX = 0;  // UART0, MUI-RX
+static const uint8_t PIN_UART_RX = 1;  // UART0, MUI-TX
+static const uint8_t PIN_MD_SCK = 2;   // SPI0
+static const uint8_t PIN_MD_SDI = 3;   // SPI0
+static const uint8_t PIN_MD_SDO = 4;   // SPI0
+static const uint8_t PIN_ED_I2C_SDA = 6;    // I2C1
+static const uint8_t PIN_ED_I2C_SCL = 7;    // I2C1
+static const uint8_t PIN_ED_GATE = 8;       // GPIO OUT
+static const uint8_t PIN_ED_DETECT = 9;     // GPIO IN
+static const uint8_t PIN_MD_DIR = 16;      // GPIO OUT
+static const uint8_t PIN_MD_STEP0 = 17;    // GPIO OUT
+static const uint8_t PIN_MD_STEP1 = 18;    // GPIO OUT
+static const uint8_t PIN_MD_STEP2 = 19;    // GPIO OUT
+static const uint8_t PIN_MD_CSN0 = 20;     // GPIO OUT
+static const uint8_t PIN_MD_CSN1 = 21;     // GPIO OUT
+static const uint8_t PIN_MD_CSN2 = 22;     // GPIO OUT
+
 #define MD_SPI spi0
+#define ED_I2C i2c1
+
+
 
 inline static void wait_25ns() {
     // 4 nops, assuming 150MHz
