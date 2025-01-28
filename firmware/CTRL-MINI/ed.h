@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 /** Initializes discharge component. All other functions must be called after
  * this. */
@@ -10,6 +11,12 @@ void ed_init();
 /** Returns if ED board is available or not. If false, all other commands will
  * be ignored for safety. */
 bool ed_available();
+
+/**
+ * Write current ED state to the specified buffer.
+ * It won't contain newlines.
+ */
+void ed_dump_state(char* ptr, size_t size);
 
 /**
  * Returns tmperature (degree Celsius) of the board.

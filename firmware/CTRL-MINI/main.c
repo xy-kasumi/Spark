@@ -56,16 +56,9 @@ void exec_command_status(ctrl_config_t* config) {
     printf("\n");
   }
 
-  if (ed_available()) {
-    uint8_t temp = ed_temp();
-    if (temp == 255) {
-      printf("ED: TEMP SENSOR ERROR\n");
-    } else {
-      printf("ED: OK (temp=%u C)\n", temp);
-    }
-  } else {
-    printf("ED: NO_BOARD\n");
-  }
+  char ed_state[64];
+  ed_dump_state(ed_state, sizeof(ed_state));
+  printf("ED: %s\n", ed_state);
 
   printf("PARAM: pulse_dur_us=%u, duty=%u\n", config->pulse_dur_us,
          config->duty_pct);
@@ -131,10 +124,6 @@ void exec_command_regread(char board_id, uint8_t addr) {
 
 void exec_command_regwrite(char board_id, uint8_t addr, uint32_t data) {
   if (board_id == 'E') {
-    if (!ed_available()) {
-      printf("ED: NO_BOARD\n");
-      return;
-    }
     ed_write_register(addr, (uint8_t)data);
     printf("board E: reg 0x%02x set to 0x%02x\n", addr, (uint8_t)data);
   } else {

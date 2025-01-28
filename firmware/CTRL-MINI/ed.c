@@ -4,6 +4,7 @@
 #include "hardware/i2c.h"
 #include "pico/stdlib.h"
 #include "pico/time.h"
+#include <stdio.h>
 
 #include "config.h"
 
@@ -38,13 +39,19 @@ typedef enum {
 
 static ed_mode_t mode = ED_UNKNOWN;
 
+static uint32_t cnt_i2c_read_error = 0;
+static uint32_t cnt_i2c_write_error = 0;
+
+
 // Read single byte from the specified register, with reasonable timeout.
 // Returns true if successful, false if timeout or error.
 bool read_reg(uint8_t reg_addr, uint8_t* val) {
   if (i2c_write_timeout_us(ED_I2C, ED_I2C_ADDR, &reg_addr, 1, true, ED_I2C_MAX_TX_US) != 1) {
+    cnt_i2c_read_error++;
     return false;
   }
   if (i2c_read_timeout_us(ED_I2C, ED_I2C_ADDR, val, 1, false, ED_I2C_MAX_TX_US) != 1) {
+    cnt_i2c_read_error++;
     return false;
   }
   return true;
@@ -54,7 +61,11 @@ bool read_reg(uint8_t reg_addr, uint8_t* val) {
 // Returns true if successful, false if timeout or error.
 bool write_reg(uint8_t reg_addr, uint8_t val) {
   uint8_t buffer[2] = {reg_addr, val};
-  return i2c_write_timeout_us(ED_I2C, ED_I2C_ADDR, buffer, 2, false, ED_I2C_MAX_TX_US) == 2;
+  if (i2c_write_timeout_us(ED_I2C, ED_I2C_ADDR, buffer, 2, false, ED_I2C_MAX_TX_US) != 2) {
+    cnt_i2c_write_error++;
+    return false;
+  }
+  return true;
 }
 
 void ed_init() {
@@ -99,6 +110,12 @@ uint8_t ed_temp() {
     return 255;
   }
   return temp;
+}
+
+void ed_dump_state(char* ptr, size_t size) {
+  const char* mode_str = mode == ED_OK ? "OK" : "NG";
+  uint8_t temp = ed_temp();
+  snprintf(ptr, size, "%s, temp=%u C (i2c-r-err: %u, i2c-w-err: %u)", mode_str, temp, cnt_i2c_read_error, cnt_i2c_write_error);
 }
 
 void ed_set_current(uint16_t current_ma) {
