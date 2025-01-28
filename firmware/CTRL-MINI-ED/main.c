@@ -360,6 +360,7 @@ int main() {
   csec_pulse_pol = POL_OFF;
   csec_pulse_pcurr = PCURR_ON_RESET;
   csec_pulse_th_on_cyc = th_cyc_on_reset;
+  critical_section_init(&csec_pulse);
 
   // Init I/O to safe state.
   const uint32_t output_mask =
