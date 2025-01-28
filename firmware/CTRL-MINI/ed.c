@@ -172,7 +172,7 @@ void ed_set_energize(bool on) {
     return;
   }
 
-  write_reg(REG_POLARITY, POLARITY_TNWP);
+  write_reg(REG_POLARITY, on ? POLARITY_TNWP : POLARITY_OFF);
   sleep_us(WAIT_POLARITY_US);
 }
 

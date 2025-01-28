@@ -56,13 +56,25 @@ Tests:
 Connect to host. Host must be able to read/write registers.
 
 Tests:
-* _host_temp: Read TEMPERATURE. Must be within 5 degrees of Tamb.
+* _host_temp: Read TEMPERATURE. Must be within 5 degrees C of Tamb.
 * _host_pol1: Write 1 to POLARITY. Relay switch sound, PWR(red)=ON, T=100V, W=0V, G=High-Z
 * _host_pol2: Write 2 to POLARITY. Relay switch sound, PWR(red)=ON, T=0V, W=100V, G=High-Z
 * _host_pol3: Write 3 to POLARITY. Relay switch sound, PWR(red)=ON, T=100V, W=High-Z, G=0V
 * _host_pol4: Write 4 to POLARITY. Relay switch sound, PWR(red)=ON, T=0V, W=0V, G=100V
 * _host_pol0: Write 0 to POLARITY. Relay switch sound, PWR(red)=OFF, T=High-Z, W=High-Z, G=High-Z
 
+### _res (Resitive load)
+Preparation
+* Connect to host. Host must be able to read/write registers.
+* Connect 12Ω load between Tool & Work.
+
+Tests:
+* _res_
+
+
+100mA, 200mA
+4A, 4.1A
+7.9A, 8A
 
 ## Calibrations and other tweaks
 

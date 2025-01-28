@@ -13,6 +13,7 @@
 typedef struct {
   uint32_t pulse_dur_us;
   uint8_t duty_pct;
+  uint16_t current_ma;
 } ctrl_config_t;
 
 void pico_led_init() {
@@ -60,8 +61,8 @@ void exec_command_status(ctrl_config_t* config) {
   ed_dump_state(ed_state, sizeof(ed_state));
   printf("ED: %s\n", ed_state);
 
-  printf("PARAM: pulse_dur_us=%u, duty=%u\n", config->pulse_dur_us,
-         config->duty_pct);
+  printf("PULSE: dur_us=%u, duty=%u, curr_ma=%u\n", config->pulse_dur_us,
+         config->duty_pct, config->current_ma);
 }
 
 void exec_command_step(uint8_t md_ix, int step, uint32_t wait) {
@@ -132,16 +133,6 @@ void exec_command_regwrite(char board_id, uint8_t addr, uint32_t data) {
   }
 }
 
-void exec_command_edon() {
-  ed_set_energize(true);
-  printf("ED: ENERGIZED\n");
-}
-
-void exec_command_edoff() {
-  ed_set_energize(false);
-  printf("ED: de-energized\n");
-}
-
 void exec_command_find(uint8_t md_ix, float distance) {
   const uint32_t WAIT_US = 25;
 
@@ -149,6 +140,7 @@ void exec_command_find(uint8_t md_ix, float distance) {
   bool is_plus = distance > 0;
 
   ed_set_current(100);
+  ed_set_energize(true);
   ed_unsafe_set_gate(true);
   int32_t ix = 0;
   bool found = false;
@@ -176,6 +168,7 @@ void exec_command_find(uint8_t md_ix, float distance) {
   } else {
     printf("find: not found\n");
   }
+  ed_set_energize(false);
 }
 
 typedef enum {
@@ -450,7 +443,8 @@ void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
   drill_stats_t stats;
   init_drill_stats(&stats);
 
-  ed_set_current(2000); // 2A
+  ed_set_current(config->current_ma);
+  ed_set_energize(true);
   while (md.pos < md.steps) {
     /* Exec */
     uint16_t ig_time;
@@ -461,6 +455,7 @@ void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
     if (ed.successive_shorts >= 1000) {
       // CONTINUED short; abort
       ed_unsafe_set_gate(false);
+      ed_set_energize(false);
       print_time();
       printf("drill: ABORTED due to continued 10000 shorts\n");
       return;
@@ -517,83 +512,29 @@ void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
   }
 
   ed_unsafe_set_gate(false); // turn off
+  ed_set_energize(false);
   print_time();
   printf("drill: done\n");
   drill_print_stats(tick, &md, &ed, &stats);
   printf("drill: #tmiss=%d\n", stats.n_tick_miss);
 }
 
-void exec_command_edeexec(uint32_t duration_ms, uint16_t pulse_dur_us,
-                          uint16_t current_ma, uint8_t duty_pct) {
-  const uint32_t NUM_BUCKETS = 100;
-
-  uint32_t wait_time_us = ((uint32_t)pulse_dur_us) * 100 / duty_pct;
-  uint32_t duration_us = duration_ms * 1000;
-
-  ed_set_current(current_ma);
-  absolute_time_t t0 = get_absolute_time();
-
-  uint32_t count_pulse_success = 0;
-  uint32_t count_pulse_timeout = 0;
-  uint64_t accum_ig_delay = 0;
-  uint32_t max_ig_delay = 0;
-  uint32_t min_ig_delay = UINT32_MAX;
-  uint32_t hist_ig_delay[NUM_BUCKETS];
-  for (int i = 0; i < NUM_BUCKETS; i++) {
-    hist_ig_delay[i] = 0;
-  }
-
-  while (absolute_time_diff_us(t0, get_absolute_time()) < duration_us) {
-    uint16_t ignition_delay_us = ed_single_pulse(pulse_dur_us, 5000);
-    if (ignition_delay_us == UINT16_MAX) {
-      count_pulse_timeout++;
-    } else {
-      count_pulse_success++;
-      accum_ig_delay += ignition_delay_us;
-      if (ignition_delay_us > max_ig_delay) {
-        max_ig_delay = ignition_delay_us;
-      }
-      if (ignition_delay_us < min_ig_delay) {
-        min_ig_delay = ignition_delay_us;
-      }
-      uint16_t bucket_key = (ignition_delay_us >= NUM_BUCKETS)
-                                ? (NUM_BUCKETS - 1)
-                                : ignition_delay_us;
-      hist_ig_delay[bucket_key]++;
-    }
-
-    sleep_us(wait_time_us); // defensive; can subtract ignition_delay to
-                            // maximize power output.
-  }
-
-  printf("pulse count: %u success, %u timeout\n", count_pulse_success,
-         count_pulse_timeout);
-  if (count_pulse_success > 0) {
-    printf("ignition delay stats(usec):\n");
-    printf("avg=%u, min=%u, max=%u\n",
-           (uint32_t)(accum_ig_delay / count_pulse_success), min_ig_delay,
-           max_ig_delay);
-    printf("histogram: 100 buckets, [0,1),...[99,5000). 100 count values:\n");
-    for (int i = 0; i < NUM_BUCKETS; i++) {
-      printf("%u,", hist_ig_delay[i]);
-      if (i % 50 == 49) {
-        printf("\n");
-      }
-    }
-    printf("\n");
-  }
-
-  print_time();
-  printf("ED: exec done\n");
-}
-
-void exec_command_edparam(uint32_t pulse_dur_us, uint8_t duty_pct,
+void exec_command_edparam(uint32_t pulse_dur_us, uint8_t duty_pct, float curr_a,
                           ctrl_config_t* config) {
+  float curr_ma = curr_a * 1000;
+  if (curr_ma < 100) {
+    curr_ma = 100;
+  } else if (curr_ma > 8000) {
+    curr_ma = 8000;
+  }
+
   config->pulse_dur_us = pulse_dur_us;
   config->duty_pct = duty_pct;
+  config->current_ma = curr_ma;
 
   print_time();
-  printf("New config: pulse_dur_us=%u, duty=%u%%\n", pulse_dur_us, duty_pct);
+  printf("New pulse config: dur_us=%u, duty=%u%%, curr_ma=%u\n",
+         config->pulse_dur_us, config->duty_pct, config->current_ma);
 }
 
 // Try to get line.
@@ -804,10 +745,11 @@ void try_exec_command(char* buf, ctrl_config_t* config) {
   } else if (strcmp(command, "edparam") == 0) {
     uint16_t pulse_dur_us = parse_int(&parser, 5, 10000);
     uint8_t duty_pct = parse_int(&parser, 1, 50);
+    float curr_a = parse_float(&parser);
     if (!parser.success) {
       return;
     }
-    exec_command_edparam(pulse_dur_us, duty_pct, config);
+    exec_command_edparam(pulse_dur_us, duty_pct, curr_a, config);
   } else if (strcmp(command, "regread") == 0) {
     char board_id = parse_board_id(&parser);
     uint8_t addr = parse_hex(&parser, 0x7f);
@@ -823,10 +765,6 @@ void try_exec_command(char* buf, ctrl_config_t* config) {
       return;
     }
     exec_command_regwrite(board_id, addr, data);
-  } else if (strcmp(command, "edon") == 0) {
-    exec_command_edon();
-  } else if (strcmp(command, "edoff") == 0) {
-    exec_command_edoff();
   } else if (strcmp(command, "find") == 0) {
     uint8_t md_ix = parse_int(&parser, 0, MD_NUM_BOARDS - 1);
     float distance = parse_float(&parser);
@@ -863,6 +801,7 @@ int main() {
   ctrl_config_t config;
   config.pulse_dur_us = 500;
   config.duty_pct = 50;
+  config.current_ma = 1000;
 
   // report init done
   printf("init OK\n");

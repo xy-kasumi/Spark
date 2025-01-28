@@ -172,9 +172,9 @@ Register access:
 * R: read-only
 
 Invalid value writes are:
-* set to safe default such as 0, OFF (e.g. POLARITY)
-* set to nearest valid value (e.g. PULSE_CURRENT, DETECT_THRESH)
-* ignored for read-only or unused registers
+* set to safe default such as OFF (e.g. POLARITY)
+* set to nearest valid value (e.g. PULSE_CURRENT)
+* ignored for read-only or unused registers (e.g. TEMPERATURE)
 
 #### Timing wrt. GATE/DETECT
 

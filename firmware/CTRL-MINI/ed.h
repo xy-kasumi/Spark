@@ -24,8 +24,16 @@ void ed_dump_state(char* ptr, size_t size);
  */
 uint8_t ed_temp();
 
+/**
+ * Set polarity to ON or OFF.
+ * Wait until polarity change is complete.
+ */
 void ed_set_energize(bool on);
 
+/**
+ * Set specified pulse current.
+ * Wait until current change is complete.
+ */
 void ed_set_current(uint16_t current_ma);
 
 void ed_unsafe_set_gate(bool on);

@@ -87,11 +87,12 @@ Interface behavior:
 #### `status`
 * **Description:** Prints the status of the system.
 
-#### `edparam <pulse_us> <duty>`
-* **Description:** Configures the default value of discharge pulse and duty ratio. Will affect `drill` command.
+#### `edparam <duration_us> <duty> <current_a>`
+* **Description:** Configures pulse duration, duty factor, current. Will affect `drill` command.
 * **Parameters:**
-  * `pulse_us`: integer, pulse duration in microseconds (range: 5 to 10000)
+  * `duration_us`: integer, pulse duration in microseconds (range: 5 to 10000)
   * `duty`: integer, max duty ratio in percent (range: 1 to 50)
+  * `current_a`: float, current in amperes (range: 0.1 to 8). Will be rounded to nearest allowed value.
 
 #### `move <board_ix> <distance>`
 * **Description:** Moves the specified board by a given distance (in millimeters).
@@ -136,6 +137,8 @@ Interface behavior:
   * `board_id`: 0, 1, 2, E
   * `addr`: hexadecimal value from `00` to `7f`
 
+### Low-Level Commands
+
 #### `regwrite <board_id> <addr> <data>`
 * **Description:** Writes to a register on the peripheral boards.
 * **Parameters:**
@@ -145,11 +148,3 @@ Interface behavior:
 * **Examples:**
   * `regwrite E 02 01`
   * `regwrite 0 10 1f10`
-
-### ED (Electro-Discharge) Commands
-
-#### `edon`
-* **Description:** Switches the ED to discharge mode.
-
-#### `edoff`
-* **Description:** Switches the ED to sense mode.
