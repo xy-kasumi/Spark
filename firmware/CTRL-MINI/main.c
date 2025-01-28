@@ -121,10 +121,6 @@ void exec_command_home(uint8_t md_ix, bool dir_plus, int timeout_ms) {
 
 void exec_command_regread(char board_id, uint8_t addr) {
   if (board_id == 'E') {
-    if (!ed_available()) {
-      printf("ED: NO_BOARD\n");
-      return;
-    }
     uint8_t value = ed_read_register(addr);
     printf("board E: reg 0x%02x = 0x%02x\n", addr, value);
   } else {

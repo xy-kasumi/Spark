@@ -67,16 +67,22 @@ void ed_init() {
   gpio_set_function(PIN_ED_I2C_SDA, GPIO_FUNC_I2C);
   gpio_set_function(PIN_ED_I2C_SCL, GPIO_FUNC_I2C);
 
-  // Check temperature sanity.
-  uint8_t temp;
-  if (read_reg(REG_TEMPERATURE, &temp)) {
-    if (temp == TEMP_INVALID_VALUE) {
-      return; // temp sensor not working
+  // Poll ED board until 500ms (mostly PSU turn on time).
+  for (int i = 0; i < 5; i++) {
+    // Check temperature sanity.
+    uint8_t temp;
+    if (read_reg(REG_TEMPERATURE, &temp)) {
+      if (temp == TEMP_INVALID_VALUE) {
+        return; // temp sensor not working
+      }
+      if (temp > 80) {
+        return; // too hot for start condition
+      }
+      mode = ED_OK;
+      return;
     }
-    if (temp > 80) {
-      return; // too hot for start condition
-    }
-    mode = ED_OK;
+
+    sleep_ms(100);
   }
 }
 
@@ -161,9 +167,7 @@ bool ed_unsafe_get_detect() {
 }
 
 uint8_t ed_read_register(uint8_t reg_addr) {
-  if (mode != ED_OK) {
-    return 0;
-  }
+  // omit mode check for easier debugging
   uint8_t val;
   if (!read_reg(reg_addr, &val)) {
     return 0;
