@@ -1,7 +1,7 @@
-# CTRL-MINI-ED (r0) PCB Spec / Cheatsheet for Firmware Developer
+# PULSER (r1) PCB Spec / Cheatsheet for Firmware Developer
 
 This document specifies the PCB hardware interface needed for firmware development,
-to meet the requirements defined in [user-README-CTRL-MINI.md](user-README-CTRL-MINI.md).
+to meet the requirements defined in [user-PULSER.md](user-PULSER.md).
 
 
 ## Conditions to consider
@@ -55,27 +55,27 @@ uC operating environment
 
 * N/C: No Connection
 
-MD r0, ED r1 is assumed.
-ED r0 pin notes are left for historical reference.
+STPDRV r0, PULSER r1 is assumed.
+PULSER r0 pin notes are left for historical reference.
 
 
-## MD boards
+## STPDRV boards
 
-The MD board is a 14-pin child board, taking 3.3V logic power and 12V power input.
+The STPDRV board is a 14-pin child board, taking 3.3V logic power and 12V power input.
 
-Each MD board has:
+Each STPDRV board has:
 * A single TMC2130 stepper driver motor
 * On-PCB configuration jumpers for:
   * Phase current (0.2A vs 0.4A)
   * Power voltage (5V vs 12V)
 
 They're controlled by SPI & "STEP/DIR" interface.
-SPI bus connects uC and 3 MD boards.
+SPI bus connects uC and 3 STPDRV boards.
 
 To address each chip individually, CSN pins are used.
 CSNs are GPIO pins, so firmware needs to manually toggle them when doing SPI transactions.
 
-# ED board
+# PULSER board
 
-Nothing is done in CTRL-MINI. Just a direct connection.
-See [user-README-CTRL-MINI-ED.md](user-README-CTRL-MINI-ED.md) for details.
+Nothing is done in PULSER. Just a direct connection.
+See [user-PULSER.md](user-PULSER.md) for details.

@@ -10,7 +10,7 @@
 		(rev "1")
 		(company "Spark Project")
 		(comment 1 "Author: 夕月霞 (xyx)")
-		(comment 2 "Electric Discharge Machining board for CTRL-MINI")
+		(comment 2 "EDM Pulse Generator Board")
 	)
 	(lib_symbols
 		(symbol "Connector:TestPoint_Small"

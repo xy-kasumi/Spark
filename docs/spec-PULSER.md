@@ -1,7 +1,7 @@
-# CTRL-MINI-ED PCB Spec / Cheatsheet for Firmware Developer
+# PULSER PCB Spec / Cheatsheet for Firmware Developer
 
 This document specifies the PCB hardware interface needed for firmware development,
-to meet the requirements defined in [user-README-CTRL-MINI-ED.md](user-README-CTRL-MINI-ED.md).
+to meet the requirements defined in [user-PULSER.md](user-PULSER.md).
 
 
 ## Conditions to consider

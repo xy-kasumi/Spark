@@ -1,24 +1,24 @@
-# CTRL-MINI (r0) User Manual
+# CORE (r0) User Manual
 
-This doc is for users of the CTRL-MINI board.
+This doc is for users of the CORE board.
 It serves as both a datasheet and an operating manual.
 
 ## Overview
 
-![photo](./CTRL-MINI-r0-photo.jpeg)
+![photo](./CORE-r0-photo.jpeg)
 
-CTRL-MINI is the main board of a Spark machine.
+CORE is the main board of a Spark machine.
 In the current prototype phase, it serves as an experimental hub.
 Major revisions are expected in future iterations.
 
 It features the following functionality:
 - Terminal-like interface for human operator via RasPi probe
-- 3-axis bipolar stepper motor driver with swappable child boards (CTRL-MINI-MD)
+- 3-axis bipolar stepper motor driver with swappable child boards (STPDRV)
   - 12V, 0.4-ish A per phase
   - Features Trinamic TMC2130 driver with 1/256 microstepping capability
-- Connectivity to CTRL-MINI-ED board
+- Connectivity to PULSER board
 
-Note: The architectural relationship between CTRL-MINI and CTRL-MINI-ED (whether as a sub-component or separate board) is TBD. This document treats it as a separate board.
+Note: The architectural relationship between CORE and PULSER (whether as a sub-component or separate board) is TBD. This document treats it as a separate board.
 
 ### Power Supply
 
@@ -38,7 +38,7 @@ Right edge: Motors
     3: B1
     4: B2
 
-Bottom edge: CTRL-MINI-ED connection
+Bottom edge: PULSER connection
 - Upright connector for FFC (Flat Flexible Cable)
   - Type-A, pitch 1mm, 8 pins
   - Terminal thickness: 0.3mm

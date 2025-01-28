@@ -1,7 +1,9 @@
-# CTRL-MINI-ED (r1) Builder Manual
+# PULSER (r1) Builder Manual
 
-This doc is for people who want to build, modify, test ED board.
+This doc is for people who want to build, modify, test PULSER (aka CTRL-MINI-ED) board.
 Current it's written for r1 (r0 didn't have any such doc).
+
+R1 is a transition period from CTRL-MINI-ED to PULSER naming and design.
 
 ## Assembly
 
@@ -81,14 +83,3 @@ Tests:
 
 ## Real world measurements
 Measurement procedures during actual EDM.
-
-### _pulse
-Prepare CTRL-MINI-ED, host controller, work & tool in operation fluid.
-
-Trigger:
-  M_GATE
-  CURR_GATE
-  CURR_DETECT
-Current:
-Voltage:
-

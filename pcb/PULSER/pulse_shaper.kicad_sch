@@ -10,7 +10,7 @@
 		(rev "1")
 		(company "Spark Project")
 		(comment 1 "Author: 夕月霞 (xyx)")
-		(comment 2 "Electric Discharge Machining board for CTRL-MINI")
+		(comment 2 "EDM Pulse Generator Board")
 	)
 	(lib_symbols
 		(symbol "Amplifier_Operational:AD8603"
@@ -6885,7 +6885,7 @@
 			(uuid "358556e2-eb87-4b9c-ae9d-85b2e2c685ad")
 		)
 		(instances
-			(project "CTRL-MINI-ED"
+			(project "PULSER"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f"
 					(page "6")
 				)

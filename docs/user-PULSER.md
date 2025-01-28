@@ -1,16 +1,16 @@
-# CTRL-MINI-ED (r1) User Manual
+# PULSER (r1) User Manual
 
-This doc is for users of the CTRL-MINI-ED board.
+This doc is for users of the PULSER board.
 It basically serves as both a datasheet and an operating manual.
 
 ## ⚠️ Safety warning ⚠️
-Improper use of CTRL-MINI-ED may cause death, fire, or damage to nearby devices.
+Improper use of PULSER may cause death, fire, or damage to nearby devices.
 
 ## Overview
 
-![photo](./CTRL-MINI-ED-r1-photo.jpeg)
+![photo](./PULSER-r1-photo.jpeg)
 
-CTRL-MINI-ED is an EDM discharge board, controllable via digital IOs and I2C.
+PULSER is an EDM discharge board, controllable via digital IOs and I2C.
 
 * Max pulse current: 8A (at duty factor=50%)
 * Open voltage: 100V
@@ -67,7 +67,7 @@ Board dimensions: 100mm (width) x 100mm (height)
 
 ## Controller Interface
 
-CTRL-MINI-ED is designed to be safe (de-energized) to be turned on with "Control Connector" disconnected.
+PULSER is designed to be safe (de-energized) to be turned on with "Control Connector" disconnected.
 
 ### Physical layer
 "Control Connector" pinout (at **host-side**. See note.):
@@ -146,7 +146,7 @@ The current detection threshold is auto-set to 25% of pulse current by the ED bo
 When POLARITY or PULSE_CURRENT is updated, DETECT can become LOW even when actual discharge
 current is still flowing.
 
-![photo](./CTRL-MINI-ED-GD-signal-timing.png)
+![photo](./PULSER-GD-signal-timing.png)
 
 There is a constraint for combinations of pulse time, pulse current, and duty factor.
 See the "Pulse Shaping" section for details.

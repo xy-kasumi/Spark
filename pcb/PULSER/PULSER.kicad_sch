@@ -10,7 +10,7 @@
 		(rev "1")
 		(company "Spark Project")
 		(comment 1 "Author: 夕月霞 (xyx)")
-		(comment 2 "Electric Discharge Machining board for CTRL-MINI")
+		(comment 2 "EDM Pulse Generator Board")
 	)
 	(lib_symbols
 		(symbol "Connector:Conn_01x02_Pin"
@@ -6821,7 +6821,7 @@
 			(uuid "cbfadfb5-f63d-4c7b-99de-d7148eac4a2c")
 		)
 		(instances
-			(project "CTRL-MINI-ED"
+			(project "PULSER"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
 					(page "10")
 				)
@@ -6880,7 +6880,7 @@
 			(uuid "14da9da0-0bd0-4a25-9463-bbf6324a7db3")
 		)
 		(instances
-			(project "CTRL-MINI-ED"
+			(project "PULSER"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
 					(page "4")
 				)
@@ -6949,7 +6949,7 @@
 			(uuid "26e483cd-11a7-4758-a950-47ef224bd625")
 		)
 		(instances
-			(project "CTRL-MINI-ED"
+			(project "PULSER"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
 					(page "11")
 				)
@@ -7068,7 +7068,7 @@
 			(uuid "55ec3a46-d361-48a4-88c3-fa016fa066f5")
 		)
 		(instances
-			(project "CTRL-MINI-ED"
+			(project "PULSER"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
 					(page "2")
 				)
@@ -7127,7 +7127,7 @@
 			(uuid "d252d247-d260-495b-bee8-d3ca43589605")
 		)
 		(instances
-			(project "CTRL-MINI-ED"
+			(project "PULSER"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
 					(page "3")
 				)
@@ -7306,7 +7306,7 @@
 			(uuid "5c097346-9c26-442a-ab4e-ad207cdaad8d")
 		)
 		(instances
-			(project "CTRL-MINI-ED"
+			(project "PULSER"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
 					(page "7")
 				)
@@ -7385,7 +7385,7 @@
 			(uuid "5f3f5bf9-ad0f-49ea-aac4-d2a29c799ed1")
 		)
 		(instances
-			(project "CTRL-MINI-ED"
+			(project "PULSER"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
 					(page "5")
 				)

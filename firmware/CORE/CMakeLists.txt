@@ -70,31 +70,30 @@ set(PICO_BOARD pico2 CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(ctrl_ed_fw C CXX ASM)
+project(CORE_fw C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(ctrl_ed_fw
+add_executable(CORE_fw
     main.c
+    ed.c
+    md.c
     )
 
 # pull in common dependencies
-target_link_libraries(ctrl_ed_fw pico_stdlib)
-target_link_libraries(ctrl_ed_fw pico_i2c_slave)
-target_link_libraries(ctrl_ed_fw hardware_pwm)
-target_link_libraries(ctrl_ed_fw hardware_i2c)
-target_link_libraries(ctrl_ed_fw hardware_adc)
-target_link_libraries(ctrl_ed_fw pico_multicore)
-
+target_link_libraries(CORE_fw pico_stdlib)
+target_link_libraries(CORE_fw hardware_spi)
+target_link_libraries(CORE_fw hardware_i2c)
+target_link_libraries(CORE_fw hardware_pwm)
 
 if (PICO_CYW43_SUPPORTED)
-    target_link_libraries(ctrl_ed_fw pico_cyw43_arch_none)
+    target_link_libraries(CORE_fw pico_cyw43_arch_none)
 endif()
 
 # create map/bin/hex file etc.
-pico_add_extra_outputs(ctrl_ed_fw)
+pico_add_extra_outputs(CORE_fw)
 
 # add url via pico_set_program_url
