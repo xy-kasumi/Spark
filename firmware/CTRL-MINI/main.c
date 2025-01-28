@@ -122,7 +122,7 @@ void exec_command_home(uint8_t md_ix, bool dir_plus, int timeout_ms) {
 void exec_command_regread(char board_id, uint8_t addr) {
   if (board_id == 'E') {
     uint8_t value = ed_read_register(addr);
-    printf("board E: reg 0x%02x = 0x%02x\n", addr, value);
+    printf("board E: reg 0x%02x = 0x%02x (%d)\n", addr, value, value);
   } else {
     uint32_t value = md_read_register(board_id - '0', addr);
     printf("board %c: reg 0x%02x = 0x%08x\n", board_id, addr, value);
