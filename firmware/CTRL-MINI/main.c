@@ -519,15 +519,8 @@ void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
   printf("drill: #tmiss=%d\n", stats.n_tick_miss);
 }
 
-void exec_command_edparam(uint32_t pulse_dur_us, uint8_t duty_pct, float curr_a,
+void exec_command_edparam(uint32_t pulse_dur_us, uint8_t duty_pct, uint16_t curr_ma,
                           ctrl_config_t* config) {
-  float curr_ma = curr_a * 1000;
-  if (curr_ma < 100) {
-    curr_ma = 100;
-  } else if (curr_ma > 8000) {
-    curr_ma = 8000;
-  }
-
   config->pulse_dur_us = pulse_dur_us;
   config->duty_pct = duty_pct;
   config->current_ma = curr_ma;
@@ -578,7 +571,7 @@ int32_t parse_int(parser_t* parser, int32_t min, int32_t max) {
 
   char* str = strtok(NULL, " ");
   if (str == NULL) {
-    printf("arg%d missing: expecting int", parser->ix);
+    printf("arg%d missing: expecting int\n", parser->ix);
     parser->success = false;
     return 0;
   }
@@ -586,13 +579,13 @@ int32_t parse_int(parser_t* parser, int32_t min, int32_t max) {
   char* end;
   int res = strtol(str, &end, 10);
   if (str == end || *end != 0) {
-    printf("arg%d invalid int", parser->ix);
+    printf("arg%d invalid int\n", parser->ix);
     parser->success = false;
     return 0;
   }
 
   if (res < min || res > max) {
-    printf("arg%d must be in [%d, %d]", parser->ix, min, max);
+    printf("arg%d must be in [%d, %d]\n", parser->ix, min, max);
     parser->success = false;
     return 0;
   }
@@ -609,7 +602,7 @@ uint32_t parse_hex(parser_t* parser, uint32_t max) {
 
   char* str = strtok(NULL, " ");
   if (str == NULL) {
-    printf("arg%d missing: expecting hex", parser->ix);
+    printf("arg%d missing: expecting hex\n", parser->ix);
     parser->success = false;
     return false;
   }
@@ -617,13 +610,13 @@ uint32_t parse_hex(parser_t* parser, uint32_t max) {
   char* end;
   int res = strtol(str, &end, 16);
   if (str == end || *end != 0) {
-    printf("invalid hex\n");
+    printf("arg%d: invalid hex\n");
     parser->success = false;
     return false;
   }
 
   if (res > max) {
-    printf("arg%d must be <= %x", parser->ix, max);
+    printf("arg%d must be <= %x\n", parser->ix, max);
     parser->success = false;
     return false;
   }
@@ -639,7 +632,7 @@ bool parse_dir(parser_t* parser) {
 
   char* str = strtok(NULL, " ");
   if (str == NULL) {
-    printf("arg%d missing: expecting + or -", parser->ix);
+    printf("arg%d missing: expecting + or -\n", parser->ix);
     parser->success = false;
     return false;
   }
@@ -647,7 +640,7 @@ bool parse_dir(parser_t* parser) {
   bool is_plus = strcmp(str, "+") == 0;
   bool is_minus = strcmp(str, "-") == 0;
   if (!is_plus && !is_minus) {
-    printf("arg%d invalid direction", parser->ix);
+    printf("arg%d invalid direction\n", parser->ix);
     parser->success = false;
     return false;
   }
@@ -663,7 +656,7 @@ float parse_float(parser_t* parser) {
 
   char* str = strtok(NULL, " ");
   if (str == NULL) {
-    printf("arg%d missing: expecting float", parser->ix);
+    printf("arg%d missing: expecting float\n", parser->ix);
     parser->success = false;
     return 0;
   }
@@ -671,7 +664,7 @@ float parse_float(parser_t* parser) {
   char* end;
   float res = strtof(str, &end);
   if (str == end || *end != 0) {
-    printf("arg%d invalid float", parser->ix);
+    printf("arg%d invalid float\n", parser->ix);
     parser->success = false;
     return 0;
   }
@@ -687,20 +680,20 @@ char parse_board_id(parser_t* parser) {
 
   char* str = strtok(NULL, " ");
   if (str == NULL) {
-    printf("arg%d missing: expecting board_id (0/1/2/E)", parser->ix);
+    printf("arg%d missing: expecting board_id (0/1/2/E)\n", parser->ix);
     parser->success = false;
     return 'X';
   }
 
   if (strlen(str) >= 2) {
-    printf("arg%d invalid board_id", parser->ix);
+    printf("arg%d invalid board_id\n", parser->ix);
     parser->success = false;
     return 'X';
   }
 
   char ch = str[0];
   if (ch != '0' && ch != '1' && ch != '2' && ch != 'E') {
-    printf("arg%d invalid board_id", parser->ix);
+    printf("arg%d invalid board_id\n", parser->ix);
     parser->success = false;
     return 'X';
   }
@@ -745,11 +738,11 @@ void try_exec_command(char* buf, ctrl_config_t* config) {
   } else if (strcmp(command, "edparam") == 0) {
     uint16_t pulse_dur_us = parse_int(&parser, 5, 10000);
     uint8_t duty_pct = parse_int(&parser, 1, 50);
-    float curr_a = parse_float(&parser);
+    uint16_t curr_ma = parse_int(&parser, 100, 8000);
     if (!parser.success) {
       return;
     }
-    exec_command_edparam(pulse_dur_us, duty_pct, curr_a, config);
+    exec_command_edparam(pulse_dur_us, duty_pct, curr_ma, config);
   } else if (strcmp(command, "regread") == 0) {
     char board_id = parse_board_id(&parser);
     uint8_t addr = parse_hex(&parser, 0x7f);

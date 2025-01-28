@@ -87,12 +87,12 @@ Interface behavior:
 #### `status`
 * **Description:** Prints the status of the system.
 
-#### `edparam <duration_us> <duty> <current_a>`
+#### `edparam <duration_us> <duty> <current_ma>`
 * **Description:** Configures pulse duration, duty factor, current. Will affect `drill` command.
 * **Parameters:**
   * `duration_us`: integer, pulse duration in microseconds (range: 5 to 10000)
   * `duty`: integer, max duty ratio in percent (range: 1 to 50)
-  * `current_a`: float, current in amperes (range: 0.1 to 8). Will be rounded to nearest allowed value.
+  * `current_ma`: integer, current in mA (range: 100 to 8000). Will be rounded down to possible value.
 
 #### `move <board_ix> <distance>`
 * **Description:** Moves the specified board by a given distance (in millimeters).
