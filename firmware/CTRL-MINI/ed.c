@@ -70,6 +70,7 @@ bool write_reg(uint8_t reg_addr, uint8_t val) {
 
 void ed_init() {
   gpio_init_mask((1 << PIN_ED_GATE) | (1 << PIN_ED_DETECT) | (1 << PIN_ED_I2C_SCL) | (1 << PIN_ED_I2C_SDA));
+  gpio_set_dir(PIN_ED_GATE, GPIO_OUT);
   gpio_set_dir(PIN_ED_DETECT, GPIO_IN);
   gpio_pull_down(PIN_ED_DETECT);
 
