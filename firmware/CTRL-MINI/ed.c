@@ -67,8 +67,8 @@ void ed_init() {
   gpio_set_function(PIN_ED_I2C_SDA, GPIO_FUNC_I2C);
   gpio_set_function(PIN_ED_I2C_SCL, GPIO_FUNC_I2C);
 
-  // Poll ED board until 500ms (mostly PSU turn on time).
-  for (int i = 0; i < 5; i++) {
+  // Poll ED board until 1000ms (typ PSU turn on time x2).
+  for (int i = 0; i < 10; i++) {
     // Check temperature sanity.
     uint8_t temp;
     if (read_reg(REG_TEMPERATURE, &temp)) {
