@@ -1,4 +1,4 @@
-# CTRL-MINI-ED Builder Manual
+# CTRL-MINI-ED (r1) Builder Manual
 
 This doc is for people who want to build, modify, test ED board.
 Current it's written for r1 (r0 didn't have any such doc).
@@ -10,7 +10,7 @@ You'll need the following
 * heatsink
 * 12V fan (2pin, XH connector)
 * thermal sheet with electric isolation
-* isolating M3 screw
+* plastic M3 screw x2
 * 220mΩ resistor & wire
 * NTC 100kΩ free-hanging thermistor
 
@@ -45,47 +45,23 @@ Tests:
 * _nofw_curr: Board current draw = 0.08±0.01A
 * _nofw_out: GRINDER, WORK, TOOL = High-Z
 
-### _noconn (No host connection)
+### _nohost (No host connection)
 Install firmware.
 
 Tests:
-* _noconn_led: Status LED = ON, Power LED = OFF
-* _noconn_smoke: No smoke, max temp in thermography < 70℃ (Tamb<30℃) after 1 min
-* _noconn_pow: repeat _nofw_pow
-* _noconn_curr: Board current draw = (TBD) A
-* _noconn_conn: Connector pin voltages
-  * GND = 0 V
-  * I2C_SCL, I2C_SDA = 3.3 V
-  * DCHG_GATE, DCHG_DETECT = 0 V
+* _nohost_led: Status LED = ON, Power LED = OFF
+* _nohost_smoke: No smoke, max temp in thermography < 70℃ (Tamb<30℃) after 1 min
 
-### _conn
+### _host (Host connection)
+Connect to host. Host must be able to read/write registers.
 
 Tests:
-* TBD: something about GATE,DETECT with no I2C (default setting)
-* TBD: something about I2C output configuration
-* TBD: something to measure current with different pulse config
-* TBD: something about rejecting dangerous values
-* TBD: something about measuring wave form with fake/real load
-
-* I can just cowboy all the way; what will I regret? (for not testing)
- * if it looks like it's working
- * if it's mysterious
- * if it breaks
-
-If I don't regret, I don't need those tests.
-
-Basically, for Spark progress, I need
-* Good MRR, TWR for known materials (esp AL)
-* Verify low-current ignition concept
-  * Otherwise, we need to rework ED soon
-* Verify different pulse settings are possible
-  * to plan other expriments
-* Verify touch detection with small current
-* Safety of long-runs, temeprature monitoring works. Try stopping fan.
-
-With these, I'll move towards mechanical design & CAM.
-I won't touch pulse current shaping any time soon.
-
+* _host_temp: Read TEMPERATURE. Must be within 5 degrees of Tamb.
+* _host_pol1: Write 1 to POLARITY. Relay switch sound, PWR(red)=ON, T=100V, W=0V, G=High-Z
+* _host_pol2: Write 2 to POLARITY. Relay switch sound, PWR(red)=ON, T=0V, W=100V, G=High-Z
+* _host_pol3: Write 3 to POLARITY. Relay switch sound, PWR(red)=ON, T=100V, W=High-Z, G=0V
+* _host_pol4: Write 4 to POLARITY. Relay switch sound, PWR(red)=ON, T=0V, W=0V, G=100V
+* _host_pol0: Write 0 to POLARITY. Relay switch sound, PWR(red)=OFF, T=High-Z, W=High-Z, G=High-Z
 
 
 ## Calibrations and other tweaks

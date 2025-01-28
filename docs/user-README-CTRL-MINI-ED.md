@@ -32,9 +32,10 @@ Above 4.2 A should be fine, but too much output (e.g. 10 A) will increase the da
 ### Indicators
 
 * Status (white) LED: ON if OK. Blinks if error. OFF means hardware or firmware failure.
-* Power (red) LED: indicates that electrodes are potentially energized
+* Power (red) LED: Indicates that electrodes are potentially energized. Blinks if error.
 
-Even after sudden power failure, electrodes should be High-Z if power red is OFF.
+Even after sudden power failure, electrodes should be in high-impedance state if the Power (red) LED is OFF.
+When the board enters an error state, the only way to recover is through a power reset.
 
 ### Connections
 

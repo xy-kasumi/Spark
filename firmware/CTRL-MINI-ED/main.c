@@ -349,7 +349,11 @@ fatal_error:
   gpio_put(PIN_DETECT, 0);
 
   while (true) {
-    // do nothing.
+    // "error blink" forever
+    gpio_put(PIN_LED_POWER, 1);
+    sleep_ms(LED_ERR_BLINK_ON_MS);
+    gpio_put(PIN_LED_POWER, 0);
+    sleep_ms(LED_ERR_BLINK_OFF_MS);
   }
 }
 
