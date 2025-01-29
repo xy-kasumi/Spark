@@ -1,13 +1,13 @@
-# PULSER (r1) PCB Spec / Cheatsheet for Firmware Developer
+# CORE (r0) PCB Spec / Cheatsheet for Firmware Developer
 
 This document specifies the PCB hardware interface needed for firmware development,
-to meet the requirements defined in [user-PULSER.md](user-PULSER.md).
+to meet the requirements defined in [user-CORE.md](user-CORE.md).
 
 
 ## Conditions to consider
 
-* MD boards are (partially) unavailable
-* ED board is unavailable
+* Some STPDRV boards are unavailable
+* PULSER board is unavailable
 
 Firmware must map these states to well-defined safe behaviors.
 
