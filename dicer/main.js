@@ -1066,16 +1066,13 @@ class PartialPath {
      * @param {number} sweepIx - Sweep index
      * @param {string} group - Group name
      * @param {THREE.Vector3} normal - Normal vector
-     * @param {number} minToolLength - Minimum tool length required
+     * @param {number} minToolLength - Minimum tool length required. Can change later with 
      * @param {number} toolIx - Tool index
      * @param {number} toolLength - Current tool length
      * @param {Object} machineConfig - Target machine's physical configuration
      */
     constructor(sweepIx, group, normal, minToolLength, toolIx, toolLength, machineConfig) {
         this.machineConfig = machineConfig;
-        if (this.machineConfig.toolNaturalLength < this.minToolLength) {
-            throw "required min tool length impossible";
-        }
         
         this.sweepIx = sweepIx;
         this.group = group;
@@ -1088,10 +1085,23 @@ class PartialPath {
         this.path = [];
         this.prevPtTipPos = null; // work-coords
 
-        if (this.toolLength < this.minToolLength) {
-            this.#changeTool();
-            this.toolLength = this.toolNaturalLength;
+        this.updateMinToolLength(this.minToolLength);
+    }
+
+    /**
+     * Update minimum tool length.
+     * @param {number} newMinToolLength - New minimum tool length
+     */
+    updateMinToolLength(newMinToolLength) {
+        if (this.machineConfig.toolNaturalLength < newMinToolLength) {
+            throw "required min tool length impossible";
         }
+
+        if (this.toolLength < newMinToolLength) {
+            this.#changeTool();
+            this.toolLength = this.machineConfig.toolNaturalLength;
+        }
+        this.minToolLength = newMinToolLength;
     }
 
     #withAxisValue(type, pt) {
@@ -1230,10 +1240,10 @@ class PartialPath {
      * Add material-removing move. (i.e. G1 move) The move must be vertical.
      * @param {THREE.Vector3} tipPos - Tip position in work coordinates
      * @param {number} toolRotDelta - Tool rotation delta in radians
-     * @param {number} maxDiameter - Maximum diameter of the tool
-     * @param {number} minDiameter - Minimum diameter of the tool
+     * @param {number} diameter - Diameter of the tool
+     * @param {number} uncutDepth - Depth that might not be cut (reduce min cut by this)
      */
-    removeVertical(tipPos, toolRotDelta, maxDiameter, minDiameter) {
+    removeVertical(tipPos, toolRotDelta, diameter, uncutDepth) {
         if (this.prevPtTipPos === null) {
             throw "nonRemove() need to be called before removeVertical()";
         }
@@ -1241,8 +1251,8 @@ class PartialPath {
             throw "remove path needs to be vertical (parallel to normal)";
         }
 
-        this.minSweepRemoveShapes.push(createCylinderShape(this.prevPtTipPos, this.normal, minDiameter / 2));
-        this.maxSweepRemoveShapes.push(createCylinderShape(this.prevPtTipPos, this.normal, maxDiameter / 2));
+        this.minSweepRemoveShapes.push(createCylinderShape(offsetPoint(tipPos, [this.normal, uncutDepth]), this.normal, diameter / 2, 200));
+        this.maxSweepRemoveShapes.push(createCylinderShape(tipPos, this.normal, diameter / 2, 200));
         this.path.push(this.#withAxisValue("remove-work", {
             tipPosW: tipPos,
             toolRotDelta: toolRotDelta,
@@ -1457,6 +1467,9 @@ class Planner {
             }
             const minToolLength = (workOffset - offset) + feedDepth;
             console.log(`minToolLength: ${minToolLength}`);
+            if (minToolLength > this.machineConfig.toolNaturalLength) {
+                return null;
+            }
             const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, minToolLength, this.toolIx, this.toolLength, this.machineConfig);
 
             const rot = createRotationWithZ(normal);
@@ -1654,7 +1667,7 @@ class Planner {
 
                     sweepPath.nonRemove("move-in", scan.apBot.clone().add(evacuateOffset));
                     sweepPath.nonRemove("move-in", scan.apBot);
-                    sweepPath.removeHorizontal(endBot, 0, toolDiameter, 0); // we don't know min-cut during repeated scan.
+                    sweepPath.removeHorizontal(endBot, 0, toolDiameter, 0); // minDia=0, because we don't know min-cut during repeated scan.
                     sweepPath.nonRemove("move-out", endBot.clone().add(evacuateOffset));
 
                     if (areaConsumption > 1) {
@@ -1685,7 +1698,8 @@ class Planner {
         };
 
         /**
-         * Generate "drill sweep", axis=normal.
+         * Generate "drill sweep", axis=normal. Single drill sweep is single hole.
+         * 
          * @param {THREE.Vector3} normal Normal vector, in work coords. = tip normal
          * @param {number} toolDiameter Tool diameter to use for this sweep.
          * @returns {{partialPath: PartialPath, ignoreOvercutErrors: boolean} | null} null if impossible
@@ -1695,54 +1709,95 @@ class Planner {
             const trvgCenter = this.trvg.ofs.clone().add(halfDiagVec);
             const trvgRadius = halfDiagVec.length(); // TODO: proper bounds
 
-            const minToolLength = trvgRadius * 2;
-            console.log(`minToolLength: ${minToolLength}`);
-            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, minToolLength, this.toolIx, this.toolLength, this.machineConfig);
+            //const minToolLength = trvgRadius * 2;
+            //console.log(`minToolLength: ${minToolLength}`);
+            const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, 0, this.toolIx, this.toolLength, this.machineConfig);
 
             const rot = createRotationWithZ(normal);
             const scanDir0 = new THREE.Vector3(1, 0, 0).transformDirection(rot);
             const scanDir1 = new THREE.Vector3(0, 1, 0).transformDirection(rot);
 
-            const scanRes = .5;
+            const scanRes = toolDiameter * 0.5;
             const numScan0 = Math.ceil(trvgRadius * 2 / scanRes);
             const numScan1 = Math.ceil(trvgRadius * 2 / scanRes);
             const scanOrigin = offsetPoint(trvgCenter, [scanDir0, -trvgRadius], [scanDir1, -trvgRadius]);
 
             const holeDiameter = toolDiameter * 1.1;
+            const depthDelta = toolDiameter;
 
             // grid query for drilling
             // if ok, just drill it with helical downwards path.
             const drillHoles = [];
             for (let ixScan0 = 0; ixScan0 < numScan0; ixScan0++) {
                 for (let ixScan1 = 0; ixScan1 < numScan1; ixScan1++) {
-                    const scanPt = offsetPoint(scanOrigin.clone(), [scanDir0, scanRes * ixScan0], [scanDir1, scanRes * ixScan1]);
-                    
-                    const holeBot = offsetPoint(scanPt, [normal, -trvgRadius]);
-                    const holeTop = offsetPoint(holeBot, [normal, trvgRadius * 2]);
-                    const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2);
-                    const ok = this.trvg.queryHasWork(holeShape) && !this.trvg.queryBlocked(holeShape);
-                    if (ok) {
-                        //debug.vlogE(createErrorLocVis(holeBot, "red"));
-                        drillHoles.push({
-                            pos: scanPt,
-                            holeBot,
-                            holeTop,
-                        });
-                    } else {
-                        //debug.vlogE(createErrorLocVis(holeBot, "blue"));
+                    const scanPt = offsetPoint(scanOrigin.clone(), [scanDir0, scanRes * ixScan0], [scanDir1, scanRes * ixScan1], [normal, trvgRadius]);
+                    const maxDepth = trvgRadius * 2;
+                    let currDepth = depthDelta;
+
+                    // Find begin depth (just before hitting work)
+                    let depthBegin = null;
+                    while (currDepth < maxDepth) {
+                        const holeBot = offsetPoint(scanPt, [normal, -currDepth]);
+                        const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2, depthDelta);
+
+                        if (this.trvg.queryBlocked(holeShape)) {
+                            break; // this location was no good
+                        }
+                        if (this.trvg.queryHasWork(holeShape)) {
+                            depthBegin = currDepth - depthDelta; // good begin depth found
+                            break;
+                        }
+                        currDepth += depthDelta;
                     }
+                    if (depthBegin === null) {
+                        continue;
+                    }
+
+                    // Find end depth
+                    currDepth += depthDelta;
+                    let depthEnd = null;
+                    while (currDepth < maxDepth) {
+                        const holeBot = offsetPoint(scanPt, [normal, -currDepth]);
+                        const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2, depthDelta);
+                        // TODO: this can stop too early (when holes span multiple separate layers).
+                        if (this.trvg.queryBlocked(holeShape) || !this.trvg.queryHasWork(holeShape)) {
+                            // end found
+                            depthEnd = currDepth - depthDelta;
+                            break; 
+                        }
+                        currDepth += depthDelta;
+                    }
+                    if (depthEnd === null) {
+                        continue;
+                    }
+                    
+                    const holeTop = offsetPoint(scanPt, [normal, -depthBegin]);
+                    const holeBot = offsetPoint(scanPt, [normal, -depthEnd]);
+                    debug.vlogE(createErrorLocVis(holeTop, "red"));
+                    debug.vlogE(createErrorLocVis(holeBot, "blue"));
+
+                    drillHoles.push({
+                        holeBot,
+                        holeTop,
+                    });
                 }
             }
             if (drillHoles.length === 0) {
                 return null;
             }
 
+            // TODO: pick best hole (= removes most work)
+
+
             // Generate paths
             const evacuateOffset = normal.clone().multiplyScalar(3);
 
             drillHoles.forEach(hole => {
                 sweepPath.nonRemove("move-in", hole.holeTop.clone().add(evacuateOffset));
-                sweepPath.removeVertical(hole.holeBot); // TODO: helical path
+                // TODO: helical path
+                // TODO: wear handling
+                // TODO: proper min-cut
+                sweepPath.removeVertical(hole.holeBot, 0, toolDiameter, toolDiameter);
                 sweepPath.nonRemove("move-out", hole.holeTop.clone().add(evacuateOffset));
             });
             
@@ -1787,7 +1842,7 @@ class Planner {
         // Main Loop
 
         // TODO: augment this from model normal features?
-        const candidateNormals = [
+        let candidateNormals = [
             new THREE.Vector3(1, 0, 0),
             new THREE.Vector3(0, 1, 0),
             new THREE.Vector3(-1, 0, 0),
@@ -1837,7 +1892,6 @@ class Planner {
         };
 
         // rough removals
-        
         for (const normal of candidateNormals) {
             let offset = this.trvg.queryWorkOffset(normal);
 
@@ -1857,7 +1911,7 @@ class Planner {
 
         // rough drills
         for (const normal of candidateNormals) {
-            const sweep = genDrillSweep(normal, this.machineConfig.toolNaturalDiameter / 4);
+            const sweep = genDrillSweep(normal, this.machineConfig.toolNaturalDiameter / 2);
             this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
             if (sweep) {
                 if (tryCommitSweep(sweep)) {

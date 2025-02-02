@@ -1,5 +1,5 @@
 import { Vector3 } from 'three';
-import { createSdfBox } from '../voxel.js';
+import { createSdfBox, createSdfCylinder } from '../voxel.js';
 
 QUnit.module('sdf', function() {
     QUnit.test('sdf cube', function(assert) {
@@ -31,5 +31,14 @@ QUnit.module('sdf', function() {
         assert.equal(sdf(new Vector3(-0.5, 0, 0)), 0, "X-");
         assert.equal(sdf(new Vector3(0, -1, 0)), 0, "Y-");
         assert.equal(sdf(new Vector3(0, 0, -1.5)), 0, "Z-");
+    });
+
+    QUnit.test('sdf cylinder', function(assert) {
+        const sdf = createSdfCylinder(new Vector3(0, 0, 0), new Vector3(0, 0, 1), 0.5, 2);
+        assert.equal(sdf(new Vector3(0, 0, -1)), 1, "bottom-1");
+        assert.equal(sdf(new Vector3(0, 0, 0)), 0, "bottom");
+        assert.equal(sdf(new Vector3(0, 0, 1)), -0.5, "center");
+        assert.equal(sdf(new Vector3(0, 0, 2)), 0, "top");
+        assert.equal(sdf(new Vector3(0, 0, 3)), 1, "top+1");
     });
 });

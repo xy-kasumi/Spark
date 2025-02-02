@@ -9,10 +9,11 @@ import { Vector3 } from 'three';
  * @param {Vector3} p Start point
  * @param {Vector3} n Direction (the cylinder extends infinitely towards n+ direction)
  * @param {number} r Radius
+ * @param {number} h Height
  * @returns {Object} Shape
  */
-export const createCylinderShape = (p, n, r) => {
-    return {type: "cylinder", p, n, r};
+export const createCylinderShape = (p, n, r, h) => {
+    return {type: "cylinder", p, n, r, h};
 };
 
 /**
@@ -46,7 +47,7 @@ export const createBoxShape = (center, halfVec0, halfVec1, halfVec2) => {
 export const createSdf = (shape) => {
     switch (shape.type) {
         case "cylinder":
-            return createSdfCylinder(shape.p, shape.n, shape.r);
+            return createSdfCylinder(shape.p, shape.n, shape.r, shape.h);
         case "ELH":
             return createSdfElh(shape.p, shape.q, shape.n, shape.r, shape.h);
         case "box":
@@ -60,9 +61,10 @@ export const createSdf = (shape) => {
  * @param {Vector3} p Start point
  * @param {Vector3} n Direction (the cylinder extends infinitely towards n+ direction)
  * @param {number} r Radius
+ * @param {number} h Height
  * @returns {Function} SDF: Vector3 -> number (+: outside, 0: surface, -: inside)
  */
-export const createSdfCylinder = (p, n, r) => {
+export const createSdfCylinder = (p, n, r, h) => {
     if (n.length() !== 1) {
         throw "Cylinder direction not normalized";
     }
@@ -74,8 +76,8 @@ export const createSdfCylinder = (p, n, r) => {
         const dx1 = dx.dot(n);
         const dx2 = dx.projectOnPlane(n); // destroys dx
 
-        // 1D distance from interval [0, +inf)
-        const d1 = -dx1;
+        // 1D distance from interval [0, h]
+        const d1 = Math.abs(dx1 - h * 0.5) - h * 0.5;
 
         // 2D distance from a circle r.
         const d2 = dx2.length() - r;
