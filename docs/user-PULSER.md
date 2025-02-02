@@ -80,9 +80,9 @@ PULSER is designed to be safe (de-energized) to be turned on with "Control Conne
 7. GATE
 8. DETECT
 
-Note: Type-A (terminals on same-side) means cross-cable. Thus, pinout at host and ED board is flipped.
+Note: Type-A (terminals on same-side) means cross-cable. Thus, pinout at host and PULSER board is flipped.
 
-* I2C SDA/SCL: 3.3V I/O. Standard Mode (~100kHz). Pulled-up in ED board.
+* I2C SDA/SCL: 3.3V I/O. Standard Mode (~100kHz). Pulled-up in PULSER board.
 * GATE: 3.3V digital input
 * DETECT: 3.3V digital output
 
@@ -141,7 +141,7 @@ actual driving can be suppressed. See the "Timing wrt. GATE/DETECT" section for 
 
 DETECT becomes HIGH whenever discharge current is detected.
 The host is responsible for monitoring DETECT and setting GATE to LOW after the desired pulse duration time.
-The current detection threshold is auto-set to 25% of pulse current by the ED board.
+The current detection threshold is auto-set to 25% of pulse current by the PULSER board.
 
 When POLARITY or PULSE_CURRENT is updated, DETECT can become LOW even when actual discharge
 current is still flowing.
@@ -208,7 +208,7 @@ Pulse current is limited due to the internal capacitor bank.
 
 If DF or pulse duration exceeds these values, discharge current will dwindle to 4A (power supply current) or cause an abrupt voltage drop.
 
-The ED board driver is optimized for EDM. It uses a combination of:
+The PULSER board driver is optimized for EDM. It uses a combination of:
 * 100V low-capacity "ignition supply"
 * 36V high-capacity "discharge supply"
 
