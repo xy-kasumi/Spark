@@ -436,26 +436,31 @@ class TrackingVoxelGrid {
     }
 
     /**
-     * Returns offset of the work in normal direction conservatively.
+     * Returns range of the work in normal direction conservatively.
      * Conservative means: "no-work" region never has work, despite presence of quantization error.
      * 
      * @param {THREE.Vector3} normal Normal vector, in work coords.
-     * @returns {number} Offset. No work exists in + side of the plane. normal * offset is on the plane.
+     * @returns {{min: number, max: number}} Offsets. No work exists outside the range.
      */
-    queryWorkOffset(normal) {
-        let offset = -Infinity;
+    queryWorkRange(normal) {
+        let min = Infinity;
+        let max = -Infinity;
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
                     if (this.getW(ix, iy, iz) === W_REMAINING) {
                         const t = this.centerOf(ix, iy, iz).dot(normal);
-                        offset = Math.max(offset, t);
+                        min = Math.min(min, t);
+                        max = Math.max(max, t);
                     }
                 }
             }
         }
         const maxVoxelCenterOfs = this.res * Math.sqrt(3) * 0.5;
-        return offset + maxVoxelCenterOfs;
+        return {
+            min: min - maxVoxelCenterOfs,
+            max: max + maxVoxelCenterOfs,
+        };
     }
 
     /**
@@ -1461,7 +1466,7 @@ class Planner {
          */
         const genPlanarSweep = (normal, offset, toolDiameter) => {
             console.log(`genPlanarSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), offset: ${offset}, toolDiameter: ${toolDiameter}`);
-            const workOffset = this.trvg.queryWorkOffset(normal);
+            const workOffset = this.trvg.queryWorkRange(normal).max;
             if (workOffset < offset) {
                 throw "contradicting offset for genPlanarSweep";
             }
@@ -1816,18 +1821,16 @@ class Planner {
             const normal = new THREE.Vector3(1, 0, 0);
             const cutDir = new THREE.Vector3(0, 1, 0);
 
-            const ctMin = this.trvg.queryWorkOffset(cutDir.clone().multiplyScalar(-1));
-            const ctMax = this.trvg.queryWorkOffset(cutDir);
-            const nrMin = this.trvg.queryWorkOffset(normal.clone().multiplyScalar(-1));
-            const nrMax = this.trvg.queryWorkOffset(normal);
+            const ctRange = this.trvg.queryWorkRange(cutDir);
+            const nrRange = this.trvg.queryWorkRange(normal);
             const cutOffset = new THREE.Vector3(0, 0, -this.stockCutWidth * 0.5); // center of cut path
 
-            const minToolLength = nrMin + nrMax;
+            const minToolLength = nrRange.max - nrRange.min;
             console.log(`minToolLength: ${minToolLength}`);
             const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, minToolLength, this.toolIx, this.toolLength, this.machineConfig);
 
-            const ptBeginBot = offsetPoint(cutOffset, [cutDir, -ctMin], [normal, -nrMin]);
-            const ptEndBot = offsetPoint(cutOffset, [cutDir, ctMax], [normal, -nrMin]);
+            const ptBeginBot = offsetPoint(cutOffset, [cutDir, ctRange.min], [normal, nrRange.min]);
+            const ptEndBot = offsetPoint(cutOffset, [cutDir, ctRange.max], [normal, nrRange.min]);
 
             sweepPath.nonRemove("move-in", ptBeginBot);
             sweepPath.removeHorizontal(ptEndBot, 123, this.stockCutWidth, this.stockCutWidth);
@@ -1893,7 +1896,7 @@ class Planner {
 
         // rough removals
         for (const normal of candidateNormals) {
-            let offset = this.trvg.queryWorkOffset(normal);
+            let offset = this.trvg.queryWorkRange(normal).max;
 
             // TODO: better termination condition
             while (offset > -50) {
