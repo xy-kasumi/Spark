@@ -45,7 +45,7 @@ const axisColorC = new THREE.Color(0x9b59b6);
  * @param {THREE.Color} col Color
  * @returns {THREE.Mesh} Cylinder visualization mesh
  */
-const createCylinderVis = (p, n, r, col) => {
+const visCylinder = (p, n, r, col) => {
     // Cylinder lies along Y axis, centered at origin.
     const geom = new THREE.CylinderGeometry(r, r, 30, 8);
     const mat = new THREE.MeshBasicMaterial({ color: col, wireframe: true });
@@ -60,11 +60,13 @@ const createCylinderVis = (p, n, r, col) => {
 };
 
 /**
+ * Quick visualization of a point.
+ * 
  * @param {THREE.Vector3} p Location in work coords
  * @param {THREE.Color} col Color
  * @returns {THREE.Mesh} Sphere visualization mesh
  */
-const createErrorLocVis = (p, col) => {
+const visDot = (p, col) => {
     const sphGeom = new THREE.SphereGeometry(0.1);
     const sphMat = new THREE.MeshBasicMaterial({ color: col });
     const sph = new THREE.Mesh(sphGeom, sphMat);
@@ -73,13 +75,35 @@ const createErrorLocVis = (p, col) => {
 }
 
 /**
+ * Quick visualization of a quad. {p, p+a, p+b, p+a+b} as wireframe.
+ * 
+ * @param {THREE.Vector3} p Origin
+ * @param {THREE.Vector3} a First edge vector
+ * @param {THREE.Vector3} b Second edge vector
+ * @param {THREE.Color} color Color
+ * @returns {THREE.Mesh} Quad visualization mesh
+ */
+const visQuad = (p, a, b, color) => {
+    const geom = new THREE.BufferGeometry();
+    const pos = new Float32Array([
+        p.x, p.y, p.z,
+        p.x + a.x, p.y + a.y, p.z + a.z,
+        p.x + a.x + b.x, p.y + a.y + b.y, p.z + a.z + b.z,
+        p.x + b.x, p.y + b.y, p.z + b.z,
+    ]);
+    geom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+
+    return new THREE.LineLoop(geom, new THREE.LineBasicMaterial({ color }));
+};
+
+/**
  * @param {THREE.Vector3} p Location in work coords
  * @param {string} text Text to display
  * @param {number} [size=0.25] Text size
  * @param {string} [color="#222222"] Text color
  * @returns {THREE.Mesh} Text visualization mesh
  */
-const createTextVis = (p, text, size=0.25, color="#222222") => {
+const visText = (p, text, size=0.25, color="#222222") => {
     const textGeom = new TextGeometry(text, {
         font,
         size,
@@ -399,7 +423,7 @@ class TrackingVoxelGrid {
                     // Check overcut.
                     if (!ignoreOvercutErrors && isInMax && isTargetNotEmpty) {
                         // this voxel can be potentially uncertainly removed.
-                        debug.vlogE(createErrorLocVis(this.centerOf(x, y, z), "violet"));
+                        debug.vlogE(visDot(this.centerOf(x, y, z), "violet"));
                         numDamages++;
                     }
                     
@@ -1330,7 +1354,6 @@ class Planner {
         this.deviation = 0;
         this.toolIx = 0;
         this.toolLength = this.toolNaturalLength;
-        this.showSweepVis = false;
         this.showPlanPath = true;
         this.highlightSweep = 2;
     }
@@ -1355,9 +1378,6 @@ class Planner {
             .listen();
         gui.add(this, "showWork")
             .onChange(_ => this.setVisVisibility("work-vg", this.showWork))
-            .listen();
-        gui.add(this, "showSweepVis")
-            .onChange(_ => this.setVisVisibility("sweep-vis", this.showSweepVis))
             .listen();
         gui.add(this, "showPlanPath")
             .onChange(_ => this.setVisVisibility("plan-path-vg", this.showPlanPath))
@@ -1453,7 +1473,6 @@ class Planner {
 
         // Global sweep hyperparams
         const feedDepth = 1; // TODO: reduce later. current values allow fast debug, but too big for actual use.
-        const sweepVises = [];
 
         /**
          * Generate "planar sweep", directly below given plane.
@@ -1484,6 +1503,7 @@ class Planner {
             const halfDiagVec = new THREE.Vector3(this.trvg.numX, this.trvg.numY, this.trvg.numZ).multiplyScalar(this.trvg.res * 0.5);
             const trvgCenter = this.trvg.ofs.clone().add(halfDiagVec);
             const trvgRadius = halfDiagVec.length(); // TODO: proper bounds
+            const maxHeight = trvgRadius * 2;
 
             // rows : [row]
             // row : [segment]
@@ -1501,15 +1521,21 @@ class Planner {
             const numSegs = Math.ceil(trvgRadius * 2 / segmentLength);
             const scanOrigin = offsetPoint(trvgCenter.clone().projectOnPlane(normal), [normal, offset], [feedDir, -trvgRadius], [rowDir, -trvgRadius]);
 
+            debug.vlog(visDot(scanOrigin, "red"));
+            debug.vlog(visQuad(
+                scanOrigin,
+                rowDir.clone().multiplyScalar(feedWidth * numRows),
+                feedDir.clone().multiplyScalar(segmentLength * numSegs),
+                "gray"));
+
             const segCenterBot = (ixRow, ixSeg) => {
                 return offsetPoint(scanOrigin, [rowDir, feedWidth * ixRow], [feedDir, segmentLength * ixSeg], [normal, -feedDepth]);
             };
             
-            sweepVises.length = 0;
             for (let ixRow = 0; ixRow < numRows; ixRow++) {
                 const row = [];
                 for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
-                    const segShapeAndAbove = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, trvgRadius * 2], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
+                    const segShapeAndAbove = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, maxHeight], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
                     const segShape = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, feedDepth], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
                     // Maybe should check any-non work for above, instead of blocked?
                     // even if above region is cuttable, it will alter tool state unexpectedly.
@@ -1778,8 +1804,8 @@ class Planner {
                     
                     const holeTop = offsetPoint(scanPt, [normal, -depthBegin]);
                     const holeBot = offsetPoint(scanPt, [normal, -depthEnd]);
-                    debug.vlogE(createErrorLocVis(holeTop, "red"));
-                    debug.vlogE(createErrorLocVis(holeBot, "blue"));
+                    debug.vlog(visDot(holeTop, "red"));
+                    debug.vlog(visDot(holeBot, "blue"));
 
                     drillHoles.push({
                         holeBot,
@@ -1858,10 +1884,7 @@ class Planner {
          * @param {{partialPath: PartialPath, ignoreOvercutErrors: boolean}} sweep - Sweep to commit
          * @returns {boolean} true if committed, false if rejected.
          */
-        const tryCommitSweep = (sweep) => {
-            // update sweep vis regardless of commit result
-            this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
-            
+        const tryCommitSweep = (sweep) => {            
             const volRemoved = this.trvg.commitRemoval(
                 sweep.partialPath.getMinRemoveShapes(), 
                 sweep.partialPath.getMaxRemoveShapes(), 
@@ -1915,7 +1938,6 @@ class Planner {
         // rough drills
         for (const normal of candidateNormals) {
             const sweep = genDrillSweep(normal, this.machineConfig.toolNaturalDiameter / 2);
-            this.updateVis("sweep-vis", sweepVises, this.showSweepVis);
             if (sweep) {
                 if (tryCommitSweep(sweep)) {
                     yield;
@@ -1961,8 +1983,16 @@ class View3D {
 
         this.visGroups = {};
 
+        this.vlogDebugs = [];
         this.vlogErrors = [];
         this.lastNumVlogErrors = 0;
+
+        // Visually log debug info.
+        // [in] obj: THREE.Object3D
+        debug.vlog = (obj) => {
+            this.vlogDebugs.push(obj);
+            this.updateVis("vlog-debug", this.vlogDebugs, this.showVlogDebug);
+        };
         
         // Visually log errors.
         // [in] obj: THREE.Object3D
@@ -1993,6 +2023,8 @@ class View3D {
         this.showStockMesh = true;
         this.showTargetMesh = true;
         this.updateVis("stock", [generateStock(this.stockDiameter / 2, this.stockLength)], this.showStockMesh);
+
+        this.showVlogDebug = false;
 
         this.renderAoRadius = 5;
         this.renderDistFallOff = 1.0;
@@ -2027,6 +2059,10 @@ class View3D {
         gui.add(this, "showTargetMesh").onChange(v => {
             this.setVisVisibility("target", v);
         }).listen();
+
+        gui.add(this, "showVlogDebug").onChange(v => {
+            this.updateVis("vlog-debug", this.vlogDebugs, v);
+        });
 
         this.modPlanner.guiHook(gui);
         
