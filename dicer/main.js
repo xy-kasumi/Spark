@@ -157,7 +157,8 @@ class TrackingVoxelGrid {
      * @param {number} numZ Grid depth
      * @param {THREE.Vector3} [ofs=new THREE.Vector3()] Voxel grid offset (local to world)
      */
-    constructor(res, numX, numY, numZ, ofs = new THREE.Vector3()) {
+    constructor(kernels, res, numX, numY, numZ, ofs = new THREE.Vector3()) {
+        this.kernels = kernels;
         this.res = res;
         this.numX = numX;
         this.numY = numY;
@@ -165,13 +166,6 @@ class TrackingVoxelGrid {
         this.dataW = new Uint8Array(numX * numY * numZ);
         this.dataT = new Uint8Array(numX * numY * numZ);
         this.ofs = ofs.clone();
-    }
-
-    clone() {
-        const vg = new TrackingVoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs.clone());
-        vg.dataW.set(this.dataW);
-        vg.dataT.set(this.dataT);
-        return vg;
     }
 
     /**
@@ -274,11 +268,16 @@ class TrackingVoxelGrid {
      * @param {boolean} [excludeProtectedWork=false] If true, exclude protected work.
      * @returns {VoxelGrid} (f32)
      */
-    extractWorkWithDeviation(excludeProtectedWork = false) {
+    async extractWorkWithDeviation(excludeProtectedWork = false) {
         const dist = this.#computeDistField().clone();
 
         // Convert JF data to work data.
         const vxDiag = this.res * Math.sqrt(3);
+
+        const res = await this.kernels.createLike(dist);
+        await this.kernels.map2("work_deviation", dist, this.dataW, res);
+        return res;
+
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
@@ -308,78 +307,16 @@ class TrackingVoxelGrid {
     }
 
     /** Compute distance field (from target). This data is work-independent.*/
-    #computeDistField() {
+    async #computeDistField() {
         if (this.distFieldCache) {
             return this.distFieldCache;
         }
 
-        // Jump Flood
-        const dist = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, "f32"); // -1 means invalid data.
-        const seedPosX = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, "f32");
-        const seedPosY = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, "f32");
-        const seedPosZ = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, "f32");
-
-        // Initialize with target data.
-        dist.fill(-1);
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let iy = 0; iy < this.numY; iy++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    if (this.getT(ix, iy, iz) !== TG_EMPTY) {
-                        const pos = this.centerOf(ix, iy, iz);
-                        dist.set(ix, iy, iz, 0);
-                        seedPosX.set(ix, iy, iz, pos.x);
-                        seedPosY.set(ix, iy, iz, pos.y);
-                        seedPosZ.set(ix, iy, iz, pos.z);
-                    }
-                }
-            }
-        }
-
-        const numPass = Math.ceil(Math.log2(Math.max(this.numX, this.numY, this.numZ)));
-        const neighborOffsets = [
-            [-1, 0, 0],
-            [1, 0, 0],
-            [0, -1, 0],
-            [0, 1, 0],
-            [0, 0, -1],
-            [0, 0, 1],
-        ]; // maybe better to use 26-neighbor
-        for (let pass = 0; pass < numPass; pass++) {
-            const step = Math.pow(2, numPass - pass - 1);
-            const nSeedPos = new THREE.Vector3();
-
-            for (let iz = 0; iz < this.numZ; iz++) {
-                for (let iy = 0; iy < this.numY; iy++) {
-                    for (let ix = 0; ix < this.numX; ix++) {
-                        const pos = this.centerOf(ix, iy, iz);
-                        if (dist.get(ix, iy, iz) === 0) {
-                            continue; // no possibility of change
-                        }
-
-                        
-                        for (const neighborOffset of neighborOffsets) {
-                            const nx = ix + neighborOffset[0] * step;
-                            const ny = iy + neighborOffset[1] * step;
-                            const nz = iz + neighborOffset[2] * step;
-                            if (nx < 0 || nx >= this.numX || ny < 0 || ny >= this.numY || nz < 0 || nz >= this.numZ) {
-                                continue;
-                            }
-                            if (dist.get(nx, ny, nz) < 0) {
-                                continue; // neibor is invalid
-                            }
-                            nSeedPos.set(seedPosX.get(nx, ny, nz), seedPosY.get(nx, ny, nz), seedPosZ.get(nx, ny, nz));
-                            const dNew = nSeedPos.distanceTo(pos);
-                            if (dist.get(ix, iy, iz) < 0 || dNew < dist.get(ix, iy, iz)) {
-                                dist.set(ix, iy, iz, dNew);
-                                seedPosX.set(ix, iy, iz, nSeedPos.x);
-                                seedPosY.set(ix, iy, iz, nSeedPos.y);
-                                seedPosZ.set(ix, iy, iz, nSeedPos.z);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        const initial = await this.kernels.createLike(this.dataT);
+        const dist = await this.kernels.createLike(this.dataT, "f32");
+        await this.kernels.map("!=TG_EMPTY", this.dataT, initial);
+        await this.kernels.distField(initial, dist);
+        await this.kernels.destroy(initial);
         this.distFieldCache = dist;
         return dist;
     }
@@ -412,11 +349,14 @@ class TrackingVoxelGrid {
         const minVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         const maxVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
         minShapes.forEach(shape => {
+            //this.kernels.fillShape(
             minVg.fillShape(shape, 255, "inside");
         });
         maxShapes.forEach(shape => {
             maxVg.fillShape(shape, 255, "outside");
         });
+
+
 
         let numDamages = 0;
         let numRemoved = 0;
@@ -483,6 +423,10 @@ class TrackingVoxelGrid {
     queryWorkRange(normal) {
         let min = Infinity;
         let max = -Infinity;
+
+        genericOp(W_REMAINING);
+        boundOfAxis(normal, "outside");
+
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
@@ -510,6 +454,10 @@ class TrackingVoxelGrid {
     queryBlocked(shape) {
         const sdf = createSdf(shape);
         const margin = this.res * 0.5 * Math.sqrt(3);
+
+        genericOp(MASK_BLOCKED);
+        any(sdf, "outside");
+
         return anyPointInsideIs(this, sdf, margin, (ix, iy, iz) => {
             const st = this.get(ix, iy, iz);
             return st === C_FULL_DONE || st === C_PARTIAL_DONE || st === C_PARTIAL_REMAINING;
@@ -524,6 +472,10 @@ class TrackingVoxelGrid {
      */
     queryHasWork(shape) {
         const sdf = createSdf(shape);
+
+        genericOp(MASK_HAS_WORK);
+        any(sdf, "nearest");
+
         return anyPointInsideIs(this, sdf, 0, (ix, iy, iz) => {
             const st = this.get(ix, iy, iz);
             return st === C_EMPTY_REMAINING || st === C_PARTIAL_REMAINING;
