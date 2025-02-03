@@ -275,6 +275,44 @@ class TrackingVoxelGrid {
      * @returns {VoxelGrid} (f32)
      */
     extractWorkWithDeviation(excludeProtectedWork = false) {
+        const dist = this.#computeDistField().clone();
+
+        // Convert JF data to work data.
+        const vxDiag = this.res * Math.sqrt(3);
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    const d = dist.get(ix, iy, iz);
+                    const s = this.get(ix, iy, iz);
+                    if (d < 0) {
+                        throw "Jump Flood impl error; failed to cover entire grid";
+                    }
+
+                    if (s === C_EMPTY_DONE) {
+                        dist.set(ix, iy, iz, -1); // empty
+                    } else if (d === 0) {
+                        dist.set(ix, iy, iz, 0); // inside
+                    } else {
+                        // trueD <= 0.5 vxDiag (partial vertex - partial center) + d (partial center - cell center) + 0.5 vxDiag (cell center - cell vertex)
+                        // because of triangle inequality.
+                        dist.set(ix, iy, iz, d + vxDiag);
+                    }
+
+                    if (excludeProtectedWork && this.protectedWorkBelowZ !== undefined && this.centerOf(ix, iy, iz).z < this.protectedWorkBelowZ + this.res) {
+                        dist.set(ix, iy, iz, -1); // protected work -> empty
+                    }
+                }
+            }
+        }
+        return dist;
+    }
+
+    /** Compute distance field (from target). This data is work-independent.*/
+    #computeDistField() {
+        if (this.distFieldCache) {
+            return this.distFieldCache;
+        }
+
         // Jump Flood
         const dist = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, "f32"); // -1 means invalid data.
         const seedPosX = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs, "f32");
@@ -308,6 +346,8 @@ class TrackingVoxelGrid {
         ]; // maybe better to use 26-neighbor
         for (let pass = 0; pass < numPass; pass++) {
             const step = Math.pow(2, numPass - pass - 1);
+            const nSeedPos = new THREE.Vector3();
+
             for (let iz = 0; iz < this.numZ; iz++) {
                 for (let iy = 0; iy < this.numY; iy++) {
                     for (let ix = 0; ix < this.numX; ix++) {
@@ -316,6 +356,7 @@ class TrackingVoxelGrid {
                             continue; // no possibility of change
                         }
 
+                        
                         for (const neighborOffset of neighborOffsets) {
                             const nx = ix + neighborOffset[0] * step;
                             const ny = iy + neighborOffset[1] * step;
@@ -326,7 +367,7 @@ class TrackingVoxelGrid {
                             if (dist.get(nx, ny, nz) < 0) {
                                 continue; // neibor is invalid
                             }
-                            const nSeedPos = new THREE.Vector3(seedPosX.get(nx, ny, nz), seedPosY.get(nx, ny, nz), seedPosZ.get(nx, ny, nz));
+                            nSeedPos.set(seedPosX.get(nx, ny, nz), seedPosY.get(nx, ny, nz), seedPosZ.get(nx, ny, nz));
                             const dNew = nSeedPos.distanceTo(pos);
                             if (dist.get(ix, iy, iz) < 0 || dNew < dist.get(ix, iy, iz)) {
                                 dist.set(ix, iy, iz, dNew);
@@ -339,34 +380,7 @@ class TrackingVoxelGrid {
                 }
             }
         }
-
-        // Convert JF data to work data.
-        const vxDiag = this.res * Math.sqrt(3);
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let iy = 0; iy < this.numY; iy++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    const d = dist.get(ix, iy, iz);
-                    const s = this.get(ix, iy, iz);
-                    if (d < 0) {
-                        throw "Jump Flood impl error; failed to cover entire grid";
-                    }
-
-                    if (s === C_EMPTY_DONE) {
-                        dist.set(ix, iy, iz, -1); // empty
-                    } else if (d === 0) {
-                        dist.set(ix, iy, iz, 0); // inside
-                    } else {
-                        // trueD <= 0.5 vxDiag (partial vertex - partial center) + d (partial center - cell center) + 0.5 vxDiag (cell center - cell vertex)
-                        // because of triangle inequality.
-                        dist.set(ix, iy, iz, d + vxDiag);
-                    }
-
-                    if (excludeProtectedWork && this.protectedWorkBelowZ !== undefined && this.centerOf(ix, iy, iz).z < this.protectedWorkBelowZ + this.res) {
-                        dist.set(ix, iy, iz, -1); // protected work -> empty
-                    }
-                }
-            }
-        }
+        this.distFieldCache = dist;
         return dist;
     }
 
@@ -1392,9 +1406,12 @@ class Planner {
 
     animateHook() {
         if (this.genSweeps) {
-            const done = this.genNextSweep();
-            if (done) {
+            const status = this.genNextSweep();
+            if (status !== "continue") {
                 this.genSweeps = false;
+                if (status === "break") {
+                    console.log("break requested");
+                }
             }
         }
     }
@@ -1421,16 +1438,25 @@ class Planner {
 
     /**
      * Generate the next sweep.
-     * @returns {boolean} True if the sweep generation is done, false otherwise.
+     * @returns {"done" | "break" | "continue"} "done": gen is done. "break": gen requests breakpoint for debug, restart needs manual intervention. "continue": gen should be continued.
      */
     genNextSweep() {
         if (!this.gen) {
             this.gen = this.#pathGenerator();
         }
         const res = this.gen.next();
-        return res.done;
+        if (res.done) {
+            return "done";
+        }
+        return (res.value === "break") ? "break" : "continue";
     }
 
+    /**
+     * Generates all sweeps.
+     * 
+     * Yields "break" to request pausing execution for debug inspection.
+     * Otherwise yields undefined to request an animation frame before continuing.
+     */
     *#pathGenerator() {
         const t0 = performance.now();
 
@@ -1485,11 +1511,11 @@ class Planner {
          */
         const genPlanarSweep = (normal, offset, toolDiameter) => {
             console.log(`genPlanarSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), offset: ${offset}, toolDiameter: ${toolDiameter}`);
-            const workOffset = this.trvg.queryWorkRange(normal).max;
-            if (workOffset < offset) {
+            const normalRange = this.trvg.queryWorkRange(normal);
+            if (normalRange.max < offset) {
                 throw "contradicting offset for genPlanarSweep";
             }
-            const minToolLength = (workOffset - offset) + feedDepth;
+            const minToolLength = (normalRange.max - offset) + feedDepth;
             console.log(`minToolLength: ${minToolLength}`);
             if (minToolLength > this.machineConfig.toolNaturalLength) {
                 return null;
@@ -1499,11 +1525,10 @@ class Planner {
             const rot = createRotationWithZ(normal);
             const feedDir = new THREE.Vector3(1, 0, 0).transformDirection(rot);
             const rowDir = new THREE.Vector3(0, 1, 0).transformDirection(rot);
+            const feedRange = this.trvg.queryWorkRange(feedDir);
+            const rowRange = this.trvg.queryWorkRange(rowDir);
 
-            const halfDiagVec = new THREE.Vector3(this.trvg.numX, this.trvg.numY, this.trvg.numZ).multiplyScalar(this.trvg.res * 0.5);
-            const trvgCenter = this.trvg.ofs.clone().add(halfDiagVec);
-            const trvgRadius = halfDiagVec.length(); // TODO: proper bounds
-            const maxHeight = trvgRadius * 2;
+            const maxHeight = normalRange.max - normalRange.min;
 
             // rows : [row]
             // row : [segment]
@@ -1517,9 +1542,10 @@ class Planner {
             const segmentLength = 1;
             const discreteToolRadius = Math.ceil(toolDiameter / segmentLength / 2 - 0.5); // spans segments [-r, r].
 
-            const numRows = Math.ceil(trvgRadius * 2 / feedWidth);
-            const numSegs = Math.ceil(trvgRadius * 2 / segmentLength);
-            const scanOrigin = offsetPoint(trvgCenter.clone().projectOnPlane(normal), [normal, offset], [feedDir, -trvgRadius], [rowDir, -trvgRadius]);
+            const margin = toolDiameter;
+            const scanOrigin = offsetPoint(new THREE.Vector3(), [normal, offset], [feedDir, feedRange.min - margin], [rowDir, rowRange.min - margin]);
+            const numRows = Math.ceil((rowRange.max - rowRange.min + 2 * margin) / feedWidth);
+            const numSegs = Math.ceil((feedRange.max - feedRange.min + 2 * margin) / segmentLength);
 
             debug.vlog(visDot(scanOrigin, "red"));
             debug.vlog(visQuad(
@@ -1736,34 +1762,36 @@ class Planner {
          * @returns {{partialPath: PartialPath, ignoreOvercutErrors: boolean} | null} null if impossible
          */
         const genDrillSweep = (normal, toolDiameter) => {
-            const halfDiagVec = new THREE.Vector3(this.trvg.numX, this.trvg.numY, this.trvg.numZ).multiplyScalar(this.trvg.res * 0.5);
-            const trvgCenter = this.trvg.ofs.clone().add(halfDiagVec);
-            const trvgRadius = halfDiagVec.length(); // TODO: proper bounds
+            console.log(`genDrillSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), toolDiameter: ${toolDiameter}`);
 
-            //const minToolLength = trvgRadius * 2;
-            //console.log(`minToolLength: ${minToolLength}`);
+            const normalRange = this.trvg.queryWorkRange(normal);
+            const depthDelta = toolDiameter;
+            const maxDepth = normalRange.max - normalRange.min;
+            const holeDiameter = toolDiameter * 1.1;
+
             const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, 0, this.toolIx, this.toolLength, this.machineConfig);
 
             const rot = createRotationWithZ(normal);
             const scanDir0 = new THREE.Vector3(1, 0, 0).transformDirection(rot);
             const scanDir1 = new THREE.Vector3(0, 1, 0).transformDirection(rot);
+            const scanRange0 = this.trvg.queryWorkRange(scanDir0);
+            const scanRange1 = this.trvg.queryWorkRange(scanDir1);
 
             const scanRes = toolDiameter * 0.5;
-            const numScan0 = Math.ceil(trvgRadius * 2 / scanRes);
-            const numScan1 = Math.ceil(trvgRadius * 2 / scanRes);
-            const scanOrigin = offsetPoint(trvgCenter, [scanDir0, -trvgRadius], [scanDir1, -trvgRadius]);
-
-            const holeDiameter = toolDiameter * 1.1;
-            const depthDelta = toolDiameter;
+            // +depthDelta: ensure initial position is unoccupied
+            const scanOrigin = offsetPoint(new THREE.Vector3(), [scanDir0, scanRange0.min], [scanDir1, scanRange1.min], [normal, normalRange.max + depthDelta]);
+            const numScan0 = Math.ceil((scanRange0.max - scanRange0.min) / scanRes);
+            const numScan1 = Math.ceil((scanRange1.max - scanRange1.min) / scanRes);
 
             // grid query for drilling
             // if ok, just drill it with helical downwards path.
             const drillHoles = [];
             for (let ixScan0 = 0; ixScan0 < numScan0; ixScan0++) {
                 for (let ixScan1 = 0; ixScan1 < numScan1; ixScan1++) {
-                    const scanPt = offsetPoint(scanOrigin.clone(), [scanDir0, scanRes * ixScan0], [scanDir1, scanRes * ixScan1], [normal, trvgRadius]);
-                    const maxDepth = trvgRadius * 2;
+                    const scanPt = offsetPoint(scanOrigin, [scanDir0, scanRes * ixScan0], [scanDir1, scanRes * ixScan1]);
                     let currDepth = depthDelta;
+
+                    
 
                     // Find begin depth (just before hitting work)
                     let depthBegin = null;
@@ -1781,13 +1809,14 @@ class Planner {
                         currDepth += depthDelta;
                     }
                     if (depthBegin === null) {
+                        debug.vlog(visDot(scanPt, "gray"));
                         continue;
                     }
 
                     // Find end depth
                     currDepth += depthDelta;
                     let depthEnd = null;
-                    while (currDepth < maxDepth) {
+                    while (true) {
                         const holeBot = offsetPoint(scanPt, [normal, -currDepth]);
                         const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2, depthDelta);
                         // TODO: this can stop too early (when holes span multiple separate layers).
@@ -1797,9 +1826,6 @@ class Planner {
                             break; 
                         }
                         currDepth += depthDelta;
-                    }
-                    if (depthEnd === null) {
-                        continue;
                     }
                     
                     const holeTop = offsetPoint(scanPt, [normal, -depthBegin]);
@@ -1933,7 +1959,8 @@ class Planner {
                 }
             }
         }
-            
+
+        // yield "break";
 
         // rough drills
         for (const normal of candidateNormals) {
@@ -2035,6 +2062,11 @@ class View3D {
         this.modPlanner = new Planner((group, vs, visible = true) => this.updateVis(group, vs, visible), (group, visible = true) => this.setVisVisibility(group, visible));
         this.initGui();
     }
+    
+    clearVlogDebug() {
+        this.vlogDebugs = [];
+        this.updateVis("vlog-debug", this.vlogDebugs, this.showVlogDebug);
+    }
 
     initGui() {
         const gui = new GUI();
@@ -2063,7 +2095,7 @@ class View3D {
         gui.add(this, "showVlogDebug").onChange(v => {
             this.updateVis("vlog-debug", this.vlogDebugs, v);
         });
-
+        gui.add(this, "clearVlogDebug");
         this.modPlanner.guiHook(gui);
         
         gui.add(this, "copyGcode");
