@@ -559,7 +559,7 @@ export class GpuKernels {
             const commandEncoder = this.device.createCommandEncoder();
             commandEncoder.copyBufferToBuffer(inBuf, 0, tempBuf, 0, bufSize);
             this.device.queue.submit([commandEncoder.finish()]);
-            await this.device.queue.onSubmittedWorkDone();
+            // await this.device.queue.onSubmittedWorkDone();
             await tempBuf.mapAsync(GPUMapMode.READ);
             new Uint8Array(outBuf).set(new Uint8Array(tempBuf.getMappedRange(0, bufSize)));
             tempBuf.unmap();
@@ -569,7 +569,7 @@ export class GpuKernels {
             const commandEncoder = this.device.createCommandEncoder();
             commandEncoder.copyBufferToBuffer(inBuf, 0, outBuf, 0, bufSize);
             this.device.queue.submit([commandEncoder.finish()]);
-            await this.device.queue.onSubmittedWorkDone();
+            // await this.device.queue.onSubmittedWorkDone();
         }
     }
 
@@ -929,6 +929,7 @@ export class GpuKernels {
             throw new Error(`Reduce fn "${fnName}" type mismatch; expected ${valType}, got ${inVg.type}`);
         }
 
+        let t0 = performance.now();
         const tempBufs = [
             this.createBuffer(inVg.buffer.size),
             this.createBuffer(inVg.buffer.size),
@@ -936,6 +937,8 @@ export class GpuKernels {
 
         let activeBufIx = 0;
         await this.copyBuffer(inVg.buffer, tempBufs[activeBufIx]);
+        //console.log(`    reduce:copyBuffer: ${performance.now() - t0}ms`);
+        t0 = performance.now();
 
         try {
             const commandEncoder = this.device.createCommandEncoder();
@@ -946,10 +949,12 @@ export class GpuKernels {
                 numElems = Math.ceil(numElems / this.wgSize);
             }
             this.device.queue.submit([commandEncoder.finish()]);
-            await this.device.queue.onSubmittedWorkDone();
+            //await this.device.queue.onSubmittedWorkDone();
+            //console.log(`    reduce:dispatchKernel: ${performance.now() - t0}ms`);
+            t0 = performance.now();
             const readBuf = this.createBufferForCpuRead(inVg.buffer.size);
             await this.copyBuffer(tempBufs[activeBufIx], readBuf);
-            await readBuf.mapAsync(GPUMapMode.READ);
+            await readBuf.mapAsync(GPUMapMode.READ, 0, 4);
             let result = null;
             if (valType === "u32") {
                 result = new Uint32Array(readBuf.getMappedRange(0, 4))[0];
@@ -958,6 +963,7 @@ export class GpuKernels {
             } else {
                 throw "unexpected valType";
             }
+            //console.log(`    reduce:read: ${performance.now() - t0}ms`);
             readBuf.unmap();
             readBuf.destroy();
             return result;
@@ -1418,9 +1424,13 @@ export class GpuKernels {
         const options = { offset: this.boundaryOffset(inVg, boundary) };
         Object.assign(options, this.sdfUniformVars(shape));
 
+        let t = performance.now();
         const flagVg = this.createLike(inVg, "u32");
         await this.map("check_sdf_" + shape.type, inVg, flagVg, options);
+        //console.log(`  anyInShape:map: ${performance.now() - t}ms`);
+        t = performance.now();
         const count = await this.reduce("sum", flagVg);
+        //console.log(`  anyInShape:reduce: ${performance.now() - t}ms`);
         this.destroy(flagVg);
         return count > 0;
     }

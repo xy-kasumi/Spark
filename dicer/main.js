@@ -524,11 +524,11 @@ class TrackingVoxelGrid {
         let t = performance.now();
         const hasWork = this.kernels.createLike(this.vx, "u32");
         await this.kernels.map("has_work", this.vx, hasWork);
-        console.log("queryHasWork:map", performance.now() - t);
+        //console.log(`queryHasWork:map: ${performance.now() - t}ms`);
         t = performance.now();
 
         const result = await this.kernels.anyInShape(shape, hasWork, "nearest");
-        console.log("queryHasWork:anyInShape", performance.now() - t);
+        //console.log(`queryHasWork:anyInShape: ${performance.now() - t}ms`);
         t = performance.now();
 
         this.kernels.destroy(hasWork);
@@ -1558,13 +1558,8 @@ class Planner {
 
             const maxHeight = normalRange.max - normalRange.min;
 
-            // rows : [row]
-            // row : [segment]
-            // segment : {
-            //   segCenterBot: Vector3
-            //   state: "blocked" | "work" | "empty" // blocked = contains non-cuttable bits, work = cuttable & has non-zero work, empty = accessible and no work
-            // }
-            const rows = [];
+
+            
 
             const feedWidth = toolDiameter - this.resMm; // create little overlap, to remove undercut artifact caused by conservative minGeom computation.
             const segmentLength = 1;
@@ -1586,33 +1581,51 @@ class Planner {
                 return offsetPoint(scanOrigin, [rowDir, feedWidth * ixRow], [feedDir, segmentLength * ixSeg], [normal, -feedDepth]);
             };
 
+            // rows : [row]
+            // row : [segment]
+            // segment : {
+            //   segCenterBot: Vector3
+            //   state: "blocked" | "work" | "empty" // blocked = contains non-cuttable bits, work = cuttable & has non-zero work, empty = accessible and no work
+            // }
+            const rows = new Array(numRows);
+            const promises = [];
             for (let ixRow = 0; ixRow < numRows; ixRow++) {
-                const row = [];
-                for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
-                    const segShapeAndAbove = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, maxHeight], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
-                    const segShape = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, feedDepth], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
-                    // Maybe should check any-non work for above, instead of blocked?
-                    // even if above region is cuttable, it will alter tool state unexpectedly.
-                    // Current logic only works correctly if scan pattern is same for different offset.
-                    const isBlocked = await this.trvg.queryBlocked(segShapeAndAbove);
-                    const hasWork = await this.trvg.queryHasWork(segShape);
-                    const state = isBlocked ? "blocked" : (hasWork ? "work" : "empty");
-                    row.push(state);
+                promises.push((async () => {
+                    const row = new Array(numSegs);
+                    rows[ixRow] = row;
 
-                    if (state === "blocked") {
-                        if (hasWork) {
-                            debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "orange"));
-                        } else {
-                            debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "red"));
-                        }
-                    } else if (state === "work") {
-                        debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "green"));
-                    } else {
-                        debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "gray"));
+                    const rowPromises = [];
+                    for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
+                        rowPromises.push((async() => {
+                            const segShapeAndAbove = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, maxHeight], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
+                            const segShape = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, feedDepth], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
+                            // Maybe should check any-non work for above, instead of blocked?
+                            // even if above region is cuttable, it will alter tool state unexpectedly.
+                            // Current logic only works correctly if scan pattern is same for different offset.
+                            const isBlocked = await this.trvg.queryBlocked(segShapeAndAbove);
+                            const hasWork = await this.trvg.queryHasWork(segShape);
+                            const state = isBlocked ? "blocked" : (hasWork ? "work" : "empty");
+                            row[ixSeg] = state;
+
+                            /*
+                            if (state === "blocked") {
+                                if (hasWork) {
+                                    debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "orange"));
+                                } else {
+                                    debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "red"));
+                                }
+                            } else if (state === "work") {
+                                debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "green"));
+                            } else {
+                                debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "gray"));
+                            }
+                                */
+                        })());
                     }
-                }
-                rows.push(row);
+                    await Promise.all(rowPromises);
+                })());
             }
+            await Promise.all(promises);
 
             // From segemnts, create "scans".
             // Scan will end at scanEndBot = apBot + scanDir * scanLen. half-cylinder of toolDiameter will extrude from scanEndBot at max.
@@ -1827,59 +1840,61 @@ class Planner {
             // grid query for drilling
             // if ok, just drill it with helical downwards path.
             const drillHoles = [];
+            const promises = [];
             for (let ixScan0 = 0; ixScan0 < numScan0; ixScan0++) {
                 for (let ixScan1 = 0; ixScan1 < numScan1; ixScan1++) {
-                    const scanPt = offsetPoint(scanOrigin, [scanDir0, scanRes * ixScan0], [scanDir1, scanRes * ixScan1]);
-                    let currDepth = depthDelta;
+                    promises.push((async () => {
+                        const scanPt = offsetPoint(scanOrigin, [scanDir0, scanRes * ixScan0], [scanDir1, scanRes * ixScan1]);
+                        let currDepth = depthDelta;
 
+                        // Find begin depth (just before hitting work)
+                        let depthBegin = null;
+                        while (currDepth < maxDepth) {
+                            const holeBot = offsetPoint(scanPt, [normal, -currDepth]);
+                            const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2, depthDelta);
 
-
-                    // Find begin depth (just before hitting work)
-                    let depthBegin = null;
-                    while (currDepth < maxDepth) {
-                        const holeBot = offsetPoint(scanPt, [normal, -currDepth]);
-                        const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2, depthDelta);
-
-                        if (await this.trvg.queryBlocked(holeShape)) {
-                            break; // this location was no good
+                            if (await this.trvg.queryBlocked(holeShape)) {
+                                break; // this location was no good
+                            }
+                            if (await this.trvg.queryHasWork(holeShape)) {
+                                depthBegin = currDepth - depthDelta; // good begin depth found
+                                break;
+                            }
+                            currDepth += depthDelta;
                         }
-                        if (await this.trvg.queryHasWork(holeShape)) {
-                            depthBegin = currDepth - depthDelta; // good begin depth found
-                            break;
+                        if (depthBegin === null) {
+                            debug.vlog(visDot(scanPt, "gray"));
+                            return;
                         }
+
+                        // Find end depth
                         currDepth += depthDelta;
-                    }
-                    if (depthBegin === null) {
-                        debug.vlog(visDot(scanPt, "gray"));
-                        continue;
-                    }
-
-                    // Find end depth
-                    currDepth += depthDelta;
-                    let depthEnd = null;
-                    while (true) {
-                        const holeBot = offsetPoint(scanPt, [normal, -currDepth]);
-                        const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2, depthDelta);
-                        // TODO: this can stop too early (when holes span multiple separate layers).
-                        if (await this.trvg.queryBlocked(holeShape) || !await this.trvg.queryHasWork(holeShape)) {
-                            // end found
-                            depthEnd = currDepth - depthDelta;
-                            break;
+                        let depthEnd = null;
+                        while (true) {
+                            const holeBot = offsetPoint(scanPt, [normal, -currDepth]);
+                            const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2, depthDelta);
+                            // TODO: this can stop too early (when holes span multiple separate layers).
+                            if (await this.trvg.queryBlocked(holeShape) || !await this.trvg.queryHasWork(holeShape)) {
+                                // end found
+                                depthEnd = currDepth - depthDelta;
+                                break;
+                            }
+                            currDepth += depthDelta;
                         }
-                        currDepth += depthDelta;
-                    }
 
-                    const holeTop = offsetPoint(scanPt, [normal, -depthBegin]);
-                    const holeBot = offsetPoint(scanPt, [normal, -depthEnd]);
-                    debug.vlog(visDot(holeTop, "red"));
-                    debug.vlog(visDot(holeBot, "blue"));
+                        const holeTop = offsetPoint(scanPt, [normal, -depthBegin]);
+                        const holeBot = offsetPoint(scanPt, [normal, -depthEnd]);
+                        debug.vlog(visDot(holeTop, "red"));
+                        debug.vlog(visDot(holeBot, "blue"));
 
-                    drillHoles.push({
-                        holeBot,
-                        holeTop,
-                    });
+                        drillHoles.push({
+                            holeBot,
+                            holeTop,
+                        });
+                    })());
                 }
             }
+            await Promise.all(promises);
             if (drillHoles.length === 0) {
                 return null;
             }
