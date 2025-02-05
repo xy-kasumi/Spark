@@ -1,5 +1,5 @@
 import { Vector3 } from 'three';
-import { createSdfBox, createSdfCylinder } from '../voxel.js';
+import { createSdfBox, createSdfCylinder, GpuKernels, VoxelGridCpu, VoxelGridGpu } from '../voxel.js';
 
 QUnit.module('sdf', function() {
     QUnit.test('sdf cube', function(assert) {
@@ -40,5 +40,23 @@ QUnit.module('sdf', function() {
         assert.equal(sdf(new Vector3(0, 0, 1)), -0.5, "center");
         assert.equal(sdf(new Vector3(0, 0, 2)), 0, "top");
         assert.equal(sdf(new Vector3(0, 0, 3)), 1, "top+1");
+    });
+});
+
+QUnit.module('gpu', function() {
+    QUnit.test('gpu->cpu', async function(assert) {
+        const adapter = await navigator.gpu.requestAdapter();
+        const device = await adapter.requestDevice();
+        const kernels = new GpuKernels(device);
+
+        const gpu = new VoxelGridGpu(kernels, 0.1, 1, 1, 1, new Vector3(0, 0, 0), "u32");
+        const cpu = new VoxelGridCpu(0.1, 1, 1, 1, new Vector3(0, 0, 0), "u32");
+        cpu.fill(0);
+
+        device.queue.writeBuffer(gpu.buffer, 0, new Uint32Array([123]));
+        await device.queue.onSubmittedWorkDone();
+        await kernels.copy(gpu, cpu);
+
+        assert.equal(cpu.get(0, 0, 0), 123);
     });
 });

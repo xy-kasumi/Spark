@@ -9,9 +9,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from './N8AO.js';
-import { VoxelGrid } from './voxel.js';
 import { diceSurf } from './mesh.js';
-import { createSdf, createELHShape, createCylinderShape, createBoxShape, anyPointInsideIs, everyPointInsideIs } from './voxel.js';
+import { createSdf, createELHShape, createCylinderShape, createBoxShape, anyPointInsideIs, everyPointInsideIs, VoxelGridGpu, VoxelGridCpu, GpuKernels } from './voxel.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Basis
@@ -50,7 +49,7 @@ const visCylinder = (p, n, r, col) => {
     const geom = new THREE.CylinderGeometry(r, r, 30, 8);
     const mat = new THREE.MeshBasicMaterial({ color: col, wireframe: true });
     const mesh = new THREE.Mesh(geom, mat);
-    
+
     const rotV = new THREE.Vector3(0, 1, 0).cross(n);
     if (rotV.length() > 1e-6) {
         mesh.setRotationFromAxisAngle(rotV.clone().normalize(), Math.asin(rotV.length()));
@@ -103,7 +102,7 @@ const visQuad = (p, a, b, color) => {
  * @param {string} [color="#222222"] Text color
  * @returns {THREE.Mesh} Text visualization mesh
  */
-const visText = (p, text, size=0.25, color="#222222") => {
+const visText = (p, text, size = 0.25, color = "#222222") => {
     const textGeom = new TextGeometry(text, {
         font,
         size,
@@ -151,6 +150,7 @@ const C_PARTIAL_REMAINING = 4; // current=full
  */
 class TrackingVoxelGrid {
     /**
+     * @param {GpuKernels} kernels
      * @param {number} res Voxel resolution
      * @param {number} numX Grid width
      * @param {number} numY Grid height
@@ -166,6 +166,8 @@ class TrackingVoxelGrid {
         this.dataW = new Uint8Array(numX * numY * numZ);
         this.dataT = new Uint8Array(numX * numY * numZ);
         this.ofs = ofs.clone();
+
+        this.vx = new VoxelGridGpu(kernels, res, numX, numY, numZ, ofs, "u32");
     }
 
     /**
@@ -176,7 +178,7 @@ class TrackingVoxelGrid {
     setFromWorkAndTarget(work, target) {
         for (let i = 0; i < this.dataW.length; i++) {
             let tst = null;
-            switch(target.data[i]) {
+            switch (target.data[i]) {
                 case 0:
                     tst = TG_EMPTY;
                     break;
@@ -191,7 +193,7 @@ class TrackingVoxelGrid {
             }
             this.dataT[i] = tst;
 
-            switch(work.data[i]) {
+            switch (work.data[i]) {
                 case 0: // empty
                     if (tst !== TG_EMPTY) {
                         throw `Unachievable target: target=${tst}, work=empty`;
@@ -211,6 +213,16 @@ class TrackingVoxelGrid {
                     throw `Unknown work value: ${work.data[i]}`;
             }
         }
+
+        const vxCpu = new VoxelGridCpu(this.res, this.numX, this.numY, this.numZ, this.ofs);
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    vxCpu.set(ix, iy, iz, this.get(ix, iy, iz));
+                }
+            }
+        }
+        this.kernels.copy(vxCpu, this.vx);
     }
 
     /**
@@ -234,48 +246,32 @@ class TrackingVoxelGrid {
     }
 
     /**
-     * Scaffold for refactoring.
-     * @param {boolean} [excludeProtectedWork=false] If true, exclude protected work.
-     * @returns {VoxelGrid} (0: empty, 128: partial done, 255: full)
-     */
-    extractWork(excludeProtectedWork = false) {
-        const res = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let iy = 0; iy < this.numY; iy++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    if (excludeProtectedWork && this.protectedWorkBelowZ !== undefined && this.centerOf(ix, iy, iz).z < this.protectedWorkBelowZ + this.res) {
-                        res.set(ix, iy, iz, 0);
-                        continue;
-                    }
-
-                    const s = this.get(ix, iy, iz);
-                    if (s === C_FULL_DONE || s === C_EMPTY_REMAINING || s === C_PARTIAL_REMAINING) {
-                        res.set(ix, iy, iz, 255);
-                    } else if (s === C_PARTIAL_DONE) {
-                        res.set(ix, iy, iz, 128);
-                    } else {
-                        res.set(ix, iy, iz, 0);
-                    }
-                }
-            }
-        }
-        return res;
-    }
-
-    /**
      * Extract work volume as voxels. Each cell will contain deviation from target shape.
      * positive value indicates deviation. 0 for perfect finish or inside. -1 for empty regions.
      * @param {boolean} [excludeProtectedWork=false] If true, exclude protected work.
-     * @returns {VoxelGrid} (f32)
+     * @returns {Promise<VoxelGridGpu>} (f32)
+     * @async
      */
     async extractWorkWithDeviation(excludeProtectedWork = false) {
-        const dist = this.#computeDistField().clone();
+        const dist = await this.#computeDistField();
 
         // Convert JF data to work data.
         const vxDiag = this.res * Math.sqrt(3);
-
-        const res = await this.kernels.createLike(dist);
-        await this.kernels.map2("work_deviation", dist, this.dataW, res);
+        const res = this.kernels.createLike(dist);
+        if (!this.kernels.map2Pipelines["work_deviation"]) {
+            this.kernels.registerMap2Fn("work_deviation", "f32", "u32", "f32", `
+                if (vi2 == ${C_EMPTY_DONE}) {
+                    vo = -1; // empty
+                } else if (vi1 == 0) {
+                    vo = 0; // inside
+                } else {
+                    // trueD <= 0.5 vxDiag (partial vertex - partial center) + d (partial center - cell center) + 0.5 vxDiag (cell center - cell vertex)
+                    // because of triangle inequality.
+                    vo = vi1 + ${vxDiag};
+                }`
+            );
+        }
+        await this.kernels.map2("work_deviation", dist, this.vx, res);
         return res;
 
         for (let iz = 0; iz < this.numZ; iz++) {
@@ -312,11 +308,14 @@ class TrackingVoxelGrid {
             return this.distFieldCache;
         }
 
-        const initial = await this.kernels.createLike(this.dataT);
-        const dist = await this.kernels.createLike(this.dataT, "f32");
-        await this.kernels.map("!=TG_EMPTY", this.dataT, initial);
+        this.kernels.registerMapFn("not_tg_empty", "u32", "u32",
+            `if (vi != ${C_EMPTY_DONE} && vi != ${C_EMPTY_REMAINING}) { vo = 1; } else { vo = 0; }`);
+
+        const initial = this.kernels.createLike(this.vx, "u32");
+        const dist = this.kernels.createLike(this.vx, "f32");
+        await this.kernels.map("not_tg_empty", this.vx, initial);
         await this.kernels.distField(initial, dist);
-        await this.kernels.destroy(initial);
+        this.kernels.destroy(initial);
         this.distFieldCache = dist;
         return dist;
     }
@@ -326,7 +325,7 @@ class TrackingVoxelGrid {
      * @returns {VoxelGrid} (0: empty, 128: partial, 255: full)
      */
     extractTarget() {
-        const res = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
+        const res = new VoxelGridCpu(this.res, this.numX, this.numY, this.numZ, this.ofs);
         for (let i = 0; i < this.dataT.length; i++) {
             res.data[i] = this.dataT[i] === TG_FULL ? 255 : (this.dataT[i] === TG_PARTIAL ? 128 : 0);
         }
@@ -346,8 +345,8 @@ class TrackingVoxelGrid {
      * @returns {number} volume of neewly removed work.
      */
     commitRemoval(minShapes, maxShapes, ignoreOvercutErrors = false) {
-        const minVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
-        const maxVg = new VoxelGrid(this.res, this.numX, this.numY, this.numZ, this.ofs);
+        const minVg = new VoxelGridCpu(this.res, this.numX, this.numY, this.numZ, this.ofs);
+        const maxVg = new VoxelGridCpu(this.res, this.numX, this.numY, this.numZ, this.ofs);
         minShapes.forEach(shape => {
             //this.kernels.fillShape(
             minVg.fillShape(shape, 255, "inside");
@@ -355,8 +354,6 @@ class TrackingVoxelGrid {
         maxShapes.forEach(shape => {
             maxVg.fillShape(shape, 255, "outside");
         });
-
-
 
         let numDamages = 0;
         let numRemoved = 0;
@@ -380,7 +377,7 @@ class TrackingVoxelGrid {
                         debug.vlogE(visDot(this.centerOf(x, y, z), "violet"));
                         numDamages++;
                     }
-                    
+
                     // Commit.
                     if (isInMin) {
                         // this voxel will be definitely completely removed.
@@ -424,8 +421,9 @@ class TrackingVoxelGrid {
         let min = Infinity;
         let max = -Infinity;
 
-        genericOp(W_REMAINING);
-        boundOfAxis(normal, "outside");
+        //genericOp(W_REMAINING);
+        //boundOfAxis(normal, "outside");
+        // TODO: Use this.vg
 
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
@@ -455,8 +453,8 @@ class TrackingVoxelGrid {
         const sdf = createSdf(shape);
         const margin = this.res * 0.5 * Math.sqrt(3);
 
-        genericOp(MASK_BLOCKED);
-        any(sdf, "outside");
+        //genericOp(MASK_BLOCKED);
+        //any(sdf, "outside");
 
         return anyPointInsideIs(this, sdf, margin, (ix, iy, iz) => {
             const st = this.get(ix, iy, iz);
@@ -473,8 +471,8 @@ class TrackingVoxelGrid {
     queryHasWork(shape) {
         const sdf = createSdf(shape);
 
-        genericOp(MASK_HAS_WORK);
-        any(sdf, "nearest");
+        //genericOp(MASK_HAS_WORK);
+        //any(sdf, "nearest");
 
         return anyPointInsideIs(this, sdf, 0, (ix, iy, iz) => {
             const st = this.get(ix, iy, iz);
@@ -591,19 +589,19 @@ const computeAABB = (pts) => {
  * Initialize voxel grid for storing points
  * @param {Float32Array} pts Points array [x0, y0, z0, x1, y1, z1, ...]
  * @param {number} resMm Voxel resolution
- * @returns {VoxelGrid} Initialized voxel grid
+ * @returns {VoxelGridCpu} Initialized voxel grid
  */
 const initVGForPoints = (pts, resMm) => {
     const MARGIN_MM = resMm; // want to keep boundary one voxel clear to avoid any mishaps. resMm should be enough.
     const { min, max } = computeAABB(pts);
     const center = min.clone().add(max).divideScalar(2);
-    
+
     min.subScalar(MARGIN_MM);
     max.addScalar(MARGIN_MM);
 
     const numV = max.clone().sub(min).divideScalar(resMm).ceil();
     const gridMin = center.clone().sub(numV.clone().multiplyScalar(resMm / 2));
-    return new VoxelGrid(resMm, numV.x, numV.y, numV.z, gridMin);
+    return new VoxelGridCpu(resMm, numV.x, numV.y, numV.z, gridMin);
 };
 
 /**
@@ -667,12 +665,12 @@ const generateStockGeom = (stockRadius = 7.5, stockHeight = 15) => {
 
 /**
  * Create visualization for voxel grid
- * @param {VoxelGrid} vg Voxel grid to visualize
+ * @param {VoxelGridCpu} vg Voxel grid to visualize
  * @param {string} [label=""] Optional label to display on the voxel grid
  * @param {string} [mode="occupancy"] "occupancy" | "deviation". "occupancy" treats 255:full, 128:partial, 0:empty. "deviation" is >=0 as deviation and -1 as empty
  * @returns {THREE.Object3D} Visualization object
  */
-const createVgVis = (vg, label = "", mode="occupancy") => {
+const createVgVis = (vg, label = "", mode = "occupancy") => {
     const cubeSize = vg.res * 1.0;
     const cubeGeom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
 
@@ -682,13 +680,13 @@ const createVgVis = (vg, label = "", mode="occupancy") => {
     axesHelper.scale.set(vg.res * vg.numX, vg.res * vg.numY, vg.res * vg.numZ);
 
     if (mode === "occupancy") {
-        if (vg.type !== "u8") {
+        if (vg.type !== "u32") {
             throw `Invalid vg type for occupancy: ${vg.type}`;
         }
 
         const meshFull = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), vg.countEq(255));
-        const meshPartial = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial({transparent: true, opacity: 0.25}), vg.countEq(128));
-        
+        const meshPartial = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial({ transparent: true, opacity: 0.25 }), vg.countEq(128));
+
         let instanceIxFull = 0;
         let instanceIxPartial = 0;
         for (let iz = 0; iz < vg.numZ; iz++) {
@@ -765,11 +763,11 @@ const createVgVis = (vg, label = "", mode="occupancy") => {
             font,
             size: 2,
             depth: 0.1,
-         });
+        });
         const textMesh = new THREE.Mesh(textGeom, new THREE.MeshBasicMaterial({ color: "#222222" }));
         meshContainer.add(textMesh);
     }
-    
+
     return meshContainer;
 };
 
@@ -1024,7 +1022,7 @@ const sparkWg1Config = {
         } else {
             cAngle = -Math.atan2(n.y, n.x);
         }
-        
+
         const tipPosM = tipPos.clone();
         const tipPosW = tipPos.clone();
         if (isPosW) {
@@ -1068,7 +1066,7 @@ class PartialPath {
      */
     constructor(sweepIx, group, normal, minToolLength, toolIx, toolLength, machineConfig) {
         this.machineConfig = machineConfig;
-        
+
         this.sweepIx = sweepIx;
         this.group = group;
         this.normal = normal;
@@ -1177,7 +1175,7 @@ class PartialPath {
         // TODO: offset by discardLength
         // TODO: emit RICH_STATE
         const up = new THREE.Vector3(1, 0, 0);
-        
+
         // move below grinder 
         this.path.push(this.#withAxisValue("move", {
             tipPosM: offsetPoint(this.machineConfig.wireCenter, [up, -3]),
@@ -1194,7 +1192,7 @@ class PartialPath {
      * @param {THREE.Vector3} tipPos - Tip position in work coordinates
      */
     nonRemove(type, tipPos) {
-        this.path.push(this.#withAxisValue(type, {tipPosW: tipPos}));
+        this.path.push(this.#withAxisValue(type, { tipPosW: tipPos }));
         this.prevPtTipPos = tipPos;
     }
 
@@ -1227,7 +1225,7 @@ class PartialPath {
             this.minSweepRemoveShapes.push(createELHShape(this.prevPtTipPos, tipPos, this.normal, minDiameter / 2, 100));
         }
         this.maxSweepRemoveShapes.push(createELHShape(this.prevPtTipPos, tipPos, this.normal, maxDiameter / 2, 100));
-        this.path.push(this.#withAxisValue("remove-work", {tipPosW: tipPos, toolRotDelta: toolRotDelta}));
+        this.path.push(this.#withAxisValue("remove-work", { tipPosW: tipPos, toolRotDelta: toolRotDelta }));
         this.prevPtTipPos = tipPos;
     }
 
@@ -1322,6 +1320,14 @@ class Planner {
         this.toolLength = this.toolNaturalLength;
         this.showPlanPath = true;
         this.highlightSweep = 2;
+
+        if (!navigator.gpu) {
+            throw new Error('WebGPU not supported');
+        }
+        (async () => {
+            const adapter = await navigator.gpu.requestAdapter();
+            this.kernels = new GpuKernels(await adapter.requestDevice());
+        })();
     }
 
     /**
@@ -1357,14 +1363,19 @@ class Planner {
     }
 
     animateHook() {
-        if (this.genSweeps) {
-            const status = this.genNextSweep();
-            if (status !== "continue") {
-                this.genSweeps = false;
-                if (status === "break") {
+        if (this.genSweeps === "continue") {
+            this.genSweeps = "awaiting";
+            (async () => {
+                const status = await this.genNextSweep();
+                if (status === "done") {
+                    this.genSweeps = "none";
+                } else if (status === "break") {
+                    this.genSweeps = "none";
                     console.log("break requested");
+                } else if (status === "continue") {
+                    this.genSweeps = "continue";
                 }
-            }
+            })();
         }
     }
 
@@ -1385,18 +1396,18 @@ class Planner {
     }
 
     genAllSweeps() {
-        this.genSweeps = true;
+        this.genSweeps = "continue"; // "continue" | "awaiting" | "none"
     }
 
     /**
      * Generate the next sweep.
      * @returns {"done" | "break" | "continue"} "done": gen is done. "break": gen requests breakpoint for debug, restart needs manual intervention. "continue": gen should be continued.
      */
-    genNextSweep() {
+    async genNextSweep() {
         if (!this.gen) {
             this.gen = this.#pathGenerator();
         }
-        const res = this.gen.next();
+        const res = await this.gen.next();
         if (res.done) {
             return "done";
         }
@@ -1409,11 +1420,15 @@ class Planner {
      * Yields "break" to request pausing execution for debug inspection.
      * Otherwise yields undefined to request an animation frame before continuing.
      */
-    *#pathGenerator() {
+    async *#pathGenerator() {
         const t0 = performance.now();
 
         ////////////////////////////////////////
         // Init
+
+        if (!this.kernels) {
+            throw new Error('WebGPU not supported; cannot start path generation');
+        }
 
         this.numSweeps = 0;
         this.removedVol = 0;
@@ -1430,14 +1445,18 @@ class Planner {
         diceSurf(this.targetSurf, targVg);
         console.log(`stock: ${workVg.volume()} mm^3 (${workVg.count().toLocaleString("en-US")} voxels) / target: ${targVg.volume()} mm^3 (${targVg.count().toLocaleString("en-US")} voxels)`);
 
-        this.trvg = new TrackingVoxelGrid(workVg.res, workVg.numX, workVg.numY, workVg.numZ, workVg.ofs.clone());
+        this.trvg = new TrackingVoxelGrid(this.kernels, workVg.res, workVg.numX, workVg.numY, workVg.numZ, workVg.ofs.clone());
         this.trvg.setFromWorkAndTarget(workVg, targVg);
         this.trvg.setProtectedWorkBelowZ(-this.stockCutWidth);
 
         this.planPath = [];
-        this.updateVis("work-vg", [createVgVis(this.trvg.extractWorkWithDeviation(), "work", "deviation")], this.showWork);
-        this.updateVis("targ-vg", [createVgVis(this.trvg.extractTarget())], this.showTarget);
+        const workDevGpu = await this.trvg.extractWorkWithDeviation();
+        const workDevCpu = this.kernels.createLikeCpu(workDevGpu);
+        await this.kernels.copy(workDevGpu, workDevCpu);
+        this.updateVis("work-vg", [createVgVis(workDevCpu, "work", "deviation")], this.showWork);
+        this.updateVis("targ-vg", [createVgVis(await this.trvg.extractTarget())], this.showTarget);
         this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
+        return;
 
         ////////////////////////////////////////
         // Sweep generators
@@ -1509,7 +1528,7 @@ class Planner {
             const segCenterBot = (ixRow, ixSeg) => {
                 return offsetPoint(scanOrigin, [rowDir, feedWidth * ixRow], [feedDir, segmentLength * ixSeg], [normal, -feedDepth]);
             };
-            
+
             for (let ixRow = 0; ixRow < numRows; ixRow++) {
                 const row = [];
                 for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
@@ -1574,9 +1593,9 @@ class Planner {
                     if (!isAccessOk(ixBegin)) {
                         continue;
                     }
-                
+
                     // gather all valid right-scans.
-                    for (let len = 2;; len++) {
+                    for (let len = 2; ; len++) {
                         const ixEnd = ixBegin + len;
                         if (ixEnd >= row.length || isBlockedAround(ixEnd)) {
                             break;
@@ -1592,7 +1611,7 @@ class Planner {
                     }
 
                     // gather all valid left-scans.
-                    for (let len = 2;; len++) {
+                    for (let len = 2; ; len++) {
                         const ixEnd = ixBegin - len;
                         if (ixEnd < 0 || isBlockedAround(ixEnd)) {
                             break;
@@ -1743,7 +1762,7 @@ class Planner {
                     const scanPt = offsetPoint(scanOrigin, [scanDir0, scanRes * ixScan0], [scanDir1, scanRes * ixScan1]);
                     let currDepth = depthDelta;
 
-                    
+
 
                     // Find begin depth (just before hitting work)
                     let depthBegin = null;
@@ -1775,11 +1794,11 @@ class Planner {
                         if (this.trvg.queryBlocked(holeShape) || !this.trvg.queryHasWork(holeShape)) {
                             // end found
                             depthEnd = currDepth - depthDelta;
-                            break; 
+                            break;
                         }
                         currDepth += depthDelta;
                     }
-                    
+
                     const holeTop = offsetPoint(scanPt, [normal, -depthBegin]);
                     const holeBot = offsetPoint(scanPt, [normal, -depthEnd]);
                     debug.vlog(visDot(holeTop, "red"));
@@ -1809,7 +1828,7 @@ class Planner {
                 sweepPath.removeVertical(hole.holeBot, 0, toolDiameter, toolDiameter);
                 sweepPath.nonRemove("move-out", hole.holeTop.clone().add(evacuateOffset));
             });
-            
+
             return {
                 partialPath: sweepPath,
             };
@@ -1860,12 +1879,13 @@ class Planner {
         /**
          * Verify and commit sweep.
          * @param {{partialPath: PartialPath, ignoreOvercutErrors: boolean}} sweep - Sweep to commit
-         * @returns {boolean} true if committed, false if rejected.
+         * @returns {Promise<boolean>} true if committed, false if rejected.
+         * @async
          */
-        const tryCommitSweep = (sweep) => {            
+        const tryCommitSweep = async (sweep) => {
             const volRemoved = this.trvg.commitRemoval(
-                sweep.partialPath.getMinRemoveShapes(), 
-                sweep.partialPath.getMaxRemoveShapes(), 
+                sweep.partialPath.getMinRemoveShapes(),
+                sweep.partialPath.getMaxRemoveShapes(),
                 sweep.ignoreOvercutErrors ?? false
             );
             if (volRemoved === 0) {
@@ -1885,12 +1905,14 @@ class Planner {
                 this.showingSweep++;
 
                 // update visualizations
-                const workDeviation = this.trvg.extractWorkWithDeviation(true);
+                const workDeviation = await this.trvg.extractWorkWithDeviation(true);
+                const workDevCpu = this.kernels.createLikeCpu(workDeviation);
+                await this.kernels.copy(workDeviation, workDevCpu);
                 this.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath, false);
-                this.updateVis("work-vg", [createVgVis(workDeviation, "work-vg", "deviation")], this.showWork);
+                this.updateVis("work-vg", [createVgVis(workDevCpu, "work-vg", "deviation")], this.showWork);
                 const lastPt = this.planPath[this.planPath.length - 1];
                 this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
-                this.deviation = workDeviation.max();
+                this.deviation = workDevCpu.max();
                 return true;
             }
         };
@@ -1906,7 +1928,7 @@ class Planner {
                     break;
                 }
                 offset -= feedDepth;
-                if (tryCommitSweep(sweep)) {
+                if (await tryCommitSweep(sweep)) {
                     yield;
                 }
             }
@@ -1918,7 +1940,7 @@ class Planner {
         for (const normal of candidateNormals) {
             const sweep = genDrillSweep(normal, this.machineConfig.toolNaturalDiameter / 2);
             if (sweep) {
-                if (tryCommitSweep(sweep)) {
+                if (await tryCommitSweep(sweep)) {
                     yield;
                 }
             }
@@ -1926,7 +1948,7 @@ class Planner {
 
         // part off
         const sweep = genPartOffSweep();
-        if (tryCommitSweep(sweep)) {
+        if (await tryCommitSweep(sweep)) {
             yield;
         }
 
@@ -1972,7 +1994,7 @@ class View3D {
             this.vlogDebugs.push(obj);
             this.updateVis("vlog-debug", this.vlogDebugs, this.showVlogDebug);
         };
-        
+
         // Visually log errors.
         // [in] obj: THREE.Object3D
         debug.vlogE = (obj) => {
@@ -2014,7 +2036,7 @@ class View3D {
         this.modPlanner = new Planner((group, vs, visible = true) => this.updateVis(group, vs, visible), (group, visible = true) => this.setVisVisibility(group, visible));
         this.initGui();
     }
-    
+
     clearVlogDebug() {
         this.vlogDebugs = [];
         this.updateVis("vlog-debug", this.vlogDebugs, this.showVlogDebug);
@@ -2049,10 +2071,10 @@ class View3D {
         });
         gui.add(this, "clearVlogDebug");
         this.modPlanner.guiHook(gui);
-        
+
         gui.add(this, "copyGcode");
         gui.add(this, "sendGcodeToSim");
-    
+
         this.loadStl(this.model);
     }
 
