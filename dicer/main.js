@@ -163,86 +163,80 @@ class TrackingVoxelGrid {
         this.numX = numX;
         this.numY = numY;
         this.numZ = numZ;
-        this.dataW = new Uint8Array(numX * numY * numZ);
-        this.dataT = new Uint8Array(numX * numY * numZ);
         this.ofs = ofs.clone();
-
         this.vx = new VoxelGridGpu(kernels, res, numX, numY, numZ, ofs, "u32");
     }
 
     /**
      * Scaffold for refactoring.
-     * @param {VoxelGrid} work VoxelGrid (0: empty, 128: partial, 255: full)
-     * @param {VoxelGrid} target VoxelGrid (0: empty, 128: partial, 255: full)
+     * @param {VoxelGridCpu} work VoxelGrid (0: empty, 128: partial, 255: full)
+     * @param {VoxelGridCpu} target VoxelGrid (0: empty, 128: partial, 255: full)
+     * @returns {Promise<void>}
+     * @async
      */
-    setFromWorkAndTarget(work, target) {
-        for (let i = 0; i < this.dataW.length; i++) {
-            let tst = null;
-            switch (target.data[i]) {
-                case 0:
-                    tst = TG_EMPTY;
-                    break;
-                case 128:
-                    tst = TG_PARTIAL;
-                    break;
-                case 255:
-                    tst = TG_FULL;
-                    break;
-                default:
-                    throw `Unknown target value: ${target.data[i]}`;
-            }
-            this.dataT[i] = tst;
-
-            switch (work.data[i]) {
-                case 0: // empty
-                    if (tst !== TG_EMPTY) {
-                        throw `Unachievable target: target=${tst}, work=empty`;
-                    }
-                    this.dataW[i] = W_DONE;
-                    break;
-                case 128: // partial
-                    if (tst !== TG_EMPTY) {
-                        throw `(Possibly) unachievable target: target=${tst}, work=partial`;
-                    }
-                    this.dataW[i] = W_REMAINING;
-                    break;
-                case 255: // full
-                    this.dataW[i] = (tst === TG_FULL) ? W_DONE : W_REMAINING;
-                    break;
-                default:
-                    throw `Unknown work value: ${work.data[i]}`;
-            }
-        }
-
+    async setFromWorkAndTarget(work, target) {
         const vxCpu = new VoxelGridCpu(this.res, this.numX, this.numY, this.numZ, this.ofs);
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
-                    vxCpu.set(ix, iy, iz, this.get(ix, iy, iz));
+                    const ixFlat = ix + iy * this.numX + iz * this.numX * this.numY;
+                    let tst = null;
+                    switch (target.data[ixFlat]) {
+                        case 0:
+                            tst = TG_EMPTY;
+                            break;
+                        case 128:
+                            tst = TG_PARTIAL;
+                            break;
+                        case 255:
+                            tst = TG_FULL;
+                            break;
+                        default:
+                            throw `Unknown target value: ${target.data[i]}`;
+                    }
+                    let wst = null;
+                    switch (work.data[ixFlat]) {
+                        case 0: // empty
+                            if (tst !== TG_EMPTY) {
+                                throw `Unachievable target: target=${tst}, work=empty`;
+                            }
+                            wst = W_DONE;
+                            break;
+                        case 128: // partial
+                            if (tst !== TG_EMPTY) {
+                                throw `(Possibly) unachievable target: target=${tst}, work=partial`;
+                            }
+                            wst = W_REMAINING;
+                            break;
+                        case 255: // full
+                            wst = (tst === TG_FULL) ? W_DONE : W_REMAINING;
+                            break;
+                        default:
+                            throw `Unknown work value: ${work.data[i]}`;
+                    }
+                    vxCpu.set(ix, iy, iz, TrackingVoxelGrid.combineTargetWork(tst, wst));
                 }
             }
         }
-        this.kernels.copy(vxCpu, this.vx);
+        await this.kernels.copy(vxCpu, this.vx);
     }
 
     /**
      * Designate work below specified z to be protected. Primarily used to mark stock that should be kept for next session.
      * @param {number} z Z+ in work coords.
+     * @returns {Promise<void>}
+     * @async
      */
-    setProtectedWorkBelowZ(z) {
+    async setProtectedWorkBelowZ(z) {
         this.protectedWorkBelowZ = z;
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let iy = 0; iy < this.numY; iy++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    const p = this.centerOf(ix, iy, iz);
-                    if (p.z < z) {
-                        if (this.get(ix, iy, iz) === C_EMPTY_REMAINING) {
-                            this.set(ix, iy, iz, C_FULL_DONE);
-                        }
-                    }
+        if (!this.kernels.mapPipelines["set_protected_work_below_z"]) {
+            this.kernels.registerMapFn("set_protected_work_below_z", "u32", "u32", `
+                if (p.z < ${z} && vi == ${C_EMPTY_REMAINING}) {
+                    vo = ${C_FULL_DONE};
                 }
-            }
+            `);
         }
+        await this.kernels.map("set_protected_work_below_z", this.vx, this.vx);
     }
 
     /**
@@ -270,36 +264,16 @@ class TrackingVoxelGrid {
                     vo = vi1 + ${vxDiag};
                 }`
             );
+            /*
+            TODO: protectedWork logic
+
+            if (excludeProtectedWork && this.protectedWorkBelowZ !== undefined && this.centerOf(ix, iy, iz).z < this.protectedWorkBelowZ + this.res) {
+                dist.set(ix, iy, iz, -1); // protected work -> empty
+            }
+            */
         }
         await this.kernels.map2("work_deviation", dist, this.vx, res);
         return res;
-
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let iy = 0; iy < this.numY; iy++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    const d = dist.get(ix, iy, iz);
-                    const s = this.get(ix, iy, iz);
-                    if (d < 0) {
-                        throw "Jump Flood impl error; failed to cover entire grid";
-                    }
-
-                    if (s === C_EMPTY_DONE) {
-                        dist.set(ix, iy, iz, -1); // empty
-                    } else if (d === 0) {
-                        dist.set(ix, iy, iz, 0); // inside
-                    } else {
-                        // trueD <= 0.5 vxDiag (partial vertex - partial center) + d (partial center - cell center) + 0.5 vxDiag (cell center - cell vertex)
-                        // because of triangle inequality.
-                        dist.set(ix, iy, iz, d + vxDiag);
-                    }
-
-                    if (excludeProtectedWork && this.protectedWorkBelowZ !== undefined && this.centerOf(ix, iy, iz).z < this.protectedWorkBelowZ + this.res) {
-                        dist.set(ix, iy, iz, -1); // protected work -> empty
-                    }
-                }
-            }
-        }
-        return dist;
     }
 
     /** Compute distance field (from target). This data is work-independent.*/
@@ -322,13 +296,29 @@ class TrackingVoxelGrid {
 
     /**
      * Scaffold for refactoring.
-     * @returns {VoxelGrid} (0: empty, 128: partial, 255: full)
+     * @returns {Promise<VoxelGridCpu>} (0: empty, 128: partial, 255: full)
+     * @async
      */
-    extractTarget() {
-        const res = new VoxelGridCpu(this.res, this.numX, this.numY, this.numZ, this.ofs);
-        for (let i = 0; i < this.dataT.length; i++) {
-            res.data[i] = this.dataT[i] === TG_FULL ? 255 : (this.dataT[i] === TG_PARTIAL ? 128 : 0);
+    async extractTarget() {
+        if (!this.kernels.mapPipelines["extract_target"]) {
+            this.kernels.registerMapFn("extract_target", "u32", "u32", `
+                if (vi == ${C_FULL_DONE}) {
+                    vo = 255;
+                } else if (vi == ${C_PARTIAL_DONE} || vi == ${C_PARTIAL_REMAINING}) {
+                    vo = 128;
+                } else {
+                    vo = 0;
+                }
+            `);
         }
+
+        const temp = this.kernels.createLike(this.vx, "u32");
+        await this.kernels.map("extract_target", this.vx, temp);
+
+        const res = new VoxelGridCpu(this.res, this.numX, this.numY, this.numZ, this.ofs);
+        await this.kernels.copy(temp, res);
+        this.kernels.destroy(temp);
+
         return res;
     }
 
@@ -342,9 +332,10 @@ class TrackingVoxelGrid {
      * @param {Array} minShapes array of shapes, treated as union of all shapes
      * @param {Array} maxShapes array of shapes, treated as union of all shapes
      * @param {boolean} [ignoreOvercutErrors=false] if true, ignore overcut errors. Hack to get final cut done.
-     * @returns {number} volume of neewly removed work.
+     * @returns {Promise<number>} volume of neewly removed work.
+     * @async
      */
-    commitRemoval(minShapes, maxShapes, ignoreOvercutErrors = false) {
+    async commitRemoval(minShapes, maxShapes, ignoreOvercutErrors = false) {
         const minVg = new VoxelGridCpu(this.res, this.numX, this.numY, this.numZ, this.ofs);
         const maxVg = new VoxelGridCpu(this.res, this.numX, this.numY, this.numZ, this.ofs);
         minShapes.forEach(shape => {
@@ -414,22 +405,33 @@ class TrackingVoxelGrid {
      * Returns range of the work in normal direction conservatively.
      * Conservative means: "no-work" region never has work, despite presence of quantization error.
      * 
-     * @param {THREE.Vector3} normal Normal vector, in work coords.
-     * @returns {{min: number, max: number}} Offsets. No work exists outside the range.
+     * @param {THREE.Vector3} dir Unit direction vector, in work coords.
+     * @returns {Promise<{min: number, max: number}>} Offsets. No work exists outside the range.
+     * @async
      */
-    queryWorkRange(normal) {
-        let min = Infinity;
-        let max = -Infinity;
+    async queryWorkRange(dir) {
+        if (!this.kernels.mapPipelines["work_remaining"]) {
+            this.kernels.registerMapFn("work_remaining", "u32", "u32", `
+                if (vi == ${C_EMPTY_REMAINING} || vi == ${C_PARTIAL_REMAINING}) {
+                    vo = 1;
+                } else {
+                    vo = 0;
+                }
+            `);
+        }
 
-        //genericOp(W_REMAINING);
-        //boundOfAxis(normal, "outside");
-        // TODO: Use this.vg
+        const work = this.kernels.createLike(this.vx, "u32");
+        await this.kernels.map("work_remaining", this.vx, work);
+        const result = await this.kernels.boundOfAxis(dir, work, "out");
+        this.kernels.destroy(work);
+        console.log("queryWorkRange", dir, "->", result);
+        return result;
 
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
                     if (this.getW(ix, iy, iz) === W_REMAINING) {
-                        const t = this.centerOf(ix, iy, iz).dot(normal);
+                        const t = this.centerOf(ix, iy, iz).dot(dir);
                         min = Math.min(min, t);
                         max = Math.max(max, t);
                     }
@@ -523,7 +525,10 @@ class TrackingVoxelGrid {
     get(ix, iy, iz) {
         const t = this.dataT[ix + iy * this.numX + iz * this.numX * this.numY];
         const w = this.dataW[ix + iy * this.numX + iz * this.numX * this.numY];
+        return VoxelGridCpu.combineTargetWork(t, w);
+    }
 
+    static combineTargetWork(t, w) {
         switch (t) {
             case TG_FULL:
                 return C_FULL_DONE;
@@ -1446,8 +1451,8 @@ class Planner {
         console.log(`stock: ${workVg.volume()} mm^3 (${workVg.count().toLocaleString("en-US")} voxels) / target: ${targVg.volume()} mm^3 (${targVg.count().toLocaleString("en-US")} voxels)`);
 
         this.trvg = new TrackingVoxelGrid(this.kernels, workVg.res, workVg.numX, workVg.numY, workVg.numZ, workVg.ofs.clone());
-        this.trvg.setFromWorkAndTarget(workVg, targVg);
-        this.trvg.setProtectedWorkBelowZ(-this.stockCutWidth);
+        await this.trvg.setFromWorkAndTarget(workVg, targVg);
+        await this.trvg.setProtectedWorkBelowZ(-this.stockCutWidth);
 
         this.planPath = [];
         const workDevGpu = await this.trvg.extractWorkWithDeviation();
@@ -1456,7 +1461,6 @@ class Planner {
         this.updateVis("work-vg", [createVgVis(workDevCpu, "work", "deviation")], this.showWork);
         this.updateVis("targ-vg", [createVgVis(await this.trvg.extractTarget())], this.showTarget);
         this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
-        return;
 
         ////////////////////////////////////////
         // Sweep generators
@@ -1478,11 +1482,12 @@ class Planner {
          * @param {THREE.Vector3} normal Normal vector, in work coords. = tip normal
          * @param {number} offset Offset from the plane. offset * normal forms the plane.
          * @param {number} toolDiameter Tool diameter to use for this sweep.
-         * @returns {{partialPath: PartialPath, ignoreOvercutErrors: boolean} | null} null if impossible
+         * @returns {Promise<{partialPath: PartialPath, ignoreOvercutErrors: boolean} | null>} null if impossible
+         * @async
          */
-        const genPlanarSweep = (normal, offset, toolDiameter) => {
+        const genPlanarSweep = async (normal, offset, toolDiameter) => {
             console.log(`genPlanarSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), offset: ${offset}, toolDiameter: ${toolDiameter}`);
-            const normalRange = this.trvg.queryWorkRange(normal);
+            const normalRange = await this.trvg.queryWorkRange(normal);
             if (normalRange.max < offset) {
                 throw "contradicting offset for genPlanarSweep";
             }
@@ -1496,8 +1501,8 @@ class Planner {
             const rot = createRotationWithZ(normal);
             const feedDir = new THREE.Vector3(1, 0, 0).transformDirection(rot);
             const rowDir = new THREE.Vector3(0, 1, 0).transformDirection(rot);
-            const feedRange = this.trvg.queryWorkRange(feedDir);
-            const rowRange = this.trvg.queryWorkRange(rowDir);
+            const feedRange = await this.trvg.queryWorkRange(feedDir);
+            const rowRange = await this.trvg.queryWorkRange(rowDir);
 
             const maxHeight = normalRange.max - normalRange.min;
 
@@ -1730,12 +1735,13 @@ class Planner {
          * 
          * @param {THREE.Vector3} normal Normal vector, in work coords. = tip normal
          * @param {number} toolDiameter Tool diameter to use for this sweep.
-         * @returns {{partialPath: PartialPath, ignoreOvercutErrors: boolean} | null} null if impossible
+         * @returns {Promise<{partialPath: PartialPath, ignoreOvercutErrors: boolean} | null>} null if impossible
+         * @async
          */
-        const genDrillSweep = (normal, toolDiameter) => {
+        const genDrillSweep = async (normal, toolDiameter) => {
             console.log(`genDrillSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), toolDiameter: ${toolDiameter}`);
 
-            const normalRange = this.trvg.queryWorkRange(normal);
+            const normalRange = await this.trvg.queryWorkRange(normal);
             const depthDelta = toolDiameter;
             const maxDepth = normalRange.max - normalRange.min;
             const holeDiameter = toolDiameter * 1.1;
@@ -1745,8 +1751,8 @@ class Planner {
             const rot = createRotationWithZ(normal);
             const scanDir0 = new THREE.Vector3(1, 0, 0).transformDirection(rot);
             const scanDir1 = new THREE.Vector3(0, 1, 0).transformDirection(rot);
-            const scanRange0 = this.trvg.queryWorkRange(scanDir0);
-            const scanRange1 = this.trvg.queryWorkRange(scanDir1);
+            const scanRange0 = await this.trvg.queryWorkRange(scanDir0);
+            const scanRange1 = await this.trvg.queryWorkRange(scanDir1);
 
             const scanRes = toolDiameter * 0.5;
             // +depthDelta: ensure initial position is unoccupied
@@ -1836,16 +1842,17 @@ class Planner {
 
         /**
          * Generate "part off" sweep.
-         * @returns {{partialPath: PartialPath, ignoreOvercutErrors: boolean}}
+         * @returns {Promise<{partialPath: PartialPath, ignoreOvercutErrors: boolean}>}
+         * @async
          */
-        const genPartOffSweep = () => {
+        const genPartOffSweep = async () => {
             // TODO: use rectangular tool for efficiency.
             // for now, just use circular tool because impl is simpler.
             const normal = new THREE.Vector3(1, 0, 0);
             const cutDir = new THREE.Vector3(0, 1, 0);
 
-            const ctRange = this.trvg.queryWorkRange(cutDir);
-            const nrRange = this.trvg.queryWorkRange(normal);
+            const ctRange = await this.trvg.queryWorkRange(cutDir);
+            const nrRange = await this.trvg.queryWorkRange(normal);
             const cutOffset = new THREE.Vector3(0, 0, -this.stockCutWidth * 0.5); // center of cut path
 
             const minToolLength = nrRange.max - nrRange.min;
@@ -1883,7 +1890,7 @@ class Planner {
          * @async
          */
         const tryCommitSweep = async (sweep) => {
-            const volRemoved = this.trvg.commitRemoval(
+            const volRemoved = await this.trvg.commitRemoval(
                 sweep.partialPath.getMinRemoveShapes(),
                 sweep.partialPath.getMaxRemoveShapes(),
                 sweep.ignoreOvercutErrors ?? false
@@ -1919,11 +1926,11 @@ class Planner {
 
         // rough removals
         for (const normal of candidateNormals) {
-            let offset = this.trvg.queryWorkRange(normal).max;
+            let offset = await this.trvg.queryWorkRange(normal).max;
 
             // TODO: better termination condition
             while (offset > -50) {
-                const sweep = genPlanarSweep(normal, offset, this.machineConfig.toolNaturalDiameter);
+                const sweep = await genPlanarSweep(normal, offset, this.machineConfig.toolNaturalDiameter);
                 if (!sweep) {
                     break;
                 }
@@ -1938,7 +1945,7 @@ class Planner {
 
         // rough drills
         for (const normal of candidateNormals) {
-            const sweep = genDrillSweep(normal, this.machineConfig.toolNaturalDiameter / 2);
+            const sweep = await genDrillSweep(normal, this.machineConfig.toolNaturalDiameter / 2);
             if (sweep) {
                 if (await tryCommitSweep(sweep)) {
                     yield;
@@ -1947,7 +1954,7 @@ class Planner {
         }
 
         // part off
-        const sweep = genPartOffSweep();
+        const sweep = await genPartOffSweep();
         if (await tryCommitSweep(sweep)) {
             yield;
         }

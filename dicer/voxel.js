@@ -493,22 +493,19 @@ export class GpuKernels {
 
         this.registerMapFn("df_init", "u32", "vec4f", `if (vi > 0) { vo = vec4f(p, 0); } else { vo = vec4f(0, 0, 0, -1); }`);
         this.registerMapFn("df_to_dist", "vec4f", "f32", `vo = vi.w;`);
-
-        // TODO: Need to inject "axis" as uniform variable.
-        this.registerMapFn("project_to_axis", "u32", "f32", `
-            let axis = vec3f(1, 0, 0);
+        this.registerMapFn("project_to_dir", "u32", "f32", `
             if (vi > 0) {
-              vo = dot(axis, p);
+              vo = dot(dir, p);
             } else {
               vo = ${this.invalidValue};
             }
-        `);
+        `, { dir: "vec3f" });
         this.registerReduceFn("min_ignore_invalid", "f32", "1e5", `
             vo = min(
                 select(vi1, 1e5, vi1 == ${this.invalidValue}),
                 select(vi2, 1e5, vi2 == ${this.invalidValue}));
         `);
-        this.registerReduceFn("max_ignore_invalid", "f32", "1e5", `
+        this.registerReduceFn("max_ignore_invalid", "f32", "-1e5", `
             vo = max(
                 select(vi1, -1e5, vi1 == ${this.invalidValue}),
                 select(vi2, -1e5, vi2 == ${this.invalidValue}));
@@ -517,40 +514,41 @@ export class GpuKernels {
 
     /**
      * Create new GPU-backed VoxelGrid, keeping shape of buf and optionally changing type.
-     * @param {VoxelGridGpu | VoxelGridCpu} buf 
+     * @param {VoxelGridGpu | VoxelGridCpu} vg 
      * @param {"u32" | "f32" | "vec3f" | "vec4f" | null} [type=null] Type of cell ("u32" | "f32"). If null, same as buf.
      * @returns {VoxelGridGpu} New buffer
      */
-    createLike(buf, type = null) {
-        return new VoxelGridGpu(this, buf.res, buf.numX, buf.numY, buf.numZ, buf.ofs, type ?? buf.type);
+    createLike(vg, type = null) {
+        return new VoxelGridGpu(this, vg.res, vg.numX, vg.numY, vg.numZ, vg.ofs, type ?? vg.type);
     }
 
     /**
      * Create new CPU-backed VoxelGrid, keeping shape of buf.
-     * @param {VoxelGridGpu | VoxelGridCpu} buf 
+     * @param {VoxelGridGpu | VoxelGridCpu} vg 
      * @returns {VoxelGridCpu} New buffer
      */
-    createLikeCpu(buf) {
-        if (buf.type === "vec3f") {
+    createLikeCpu(vg) {
+        if (vg.type === "vec3f") {
             throw new Error("Cannot create CPU-backed VoxelGrid for vec3f");
         }
-        return new VoxelGridCpu(buf.res, buf.numX, buf.numY, buf.numZ, buf.ofs, buf.type);
+        return new VoxelGridCpu(vg.res, vg.numX, vg.numY, vg.numZ, vg.ofs, vg.type);
     }
 
     /**
      * Copy data from inBuf to outBuf. This can cross CPU/GPU boundary.
      *
-     * @param {VoxelGridGpu | VoxelGridCpu} inBuf 
-     * @param {VoxelGridGpu | VoxelGridCpu} outBuf 
+     * @param {VoxelGridGpu | VoxelGridCpu} inVg 
+     * @param {VoxelGridGpu | VoxelGridCpu} outVg 
+     * @returns {Promise<void>}
      * @async
      */
-    async copy(inBuf, outBuf) {
-        if (inBuf === outBuf) {
+    async copy(inVg, outVg) {
+        if (inVg === outVg) {
             return;
         }
-        this.#checkGridCompat(inBuf, outBuf);
-        const inBuffer = inBuf instanceof VoxelGridCpu ? inBuf.data.buffer : inBuf.buffer;
-        const outBuffer = outBuf instanceof VoxelGridCpu ? outBuf.data.buffer : outBuf.buffer;
+        this.#checkGridCompat(inVg, outVg);
+        const inBuffer = inVg instanceof VoxelGridCpu ? inVg.data.buffer : inVg.buffer;
+        const outBuffer = outVg instanceof VoxelGridCpu ? outVg.data.buffer : outVg.buffer;
         await this.copyBuffer(inBuffer, outBuffer);
     }
 
@@ -559,6 +557,7 @@ export class GpuKernels {
      * 
      * @param {ArrayBuffer | GPUBuffer} inBuf 
      * @param {ArrayBuffer | GPUBuffer} outBuf
+     * @returns {Promise<void>}
      * @async
      */
     async copyBuffer(inBuf, outBuf) {
@@ -593,17 +592,20 @@ export class GpuKernels {
             tempBuf.destroy();
         } else {
             // GPU->GPU: direct copy
-            this.device.queue.copyBufferToBuffer(inBuf, outBuf, 0, 0, bufSize);
+            const commandEncoder = this.device.createCommandEncoder();
+            commandEncoder.copyBufferToBuffer(inBuf, 0, outBuf, 0, bufSize);
+            this.device.queue.submit([commandEncoder.finish()]);
+            await this.device.queue.onSubmittedWorkDone();
         }
     }
 
     /**
-     * Destroy & free buffer.
-     * @param {VoxelGridGpu} buf 
+     * Destroy & free VoxelGrid's backing buffer.
+     * @param {VoxelGridGpu} vg 
      */
-    destroy(buf) {
-        buf.buffer.destroy();
-        buf.buffer = null;
+    destroy(vg) {
+        vg.buffer.destroy();
+        vg.buffer = null;
     }
 
     /**
@@ -613,6 +615,7 @@ export class GpuKernels {
      * @param {"u32" | "f32"} inType Type of input voxel
      * @param {"u32" | "f32"} outType Type of output voxel
      * @param {string} snippet (multi-line allowed)
+     * @param {Object} uniforms Uniform variable defintions (can change for each invocation) {varName: type}
      * 
      * Snippet can use following variables:
      * - p: vec3f, voxel center position
@@ -624,16 +627,33 @@ export class GpuKernels {
      * 
      * You can assume in/out are always different buffers.
      */
-    registerMapFn(name, inType, outType, snippet) {
+    registerMapFn(name, inType, outType, snippet, uniforms = {}) {
         if (this.mapPipelines[name]) {
             throw new Error(`Map fn "${name}" already registered`);
         }
         GpuKernels.checkAllowedType(inType);
         GpuKernels.checkAllowedType(outType);
 
-        this.mapPipelines[name] = this.#createPipeline(`map_${name}`, ["storage", "storage"], true, `
+        let uniformBindingId = 200;
+        let unifDefs = [];
+        let uniformBindings = {};
+        let uniformIds = [];
+        for (const [varName, type] of Object.entries(uniforms)) {
+            GpuKernels.checkAllowedType(type);
+            unifDefs.push(`@group(0) @binding(${uniformBindingId}) var<uniform> ${varName}: ${type};`);
+            uniformBindings[varName] = {
+                bindingId: uniformBindingId,
+                type: type,
+            };
+            uniformIds.push(uniformBindingId);
+            uniformBindingId++;
+        }
+
+        const code = `
             @group(0) @binding(0) var<storage, read_write> vs_in: array<${inType}>;
             @group(0) @binding(1) var<storage, read_write> vs_out: array<${outType}>;
+
+            ${unifDefs.join("\n")}
 
             ${this.gridSnippet}
 
@@ -652,7 +672,10 @@ export class GpuKernels {
                 }
                 vs_out[index] = vo;
             }
-        `);
+        `;
+        //console.log(code);
+        const pipeline = this.#createPipeline(`map_${name}`, ["storage", "storage"], true, code, uniformIds);
+        this.mapPipelines[name] = { pipeline, uniformBindings };
     }
 
     /**
@@ -856,9 +879,12 @@ export class GpuKernels {
      * 
      * @param {string} fnName 
      * @param {VoxelGridGpu} inBuf 
-     * @param {VoxelGridGpu} outBuf 
+     * @param {VoxelGridGpu} outBuf
+     * @param {Object} uniforms Uniform variable values.
+     * @returns {Promise<void>}
+     * @async
      */
-    async map(fnName, inBuf, outBuf = inBuf) {
+    async map(fnName, inBuf, outBuf, uniforms = {}) {
         const grid = this.#checkGridCompat(inBuf, outBuf);
         if (!this.mapPipelines[fnName]) {
             throw new Error(`Map fn "${fnName}" not registered`);
@@ -880,9 +906,28 @@ export class GpuKernels {
                 grid.ofs.x, grid.ofs.y, grid.ofs.z, grid.res,
             ]);
         });
+
+        const {pipeline, uniformBindings} = this.mapPipelines[fnName];
+        const additionalEntries = [];
+        for (const [varName, binding] of Object.entries(uniformBindings)) {
+            const {bindingId, type} = binding;
+            let buf = null;
+            if (type === "vec3f") {
+                buf = this.createUniformBuffer(32, (ptr) => {
+                    new Float32Array(ptr, 0, 4).set([
+                        uniforms[varName].x, uniforms[varName].y, uniforms[varName].z, 0,
+                    ]);
+                });
+            } else {
+                // TODO: this will leak buffer. Validate everything before allocation.
+                throw new Error(`Unsupported uniform type: ${type}`);
+            }
+            additionalEntries.push([bindingId, buf]);
+        }
+
         try {
             const commandEncoder = this.device.createCommandEncoder();
-            this.#dispatchKernel(commandEncoder, this.mapPipelines[fnName], [inBuf.buffer, outBuf.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf);
+            this.#dispatchKernel(commandEncoder, pipeline, [inBuf.buffer, outBuf.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf, additionalEntries);
             this.device.queue.submit([commandEncoder.finish()]);
             if (inBuf === outBuf) {
                 await this.copy(tmpBuf, inBuf);
@@ -891,29 +936,34 @@ export class GpuKernels {
         } finally {
             numsBuf.destroy();
             ofsBuf.destroy();
+            for (const [_, buf] of additionalEntries) {
+                buf.destroy();
+            }
         }
     }
 
     /**
      * 
      * @param {string} fnName 
-     * @param {VoxelGridGpu} inBuf1 
-     * @param {VoxelGridGpu} inBuf2 
-     * @param {VoxelGridGpu} outBuf 
+     * @param {VoxelGridGpu} inVg1 
+     * @param {VoxelGridGpu} inVg2 
+     * @param {VoxelGridGpu} outVg 
+     * @returns {Promise<void>}
+     * @async
      */
-    async map2(fnName, inBuf1, inBuf2, outBuf = inBuf1) {
-        const grid = this.#checkGridCompat(inBuf1, inBuf2, outBuf);
+    async map2(fnName, inVg1, inVg2, outVg = inVg1) {
+        const grid = this.#checkGridCompat(inVg1, inVg2, outVg);
         if (!this.map2Pipelines[fnName]) {
             throw new Error(`Map2 fn "${fnName}" not registered`);
         }
 
         let tmpBuf = null;
-        if (outBuf === inBuf1) {
-            tmpBuf = this.createLike(inBuf1);
-            outBuf = tmpBuf;
-        } else if (outBuf === inBuf2) {
-            tmpBuf = this.createLike(inBuf2);
-            outBuf = tmpBuf;
+        if (outVg === inVg1) {
+            tmpBuf = this.createLike(inVg1);
+            outVg = tmpBuf;
+        } else if (outVg === inVg2) {
+            tmpBuf = this.createLike(inVg2);
+            outVg = tmpBuf;
         }
 
         const numsBuf = this.createUniformBuffer(32, (ptr) => {
@@ -928,13 +978,13 @@ export class GpuKernels {
         });
         try {
             const commandEncoder = this.device.createCommandEncoder();
-            this.#dispatchKernel(commandEncoder, this.map2Pipelines[fnName], [inBuf1.buffer, inBuf2.buffer, outBuf.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf);
+            this.#dispatchKernel(commandEncoder, this.map2Pipelines[fnName], [inVg1.buffer, inVg2.buffer, outVg.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf);
             this.device.queue.submit([commandEncoder.finish()]);
-            if (inBuf1 === outBuf) {
-                await this.copy(tmpBuf, inBuf1);
+            if (inVg1 === outVg) {
+                await this.copy(tmpBuf, inVg1);
                 this.destroy(tmpBuf);
-            } else if (inBuf2 === outBuf) {
-                await this.copy(tmpBuf, inBuf2);
+            } else if (inVg2 === outVg) {
+                await this.copy(tmpBuf, inVg2);
                 this.destroy(tmpBuf);
             }
         } finally {
@@ -946,52 +996,44 @@ export class GpuKernels {
     /**
      * 
      * @param {string} fnName Function registered in {@link registerReduceFn}.
-     * @param {VoxelGridGpu} inBuf 
-     * @returns ?
+     * @param {VoxelGridGpu} inVg 
+     * @returns {Promise<number>}
+     * @async
      */
-    async reduce(fnName, inBuf) {
+    async reduce(fnName, inVg) {
         if (!this.reducePipelines[fnName]) {
             throw new Error(`Reduce fn "${fnName}" not registered`);
         }
-        const tempBufs = [
-            this.createLike(inBuf),
-            this.createLike(inBuf),
+
+        // TODO: These should be buffer, instead of VG.
+        const tempVgs = [
+            this.createLike(inVg),
+            this.createLike(inVg),
         ];
 
-        this.copy(inBuf, tempBufs[0]);
+        await this.copy(inVg, tempVgs[0]);
         let activeBufIx = 0;
 
-        const numsBuf = this.createUniformBuffer(32, (ptr) => {
-            new Uint32Array(ptr, 0, 4).set([
-                grid.numX, grid.numY, grid.numZ, 0,
-            ]);
-        });
-        const ofsBuf = this.createUniformBuffer(32, (ptr) => {
-            new Float32Array(ptr, 0, 4).set([
-                grid.ofs.x, grid.ofs.y, grid.ofs.z, grid.res,
-            ]);
-        });
         try {
             const commandEncoder = this.device.createCommandEncoder();
-            let numElems = inBuf.numX * inBuf.numY * inBuf.numZ;
+            let numElems = inVg.numX * inVg.numY * inVg.numZ;
             while (numElems > 1) {
-                this.#dispatchKernel(commandEncoder, this.reducePipelines[fnName], [tempBufs[activeBufIx].buffer, tempBufs[1 - activeBufIx].buffer], numElems, numsBuf, ofsBuf);
+                this.#dispatchKernel(commandEncoder, this.reducePipelines[fnName], [tempVgs[activeBufIx].buffer, tempVgs[1 - activeBufIx].buffer], numElems);
                 activeBufIx = 1 - activeBufIx;
                 numElems = Math.ceil(numElems / this.wgSize);
             }
             this.device.queue.submit([commandEncoder.finish()]);
-            const readBuf = this.createBufferForCpuRead(4);
-            this.copy(tempBufs[activeBufIx], readBuf);
+            await this.device.queue.onSubmittedWorkDone();
+            const readBuf = this.createBufferForCpuRead(inVg.buffer.size);
+            await this.copyBuffer(tempVgs[activeBufIx].buffer, readBuf);
             await readBuf.mapAsync(GPUMapMode.READ);
-            const result = new Float32Array(readBuf.getMappedRange(0, 4));
+            const result = new Float32Array(readBuf.getMappedRange(0, 4))[0];
             readBuf.unmap();
-            this.destroy(readBuf);
-            return result[0];
+            readBuf.destroy();
+            return result;
         } finally {
-            this.destroy(numsBuf);
-            this.destroy(ofsBuf);
-            this.destroy(tempBufs[0]);
-            this.destroy(tempBufs[1]);
+            this.destroy(tempVgs[0]);
+            this.destroy(tempVgs[1]);
         }
     }
 
@@ -999,14 +1041,18 @@ export class GpuKernels {
      * Get range of non-zero cells along dir.
      * 
      * @param {string} dir Unit vector representing axis to check.
-     * @param {VoxelGridGpu} inBuf non-zero means existence.
+     * @param {VoxelGridGpu} inVg non-zero means existence.
      * @param {"in" | "out" | "nearest"} boundary
-     * @returns {{min: number, max: number}}
+     * @returns {Promise<{min: number, max: number}>}
+     * @async
      */
-    async boundOfAxis(dir, inBuf, boundary) {
-        const min = await this.reduce("min_ignore_invalid", inBuf); // TODO: somehow pass dir
-        const max = await this.reduce("max_ignore_invalid", inBuf); // TODO: somehow pass dir
-        const maxVoxelCenterOfs = inBuf.res * Math.sqrt(3) * 0.5;
+    async boundOfAxis(dir, inVg, boundary) {
+        const projs = this.createLike(inVg, "f32");
+        await this.map("project_to_dir", inVg, projs, { dir });
+        const min = await this.reduce("min_ignore_invalid", projs);
+        const max = await this.reduce("max_ignore_invalid", projs);
+        this.destroy(projs);
+        const maxVoxelCenterOfs = inVg.res * Math.sqrt(3) * 0.5;
         const offset = {
             "in": -maxVoxelCenterOfs,
             "out": maxVoxelCenterOfs,
@@ -1018,11 +1064,12 @@ export class GpuKernels {
     /**
      * 
      * @param {Object} shape
-     * @param {VoxelGridGpu} inBuf
+     * @param {VoxelGridGpu} inVg
      * @param {"in" | "out" | "nearest"} boundary
-     * @returns {boolean} 
+     * @returns {Promise<boolean>}
+     * @async
      */
-    async any(shape, inBuf, boundary) {
+    async any(shape, inVg, boundary) {
         // TODO: Gen candidate big voxels, and only dispatch them.
 
         // map sdf values & booleans
@@ -1033,26 +1080,29 @@ export class GpuKernels {
      * Writes "1" to all voxels contained in shape.
      * 
      * @param {Object} shape 
-     * @param {VoxelGridGpu} buf (in-place)
+     * @param {VoxelGridGpu} vg (in-place)
      * @param {"in" | "out" | "nearest"} boundary 
+     * @returns {Promise<void>}
+     * @async
      */
-    async fill(shape, buf, boundary) {
+    async fill(shape, vg, boundary) {
         // TODO: Gen candidate big voxels & dispatch them.
 
         const numsBuf = this.createUniformBuffer(32, (ptr) => {
             new Uint32Array(ptr, 0, 4).set([
-                buf.numX, buf.numY, buf.numZ, 0,
+                vg.numX, vg.numY, vg.numZ, 0,
             ]);
         });
         const ofsBuf = this.createUniformBuffer(32, (ptr) => {
             new Float32Array(ptr, 0, 4).set([
-                buf.ofs.x, buf.ofs.y, buf.ofs.z, buf.res,
+                vg.ofs.x, vg.ofs.y, vg.ofs.z, vg.res,
             ]);
         });
         try {
             const commandEncoder = this.device.createCommandEncoder();
-            this.#dispatchKernel(commandEncoder, this.fillPipeline, [buf.buffer], buf.numX * buf.numY * buf.numZ, numsBuf, ofsBuf);
+            this.#dispatchKernel(commandEncoder, this.fillPipeline, [vg.buffer], vg.numX * vg.numY * vg.numZ, numsBuf, ofsBuf);
             this.device.queue.submit([commandEncoder.finish()]);
+            await this.device.queue.onSubmittedWorkDone();
         } finally {
             this.destroy(numsBuf);
             this.destroy(ofsBuf);
@@ -1063,19 +1113,21 @@ export class GpuKernels {
      * Compute distance field using jump flood algorithm.
      * O(N^3 log(N)) compute
      * 
-     * @param {VoxelGridGpu<u32>} inSeedBuf Positive cells = 0-distance (seed) cells.
-     * @param {VoxelGridGpu<f32>} outDistBuf Distance field. Distance from nearest seed cell will be written.
+     * @param {VoxelGridGpu<u32>} inSeedVg Positive cells = 0-distance (seed) cells.
+     * @param {VoxelGridGpu<f32>} outDistVg Distance field. Distance from nearest seed cell will be written.
+     * @returns {Promise<void>}
+     * @async
      */
-    async distField(inSeedBuf, outDistBuf) {
-        const grid = this.#checkGridCompat(inSeedBuf, outDistBuf);
+    async distField(inSeedVg, outDistVg) {
+        const grid = this.#checkGridCompat(inSeedVg, outDistVg);
 
         // xyz=seed, w=dist. w=-1 means invalid (no seed) data.
-        const df = this.createLike(inSeedBuf, "vec4f");
-        await this.map("df_init", inSeedBuf, df);
+        const df = this.createLike(inSeedVg, "vec4f");
+        await this.map("df_init", inSeedVg, df);
 
         // Jump flood
         let numPass = Math.ceil(Math.log2(Math.max(grid.numX, grid.numY, grid.numZ)));
-        
+
         for (let pass = 0; pass < numPass; pass++) {
             const step = 2 ** (numPass - pass - 1);
             const commandEncoder = this.device.createCommandEncoder();
@@ -1095,8 +1147,8 @@ export class GpuKernels {
             numsBuf.destroy();
             ofsBuf.destroy();
         }
-        
-        await this.map("df_to_dist", df, outDistBuf);
+
+        await this.map("df_to_dist", df, outDistVg);
         this.destroy(df);
     }
 
@@ -1126,28 +1178,28 @@ export class GpuKernels {
 
     /**
      * Throws error if grids are not compatible and returns common grid parameters.
-     * @param {VoxelGridGpu} grid1 
-     * @param {...VoxelGridGpu} grids Additional grids to check compatibility with
+     * @param {VoxelGridGpu} vg1 
+     * @param {...VoxelGridGpu} vgs Additional grids to check compatibility with
      * @returns {{res: number, numX: number, numY: number, numZ: number, ofs: Vector3}} Common grid parameters
      */
-    #checkGridCompat(grid1, ...grids) {
-        for (const grid2 of grids) {
-            if (grid1.numX !== grid2.numX || grid1.numY !== grid2.numY || grid1.numZ !== grid2.numZ) {
-                throw new Error(`Grid size mismatch: ${grid1.numX}x${grid1.numY}x${grid1.numZ} vs ${grid2.numX}x${grid2.numY}x${grid2.numZ}`);
+    #checkGridCompat(vg1, ...vgs) {
+        for (const grid2 of vgs) {
+            if (vg1.numX !== grid2.numX || vg1.numY !== grid2.numY || vg1.numZ !== grid2.numZ) {
+                throw new Error(`Grid size mismatch: ${vg1.numX}x${vg1.numY}x${vg1.numZ} vs ${grid2.numX}x${grid2.numY}x${grid2.numZ}`);
             }
-            if (grid1.ofs.x !== grid2.ofs.x || grid1.ofs.y !== grid2.ofs.y || grid1.ofs.z !== grid2.ofs.z) {
-                throw new Error(`Grid offset mismatch: (${grid1.ofs.x},${grid1.ofs.y},${grid1.ofs.z}) vs (${grid2.ofs.x},${grid2.ofs.y},${grid2.ofs.z})`);
+            if (vg1.ofs.x !== grid2.ofs.x || vg1.ofs.y !== grid2.ofs.y || vg1.ofs.z !== grid2.ofs.z) {
+                throw new Error(`Grid offset mismatch: (${vg1.ofs.x},${vg1.ofs.y},${vg1.ofs.z}) vs (${grid2.ofs.x},${grid2.ofs.y},${grid2.ofs.z})`);
             }
-            if (grid1.res !== grid2.res) {
-                throw new Error(`Grid resolution mismatch: ${grid1.res} vs ${grid2.res}`);
+            if (vg1.res !== grid2.res) {
+                throw new Error(`Grid resolution mismatch: ${vg1.res} vs ${grid2.res}`);
             }
         }
         return {
-            res: grid1.res,
-            numX: grid1.numX,
-            numY: grid1.numY,
-            numZ: grid1.numZ,
-            ofs: grid1.ofs,
+            res: vg1.res,
+            numX: vg1.numX,
+            numY: vg1.numY,
+            numZ: vg1.numZ,
+            ofs: vg1.ofs,
         };
     }
 
@@ -1220,10 +1272,11 @@ export class GpuKernels {
      * @param {string[]} bindings Array of binding types ("storage" | "uniform")
      * @param {boolean} enableGridSnippet Whether shaderCode contains GridSnippet.
      * @param {string} shaderCode WGSL code
+     * @param {number[]} uniformIds Additional uniform binding IDs
      * @returns {GPUComputePipeline} Created pipeline
      * @private
      */
-    #createPipeline(entryPoint, bindings, enableGridSnippet, shaderCode) {
+    #createPipeline(entryPoint, bindings, enableGridSnippet, shaderCode, uniformIds = []) {
         const shaderModule = this.device.createShaderModule({ code: shaderCode, label: entryPoint });
 
         const bindEntries = bindings.map((type, i) => ({
@@ -1244,7 +1297,14 @@ export class GpuKernels {
                 buffer: { type: "uniform" }
             });
         }
-        const bindGroupLayout = this.device.createBindGroupLayout({ entries: bindEntries });
+        for (const bindingId of uniformIds) {
+            bindEntries.push({
+                binding: bindingId,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: { type: "uniform" }
+            });
+        }
+        const bindGroupLayout = this.device.createBindGroupLayout({ entries: bindEntries, label: entryPoint });
         return this.device.createComputePipeline({
             layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
             compute: { module: shaderModule, entryPoint }
@@ -1259,15 +1319,19 @@ export class GpuKernels {
      * @param {number} numThreads Number of total threads (wanted kernel execs)
      * @param {GPUBuffer | null} numsBuf Buffer for nums (iff pipeline is created with enableGridSnippet)
      * @param {GPUBuffer | null} ofsBuf Buffer for ofs (iff pipeline is created with enableGridSnippet)
+     * @param {[[number, GPUBuffer]]} additionalEntries Additional entries to bind (bindingId, buffer).
      * @private
      */
-    #dispatchKernel(commandEncoder, pipeline, args, numThreads, numsBuf=null, ofsBuf=null) {
+    #dispatchKernel(commandEncoder, pipeline, args, numThreads, numsBuf = null, ofsBuf = null, additionalEntries = []) {
         const entries = args.map((buf, i) => ({ binding: i, resource: { buffer: buf } }));
         if (numsBuf) {
             entries.push({ binding: 100, resource: { buffer: numsBuf } });
         }
         if (ofsBuf) {
             entries.push({ binding: 101, resource: { buffer: ofsBuf } });
+        }
+        for (const [bindingId, buf] of additionalEntries) {
+            entries.push({ binding: bindingId, resource: { buffer: buf } });
         }
         const bindGroup = this.device.createBindGroup({
             layout: pipeline.getBindGroupLayout(0),
