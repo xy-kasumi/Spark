@@ -336,18 +336,98 @@ class TrackingVoxelGrid {
      * @async
      */
     async commitRemoval(minShapes, maxShapes, ignoreOvercutErrors = false) {
-        const minVg = new VoxelGridCpu(this.res, this.numX, this.numY, this.numZ, this.ofs);
-        const maxVg = new VoxelGridCpu(this.res, this.numX, this.numY, this.numZ, this.ofs);
-        minShapes.forEach(shape => {
-            //this.kernels.fillShape(
-            minVg.fillShape(shape, 255, "inside");
-        });
-        maxShapes.forEach(shape => {
-            maxVg.fillShape(shape, 255, "outside");
-        });
+        console.log("Commit removal", minShapes, maxShapes);
+        const minVg = this.kernels.createLike(this.vx, "u32");
+        const maxVg = this.kernels.createLike(this.vx, "u32");
+        for (const shape of minShapes) {
+            await this.kernels.fillShape(shape, minVg, "in");
+        }
+        for (const shape of maxShapes) {
+            await this.kernels.fillShape(shape, maxVg, "out");
+        }
+
+        // Check no-reversal of min/max. As this is relatively rare & easy to spot error, we don't log them.
+        if (!this.kernels.map2Pipelines["check_reversal"]) {
+            this.kernels.registerMap2Fn("check_reversal", "u32", "u32", "u32", `
+                vo = 0;
+                if (vi1 == 1 && vi2 == 0) {
+                    vo = 1;
+                }
+            `);
+        }
+        const reversalVg = this.kernels.createLike(this.vx, "u32");
+        await this.kernels.map2("check_reversal", minVg, maxVg, reversalVg);
+        const numReversals = await this.kernels.reduce("sum", reversalVg);
+        this.kernels.destroy(reversalVg);
+        if (numReversals > 0) {
+            throw `min/max reversal at ${numReversals} locations`;
+        }
+
+        // Check no-overcut. This error is pretty dynamic, so visual log is necessary.
+        if (!ignoreOvercutErrors) {
+            const overcutVg = this.kernels.createLike(this.vx, "u32");
+            if (!this.kernels.map2Pipelines["check_overcut"]) {
+                this.kernels.registerMap2Fn("check_overcut", "u32", "u32", "u32", `
+                    vo = 0;
+                    if (vi2 > 0 && (vi1 == ${C_FULL_DONE} || vi1 == ${C_PARTIAL_DONE} || vi1 == ${C_PARTIAL_REMAINING})) {
+                        vo = 1;
+                    }
+                `);
+            }
+            await this.kernels.map2("check_overcut", this.vx, maxVg, overcutVg);
+            const numDamages = await this.kernels.reduce("sum", overcutVg);
+            if (numDamages > 0) {
+                const overcutVgCpu = this.kernels.createLikeCpu(overcutVg);
+                await this.kernels.copy(overcutVg, overcutVgCpu);
+                for (let z = 0; z < this.numZ; z++) {
+                    for (let y = 0; y < this.numY; y++) {
+                        for (let x = 0; x < this.numX; x++) {
+                            debug.vlogE(visDot(this.centerOf(x, y, z), "violet"));
+                        }
+                    }
+                }
+            }
+            this.kernels.destroy(overcutVg);
+            if (debug.strict) {
+                if (numDamages > 0) {
+                    throw `${numDamages} cells are potentially damaged`;
+                }
+            }
+        }
+
+        // Finally ready to commit min cuts.
+        //await this.kernels.fill1(minVg);
+        
+        const removedVg = this.kernels.createLike(this.vx, "u32");
+        if (!this.kernels.map2Pipelines["check_removed"]) {
+            // vi2 > 0 && 
+            this.kernels.registerMap2Fn("check_removed", "u32", "u32", "u32", `
+                vo = 0;
+                if (vi2 > 0 && (vi1 == ${C_EMPTY_REMAINING} || vi1 == ${C_PARTIAL_REMAINING})) {
+                    vo = 1;
+                }
+            `);
+        }
+        if (!this.kernels.map2Pipelines["commit_min"]) {
+            this.kernels.registerMap2Fn("commit_min", "u32", "u32", "u32", `
+                vo = vi1;
+                if (vi2 > 0) {
+                    if (vi1 == ${C_EMPTY_REMAINING}) {
+                        vo = ${C_EMPTY_DONE};
+                    } else if (vi1 == ${C_PARTIAL_REMAINING}) {
+                        vo = ${C_PARTIAL_DONE};
+                    }
+                }
+            `);
+        }
+        await this.kernels.map2("check_removed", this.vx, minVg, removedVg);
+        await this.kernels.map2("commit_min", this.vx, minVg, this.vx);
+        const numRemoved = await this.kernels.reduce("sum", removedVg);
+        this.kernels.destroy(removedVg);
+        return numRemoved * this.res * this.res * this.res;
 
         let numDamages = 0;
-        let numRemoved = 0;
+        //let numRemoved = 0;
         for (let z = 0; z < this.numZ; z++) {
             for (let y = 0; y < this.numY; y++) {
                 for (let x = 0; x < this.numX; x++) {
@@ -389,10 +469,28 @@ class TrackingVoxelGrid {
 
     /**
      * Returns volume of remaining work.
-     * @returns {number} volume of remaining work.
+     * @returns {Promise<number>} volume of remaining work.
+     * @async
      */
-    getRemainingWorkVol() {
-        let cnt = 0;
+    async getRemainingWorkVol() {
+        if (!this.kernels.mapPipelines["work_remaining"]) {
+            this.kernels.registerMapFn("work_remaining", "u32", "u32", `
+                vo = 0;
+                if (vi == ${C_EMPTY_REMAINING} || vi == ${C_PARTIAL_REMAINING}) {
+                    vo = 1;
+                }
+            `);
+        }
+
+        const flagVg = this.kernels.createLike(this.vx, "u32");
+        await this.kernels.map("work_remaining", this.vx, flagVg);
+        const cnt = await this.kernels.reduce("sum", flagVg);
+        this.kernels.destroy(flagVg);
+        return cnt * this.res ** 3;
+
+
+        //let cnt = 0;
+
         for (let i = 0; i < this.dataW.length; i++) {
             if (this.dataW[i] === W_REMAINING) {
                 cnt++;
@@ -465,7 +563,7 @@ class TrackingVoxelGrid {
 
         const blocked = this.kernels.createLike(this.vx, "u32");
         await this.kernels.map("blocked", this.vx, blocked);
-        const result = await this.kernels.any(shape, blocked, "out");
+        const result = await this.kernels.anyInShape(shape, blocked, "out");
         this.kernels.destroy(blocked);
         return result;
     }
@@ -490,7 +588,7 @@ class TrackingVoxelGrid {
 
         const hasWork = this.kernels.createLike(this.vx, "u32");
         await this.kernels.map("has_work", this.vx, hasWork);
-        const result = await this.kernels.any(shape, hasWork, "nearest");
+        const result = await this.kernels.anyInShape(shape, hasWork, "nearest");
         this.kernels.destroy(hasWork);
         return result;
     }
@@ -1555,8 +1653,8 @@ class Planner {
                     // Maybe should check any-non work for above, instead of blocked?
                     // even if above region is cuttable, it will alter tool state unexpectedly.
                     // Current logic only works correctly if scan pattern is same for different offset.
-                    const isBlocked = this.trvg.queryBlocked(segShapeAndAbove);
-                    const hasWork = this.trvg.queryHasWork(segShape);
+                    const isBlocked = await this.trvg.queryBlocked(segShapeAndAbove);
+                    const hasWork = await this.trvg.queryHasWork(segShape);
                     const state = isBlocked ? "blocked" : (hasWork ? "work" : "empty");
                     row.push(state);
                 }
@@ -1789,10 +1887,10 @@ class Planner {
                         const holeBot = offsetPoint(scanPt, [normal, -currDepth]);
                         const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2, depthDelta);
 
-                        if (this.trvg.queryBlocked(holeShape)) {
+                        if (await this.trvg.queryBlocked(holeShape)) {
                             break; // this location was no good
                         }
-                        if (this.trvg.queryHasWork(holeShape)) {
+                        if (await this.trvg.queryHasWork(holeShape)) {
                             depthBegin = currDepth - depthDelta; // good begin depth found
                             break;
                         }
@@ -1810,7 +1908,7 @@ class Planner {
                         const holeBot = offsetPoint(scanPt, [normal, -currDepth]);
                         const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2, depthDelta);
                         // TODO: this can stop too early (when holes span multiple separate layers).
-                        if (this.trvg.queryBlocked(holeShape) || !this.trvg.queryHasWork(holeShape)) {
+                        if (await this.trvg.queryBlocked(holeShape) || !await this.trvg.queryHasWork(holeShape)) {
                             // end found
                             depthEnd = currDepth - depthDelta;
                             break;
@@ -1915,7 +2013,7 @@ class Planner {
                 console.log(`commit sweep-${this.numSweeps} success`);
                 // commit success
                 this.removedVol += volRemoved;
-                this.remainingVol = this.trvg.getRemainingWorkVol();
+                this.remainingVol = await this.trvg.getRemainingWorkVol();
                 this.planPath.push(...sweep.partialPath.getPath());
                 this.toolIx = sweep.partialPath.getToolIx();
                 this.toolLength = sweep.partialPath.getToolLength();
@@ -1939,7 +2037,8 @@ class Planner {
 
         // rough removals
         for (const normal of candidateNormals) {
-            let offset = await this.trvg.queryWorkRange(normal).max;
+            let offset = (await this.trvg.queryWorkRange(normal)).max;
+            console.log("Checking planar sweep viability", offset);
 
             // TODO: better termination condition
             while (offset > -50) {
