@@ -426,44 +426,21 @@ export class VoxelGridCpu {
     }
 
     /**
-     * Count number of non-zero cells
-     * @returns {number} Count of non-zero cells
+     * Count number of cells that satisfy the predicate.
+     * @param {(any, Vector3) => boolean} pred Predicate function (val, pos) => result
+     * @returns {number} Count of cells that satisfy predicate
      */
-    count() {
+    countIf(pred) {
         let cnt = 0;
-        for (let i = 0; i < this.data.length; i++) {
-            if (this.data[i] !== 0) {
-                cnt++;
-            }
-        }
-        return cnt;
-    }
-
-    /**
-     * Count number of cells equal to given value
-     * @param {number} val Value to compare against
-     * @returns {number} Count of matching cells
-     */
-    countEq(val) {
-        let cnt = 0;
-        for (let i = 0; i < this.data.length; i++) {
-            if (this.data[i] === val) {
-                cnt++;
-            }
-        }
-        return cnt;
-    }
-
-    /**
-     * Count number of cells less than given value
-     * @param {number} val Value to compare against
-     * @returns {number} Count of cells less than val
-     */
-    countLessThan(val) {
-        let cnt = 0;
-        for (let i = 0; i < this.data.length; i++) {
-            if (this.data[i] < val) {
-                cnt++;
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    const pos = this.centerOf(ix, iy, iz);
+                    const val = this.get(ix, iy, iz);
+                    if (pred(val, pos)) {
+                        cnt++;
+                    }
+                }
             }
         }
         return cnt;
@@ -484,11 +461,11 @@ export class VoxelGridCpu {
     }
 
     /**
-     * Calculate volume of non-zero cells
+     * Calculate volume of positive cells
      * @returns {number} Volume in cubic units
      */
     volume() {
-        return this.count() * this.res * this.res * this.res;
+        return this.countIf((val) => val > 0) * this.res ** 3;
     }
 
     /**
@@ -532,138 +509,23 @@ export class VoxelGridGpu {
     }
 }
 
-
+/**
+ * GPU utilities.
+ * Consisits of two layers
+ * - 1D array part: no notion of geometry, just parallel data operation & wrappers.
+ * - 3D voxel part: 1D array part + 3D geometry utils.
+ */
 export class GpuKernels {
     constructor(device) {
         this.device = device;
-
         this.wgSize = 128;
-        this.gridSnippet = `
-            @group(0) @binding(100) var<uniform> nums: vec4u; // xyz: numX, numY, numZ. w: unused.
-            @group(0) @binding(101) var<uniform> ofs_res: vec4f; // xyz: ofs, w: res
-
-            fn decompose_ix(ix: u32) -> vec3u {
-                return vec3u(ix % nums.x, (ix / nums.x) % nums.y, ix / (nums.x * nums.y));
-            }
-
-            fn compose_ix(ix3: vec3u) -> u32 {
-                return ix3.x + ix3.y * nums.x + ix3.z * nums.x * nums.y;
-            }
-
-            fn cell_center(ix3: vec3u) -> vec3f {
-                return (vec3f(ix3) + 0.5) * ofs_res.w + ofs_res.xyz;
-            }
-        `;
-
         this.mapPipelines = {};
         this.map2Pipelines = {};
         this.reducePipelines = {};
-        this.#compileJumpFloodPipeline();
 
-        this.invalidValue = 65536; // used in boundOfAxis.
-
-        this.registerMapFn("df_init", "u32", "vec4f", `if (vi > 0) { vo = vec4f(p, 0); } else { vo = vec4f(0, 0, 0, -1); }`);
-        this.registerMapFn("df_to_dist", "vec4f", "f32", `vo = vi.w;`);
-        this.registerMapFn("project_to_dir", "u32", "f32", `
-            if (vi > 0) {
-              vo = dot(dir, p);
-            } else {
-              vo = ${this.invalidValue};
-            }
-        `, { dir: "vec3f" });
-        this.registerReduceFn("min_ignore_invalid", "f32", "1e5", `
-            vo = min(
-                select(vi1, 1e5, vi1 == ${this.invalidValue}),
-                select(vi2, 1e5, vi2 == ${this.invalidValue}));
-        `);
-        this.registerReduceFn("max_ignore_invalid", "f32", "-1e5", `
-            vo = max(
-                select(vi1, -1e5, vi1 == ${this.invalidValue}),
-                select(vi2, -1e5, vi2 == ${this.invalidValue}));
-        `);
-
-        this.registerMapFn("check_sdf_cylinder", "u32", "u32", `
-            if (vi == 0) {
-              vo = 0;
-            } else {
-              var d = f32(0);
-              ${wgslSdfCylinderSnippet("p", "d")}
-              vo = select(0u, 1u, d <= offset);
-            }
-        `, { _sd_p: "vec3f", _sd_n: "vec3f", _sd_r: "f32", _sd_h: "f32", offset: "f32" });
-        this.registerMapFn("check_sdf_ELH", "u32", "u32", `
-            if (vi == 0) {
-              vo = 0;
-            } else {
-              var d = f32(0);
-              ${wgslSdfElhSnippet("p", "d")}
-              vo = select(0u, 1u, d <= offset);
-            }
-        `, { _sd_p: "vec3f", _sd_q: "vec3f", _sd_n: "vec3f", _sd_r: "f32", _sd_h: "f32", offset: "f32" });
-        this.registerMapFn("check_sdf_box", "u32", "u32", `
-            if (vi == 0) {
-              vo = 0;
-            } else {
-              var d = f32(0);
-              ${wgslSdfBoxSnippet("p", "d")}
-              vo = select(0u, 1u, d <= offset);
-            }
-        `, { _sd_c: "vec3f", _sd_hv0: "vec3f", _sd_hv1: "vec3f", _sd_hv2: "vec3f", offset: "f32" });
-        this.registerReduceFn("sum", "u32", "0u", `
-            vo = vi1 + vi2;
-        `);
-
-        this.registerMapFn("fill1", "u32", "u32", `
-            vo = 1u;
-        `);
-        this.registerMap2Fn("or", "u32", "u32", "u32", `
-            if (vi1 > 0 || vi2 > 0) {
-                vo = 1u;
-            } else {
-                vo = 0u;
-            }
-        `);
+        this.#initGridUtils();
     }
 
-    /**
-     * Create new GPU-backed VoxelGrid, keeping shape of buf and optionally changing type.
-     * @param {VoxelGridGpu | VoxelGridCpu} vg 
-     * @param {"u32" | "f32" | "vec3f" | "vec4f" | null} [type=null] Type of cell ("u32" | "f32"). If null, same as buf.
-     * @returns {VoxelGridGpu} New buffer
-     */
-    createLike(vg, type = null) {
-        return new VoxelGridGpu(this, vg.res, vg.numX, vg.numY, vg.numZ, vg.ofs, type ?? vg.type);
-    }
-
-    /**
-     * Create new CPU-backed VoxelGrid, keeping shape of buf.
-     * @param {VoxelGridGpu | VoxelGridCpu} vg 
-     * @returns {VoxelGridCpu} New buffer
-     */
-    createLikeCpu(vg) {
-        if (vg.type === "vec3f") {
-            throw new Error("Cannot create CPU-backed VoxelGrid for vec3f");
-        }
-        return new VoxelGridCpu(vg.res, vg.numX, vg.numY, vg.numZ, vg.ofs, vg.type);
-    }
-
-    /**
-     * Copy data from inBuf to outBuf. This can cross CPU/GPU boundary.
-     *
-     * @param {VoxelGridGpu | VoxelGridCpu} inVg 
-     * @param {VoxelGridGpu | VoxelGridCpu} outVg 
-     * @returns {Promise<void>}
-     * @async
-     */
-    async copy(inVg, outVg) {
-        if (inVg === outVg) {
-            return;
-        }
-        this.#checkGridCompat(inVg, outVg);
-        const inBuffer = inVg instanceof VoxelGridCpu ? inVg.data.buffer : inVg.buffer;
-        const outBuffer = outVg instanceof VoxelGridCpu ? outVg.data.buffer : outVg.buffer;
-        await this.copyBuffer(inBuffer, outBuffer);
-    }
 
     /**
      * Copy data from inBuf to outBuf. This can cross CPU/GPU boundary.
@@ -712,14 +574,6 @@ export class GpuKernels {
         }
     }
 
-    /**
-     * Destroy & free VoxelGrid's backing buffer.
-     * @param {VoxelGridGpu} vg 
-     */
-    destroy(vg) {
-        vg.buffer.destroy();
-        vg.buffer = null;
-    }
 
     /**
      * Register WGSL snippet for use in {@link map}.
@@ -911,55 +765,6 @@ export class GpuKernels {
         `);
     }
 
-    #compileJumpFloodPipeline() {
-        this.jumpFloodPipeline = this.#createPipeline(`jump_flood`, ["storage"], true, `
-            @group(0) @binding(0) var<storage, read_write> df: array<vec4f>; // xyz:seed, w:dist (-1 is invalid)
-
-            ${this.gridSnippet} // + nums.w contain jump step
-
-            @compute @workgroup_size(${this.wgSize})
-            fn jump_flood(@builtin(global_invocation_id) id: vec3u) {
-                let ix = id.x;
-                if (ix >= arrayLength(&df)) {
-                    return;
-                }
-
-                let ix3 = decompose_ix(ix);
-                let p = cell_center(ix3);
-                var sd = df[ix];
-                if (sd.w == 0) {
-                    return; // no change needed
-                }
-
-                let offsets = array<vec3i, 6>(
-                    vec3i(-1, 0, 0),
-                    vec3i(1, 0, 0),
-                    vec3i(0, -1, 0),
-                    vec3i(0, 1, 0),
-                    vec3i(0, 0, -1),
-                    vec3i(0, 0, 1),
-                );
-                for (var i = 0; i < 6; i++) {
-                    let nix3 = vec3i(ix3) + offsets[i] * i32(nums.w);
-                    if (any(nix3 < vec3i(0)) || any(nix3 >= vec3i(nums.xyz))) {
-                        continue; // neighbor is out of bound
-                    }
-                    let nix = compose_ix(vec3u(nix3));
-                    let nsd = df[nix];
-                    if (nsd.w < 0) {
-                        continue; // neighbor is invalid
-                    }
-                    let nd = distance(nsd.xyz, p);
-                    if (sd.w < 0 || nd < sd.w) {
-                        sd = vec4f(nsd.xyz, nd);  // closer seed found
-                    }
-                }
-                df[ix] = sd;
-            }
-        `);
-    }
-
-
     /**
      * 
      * @param {string} fnName 
@@ -997,7 +802,7 @@ export class GpuKernels {
         let tmpBuf = null;
         let dispatchOutVg = outVg;
         if (outVg === inVg) {
-            tmpBuf = this.createLike(inVg);
+            tmpBuf = this.createLike(outVg);
             dispatchOutVg = tmpBuf;
         }
 
@@ -1064,12 +869,10 @@ export class GpuKernels {
         }
 
         let tmpBuf = null;
-        if (outVg === inVg1) {
-            tmpBuf = this.createLike(inVg1);
-            outVg = tmpBuf;
-        } else if (outVg === inVg2) {
-            tmpBuf = this.createLike(inVg2);
-            outVg = tmpBuf;
+        let dispatchOutVg = outVg;
+        if (outVg === inVg1 || outVg === inVg2) {
+            tmpBuf = this.createLike(outVg);
+            dispatchOutVg = tmpBuf;
         }
 
         const numsBuf = this.createUniformBuffer(32, (ptr) => {
@@ -1084,13 +887,10 @@ export class GpuKernels {
         });
         try {
             const commandEncoder = this.device.createCommandEncoder();
-            this.#dispatchKernel(commandEncoder, this.map2Pipelines[fnName], [inVg1.buffer, inVg2.buffer, outVg.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf);
+            this.#dispatchKernel(commandEncoder, this.map2Pipelines[fnName], [inVg1.buffer, inVg2.buffer, dispatchOutVg.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf);
             this.device.queue.submit([commandEncoder.finish()]);
-            if (inVg1 === outVg) {
-                await this.copy(tmpBuf, inVg1);
-                this.destroy(tmpBuf);
-            } else if (inVg2 === outVg) {
-                await this.copy(tmpBuf, inVg2);
+            if (outVg === inVg1 || outVg === inVg2) {
+                await this.copy(tmpBuf, dispatchOutVg);
                 this.destroy(tmpBuf);
             }
         } finally {
@@ -1144,178 +944,6 @@ export class GpuKernels {
     }
 
     /**
-     * Get range of non-zero cells along dir.
-     * 
-     * @param {string} dir Unit vector representing axis to check.
-     * @param {VoxelGridGpu} inVg non-zero means existence.
-     * @param {"in" | "out" | "nearest"} boundary
-     * @returns {Promise<{min: number, max: number}>}
-     * @async
-     */
-    async boundOfAxis(dir, inVg, boundary) {
-        const projs = this.createLike(inVg, "f32");
-        await this.map("project_to_dir", inVg, projs, { dir });
-        const min = await this.reduce("min_ignore_invalid", projs);
-        const max = await this.reduce("max_ignore_invalid", projs);
-        this.destroy(projs);
-        const maxVoxelCenterOfs = inVg.res * Math.sqrt(3) * 0.5;
-        const offset = {
-            "in": -maxVoxelCenterOfs,
-            "out": maxVoxelCenterOfs,
-            "nearest": 0,
-        }[boundary];
-        return { min: min - offset, max: max + offset };
-    }
-
-    /**
-     * Checks if any voxel exists inside shape.
-     * 
-     * @param {Object} shape
-     * @param {VoxelGridGpu} inVg(u32). Non-zero means exist.
-     * @param {"in" | "out" | "nearest"} boundary
-     * @returns {Promise<boolean>}
-     * @async
-     */
-    async anyInShape(shape, inVg, boundary) {
-        // TODO: Gen candidate big voxels, and only dispatch them.
-        const maxVoxelCenterOfs = inVg.res * Math.sqrt(3) * 0.5;
-        const offset = {
-            "in": -maxVoxelCenterOfs,
-            "out": maxVoxelCenterOfs,
-            "nearest": 0,
-        }[boundary];
-
-        const options = { offset };
-        if (shape.type === "cylinder") {
-            options._sd_p = shape.p;
-            options._sd_n = shape.n;
-            options._sd_r = shape.r;
-            options._sd_h = shape.h;
-        } else if (shape.type === "ELH") {
-            options._sd_p = shape.p;
-            options._sd_q = shape.q;
-            options._sd_n = shape.n;
-            options._sd_r = shape.r;
-            options._sd_h = shape.h;
-        } else if (shape.type === "box") {
-            options._sd_c = shape.center;
-            options._sd_hv0 = shape.halfVec0;
-            options._sd_hv1 = shape.halfVec1;
-            options._sd_hv2 = shape.halfVec2;
-        } else {
-            throw new Error(`Unsupported shape type: ${shape.type}`);
-        }
-
-        const flagVg = this.createLike(inVg, "u32");
-        await this.map("check_sdf_" + shape.type, inVg, flagVg, options);
-        const count = await this.reduce("sum", flagVg);
-        this.destroy(flagVg);
-        return count > 0;
-    }
-
-    /**
-     * Write "1" to all voxels.
-     * @param {VoxelGridGpu} vg 
-     * @returns {Promise<void>}
-     * @async
-     */
-    async fill1(vg) {
-        await this.map("fill1", vg, vg);
-    }
-
-    /**
-     * Writes "1" to all voxels contained in shape, "0" to other voxels.
-     * 
-     * @param {Object} shape 
-     * @param {VoxelGridGpu} vg (in-place)
-     * @param {"in" | "out" | "nearest"} boundary 
-     * @returns {Promise<void>}
-     * @async
-     */
-    async fillShape(shape, vg, boundary) {
-        // TODO: Gen candidate big voxels & dispatch them.
-
-        const maxVoxelCenterOfs = vg.res * Math.sqrt(3) * 0.5;
-        const offset = {
-            "in": -maxVoxelCenterOfs,
-            "out": maxVoxelCenterOfs,
-            "nearest": 0,
-        }[boundary];
-
-        const options = { offset };
-        if (shape.type === "cylinder") {
-            options._sd_p = shape.p;
-            options._sd_n = shape.n;
-            options._sd_r = shape.r;
-            options._sd_h = shape.h;
-        } else if (shape.type === "ELH") {
-            options._sd_p = shape.p;
-            options._sd_q = shape.q;
-            options._sd_n = shape.n;
-            options._sd_r = shape.r;
-            options._sd_h = shape.h;
-        } else if (shape.type === "box") {
-            options._sd_c = shape.center;
-            options._sd_hv0 = shape.halfVec0;
-            options._sd_hv1 = shape.halfVec1;
-            options._sd_hv2 = shape.halfVec2;
-        } else {
-            throw new Error(`Unsupported shape type: ${shape.type}`);
-        }
-        const dummyVg = this.createLike(vg, "u32");
-        await this.fill1(dummyVg);
-        const maskVg = this.createLike(vg, "u32");
-        await this.map("check_sdf_" + shape.type, dummyVg, maskVg, options);
-        await this.map2("or", maskVg, vg, vg);
-
-        this.destroy(dummyVg);
-        this.destroy(maskVg);
-    }
-
-    /**
-     * Compute distance field using jump flood algorithm.
-     * O(N^3 log(N)) compute
-     * 
-     * @param {VoxelGridGpu<u32>} inSeedVg Positive cells = 0-distance (seed) cells.
-     * @param {VoxelGridGpu<f32>} outDistVg Distance field. Distance from nearest seed cell will be written.
-     * @returns {Promise<void>}
-     * @async
-     */
-    async distField(inSeedVg, outDistVg) {
-        const grid = this.#checkGridCompat(inSeedVg, outDistVg);
-
-        // xyz=seed, w=dist. w=-1 means invalid (no seed) data.
-        const df = this.createLike(inSeedVg, "vec4f");
-        await this.map("df_init", inSeedVg, df);
-
-        // Jump flood
-        let numPass = Math.ceil(Math.log2(Math.max(grid.numX, grid.numY, grid.numZ)));
-
-        for (let pass = 0; pass < numPass; pass++) {
-            const step = 2 ** (numPass - pass - 1);
-            const commandEncoder = this.device.createCommandEncoder();
-            const numsBuf = this.createUniformBuffer(32, (ptr) => {
-                new Uint32Array(ptr, 0, 4).set([
-                    grid.numX, grid.numY, grid.numZ, step,
-                ]);
-            });
-            const ofsBuf = this.createUniformBuffer(32, (ptr) => {
-                new Float32Array(ptr, 0, 4).set([
-                    grid.ofs.x, grid.ofs.y, grid.ofs.z, grid.res,
-                ]);
-            });
-            this.#dispatchKernel(commandEncoder, this.jumpFloodPipeline, [df.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf);
-            this.device.queue.submit([commandEncoder.finish()]);
-            await this.device.queue.onSubmittedWorkDone();
-            numsBuf.destroy();
-            ofsBuf.destroy();
-        }
-
-        await this.map("df_to_dist", df, outDistVg);
-        this.destroy(df);
-    }
-
-    /**
      * Throws error if ty is not allowed in map/map2 or grid types.
      * @param {string} ty 
      */
@@ -1337,33 +965,6 @@ export class GpuKernels {
             "vec3f": 16, // 16, not 12, because of alignment. https://www.w3.org/TR/WGSL/#alignment-and-size
             "vec4f": 16,
         }[ty];
-    }
-
-    /**
-     * Throws error if grids are not compatible and returns common grid parameters.
-     * @param {VoxelGridGpu} vg1 
-     * @param {...VoxelGridGpu} vgs Additional grids to check compatibility with
-     * @returns {{res: number, numX: number, numY: number, numZ: number, ofs: Vector3}} Common grid parameters
-     */
-    #checkGridCompat(vg1, ...vgs) {
-        for (const grid2 of vgs) {
-            if (vg1.numX !== grid2.numX || vg1.numY !== grid2.numY || vg1.numZ !== grid2.numZ) {
-                throw new Error(`Grid size mismatch: ${vg1.numX}x${vg1.numY}x${vg1.numZ} vs ${grid2.numX}x${grid2.numY}x${grid2.numZ}`);
-            }
-            if (vg1.ofs.x !== grid2.ofs.x || vg1.ofs.y !== grid2.ofs.y || vg1.ofs.z !== grid2.ofs.z) {
-                throw new Error(`Grid offset mismatch: (${vg1.ofs.x},${vg1.ofs.y},${vg1.ofs.z}) vs (${grid2.ofs.x},${grid2.ofs.y},${grid2.ofs.z})`);
-            }
-            if (vg1.res !== grid2.res) {
-                throw new Error(`Grid resolution mismatch: ${vg1.res} vs ${grid2.res}`);
-            }
-        }
-        return {
-            res: vg1.res,
-            numX: vg1.numX,
-            numY: vg1.numY,
-            numZ: vg1.numZ,
-            ofs: vg1.ofs,
-        };
     }
 
     /**
@@ -1506,5 +1107,389 @@ export class GpuKernels {
         passEncoder.setBindGroup(0, bindGroup);
         passEncoder.dispatchWorkgroups(Math.ceil(numThreads / 128));
         passEncoder.end();
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // 3D geometry & grid
+
+    #initGridUtils() {
+        this.gridSnippet = `
+            @group(0) @binding(100) var<uniform> nums: vec4u; // xyz: numX, numY, numZ. w: unused.
+            @group(0) @binding(101) var<uniform> ofs_res: vec4f; // xyz: ofs, w: res
+
+            fn decompose_ix(ix: u32) -> vec3u {
+                return vec3u(ix % nums.x, (ix / nums.x) % nums.y, ix / (nums.x * nums.y));
+            }
+
+            fn compose_ix(ix3: vec3u) -> u32 {
+                return ix3.x + ix3.y * nums.x + ix3.z * nums.x * nums.y;
+            }
+
+            fn cell_center(ix3: vec3u) -> vec3f {
+                return (vec3f(ix3) + 0.5) * ofs_res.w + ofs_res.xyz;
+            }
+        `;
+        this.#compileJumpFloodPipeline();
+
+        this.invalidValue = 65536; // used in boundOfAxis.
+
+        this.registerMapFn("df_init", "u32", "vec4f", `if (vi > 0) { vo = vec4f(p, 0); } else { vo = vec4f(0, 0, 0, -1); }`);
+        this.registerMapFn("df_to_dist", "vec4f", "f32", `vo = vi.w;`);
+        this.registerMapFn("project_to_dir", "u32", "f32", `
+            if (vi > 0) {
+              vo = dot(dir, p);
+            } else {
+              vo = ${this.invalidValue};
+            }
+        `, { dir: "vec3f" });
+        this.registerReduceFn("min_ignore_invalid", "f32", "1e5", `
+            vo = min(
+                select(vi1, 1e5, vi1 == ${this.invalidValue}),
+                select(vi2, 1e5, vi2 == ${this.invalidValue}));
+        `);
+        this.registerReduceFn("max_ignore_invalid", "f32", "-1e5", `
+            vo = max(
+                select(vi1, -1e5, vi1 == ${this.invalidValue}),
+                select(vi2, -1e5, vi2 == ${this.invalidValue}));
+        `);
+
+        this.registerMapFn("check_sdf_cylinder", "u32", "u32", `
+            if (vi == 0) {
+              vo = 0;
+            } else {
+              var d = f32(0);
+              ${wgslSdfCylinderSnippet("p", "d")}
+              vo = select(0u, 1u, d <= offset);
+            }
+        `, { _sd_p: "vec3f", _sd_n: "vec3f", _sd_r: "f32", _sd_h: "f32", offset: "f32" });
+        this.registerMapFn("check_sdf_ELH", "u32", "u32", `
+            if (vi == 0) {
+              vo = 0;
+            } else {
+              var d = f32(0);
+              ${wgslSdfElhSnippet("p", "d")}
+              vo = select(0u, 1u, d <= offset);
+            }
+        `, { _sd_p: "vec3f", _sd_q: "vec3f", _sd_n: "vec3f", _sd_r: "f32", _sd_h: "f32", offset: "f32" });
+        this.registerMapFn("check_sdf_box", "u32", "u32", `
+            if (vi == 0) {
+              vo = 0;
+            } else {
+              var d = f32(0);
+              ${wgslSdfBoxSnippet("p", "d")}
+              vo = select(0u, 1u, d <= offset);
+            }
+        `, { _sd_c: "vec3f", _sd_hv0: "vec3f", _sd_hv1: "vec3f", _sd_hv2: "vec3f", offset: "f32" });
+        this.registerReduceFn("sum", "u32", "0u", `
+            vo = vi1 + vi2;
+        `);
+
+        this.registerMapFn("fill1", "u32", "u32", `
+            vo = 1u;
+        `);
+        this.registerMap2Fn("or", "u32", "u32", "u32", `
+            if (vi1 > 0 || vi2 > 0) {
+                vo = 1u;
+            } else {
+                vo = 0u;
+            }
+        `);
+    }
+
+    #compileJumpFloodPipeline() {
+        this.jumpFloodPipeline = this.#createPipeline(`jump_flood`, ["storage"], true, `
+            @group(0) @binding(0) var<storage, read_write> df: array<vec4f>; // xyz:seed, w:dist (-1 is invalid)
+
+            ${this.gridSnippet} // + nums.w contain jump step
+
+            @compute @workgroup_size(${this.wgSize})
+            fn jump_flood(@builtin(global_invocation_id) id: vec3u) {
+                let ix = id.x;
+                if (ix >= arrayLength(&df)) {
+                    return;
+                }
+
+                let ix3 = decompose_ix(ix);
+                let p = cell_center(ix3);
+                var sd = df[ix];
+                if (sd.w == 0) {
+                    return; // no change needed
+                }
+
+                let offsets = array<vec3i, 6>(
+                    vec3i(-1, 0, 0),
+                    vec3i(1, 0, 0),
+                    vec3i(0, -1, 0),
+                    vec3i(0, 1, 0),
+                    vec3i(0, 0, -1),
+                    vec3i(0, 0, 1),
+                );
+                for (var i = 0; i < 6; i++) {
+                    let nix3 = vec3i(ix3) + offsets[i] * i32(nums.w);
+                    if (any(nix3 < vec3i(0)) || any(nix3 >= vec3i(nums.xyz))) {
+                        continue; // neighbor is out of bound
+                    }
+                    let nix = compose_ix(vec3u(nix3));
+                    let nsd = df[nix];
+                    if (nsd.w < 0) {
+                        continue; // neighbor is invalid
+                    }
+                    let nd = distance(nsd.xyz, p);
+                    if (sd.w < 0 || nd < sd.w) {
+                        sd = vec4f(nsd.xyz, nd);  // closer seed found
+                    }
+                }
+                df[ix] = sd;
+            }
+        `);
+    }
+
+    /**
+     * Create new GPU-backed VoxelGrid, keeping shape of buf and optionally changing type.
+     * @param {VoxelGridGpu | VoxelGridCpu} vg 
+     * @param {"u32" | "f32" | "vec3f" | "vec4f" | null} [type=null] Type of cell ("u32" | "f32"). If null, same as buf.
+     * @returns {VoxelGridGpu} New buffer
+     */
+    createLike(vg, type = null) {
+        return new VoxelGridGpu(this, vg.res, vg.numX, vg.numY, vg.numZ, vg.ofs, type ?? vg.type);
+    }
+
+    /**
+     * Create new CPU-backed VoxelGrid, keeping shape of buf.
+     * @param {VoxelGridGpu | VoxelGridCpu} vg 
+     * @returns {VoxelGridCpu} New buffer
+     */
+    createLikeCpu(vg) {
+        if (vg.type === "vec3f") {
+            throw new Error("Cannot create CPU-backed VoxelGrid for vec3f");
+        }
+        return new VoxelGridCpu(vg.res, vg.numX, vg.numY, vg.numZ, vg.ofs, vg.type);
+    }
+
+    /**
+     * Copy data from inBuf to outBuf. This can cross CPU/GPU boundary.
+     *
+     * @param {VoxelGridGpu | VoxelGridCpu} inVg 
+     * @param {VoxelGridGpu | VoxelGridCpu} outVg 
+     * @returns {Promise<void>}
+     * @async
+     */
+    async copy(inVg, outVg) {
+        if (inVg === outVg) {
+            return;
+        }
+        this.#checkGridCompat(inVg, outVg);
+        const inBuffer = inVg instanceof VoxelGridCpu ? inVg.data.buffer : inVg.buffer;
+        const outBuffer = outVg instanceof VoxelGridCpu ? outVg.data.buffer : outVg.buffer;
+        await this.copyBuffer(inBuffer, outBuffer);
+    }
+
+    /**
+     * Destroy & free VoxelGrid's backing buffer.
+     * @param {VoxelGridGpu} vg 
+     */
+    destroy(vg) {
+        vg.buffer.destroy();
+        vg.buffer = null;
+    }
+
+    /**
+     * Throws error if grids are not compatible and returns common grid parameters.
+     * @param {VoxelGridGpu} vg1 
+     * @param {...VoxelGridGpu} vgs Additional grids to check compatibility with
+     * @returns {{res: number, numX: number, numY: number, numZ: number, ofs: Vector3}} Common grid parameters
+     */
+    #checkGridCompat(vg1, ...vgs) {
+        for (const grid2 of vgs) {
+            if (vg1.numX !== grid2.numX || vg1.numY !== grid2.numY || vg1.numZ !== grid2.numZ) {
+                throw new Error(`Grid size mismatch: ${vg1.numX}x${vg1.numY}x${vg1.numZ} vs ${grid2.numX}x${grid2.numY}x${grid2.numZ}`);
+            }
+            if (vg1.ofs.x !== grid2.ofs.x || vg1.ofs.y !== grid2.ofs.y || vg1.ofs.z !== grid2.ofs.z) {
+                throw new Error(`Grid offset mismatch: (${vg1.ofs.x},${vg1.ofs.y},${vg1.ofs.z}) vs (${grid2.ofs.x},${grid2.ofs.y},${grid2.ofs.z})`);
+            }
+            if (vg1.res !== grid2.res) {
+                throw new Error(`Grid resolution mismatch: ${vg1.res} vs ${grid2.res}`);
+            }
+        }
+        return {
+            res: vg1.res,
+            numX: vg1.numX,
+            numY: vg1.numY,
+            numZ: vg1.numZ,
+            ofs: vg1.ofs,
+        };
+    }
+
+    /**
+     * Writes "1" to all voxels contained in shape, "0" to other voxels.
+     * 
+     * @param {Object} shape 
+     * @param {VoxelGridGpu} vg (in-place)
+     * @param {"in" | "out" | "nearest"} boundary 
+     * @returns {Promise<void>}
+     * @async
+     */
+    async fillShape(shape, vg, boundary) {
+        // TODO: Gen candidate big voxels & dispatch them.
+
+        const maxVoxelCenterOfs = vg.res * Math.sqrt(3) * 0.5;
+        const offset = {
+            "in": -maxVoxelCenterOfs,
+            "out": maxVoxelCenterOfs,
+            "nearest": 0,
+        }[boundary];
+
+        const options = { offset };
+        if (shape.type === "cylinder") {
+            options._sd_p = shape.p;
+            options._sd_n = shape.n;
+            options._sd_r = shape.r;
+            options._sd_h = shape.h;
+        } else if (shape.type === "ELH") {
+            options._sd_p = shape.p;
+            options._sd_q = shape.q;
+            options._sd_n = shape.n;
+            options._sd_r = shape.r;
+            options._sd_h = shape.h;
+        } else if (shape.type === "box") {
+            options._sd_c = shape.center;
+            options._sd_hv0 = shape.halfVec0;
+            options._sd_hv1 = shape.halfVec1;
+            options._sd_hv2 = shape.halfVec2;
+        } else {
+            throw new Error(`Unsupported shape type: ${shape.type}`);
+        }
+        const dummyVg = this.createLike(vg, "u32");
+        await this.fill1(dummyVg);
+        const maskVg = this.createLike(vg, "u32");
+        await this.map("check_sdf_" + shape.type, dummyVg, maskVg, options);
+        await this.map2("or", maskVg, vg, vg);
+
+        this.destroy(dummyVg);
+        this.destroy(maskVg);
+    }
+
+    /**
+     * Compute distance field using jump flood algorithm.
+     * O(N^3 log(N)) compute
+     * 
+     * @param {VoxelGridGpu<u32>} inSeedVg Positive cells = 0-distance (seed) cells.
+     * @param {VoxelGridGpu<f32>} outDistVg Distance field. Distance from nearest seed cell will be written.
+     * @returns {Promise<void>}
+     * @async
+     */
+    async distField(inSeedVg, outDistVg) {
+        const grid = this.#checkGridCompat(inSeedVg, outDistVg);
+
+        // xyz=seed, w=dist. w=-1 means invalid (no seed) data.
+        const df = this.createLike(inSeedVg, "vec4f");
+        await this.map("df_init", inSeedVg, df);
+
+        // Jump flood
+        let numPass = Math.ceil(Math.log2(Math.max(grid.numX, grid.numY, grid.numZ)));
+
+        for (let pass = 0; pass < numPass; pass++) {
+            const step = 2 ** (numPass - pass - 1);
+            const commandEncoder = this.device.createCommandEncoder();
+            const numsBuf = this.createUniformBuffer(32, (ptr) => {
+                new Uint32Array(ptr, 0, 4).set([
+                    grid.numX, grid.numY, grid.numZ, step,
+                ]);
+            });
+            const ofsBuf = this.createUniformBuffer(32, (ptr) => {
+                new Float32Array(ptr, 0, 4).set([
+                    grid.ofs.x, grid.ofs.y, grid.ofs.z, grid.res,
+                ]);
+            });
+            this.#dispatchKernel(commandEncoder, this.jumpFloodPipeline, [df.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf);
+            this.device.queue.submit([commandEncoder.finish()]);
+            await this.device.queue.onSubmittedWorkDone();
+            numsBuf.destroy();
+            ofsBuf.destroy();
+        }
+
+        await this.map("df_to_dist", df, outDistVg);
+        this.destroy(df);
+    }
+
+
+    /**
+     * Get range of non-zero cells along dir.
+     * 
+     * @param {string} dir Unit vector representing axis to check.
+     * @param {VoxelGridGpu} inVg non-zero means existence.
+     * @param {"in" | "out" | "nearest"} boundary
+     * @returns {Promise<{min: number, max: number}>}
+     * @async
+     */
+    async boundOfAxis(dir, inVg, boundary) {
+        const projs = this.createLike(inVg, "f32");
+        await this.map("project_to_dir", inVg, projs, { dir });
+        const min = await this.reduce("min_ignore_invalid", projs);
+        const max = await this.reduce("max_ignore_invalid", projs);
+        this.destroy(projs);
+        const maxVoxelCenterOfs = inVg.res * Math.sqrt(3) * 0.5;
+        const offset = {
+            "in": -maxVoxelCenterOfs,
+            "out": maxVoxelCenterOfs,
+            "nearest": 0,
+        }[boundary];
+        return { min: min - offset, max: max + offset };
+    }
+
+    /**
+     * Checks if any voxel exists inside shape.
+     * 
+     * @param {Object} shape
+     * @param {VoxelGridGpu} inVg(u32). Non-zero means exist.
+     * @param {"in" | "out" | "nearest"} boundary
+     * @returns {Promise<boolean>}
+     * @async
+     */
+    async anyInShape(shape, inVg, boundary) {
+        // TODO: Gen candidate big voxels, and only dispatch them.
+        const maxVoxelCenterOfs = inVg.res * Math.sqrt(3) * 0.5;
+        const offset = {
+            "in": -maxVoxelCenterOfs,
+            "out": maxVoxelCenterOfs,
+            "nearest": 0,
+        }[boundary];
+
+        const options = { offset };
+        if (shape.type === "cylinder") {
+            options._sd_p = shape.p;
+            options._sd_n = shape.n;
+            options._sd_r = shape.r;
+            options._sd_h = shape.h;
+        } else if (shape.type === "ELH") {
+            options._sd_p = shape.p;
+            options._sd_q = shape.q;
+            options._sd_n = shape.n;
+            options._sd_r = shape.r;
+            options._sd_h = shape.h;
+        } else if (shape.type === "box") {
+            options._sd_c = shape.center;
+            options._sd_hv0 = shape.halfVec0;
+            options._sd_hv1 = shape.halfVec1;
+            options._sd_hv2 = shape.halfVec2;
+        } else {
+            throw new Error(`Unsupported shape type: ${shape.type}`);
+        }
+
+        const flagVg = this.createLike(inVg, "u32");
+        await this.map("check_sdf_" + shape.type, inVg, flagVg, options);
+        const count = await this.reduce("sum", flagVg);
+        this.destroy(flagVg);
+        return count > 0;
+    }
+
+    /**
+     * Write "1" to all voxels.
+     * @param {VoxelGridGpu} vg 
+     * @returns {Promise<void>}
+     * @async
+     */
+    async fill1(vg) {
+        await this.map("fill1", vg, vg);
     }
 }

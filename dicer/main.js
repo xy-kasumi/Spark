@@ -231,6 +231,7 @@ class TrackingVoxelGrid {
         this.protectedWorkBelowZ = z;
         if (!this.kernels.mapPipelines["set_protected_work_below_z"]) {
             this.kernels.registerMapFn("set_protected_work_below_z", "u32", "u32", `
+                vo = vi;
                 if (p.z < ${z} && vi == ${C_EMPTY_REMAINING}) {
                     vo = ${C_FULL_DONE};
                 }
@@ -262,7 +263,8 @@ class TrackingVoxelGrid {
                     // trueD <= 0.5 vxDiag (partial vertex - partial center) + d (partial center - cell center) + 0.5 vxDiag (cell center - cell vertex)
                     // because of triangle inequality.
                     vo = vi1 + ${vxDiag};
-                }`
+                }
+                `
             );
             /*
             TODO: protectedWork logic
@@ -406,6 +408,7 @@ class TrackingVoxelGrid {
                 if (vi2 > 0 && (vi1 == ${C_EMPTY_REMAINING} || vi1 == ${C_PARTIAL_REMAINING})) {
                     vo = 1;
                 }
+                vo = 1; // DEBUG
             `);
         }
         if (!this.kernels.map2Pipelines["commit_min"]) {
@@ -424,47 +427,7 @@ class TrackingVoxelGrid {
         await this.kernels.map2("commit_min", this.vx, minVg, this.vx);
         const numRemoved = await this.kernels.reduce("sum", removedVg);
         this.kernels.destroy(removedVg);
-        return numRemoved * this.res * this.res * this.res;
-
-        let numDamages = 0;
-        //let numRemoved = 0;
-        for (let z = 0; z < this.numZ; z++) {
-            for (let y = 0; y < this.numY; y++) {
-                for (let x = 0; x < this.numX; x++) {
-                    const isInMax = maxVg.get(x, y, z) > 0;
-                    const isInMin = minVg.get(x, y, z) > 0;
-                    if (isInMin && !isInMax) {
-                        const p = this.centerOf(x, y, z);
-                        const locator = `ix=(${x},${y},${z}), p=(${p.x},${p.y},${p.z})`;
-                        throw `Min/max reversal, at ${locator}`;
-                    }
-
-                    const i = x + y * this.numX + z * this.numX * this.numY;
-                    const isTargetNotEmpty = this.dataT[i] !== TG_EMPTY;
-
-                    // Check overcut.
-                    if (!ignoreOvercutErrors && isInMax && isTargetNotEmpty) {
-                        // this voxel can be potentially uncertainly removed.
-                        debug.vlogE(visDot(this.centerOf(x, y, z), "violet"));
-                        numDamages++;
-                    }
-
-                    // Commit.
-                    if (isInMin) {
-                        // this voxel will be definitely completely removed.
-                        // (at this point. dataT === TG_EMPTY, because isMin => isMax.)
-                        if (this.dataW[i] === W_REMAINING) {
-                            this.dataW[i] = W_DONE;
-                            numRemoved++;
-                        }
-                    }
-                }
-            }
-        }
-        if (debug.strict && numDamages > 0) {
-            throw `${numDamages} cells are potentially damaged`;
-        }
-        return numRemoved * this.res * this.res * this.res;
+        return numRemoved * this.res ** 3;
     }
 
     /**
@@ -487,16 +450,6 @@ class TrackingVoxelGrid {
         const cnt = await this.kernels.reduce("sum", flagVg);
         this.kernels.destroy(flagVg);
         return cnt * this.res ** 3;
-
-
-        //let cnt = 0;
-
-        for (let i = 0; i < this.dataW.length; i++) {
-            if (this.dataW[i] === W_REMAINING) {
-                cnt++;
-            }
-        }
-        return cnt * this.res * this.res * this.res;
     }
 
     /**
@@ -800,8 +753,8 @@ const createVgVis = (vg, label = "", mode = "occupancy") => {
             throw `Invalid vg type for occupancy: ${vg.type}`;
         }
 
-        const meshFull = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), vg.countEq(255));
-        const meshPartial = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial({ transparent: true, opacity: 0.25 }), vg.countEq(128));
+        const meshFull = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), vg.countIf(val => val === 255));
+        const meshPartial = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial({ transparent: true, opacity: 0.25 }), vg.countIf(val => val === 128));
 
         let instanceIxFull = 0;
         let instanceIxPartial = 0;
@@ -841,8 +794,7 @@ const createVgVis = (vg, label = "", mode = "occupancy") => {
             throw `Invalid vg type for deviation: ${vg.type}`;
         }
 
-        const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), vg.numX * vg.numY * vg.numZ - vg.countLessThan(0));
-
+        const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), vg.countIf(val => val >= 0));
         let instanceIx = 0;
         const maxDev = 3;
         for (let iz = 0; iz < vg.numZ; iz++) {
@@ -1559,7 +1511,7 @@ class Planner {
         const targVg = workVg.clone();
         diceSurf(this.stockSurf, workVg);
         diceSurf(this.targetSurf, targVg);
-        console.log(`stock: ${workVg.volume()} mm^3 (${workVg.count().toLocaleString("en-US")} voxels) / target: ${targVg.volume()} mm^3 (${targVg.count().toLocaleString("en-US")} voxels)`);
+        console.log(`stock: ${workVg.volume()} mm^3 (${workVg.countIf(v => v > 0).toLocaleString("en-US")} voxels) / target: ${targVg.volume()} mm^3 (${targVg.countIf(v => v > 0).toLocaleString("en-US")} voxels)`);
 
         this.trvg = new TrackingVoxelGrid(this.kernels, workVg.res, workVg.numX, workVg.numY, workVg.numZ, workVg.ofs.clone());
         await this.trvg.setFromWorkAndTarget(workVg, targVg);
