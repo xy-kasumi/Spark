@@ -449,37 +449,50 @@ class TrackingVoxelGrid {
      * Returns true if given shape contains cut-forbidden parts.
      * Conservative: voxels with potential overlaps will be considered for block-detection.
      * @param {Object} shape Shape object, created by {@link createCylinderShape}, {@link createELHShape}, etc.
-     * @returns {boolean} true if blocked, false otherwise
+     * @returns {Promise<boolean>} true if blocked, false otherwise
+     * @async
      */
-    queryBlocked(shape) {
-        const sdf = createSdf(shape);
-        const margin = this.res * 0.5 * Math.sqrt(3);
+    async queryBlocked(shape) {
+        if (!this.kernels.mapPipelines["blocked"]) {
+            this.kernels.registerMapFn("blocked", "u32", "u32", `
+                if (vi == ${C_FULL_DONE} || vi == ${C_PARTIAL_DONE} || vi == ${C_PARTIAL_REMAINING}) {
+                    vo = 1;
+                } else {
+                    vo = 0;
+                }
+            `);
+        }
 
-        //genericOp(MASK_BLOCKED);
-        //any(sdf, "outside");
-
-        return anyPointInsideIs(this, sdf, margin, (ix, iy, iz) => {
-            const st = this.get(ix, iy, iz);
-            return st === C_FULL_DONE || st === C_PARTIAL_DONE || st === C_PARTIAL_REMAINING;
-        });
+        const blocked = this.kernels.createLike(this.vx, "u32");
+        await this.kernels.map("blocked", this.vx, blocked);
+        const result = await this.kernels.any(shape, blocked, "out");
+        this.kernels.destroy(blocked);
+        return result;
     }
 
     /**
      * Returns true if given shape contains work to do. Does not guarantee it's workable (not blocked).
      * 
      * @param {Object} shape Shape object, created by {@link createCylinderShape}, {@link createELHShape}, etc.
-     * @returns {boolean} true if has work, false otherwise
+     * @returns {Promise<boolean>} true if has work, false otherwise
+     * @async
      */
-    queryHasWork(shape) {
-        const sdf = createSdf(shape);
+    async queryHasWork(shape) {
+        if (!this.kernels.mapPipelines["has_work"]) {
+            this.kernels.registerMapFn("has_work", "u32", "u32", `
+                if (vi == ${C_EMPTY_REMAINING} || vi == ${C_PARTIAL_REMAINING}) {
+                    vo = 1;
+                } else {
+                    vo = 0;
+                }
+            `);
+        }
 
-        //genericOp(MASK_HAS_WORK);
-        //any(sdf, "nearest");
-
-        return anyPointInsideIs(this, sdf, 0, (ix, iy, iz) => {
-            const st = this.get(ix, iy, iz);
-            return st === C_EMPTY_REMAINING || st === C_PARTIAL_REMAINING;
-        });
+        const hasWork = this.kernels.createLike(this.vx, "u32");
+        await this.kernels.map("has_work", this.vx, hasWork);
+        const result = await this.kernels.any(shape, hasWork, "nearest");
+        this.kernels.destroy(hasWork);
+        return result;
     }
 
     /**

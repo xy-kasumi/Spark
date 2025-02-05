@@ -89,6 +89,22 @@ export const createSdfCylinder = (p, n, r, h) => {
     return sdf;
 };
 
+// The snippet assumes p, n, r, h are declared as uniform variables.
+const wgslSdfCylinderSnippet = (inVar, outVar) => `
+    {
+        let dx = ${inVar} - p;
+        // decompose into 1D + 2D
+        let dx1 = dot(dx, n);
+        let dx2 = dx - n * dx1;
+        // 1D distance from interval [0, h]
+        let d1 = abs(dx1 - h * 0.5) - h * 0.5;
+        // 2D distance from a circle r.
+        let d2 = length(dx2) - r;
+        // Combine 1D + 2D distances.
+        ${outVar} = min(max(d1, d2), 0) + length(max(vec2f(0), vec2f(d1, d2)));
+    }
+`;
+
 /**
  * @param {Vector3} p Start point
  * @param {Vector3} q End point
@@ -135,6 +151,25 @@ export const createSdfElh = (p, q, n, r, h) => {
     return sdf;
 };
 
+// The snippet assumes p, q, n, r, h are declared as uniform variables.
+const wgslSdfElhSnippet = (inVar, outVar) => `
+    {
+        let dq = q - p;
+        let dqLenSq = dot(dq, dq);
+        let dx = ${inVar} - p;
+        // decompose into 2D + 1D
+        let dx1 = dot(dx, n);
+        let dx2 = dx - n * dx1;
+        // 1D distance from interval [0, h]
+        let d1 = abs(dx1 - h * 0.5) - h * 0.5;
+        // 2D distance from long hole (0,dq,r)
+        let t = clamp(dot(dx2, dq) / dqLenSq, 0, 1); // limit to line segment (between p & q)
+        let d2 = distance(dx2, dq * t) - r;
+        // Combine 1D + 2D distances.
+        ${outVar} = min(max(d1, d2), 0) + length(max(vec2f(0), vec2f(d1, d2)));
+    }
+`;
+
 /**
  * @param {Vector3} center Center of the box
  * @param {Vector3} halfVec0 Half vector of the box (must be perpendicular to halfVec1 & halfVec2)
@@ -165,6 +200,23 @@ export const createSdfBox = (center, halfVec0, halfVec1, halfVec2) => {
     };
     return sdf;
 };
+
+// The snippet assumes center, halfVec0, halfVec1, halfVec2 are declared as uniform variables.
+const wgslSdfBoxSnippet = (inVar, outVar) => `
+    {
+        let dx = ${inVar} - center;
+        var dp = vec3f(
+            dot(dx, normalize(halfVec0)),
+            dot(dx, normalize(halfVec1)),
+            dot(dx, normalize(halfVec2))
+        );
+        dp -= vec3f(length(halfVec0), length(halfVec1), length(halfVec2));
+
+        let dInside = min(0, max(dp.x, max(dp.y, dp.z)));
+        let dOutside = length(max(vec3f(0), dp));
+        ${outVar} = dInside + dOutside;
+    }
+`;
 
 /**
  * Traverse all points that (sdf(p) <= offset), and call fn(ix, iy, iz)
@@ -509,6 +561,37 @@ export class GpuKernels {
             vo = max(
                 select(vi1, -1e5, vi1 == ${this.invalidValue}),
                 select(vi2, -1e5, vi2 == ${this.invalidValue}));
+        `);
+
+        this.registerMapFn("check_sdf_cylinder", "u32", "u32", `
+            if (vi == 0) {
+              vo = 0;
+            } else {
+              var d = f32(0);
+              ${wgslSdfCylinderSnippet("p", "d")}
+              vo = select(0u, 1u, d <= offset);
+            }
+        `, { p: "vec3f", n: "vec3f", r: "f32", h: "f32", offset: "f32" });
+        this.registerMapFn("check_sdf_elh", "u32", "u32", `
+            if (vi == 0) {
+              vo = 0;
+            } else {
+              var d = f32(0);
+              ${wgslSdfElhSnippet("p", "d")}
+              vo = select(0u, 1u, d <= offset);
+            }
+        `, { p: "vec3f", q: "vec3f", n: "vec3f", r: "f32", h: "f32", offset: "f32" });
+        this.registerMapFn("check_sdf_box", "u32", "u32", `
+            if (vi == 0) {
+              vo = 0;
+            } else {
+              var d = f32(0);
+              ${wgslSdfBoxSnippet("p", "d")}
+              vo = select(0u, 1u, d <= offset);
+            }
+        `, { center: "vec3f", halfVec0: "vec3f", halfVec1: "vec3f", halfVec2: "vec3f", offset: "f32" });
+        this.registerReduceFn("sum", "u32", "0u", `
+            vo = vi1 + vi2;
         `);
     }
 
@@ -878,22 +961,41 @@ export class GpuKernels {
     /**
      * 
      * @param {string} fnName 
-     * @param {VoxelGridGpu} inBuf 
-     * @param {VoxelGridGpu} outBuf
+     * @param {VoxelGridGpu} inVg 
+     * @param {VoxelGridGpu} outVg
      * @param {Object} uniforms Uniform variable values.
      * @returns {Promise<void>}
      * @async
      */
-    async map(fnName, inBuf, outBuf, uniforms = {}) {
-        const grid = this.#checkGridCompat(inBuf, outBuf);
+    async map(fnName, inVg, outVg, uniforms = {}) {
+        const grid = this.#checkGridCompat(inVg, outVg);
         if (!this.mapPipelines[fnName]) {
             throw new Error(`Map fn "${fnName}" not registered`);
         }
+        const { pipeline, uniformBindings } = this.mapPipelines[fnName];
+
+        // Check uniform type compatibility.
+        const unusedVars = new Set(Object.keys(uniforms)).difference(new Set(Object.keys(uniformBindings)));
+        if (unusedVars.size > 0) {
+            console.warn("Unused uniform variables: ", unusedVars);
+        }
+        for (const [varName, binding] of Object.entries(uniformBindings)) {
+            if (!uniforms[varName]) {
+                throw new Error(`Required uniform variable "${varName}" not provided`);
+            }
+            const val = uniforms[varName];
+            if (binding.type === "vec3f" && !(val instanceof Vector3)) {
+                throw new Error(`Uniform variable "${varName}: vec3f" must be a Vector3`);
+            }
+            if (binding.type === "f32" && typeof val !== "number") {
+                throw new Error(`Uniform variable "${varName}: f32" must be a number`);
+            }
+        }
 
         let tmpBuf = null;
-        if (outBuf === inBuf) {
-            tmpBuf = this.createLike(inBuf);
-            outBuf = tmpBuf;
+        if (outVg === inVg) {
+            tmpBuf = this.createLike(inVg);
+            outVg = tmpBuf;
         }
 
         const numsBuf = this.createUniformBuffer(32, (ptr) => {
@@ -907,10 +1009,10 @@ export class GpuKernels {
             ]);
         });
 
-        const {pipeline, uniformBindings} = this.mapPipelines[fnName];
+
         const additionalEntries = [];
         for (const [varName, binding] of Object.entries(uniformBindings)) {
-            const {bindingId, type} = binding;
+            const { bindingId, type } = binding;
             let buf = null;
             if (type === "vec3f") {
                 buf = this.createUniformBuffer(32, (ptr) => {
@@ -918,19 +1020,20 @@ export class GpuKernels {
                         uniforms[varName].x, uniforms[varName].y, uniforms[varName].z, 0,
                     ]);
                 });
-            } else {
-                // TODO: this will leak buffer. Validate everything before allocation.
-                throw new Error(`Unsupported uniform type: ${type}`);
+            } else if (type === "f32") {
+                buf = this.createUniformBuffer(32, (ptr) => {
+                    new Float32Array(ptr, 0, 1).set([uniforms[varName]]);
+                });
             }
             additionalEntries.push([bindingId, buf]);
         }
 
         try {
             const commandEncoder = this.device.createCommandEncoder();
-            this.#dispatchKernel(commandEncoder, pipeline, [inBuf.buffer, outBuf.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf, additionalEntries);
+            this.#dispatchKernel(commandEncoder, pipeline, [inVg.buffer, outVg.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf, additionalEntries);
             this.device.queue.submit([commandEncoder.finish()]);
-            if (inBuf === outBuf) {
-                await this.copy(tmpBuf, inBuf);
+            if (inVg === outVg) {
+                await this.copy(tmpBuf, inVg);
                 this.destroy(tmpBuf);
             }
         } finally {
@@ -1062,18 +1165,49 @@ export class GpuKernels {
     }
 
     /**
+     * Checks if any voxel exists inside shape.
      * 
      * @param {Object} shape
-     * @param {VoxelGridGpu} inVg
+     * @param {VoxelGridGpu} inVg(u32). Non-zero means exist.
      * @param {"in" | "out" | "nearest"} boundary
      * @returns {Promise<boolean>}
      * @async
      */
     async any(shape, inVg, boundary) {
         // TODO: Gen candidate big voxels, and only dispatch them.
+        const maxVoxelCenterOfs = inVg.res * Math.sqrt(3) * 0.5;
+        const offset = {
+            "in": -maxVoxelCenterOfs,
+            "out": maxVoxelCenterOfs,
+            "nearest": 0,
+        }[boundary];
 
-        // map sdf values & booleans
-        // reduce. OR
+        const options = { offset };
+        if (shape.type === "cylinder") {
+            options.p = shape.p;
+            options.n = shape.n;
+            options.r = shape.r;
+            options.h = shape.h;
+        } else if (shape.type === "elh") {
+            options.p = shape.p;
+            options.q = shape.q;
+            options.n = shape.n;
+            options.r = shape.r;
+            options.h = shape.h;
+        } else if (shape.type === "box") {
+            options.center = shape.center;
+            options.halfVec0 = shape.halfVec0;
+            options.halfVec1 = shape.halfVec1;
+            options.halfVec2 = shape.halfVec2;
+        } else {
+            throw new Error(`Unsupported shape type: ${shape.type}`);
+        }
+
+        const flagVg = this.createLike(inVg, "u32");
+        await this.map("check_sdf_" + shape.type, inVg, flagVg, options);
+        const count = await this.reduce("sum", flagVg);
+        this.destroy(flagVg);
+        return count > 0;
     }
 
     /**
