@@ -225,10 +225,10 @@ export const wgslSdfBoxSnippet = (inVar, outVar) => {
     return `
         {
             let dx = ${inVar} - _sd_c;
-            var dp = vec3f(
+            var dp = abs(vec3f(
                 dot(dx, normalize(_sd_hv0)),
                 dot(dx, normalize(_sd_hv1)),
-                dot(dx, normalize(_sd_hv2)));
+                dot(dx, normalize(_sd_hv2))));
             dp -= vec3f(length(_sd_hv0), length(_sd_hv1), length(_sd_hv2));
 
             let d_in = min(0, max(dp.x, max(dp.y, dp.z)));

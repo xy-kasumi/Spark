@@ -49,9 +49,9 @@ QUnit.module('gpu-sdf', function () {
         const device = await adapter.requestDevice();
         const kernels = new GpuKernels(device);
 
-        const num = 3;
+        const num = 10;
 
-        const vg = new VoxelGridGpu(kernels, 0.5, num, num, num, new Vector3(-2, -2, -2), "f32");
+        const vg = new VoxelGridGpu(kernels, 0.4, num, num, num, new Vector3(-2, -2, -2), "f32");
         const readVg = kernels.createLikeCpu(vg);
         kernels.registerMapFn("sdf", "f32", "f32", wgslSdfCylinderSnippet("p", "vo"), { _sd_p: "vec3f", _sd_n: "vec3f", _sd_r: "f32", _sd_h: "f32" });
 
@@ -77,9 +77,9 @@ QUnit.module('gpu-sdf', function () {
         const device = await adapter.requestDevice();
         const kernels = new GpuKernels(device);
 
-        const num = 3;
+        const num = 10;
 
-        const vg = new VoxelGridGpu(kernels, 0.5, num, num, num, new Vector3(-2, -2, -2), "f32");
+        const vg = new VoxelGridGpu(kernels, 0.4, num, num, num, new Vector3(-2, -2, -2), "f32");
         const readVg = kernels.createLikeCpu(vg);
         kernels.registerMapFn("sdf", "f32", "f32", wgslSdfElhSnippet("p", "vo"), { _sd_p: "vec3f", _sd_q: "vec3f", _sd_n: "vec3f", _sd_r: "f32", _sd_h: "f32" });
 
@@ -106,9 +106,9 @@ QUnit.module('gpu-sdf', function () {
         const device = await adapter.requestDevice();
         const kernels = new GpuKernels(device);
 
-        const num = 3;
+        const num = 10;
 
-        const vg = new VoxelGridGpu(kernels, 0.5, num, num, num, new Vector3(-2, -2, -2), "f32");
+        const vg = new VoxelGridGpu(kernels, 0.4, num, num, num, new Vector3(-2, -2, -2), "f32");
         const readVg = kernels.createLikeCpu(vg);
         kernels.registerMapFn("sdf", "f32", "f32", wgslSdfBoxSnippet("p", "vo"), { _sd_c: "vec3f", _sd_hv0: "vec3f", _sd_hv1: "vec3f", _sd_hv2: "vec3f" });
 
