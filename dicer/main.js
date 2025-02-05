@@ -475,25 +475,7 @@ class TrackingVoxelGrid {
         await this.kernels.map("work_remaining", this.vx, work);
         const result = await this.kernels.boundOfAxis(dir, work, "out");
         this.kernels.destroy(work);
-        console.log("queryWorkRange", dir, "->", result);
         return result;
-
-        for (let iz = 0; iz < this.numZ; iz++) {
-            for (let iy = 0; iy < this.numY; iy++) {
-                for (let ix = 0; ix < this.numX; ix++) {
-                    if (this.getW(ix, iy, iz) === W_REMAINING) {
-                        const t = this.centerOf(ix, iy, iz).dot(dir);
-                        min = Math.min(min, t);
-                        max = Math.max(max, t);
-                    }
-                }
-            }
-        }
-        const maxVoxelCenterOfs = this.res * Math.sqrt(3) * 0.5;
-        return {
-            min: min - maxVoxelCenterOfs,
-            max: max + maxVoxelCenterOfs,
-        };
     }
 
     /**
@@ -539,9 +521,16 @@ class TrackingVoxelGrid {
             `);
         }
 
+        let t = performance.now();
         const hasWork = this.kernels.createLike(this.vx, "u32");
         await this.kernels.map("has_work", this.vx, hasWork);
+        console.log("queryHasWork:map", performance.now() - t);
+        t = performance.now();
+
         const result = await this.kernels.anyInShape(shape, hasWork, "nearest");
+        console.log("queryHasWork:anyInShape", performance.now() - t);
+        t = performance.now();
+
         this.kernels.destroy(hasWork);
         return result;
     }
@@ -1586,7 +1575,7 @@ class Planner {
             const numRows = Math.ceil((rowRange.max - rowRange.min + 2 * margin) / feedWidth);
             const numSegs = Math.ceil((feedRange.max - feedRange.min + 2 * margin) / segmentLength);
 
-            debug.vlog(visDot(scanOrigin, "red"));
+            debug.vlog(visDot(scanOrigin, "black"));
             debug.vlog(visQuad(
                 scanOrigin,
                 rowDir.clone().multiplyScalar(feedWidth * numRows),
@@ -1609,6 +1598,18 @@ class Planner {
                     const hasWork = await this.trvg.queryHasWork(segShape);
                     const state = isBlocked ? "blocked" : (hasWork ? "work" : "empty");
                     row.push(state);
+
+                    if (state === "blocked") {
+                        if (hasWork) {
+                            debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "orange"));
+                        } else {
+                            debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "red"));
+                        }
+                    } else if (state === "work") {
+                        debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "green"));
+                    } else {
+                        debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "gray"));
+                    }
                 }
                 rows.push(row);
             }

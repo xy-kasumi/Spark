@@ -373,15 +373,14 @@ export class VoxelGridCpu {
      * Set cells inside the given shape to val
      * @param {Object} shape Shape object
      * @param {number} val Value to set to cells
-     * @param {string} roundMode "outside", "inside", or "nearest"
+     * @param {"out" | "in" | "nearest"} roundMode "outside", "inside", or "nearest"
      */
     fillShape(shape, val, roundMode) {
         const sdf = createSdf(shape);
-        let offset = null;
-        const halfDiag = this.res * 0.5 * Math.sqrt(3);
-        if (roundMode === "outside") {
+        const offset = this.boundaryOffset(shape, roundMode);
+        if (roundMode === "out") {
             offset = halfDiag;
-        } else if (roundMode === "inside") {
+        } else if (roundMode === "in") {
             offset = -halfDiag;
         } else if (roundMode === "nearest") {
             offset = 0;
@@ -640,9 +639,8 @@ export class GpuKernels {
                 vs_out[index] = vo;
             }
         `;
-        //console.log(code);
         const pipeline = this.#createPipeline(`map_${name}`, ["storage", "storage"], true, code, uniformIds);
-        this.mapPipelines[name] = { pipeline, uniformBindings };
+        this.mapPipelines[name] = { pipeline, uniformBindings, inType, outType };
     }
 
     /**
@@ -673,7 +671,7 @@ export class GpuKernels {
         GpuKernels.checkAllowedType(inType2);
         GpuKernels.checkAllowedType(outType);
 
-        this.map2Pipelines[name] = this.#createPipeline(`map2_${name}`, ["storage", "storage", "storage"], true, `
+        const pipeline = this.#createPipeline(`map2_${name}`, ["storage", "storage", "storage"], true, `
             @group(0) @binding(0) var<storage, read_write> vs_in1: array<${inType1}>;
             @group(0) @binding(1) var<storage, read_write> vs_in2: array<${inType2}>;
             @group(0) @binding(2) var<storage, read_write> vs_out: array<${outType}>;
@@ -697,13 +695,14 @@ export class GpuKernels {
                 vs_out[index] = vo;
             }
         `);
+        this.map2Pipelines[name] = { pipeline, inType1, inType2, outType };
     }
 
     /**
      * Register WGSL snippet for use in {@link reduce}.
      * 
      * @param {string} name 
-     * @param {"f32"} valType WGSL type signature of value type
+     * @param {string} valType WGSL type signature of value type
      * @param {string} initVal expression of initial value
      * @param {string} snippet sentence(s) of reduce operation (multi-line allowed)
      * 
@@ -727,15 +726,19 @@ export class GpuKernels {
         if (this.reducePipelines[name]) {
             throw new Error(`Reduce fn "${name}" already registered`);
         }
+        GpuKernels.checkAllowedType(valType);
+        if (valType !== "u32" && valType !== "f32") {
+            throw new Error(`Reduce fn "${name}": valType must be "u32" or "f32"`);
+        }
 
-        this.reducePipelines[name] = this.#createPipeline(`reduce_${name}`, ["storage", "storage"], false, `
+        const pipeline = this.#createPipeline(`reduce_${name}`, ["storage", "storage"], false, `
             var<workgroup> wg_buffer_accum: array<${valType}, ${this.wgSize}>;
 
             @group(0) @binding(0) var<storage, read_write> vs_in: array<${valType}>;
             @group(0) @binding(1) var<storage, read_write> vs_out: array<${valType}>;
 
             @compute @workgroup_size(${this.wgSize})
-            fn reduce_${name}(@builtin(global_invocation_id) gid_raw: vec3u, @builtin(local_invocation_index) lid: u32) {
+            fn reduce_${name}(@builtin(global_invocation_id) gid_raw: vec3u, @builtin(local_invocation_index) lid: u32, @builtin(num_workgroups) num_wg: vec3u) {
                 let gid = gid_raw.x;
 
                 var accum = ${initVal};
@@ -761,8 +764,12 @@ export class GpuKernels {
                 if (lid == 0) {
                     vs_out[gid / ${this.wgSize}] = wg_buffer_accum[0];
                 }
+                if (gid >= num_wg.x) {
+                    vs_out[gid] = ${initVal}; // prevent reading garbage in next pass
+                }
             }
         `);
+        this.reducePipelines[name] = { pipeline, valType };
     }
 
     /**
@@ -779,7 +786,10 @@ export class GpuKernels {
         if (!this.mapPipelines[fnName]) {
             throw new Error(`Map fn "${fnName}" not registered`);
         }
-        const { pipeline, uniformBindings } = this.mapPipelines[fnName];
+        const { pipeline, uniformBindings, inType, outType } = this.mapPipelines[fnName];
+        if (inVg.type !== inType || outVg.type !== outType) {
+            throw new Error(`Map fn "${fnName}" type mismatch; expected vi:${inType}, vo:${outType}, got vi:${inVg.type}, vo:${outVg.type}`);
+        }
 
         // Check uniform type compatibility.
         const unusedVars = new Set(Object.keys(uniforms)).difference(new Set(Object.keys(uniformBindings)));
@@ -867,6 +877,10 @@ export class GpuKernels {
         if (!this.map2Pipelines[fnName]) {
             throw new Error(`Map2 fn "${fnName}" not registered`);
         }
+        const { pipeline, inType1, inType2, outType } = this.map2Pipelines[fnName];
+        if (inVg1.type !== inType1 || inVg2.type !== inType2 || outVg.type !== outType) {
+            throw new Error(`Map2 fn "${fnName}" type mismatch; expected vi1:${inType1}, vi2:${inType2}, vo:${outType}, got vi1:${inVg1.type}, vi2:${inVg2.type}, vo:${outVg.type}`);
+        }
 
         let tmpBuf = null;
         let dispatchOutVg = outVg;
@@ -887,10 +901,10 @@ export class GpuKernels {
         });
         try {
             const commandEncoder = this.device.createCommandEncoder();
-            this.#dispatchKernel(commandEncoder, this.map2Pipelines[fnName], [inVg1.buffer, inVg2.buffer, dispatchOutVg.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf);
+            this.#dispatchKernel(commandEncoder, pipeline, [inVg1.buffer, inVg2.buffer, dispatchOutVg.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf);
             this.device.queue.submit([commandEncoder.finish()]);
             if (outVg === inVg1 || outVg === inVg2) {
-                await this.copy(tmpBuf, dispatchOutVg);
+                await this.copy(tmpBuf, outVg);
                 this.destroy(tmpBuf);
             }
         } finally {
@@ -910,36 +924,45 @@ export class GpuKernels {
         if (!this.reducePipelines[fnName]) {
             throw new Error(`Reduce fn "${fnName}" not registered`);
         }
+        const { pipeline, valType } = this.reducePipelines[fnName];
+        if (inVg.type !== valType) {
+            throw new Error(`Reduce fn "${fnName}" type mismatch; expected ${valType}, got ${inVg.type}`);
+        }
 
-        // TODO: These should be buffer, instead of VG.
-        const tempVgs = [
-            this.createLike(inVg),
-            this.createLike(inVg),
+        const tempBufs = [
+            this.createBuffer(inVg.buffer.size),
+            this.createBuffer(inVg.buffer.size),
         ];
 
-        await this.copy(inVg, tempVgs[0]);
         let activeBufIx = 0;
+        await this.copyBuffer(inVg.buffer, tempBufs[activeBufIx]);
 
         try {
             const commandEncoder = this.device.createCommandEncoder();
             let numElems = inVg.numX * inVg.numY * inVg.numZ;
             while (numElems > 1) {
-                this.#dispatchKernel(commandEncoder, this.reducePipelines[fnName], [tempVgs[activeBufIx].buffer, tempVgs[1 - activeBufIx].buffer], numElems);
+                this.#dispatchKernel(commandEncoder, pipeline, [tempBufs[activeBufIx], tempBufs[1 - activeBufIx]], numElems);
                 activeBufIx = 1 - activeBufIx;
                 numElems = Math.ceil(numElems / this.wgSize);
             }
             this.device.queue.submit([commandEncoder.finish()]);
             await this.device.queue.onSubmittedWorkDone();
             const readBuf = this.createBufferForCpuRead(inVg.buffer.size);
-            await this.copyBuffer(tempVgs[activeBufIx].buffer, readBuf);
+            await this.copyBuffer(tempBufs[activeBufIx], readBuf);
             await readBuf.mapAsync(GPUMapMode.READ);
-            const result = new Float32Array(readBuf.getMappedRange(0, 4))[0];
+            let result = null;
+            if (valType === "u32") {
+                result = new Uint32Array(readBuf.getMappedRange(0, 4))[0];
+            } else if (valType === "f32") {
+                result = new Float32Array(readBuf.getMappedRange(0, 4))[0];
+            } else {
+                throw "unexpected valType";
+            }
             readBuf.unmap();
             readBuf.destroy();
             return result;
         } finally {
-            this.destroy(tempVgs[0]);
-            this.destroy(tempVgs[1]);
+            tempBufs.forEach(buf => buf.destroy());
         }
     }
 
@@ -1105,7 +1128,7 @@ export class GpuKernels {
         const passEncoder = commandEncoder.beginComputePass();
         passEncoder.setPipeline(pipeline);
         passEncoder.setBindGroup(0, bindGroup);
-        passEncoder.dispatchWorkgroups(Math.ceil(numThreads / 128));
+        passEncoder.dispatchWorkgroups(Math.ceil(numThreads / this.wgSize));
         passEncoder.end();
     }
 
@@ -1196,53 +1219,6 @@ export class GpuKernels {
         `);
     }
 
-    #compileJumpFloodPipeline() {
-        this.jumpFloodPipeline = this.#createPipeline(`jump_flood`, ["storage"], true, `
-            @group(0) @binding(0) var<storage, read_write> df: array<vec4f>; // xyz:seed, w:dist (-1 is invalid)
-
-            ${this.gridSnippet} // + nums.w contain jump step
-
-            @compute @workgroup_size(${this.wgSize})
-            fn jump_flood(@builtin(global_invocation_id) id: vec3u) {
-                let ix = id.x;
-                if (ix >= arrayLength(&df)) {
-                    return;
-                }
-
-                let ix3 = decompose_ix(ix);
-                let p = cell_center(ix3);
-                var sd = df[ix];
-                if (sd.w == 0) {
-                    return; // no change needed
-                }
-
-                let offsets = array<vec3i, 6>(
-                    vec3i(-1, 0, 0),
-                    vec3i(1, 0, 0),
-                    vec3i(0, -1, 0),
-                    vec3i(0, 1, 0),
-                    vec3i(0, 0, -1),
-                    vec3i(0, 0, 1),
-                );
-                for (var i = 0; i < 6; i++) {
-                    let nix3 = vec3i(ix3) + offsets[i] * i32(nums.w);
-                    if (any(nix3 < vec3i(0)) || any(nix3 >= vec3i(nums.xyz))) {
-                        continue; // neighbor is out of bound
-                    }
-                    let nix = compose_ix(vec3u(nix3));
-                    let nsd = df[nix];
-                    if (nsd.w < 0) {
-                        continue; // neighbor is invalid
-                    }
-                    let nd = distance(nsd.xyz, p);
-                    if (sd.w < 0 || nd < sd.w) {
-                        sd = vec4f(nsd.xyz, nd);  // closer seed found
-                    }
-                }
-                df[ix] = sd;
-            }
-        `);
-    }
 
     /**
      * Create new GPU-backed VoxelGrid, keeping shape of buf and optionally changing type.
@@ -1294,33 +1270,6 @@ export class GpuKernels {
     }
 
     /**
-     * Throws error if grids are not compatible and returns common grid parameters.
-     * @param {VoxelGridGpu} vg1 
-     * @param {...VoxelGridGpu} vgs Additional grids to check compatibility with
-     * @returns {{res: number, numX: number, numY: number, numZ: number, ofs: Vector3}} Common grid parameters
-     */
-    #checkGridCompat(vg1, ...vgs) {
-        for (const grid2 of vgs) {
-            if (vg1.numX !== grid2.numX || vg1.numY !== grid2.numY || vg1.numZ !== grid2.numZ) {
-                throw new Error(`Grid size mismatch: ${vg1.numX}x${vg1.numY}x${vg1.numZ} vs ${grid2.numX}x${grid2.numY}x${grid2.numZ}`);
-            }
-            if (vg1.ofs.x !== grid2.ofs.x || vg1.ofs.y !== grid2.ofs.y || vg1.ofs.z !== grid2.ofs.z) {
-                throw new Error(`Grid offset mismatch: (${vg1.ofs.x},${vg1.ofs.y},${vg1.ofs.z}) vs (${grid2.ofs.x},${grid2.ofs.y},${grid2.ofs.z})`);
-            }
-            if (vg1.res !== grid2.res) {
-                throw new Error(`Grid resolution mismatch: ${vg1.res} vs ${grid2.res}`);
-            }
-        }
-        return {
-            res: vg1.res,
-            numX: vg1.numX,
-            numY: vg1.numY,
-            numZ: vg1.numZ,
-            ofs: vg1.ofs,
-        };
-    }
-
-    /**
      * Writes "1" to all voxels contained in shape, "0" to other voxels.
      * 
      * @param {Object} shape 
@@ -1332,33 +1281,9 @@ export class GpuKernels {
     async fillShape(shape, vg, boundary) {
         // TODO: Gen candidate big voxels & dispatch them.
 
-        const maxVoxelCenterOfs = vg.res * Math.sqrt(3) * 0.5;
-        const offset = {
-            "in": -maxVoxelCenterOfs,
-            "out": maxVoxelCenterOfs,
-            "nearest": 0,
-        }[boundary];
+        const options = { offset: this.boundaryOffset(vg, boundary) };
+        Object.assign(options, this.sdfUniformVars(shape));
 
-        const options = { offset };
-        if (shape.type === "cylinder") {
-            options._sd_p = shape.p;
-            options._sd_n = shape.n;
-            options._sd_r = shape.r;
-            options._sd_h = shape.h;
-        } else if (shape.type === "ELH") {
-            options._sd_p = shape.p;
-            options._sd_q = shape.q;
-            options._sd_n = shape.n;
-            options._sd_r = shape.r;
-            options._sd_h = shape.h;
-        } else if (shape.type === "box") {
-            options._sd_c = shape.center;
-            options._sd_hv0 = shape.halfVec0;
-            options._sd_hv1 = shape.halfVec1;
-            options._sd_hv2 = shape.halfVec2;
-        } else {
-            throw new Error(`Unsupported shape type: ${shape.type}`);
-        }
         const dummyVg = this.createLike(vg, "u32");
         await this.fill1(dummyVg);
         const maskVg = this.createLike(vg, "u32");
@@ -1412,6 +1337,53 @@ export class GpuKernels {
         this.destroy(df);
     }
 
+    #compileJumpFloodPipeline() {
+        this.jumpFloodPipeline = this.#createPipeline(`jump_flood`, ["storage"], true, `
+            @group(0) @binding(0) var<storage, read_write> df: array<vec4f>; // xyz:seed, w:dist (-1 is invalid)
+
+            ${this.gridSnippet} // + nums.w contain jump step
+
+            @compute @workgroup_size(${this.wgSize})
+            fn jump_flood(@builtin(global_invocation_id) id: vec3u) {
+                let ix = id.x;
+                if (ix >= arrayLength(&df)) {
+                    return;
+                }
+
+                let ix3 = decompose_ix(ix);
+                let p = cell_center(ix3);
+                var sd = df[ix];
+                if (sd.w == 0) {
+                    return; // no change needed
+                }
+
+                let offsets = array<vec3i, 6>(
+                    vec3i(-1, 0, 0),
+                    vec3i(1, 0, 0),
+                    vec3i(0, -1, 0),
+                    vec3i(0, 1, 0),
+                    vec3i(0, 0, -1),
+                    vec3i(0, 0, 1),
+                );
+                for (var i = 0; i < 6; i++) {
+                    let nix3 = vec3i(ix3) + offsets[i] * i32(nums.w);
+                    if (any(nix3 < vec3i(0)) || any(nix3 >= vec3i(nums.xyz))) {
+                        continue; // neighbor is out of bound
+                    }
+                    let nix = compose_ix(vec3u(nix3));
+                    let nsd = df[nix];
+                    if (nsd.w < 0) {
+                        continue; // neighbor is invalid
+                    }
+                    let nd = distance(nsd.xyz, p);
+                    if (sd.w < 0 || nd < sd.w) {
+                        sd = vec4f(nsd.xyz, nd);  // closer seed found
+                    }
+                }
+                df[ix] = sd;
+            }
+        `);
+    }
 
     /**
      * Get range of non-zero cells along dir.
@@ -1428,12 +1400,7 @@ export class GpuKernels {
         const min = await this.reduce("min_ignore_invalid", projs);
         const max = await this.reduce("max_ignore_invalid", projs);
         this.destroy(projs);
-        const maxVoxelCenterOfs = inVg.res * Math.sqrt(3) * 0.5;
-        const offset = {
-            "in": -maxVoxelCenterOfs,
-            "out": maxVoxelCenterOfs,
-            "nearest": 0,
-        }[boundary];
+        const offset = this.boundaryOffset(inVg, boundary);
         return { min: min - offset, max: max + offset };
     }
 
@@ -1448,33 +1415,8 @@ export class GpuKernels {
      */
     async anyInShape(shape, inVg, boundary) {
         // TODO: Gen candidate big voxels, and only dispatch them.
-        const maxVoxelCenterOfs = inVg.res * Math.sqrt(3) * 0.5;
-        const offset = {
-            "in": -maxVoxelCenterOfs,
-            "out": maxVoxelCenterOfs,
-            "nearest": 0,
-        }[boundary];
-
-        const options = { offset };
-        if (shape.type === "cylinder") {
-            options._sd_p = shape.p;
-            options._sd_n = shape.n;
-            options._sd_r = shape.r;
-            options._sd_h = shape.h;
-        } else if (shape.type === "ELH") {
-            options._sd_p = shape.p;
-            options._sd_q = shape.q;
-            options._sd_n = shape.n;
-            options._sd_r = shape.r;
-            options._sd_h = shape.h;
-        } else if (shape.type === "box") {
-            options._sd_c = shape.center;
-            options._sd_hv0 = shape.halfVec0;
-            options._sd_hv1 = shape.halfVec1;
-            options._sd_hv2 = shape.halfVec2;
-        } else {
-            throw new Error(`Unsupported shape type: ${shape.type}`);
-        }
+        const options = { offset: this.boundaryOffset(inVg, boundary) };
+        Object.assign(options, this.sdfUniformVars(shape));
 
         const flagVg = this.createLike(inVg, "u32");
         await this.map("check_sdf_" + shape.type, inVg, flagVg, options);
@@ -1492,4 +1434,86 @@ export class GpuKernels {
     async fill1(vg) {
         await this.map("fill1", vg, vg);
     }
+
+    /**
+     * Generates SDF uniform variable dictionary.
+     * @param {Object} shape 
+     * @returns {Object} Uniform variable dictionary
+     */
+    sdfUniformVars(shape) {
+        if (shape.type === "cylinder") {
+            return {
+                _sd_p: shape.p,
+                _sd_n: shape.n,
+                _sd_r: shape.r,
+                _sd_h: shape.h,
+            };
+        } else if (shape.type === "ELH") {
+            return {
+                _sd_p: shape.p,
+                _sd_q: shape.q,
+                _sd_n: shape.n,
+                _sd_r: shape.r,
+                _sd_h: shape.h,
+            };
+        } else if (shape.type === "box") {
+            return {
+                _sd_c: shape.center,
+                _sd_hv0: shape.halfVec0,
+                _sd_hv1: shape.halfVec1,
+                _sd_hv2: shape.halfVec2,
+            };
+        } else {
+            throw new Error(`Unsupported shape type: ${shape.type}`);
+        }
+    }
+
+    /**
+     * Compute offset from voxel center to specified boundary.
+     * 
+     * @param {VoxelGridGpu} vg 
+     * @param {"in" | "out" | "nearest"} boundary 
+     * @returns {number} Offset
+     */
+    boundaryOffset(vg, boundary) {
+        const maxVoxelCenterOfs = vg.res * Math.sqrt(3) * 0.5;
+        const offset = {
+            "in": -maxVoxelCenterOfs,
+            "out": maxVoxelCenterOfs,
+            "nearest": 0,
+        }[boundary];
+        if (offset === undefined) {
+            throw new Error(`Invalid boundary: ${boundary}`);
+        }
+        return offset;
+    }
+
+    /**
+     * Throws error if grids are not compatible and returns common grid parameters.
+     * @param {VoxelGridGpu} vg1 
+     * @param {...VoxelGridGpu} vgs Additional grids to check compatibility with
+     * @returns {{res: number, numX: number, numY: number, numZ: number, ofs: Vector3}} Common grid parameters
+     */
+    #checkGridCompat(vg1, ...vgs) {
+        for (const grid2 of vgs) {
+            if (vg1.numX !== grid2.numX || vg1.numY !== grid2.numY || vg1.numZ !== grid2.numZ) {
+                throw new Error(`Grid size mismatch: ${vg1.numX}x${vg1.numY}x${vg1.numZ} vs ${grid2.numX}x${grid2.numY}x${grid2.numZ}`);
+            }
+            if (vg1.ofs.x !== grid2.ofs.x || vg1.ofs.y !== grid2.ofs.y || vg1.ofs.z !== grid2.ofs.z) {
+                throw new Error(`Grid offset mismatch: (${vg1.ofs.x},${vg1.ofs.y},${vg1.ofs.z}) vs (${grid2.ofs.x},${grid2.ofs.y},${grid2.ofs.z})`);
+            }
+            if (vg1.res !== grid2.res) {
+                throw new Error(`Grid resolution mismatch: ${vg1.res} vs ${grid2.res}`);
+            }
+        }
+        return {
+            res: vg1.res,
+            numX: vg1.numX,
+            numY: vg1.numY,
+            numZ: vg1.numZ,
+            ofs: vg1.ofs,
+        };
+    }
+
+
 }

@@ -146,4 +146,26 @@ QUnit.module('gpu', function () {
 
         assert.equal(cpu.get(0, 0, 0), 123);
     });
+
+    QUnit.test('reduce-sum', async function (assert) {
+        const adapter = await navigator.gpu.requestAdapter();
+        const device = await adapter.requestDevice();
+        const kernels = new GpuKernels(device);
+
+        const testCases = [
+            [1, 1, 1], // minimum
+            [11, 13, 17], // small-ish primes
+            [1, 1, 127], // WG boundary-
+            [1, 1, 128], // WG boundary
+            [1, 1, 129], // WG boundary+
+            [1, 1, 261392], // real-world failing case
+        ];
+
+        for (const [nx, ny, nz] of testCases) {
+            const vg = new VoxelGridGpu(kernels, 1, nx, ny, nz, new Vector3(), "u32");
+            await kernels.fill1(vg);
+            const sum = await kernels.reduce("sum", vg);
+            assert.equal(sum, nx * ny * nz);
+        }
+    });
 });
