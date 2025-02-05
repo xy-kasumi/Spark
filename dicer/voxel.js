@@ -491,8 +491,9 @@ export class GpuKernels {
 
         this.invalidValue = 65536; // used in boundOfAxis.
 
-        this.registerMapFn("df_init_dist", "u32", "f32", `vo = -1; if (vi > 0) { vo = 0; }`);
-        this.registerMapFn("df_init_pos", "u32", "vec3f", `vo = vec3f(0); if (vi > 0) { vo = p; }`);
+        this.registerMapFn("df_init", "u32", "vec4f", `if (vi > 0) { vo = vec4f(p, 0); } else { vo = vec4f(0, 0, 0, -1); }`);
+        this.registerMapFn("df_to_dist", "vec4f", "f32", `vo = vi.w;`);
+
         // TODO: Need to inject "axis" as uniform variable.
         this.registerMapFn("project_to_axis", "u32", "f32", `
             let axis = vec3f(1, 0, 0);
@@ -517,7 +518,7 @@ export class GpuKernels {
     /**
      * Create new GPU-backed VoxelGrid, keeping shape of buf and optionally changing type.
      * @param {VoxelGridGpu | VoxelGridCpu} buf 
-     * @param {"u32" | "f32" | "vec3f" | null} [type=null] Type of cell ("u32" | "f32"). If null, same as buf.
+     * @param {"u32" | "f32" | "vec3f" | "vec4f" | null} [type=null] Type of cell ("u32" | "f32"). If null, same as buf.
      * @returns {VoxelGridGpu} New buffer
      */
     createLike(buf, type = null) {
@@ -803,24 +804,22 @@ export class GpuKernels {
     }
 
     #compileJumpFloodPipeline() {
-        this.jumpFloodPipeline = this.#createPipeline(`jump_flood`, ["storage", "storage"], true, `
-            @group(0) @binding(0) var<storage, read_write> dist: array<f32>;
-            @group(0) @binding(1) var<storage, read_write> seed: array<vec3f>;
+        this.jumpFloodPipeline = this.#createPipeline(`jump_flood`, ["storage"], true, `
+            @group(0) @binding(0) var<storage, read_write> df: array<vec4f>; // xyz:seed, w:dist (-1 is invalid)
 
             ${this.gridSnippet} // + nums.w contain jump step
 
             @compute @workgroup_size(${this.wgSize})
             fn jump_flood(@builtin(global_invocation_id) id: vec3u) {
                 let ix = id.x;
-                if (ix >= arrayLength(&dist)) {
+                if (ix >= arrayLength(&df)) {
                     return;
                 }
 
                 let ix3 = decompose_ix(ix);
                 let p = cell_center(ix3);
-                var s = seed[ix];
-                var d = dist[ix];
-                if (d == 0) {
+                var sd = df[ix];
+                if (sd.w == 0) {
                     return; // no change needed
                 }
 
@@ -838,20 +837,16 @@ export class GpuKernels {
                         continue; // neighbor is out of bound
                     }
                     let nix = compose_ix(vec3u(nix3));
-                    if (dist[nix] < 0) {
+                    let nsd = df[nix];
+                    if (nsd.w < 0) {
                         continue; // neighbor is invalid
                     }
-                    let ns = seed[nix];
-                    let nd = length(ns - p);
-                    if (d < 0 || nd < d) {
-                        // closer seed found
-                        s = p;
-                        d = nd;
+                    let nd = distance(nsd.xyz, p);
+                    if (sd.w < 0 || nd < sd.w) {
+                        sd = vec4f(nsd.xyz, nd);  // closer seed found
                     }
                 }
-                // write back
-                seed[ix] = s;
-                dist[ix] = d;
+                df[ix] = sd;
             }
         `);
     }
@@ -1074,17 +1069,12 @@ export class GpuKernels {
     async distField(inSeedBuf, outDistBuf) {
         const grid = this.#checkGridCompat(inSeedBuf, outDistBuf);
 
-        // outBuf is used as in-place distance buffer. -1 means invalid (no seed) data.
-        const seedPos = this.createLike(outDistBuf, "vec3f");
-
-        // Initialize with target data.
-        await this.map("df_init_dist", inSeedBuf, outDistBuf);
-        await this.map("df_init_pos", inSeedBuf, seedPos);
+        // xyz=seed, w=dist. w=-1 means invalid (no seed) data.
+        const df = this.createLike(inSeedBuf, "vec4f");
+        await this.map("df_init", inSeedBuf, df);
 
         // Jump flood
         let numPass = Math.ceil(Math.log2(Math.max(grid.numX, grid.numY, grid.numZ)));
-        console.log("numPass=", numPass);
-        //numPass = 2;
         
         for (let pass = 0; pass < numPass; pass++) {
             const step = 2 ** (numPass - pass - 1);
@@ -1099,14 +1089,15 @@ export class GpuKernels {
                     grid.ofs.x, grid.ofs.y, grid.ofs.z, grid.res,
                 ]);
             });
-            this.#dispatchKernel(commandEncoder, this.jumpFloodPipeline, [outDistBuf.buffer, seedPos.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf);
+            this.#dispatchKernel(commandEncoder, this.jumpFloodPipeline, [df.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf);
             this.device.queue.submit([commandEncoder.finish()]);
             await this.device.queue.onSubmittedWorkDone();
             numsBuf.destroy();
             ofsBuf.destroy();
         }
         
-        this.destroy(seedPos);
+        await this.map("df_to_dist", df, outDistBuf);
+        this.destroy(df);
     }
 
     /**
@@ -1114,7 +1105,7 @@ export class GpuKernels {
      * @param {string} ty 
      */
     static checkAllowedType(ty) {
-        if (ty !== "u32" && ty !== "f32" && ty !== "vec3f") {
+        if (ty !== "u32" && ty !== "f32" && ty !== "vec3f" && ty !== "vec4f") {
             throw new Error("Invalid type: " + ty);
         }
     }
@@ -1129,6 +1120,7 @@ export class GpuKernels {
             "u32": 4,
             "f32": 4,
             "vec3f": 16, // 16, not 12, because of alignment. https://www.w3.org/TR/WGSL/#alignment-and-size
+            "vec4f": 16,
         }[ty];
     }
 
