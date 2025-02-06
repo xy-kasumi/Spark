@@ -696,17 +696,60 @@ const createVgVis = (vg, label = "", mode = "occupancy") => {
             throw `Invalid vg type for deviation: ${vg.type}`;
         }
 
-        const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), vg.countIf(val => val >= 0));
+        const neighborOffsets = [
+            [1, 0, 0],
+            [-1, 0, 0],
+            [0, 1, 0],
+            [0, -1, 0],
+            [0, 0, 1],
+            [0, 0, -1],
+        ];
+        const isVisible = (ix, iy, iz) => {
+            const v = vg.get(ix, iy, iz);
+            if (v < 0) {
+                return false;
+            }
+            let numFilledNeighbors = 0;
+            for (let [dx, dy, dz] of neighborOffsets) {
+                const nx = ix + dx;
+                const ny = iy + dy;
+                const nz = iz + dz;
+                if (nx < 0 || nx >= vg.numX || ny < 0 || ny >= vg.numY || nz < 0 || nz >= vg.numZ) {
+                    continue;
+                }
+                const nv = vg.get(nx, ny, nz);
+                if (nv >= 0) {
+                    numFilledNeighbors++;
+                }
+            }
+            return numFilledNeighbors < neighborOffsets.length; // if any neighbor is not filled, this cell is visible.
+        };
+
+        // Pass 1: count visible voxels
+        let numVisibleVoxels = 0;
+        for (let iz = 0; iz < vg.numZ; iz++) {
+            for (let iy = 0; iy < vg.numY; iy++) {
+                for (let ix = 0; ix < vg.numX; ix++) {
+                    if (isVisible(ix, iy, iz)) {
+                        numVisibleVoxels++;
+                    }
+                }
+            }
+        }
+
+        // Pass 2: copy visible voxel data into buffer.
+        const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), numVisibleVoxels);
         let instanceIx = 0;
         const maxDev = 3;
         for (let iz = 0; iz < vg.numZ; iz++) {
             for (let iy = 0; iy < vg.numY; iy++) {
                 for (let ix = 0; ix < vg.numX; ix++) {
-                    const v = vg.get(ix, iy, iz);
-                    if (v < 0) {
+                    if (!isVisible(ix, iy, iz)) {
                         continue;
                     }
 
+                    const v = vg.get(ix, iy, iz);
+                    
                     // apply deviation color, from blue(0) to red(maxDev).
                     const t = Math.min(1, v / maxDev);
                     mesh.setColorAt(instanceIx, new THREE.Color(0.2 + t * 0.8, 0.2, 0.2 + (1 - t) * 0.8));
@@ -1452,12 +1495,12 @@ class Planner {
          */
         const genPlanarSweep = async (normal, offset, toolDiameter) => {
             console.log(`genPlanarSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), offset: ${offset}, toolDiameter: ${toolDiameter}`);
+            const t0 = performance.now();
             const normalRange = await this.trvg.queryWorkRange(normal);
             if (normalRange.max < offset) {
                 throw "contradicting offset for genPlanarSweep";
             }
             const minToolLength = (normalRange.max - offset) + feedDepth;
-            console.log(`minToolLength: ${minToolLength}`);
             if (minToolLength > this.machineConfig.toolNaturalLength) {
                 return null;
             }
@@ -1470,9 +1513,6 @@ class Planner {
             const rowRange = await this.trvg.queryWorkRange(rowDir);
 
             const maxHeight = normalRange.max - normalRange.min;
-
-
-            
 
             const feedWidth = toolDiameter - this.resMm; // create little overlap, to remove undercut artifact caused by conservative minGeom computation.
             const segmentLength = 1;
@@ -1715,6 +1755,7 @@ class Planner {
             if (sweepPath.getPath().length === 0) {
                 return null;
             }
+            console.log(`genPlanarSweep: took ${performance.now() - t0}ms`);
             return {
                 partialPath: sweepPath,
             };
@@ -1882,37 +1923,42 @@ class Planner {
          * @async
          */
         const tryCommitSweep = async (sweep) => {
-            const volRemoved = await this.trvg.commitRemoval(
-                sweep.partialPath.getMinRemoveShapes(),
-                sweep.partialPath.getMaxRemoveShapes(),
-                sweep.ignoreOvercutErrors ?? false
-            );
-            if (volRemoved === 0) {
-                console.log("commit rejected, because work not removed");
-                return false;
-            } else {
-                console.log(`commit sweep-${this.numSweeps} success`);
-                // commit success
-                this.removedVol += volRemoved;
-                this.remainingVol = await this.trvg.getRemainingWorkVol();
-                this.planPath.push(...sweep.partialPath.getPath());
-                this.toolIx = sweep.partialPath.getToolIx();
-                this.toolLength = sweep.partialPath.getToolLength();
-                this.numSweeps++;
-                this.highlightGui.max(this.numSweeps - 1); // ugly...
-                this.highlightSweep = this.numSweeps - 1;
-                this.showingSweep++;
+            const t0 = performance.now();
+            try {
+                const volRemoved = await this.trvg.commitRemoval(
+                    sweep.partialPath.getMinRemoveShapes(),
+                    sweep.partialPath.getMaxRemoveShapes(),
+                    sweep.ignoreOvercutErrors ?? false
+                );
+                if (volRemoved === 0) {
+                    console.log("commit rejected, because work not removed");
+                    return false;
+                } else {
+                    console.log(`commit sweep-${this.numSweeps} success`);
+                    // commit success
+                    this.removedVol += volRemoved;
+                    this.remainingVol = await this.trvg.getRemainingWorkVol();
+                    this.planPath.push(...sweep.partialPath.getPath());
+                    this.toolIx = sweep.partialPath.getToolIx();
+                    this.toolLength = sweep.partialPath.getToolLength();
+                    this.numSweeps++;
+                    this.highlightGui.max(this.numSweeps - 1); // ugly...
+                    this.highlightSweep = this.numSweeps - 1;
+                    this.showingSweep++;
 
-                // update visualizations
-                const workDeviation = await this.trvg.extractWorkWithDeviation(true);
-                const workDevCpu = this.kernels.createLikeCpu(workDeviation);
-                await this.kernels.copy(workDeviation, workDevCpu);
-                this.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath, false);
-                this.updateVis("work-vg", [createVgVis(workDevCpu, "work-vg", "deviation")], this.showWork);
-                const lastPt = this.planPath[this.planPath.length - 1];
-                this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
-                this.deviation = workDevCpu.max();
-                return true;
+                    // update visualizations
+                    const workDeviation = await this.trvg.extractWorkWithDeviation(true);
+                    const workDevCpu = this.kernels.createLikeCpu(workDeviation);
+                    await this.kernels.copy(workDeviation, workDevCpu);
+                    this.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath, false);
+                    this.updateVis("work-vg", [createVgVis(workDevCpu, "work-vg", "deviation")], this.showWork);
+                    const lastPt = this.planPath[this.planPath.length - 1];
+                    this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
+                    this.deviation = workDevCpu.max();
+                    return true;
+                }
+            } finally {
+                console.log(`tryCommitSweep: took ${performance.now() - t0}ms`);
             }
         };
 
@@ -1931,6 +1977,12 @@ class Planner {
                 if (await tryCommitSweep(sweep)) {
                     yield;
                 }
+            }
+
+            if (this.numSweeps >= 10) {
+                const dtSec = (performance.now() - t0) / 1e3;
+                console.log(`measurement milestone reached after ${dtSec}sec tot, ${dtSec / this.numSweeps}sec/sweep`);
+                return;
             }
         }
 
