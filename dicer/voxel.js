@@ -3,7 +3,7 @@
  * 
  * See https://iquilezles.org/articles/distfunctions/ for nice introduction to SDF.
  */
-import { Vector3 } from 'three';
+import { Vector3, Vector4 } from 'three';
 
 
 /**
@@ -509,12 +509,188 @@ export class VoxelGridGpu {
 }
 
 /**
+ * Represents uniform variable definition of a single GPU Pipeline.
+ */
+class PipelineUniformDef {
+    static BINDING_ID_BEGIN = 200;
+
+    /**
+     * @param {Object} defs {varName: type} Uniform variable defintions (can change for each invocation).
+     */
+    constructor(defs) {
+        let uniformBindingId = PipelineUniformDef.BINDING_ID_BEGIN;
+        const shaderLines = [];
+        this.bindings = {};
+        for (const [varName, type] of Object.entries(defs)) {
+            GpuKernels.checkAllowedType(type);
+            shaderLines.push(`@group(0) @binding(${uniformBindingId}) var<uniform> ${varName}: ${type};`);
+            this.bindings[varName] = {
+                bindingId: uniformBindingId,
+                type: type,
+            };
+            uniformBindingId++;
+        }
+        this.shader = shaderLines.join("\n") + "\n";
+    }
+
+    /**
+     * Get multi-line shader uniform variable declarations.
+     * @returns {string} Multi-line shader uniform variable declarations. (e.g. "@group(0) @binding(200) var<uniform> dir: vec3f;\n ...")
+     */
+    shaderVars() {
+        return this.shader;
+    }
+
+    /**
+     * Get uniform binding IDs. (order might not match what's given to constructor)
+     * @returns {number[]} Uniform binding IDs.
+     */
+    uniformBindingIds() {
+        return Object.values(this.bindings).map(({ bindingId }) => bindingId);
+    }
+
+    /**
+     * Check runtime inputs can be handled correctly by this pipeline uniform definition.
+     * @param {Object} vars {varName: value}
+     * @throws {Error} If any input is invalid.
+     */
+    checkInput(vars) {
+        const unusedVars = new Set(Object.keys(vars)).difference(new Set(Object.keys(this.bindings)));
+        if (unusedVars.size > 0) {
+            console.warn("Unused uniform variables: ", unusedVars);
+        }
+        for (const [varName, { type }] of Object.entries(this.bindings)) {
+            if (vars[varName] === undefined) {
+                throw new Error(`Required uniform variable "${varName}" not provided`);
+            }
+            const val = vars[varName];
+            switch (type) {
+                case "vec4f":
+                    if (this.extractArrayLikeOrVector(4, val) === null) {
+                        throw new Error(`Uniform variable "${varName}: vec4f" must be a Vector4 or array of 4 numbers`);
+                    }
+                    break;
+                case "vec3f":
+                    if (this.extractArrayLikeOrVector(3, val) === null) {
+                        throw new Error(`Uniform variable "${varName}: vec3f" must be a Vector3 or array of 3 numbers`);
+                    }
+                    break;
+                case "vec4u":
+                    if (this.extractArrayLikeOrVector(4, val) === null) {
+                        throw new Error(`Uniform variable "${varName}: vec4u" must be a Vector4 or array of 4 numbers`);
+                    }
+                    break;
+                case "vec3u":
+                    if (this.extractArrayLikeOrVector(3, val) === null) {
+                        throw new Error(`Uniform variable "${varName}: vec3u" must be a Vector3 or array of 3 numbers`);
+                    }
+                    break;
+                case "f32":
+                    if (typeof val !== "number") {
+                        throw new Error(`Uniform variable "${varName}: f32" must be a number`);
+                    }
+                    break;
+                case "u32":
+                    if (typeof val !== "number") {
+                        throw new Error(`Uniform variable "${varName}: u32" must be a number`);
+                    }
+                    break;
+                default:
+                    throw new Error(`Unsupported uniform variable type: ${type}`);
+            }
+        }
+    }
+
+    /**
+     * Extract numbers from an array-like or vector with expectedLen elements.
+     * If invalid, return null. Doesn't return partial results.
+     * 
+     * @param {number} expectedLen 
+     * @param {any} val 
+     * @returns {number[] | null} Array of numbers or null if invalid.
+     */
+    extractArrayLikeOrVector(expectedLen, val) {
+        if (val.length === expectedLen) {
+            const nums = [];
+            for (let i = 0; i < expectedLen; i++) {
+                if (typeof val[i] !== "number") {
+                    return null;
+                }
+                nums.push(val[i]);
+            }
+            return nums;
+        }
+        if (expectedLen === 3 && val instanceof Vector3) {
+            return [val.x, val.y, val.z];
+        }
+        if (expectedLen === 4 && val instanceof Vector4) {
+            return [val.x, val.y, val.z, val.w];
+        }
+        return null;
+    }
+
+    /**
+     * Allocate buffers for binding, and put values into them.
+     * Caller is responsible for destroying all the buffers.
+     * Caller is also recommended to call {@link checkInput} first, to not leak buffer by error during value conversion.
+     * 
+     * @param {GpuKernels} kernels 
+     * @param {Object} vars {varName: value}
+     * @returns {[number, GPUBuffer][]} Array of [bindingId, buffer]
+     */
+    createBuffers(kernels, vars) {
+        const binds = [];
+        for (const [varName, binding] of Object.entries(this.bindings)) {
+            const { bindingId, type } = binding;
+            const val = vars[varName];
+            let buf = null;
+            // To be conservative about memory alignment, always using 32-byte buffer.
+            // TODO: is this too much?
+            if (type === "vec4f") {
+                const nums = this.extractArrayLikeOrVector(4, val);
+                buf = kernels.createUniformBuffer(32, (ptr) => {
+                    new Float32Array(ptr, 0, 4).set(nums);
+                });
+            } else if (type === "vec3f") {
+                const nums = this.extractArrayLikeOrVector(3, val);
+                buf = kernels.createUniformBuffer(32, (ptr) => {
+                    new Float32Array(ptr, 0, 3).set(nums);
+                });
+            } else if (type === "vec4u") {
+                const nums = this.extractArrayLikeOrVector(4, val);
+                buf = kernels.createUniformBuffer(32, (ptr) => {
+                    new Uint32Array(ptr, 0, 4).set(nums);
+                });
+            } else if (type === "vec3u") {
+                const nums = this.extractArrayLikeOrVector(3, val);
+                buf = kernels.createUniformBuffer(32, (ptr) => {
+                    new Uint32Array(ptr, 0, 3).set(nums);
+                });
+            } else if (type === "f32") {
+                buf = kernels.createUniformBuffer(32, (ptr) => {
+                    new Float32Array(ptr, 0, 1).set([val]);
+                });
+            } else if (type === "u32") {
+                buf = kernels.createUniformBuffer(32, (ptr) => {
+                    new Uint32Array(ptr, 0, 1).set([val]);
+                });
+            }
+            binds.push([bindingId, buf]);
+        }
+        return binds;
+    }
+}
+
+
+/**
  * GPU utilities.
  * Consisits of two layers
  * - 1D array part: no notion of geometry, just parallel data operation & wrappers.
  * - 3D voxel part: 1D array part + 3D geometry utils.
  */
 export class GpuKernels {
+
+
     constructor(device) {
         this.device = device;
         this.wgSize = 128;
@@ -600,28 +776,16 @@ export class GpuKernels {
         GpuKernels.checkAllowedType(inType);
         GpuKernels.checkAllowedType(outType);
 
-        let uniformBindingId = 200;
-        let unifDefs = [];
-        let uniformBindings = {};
-        let uniformIds = [];
-        for (const [varName, type] of Object.entries(uniforms)) {
-            GpuKernels.checkAllowedType(type);
-            unifDefs.push(`@group(0) @binding(${uniformBindingId}) var<uniform> ${varName}: ${type};`);
-            uniformBindings[varName] = {
-                bindingId: uniformBindingId,
-                type: type,
-            };
-            uniformIds.push(uniformBindingId);
-            uniformBindingId++;
-        }
+        Object.assign(uniforms, this.gridUniformDefs);
+
+        const uniformDef = new PipelineUniformDef(uniforms);
 
         const code = `
             @group(0) @binding(0) var<storage, read_write> vs_in: array<${inType}>;
             @group(0) @binding(1) var<storage, read_write> vs_out: array<${outType}>;
+            ${uniformDef.shaderVars()}
 
-            ${unifDefs.join("\n")}
-
-            ${this.gridSnippet}
+            ${this.gridFns}
 
             @compute @workgroup_size(${this.wgSize})
             fn map_${name}(@builtin(global_invocation_id) id: vec3u) {
@@ -639,8 +803,8 @@ export class GpuKernels {
                 vs_out[index] = vo;
             }
         `;
-        const pipeline = this.#createPipeline(`map_${name}`, ["storage", "storage"], true, code, uniformIds);
-        this.mapPipelines[name] = { pipeline, uniformBindings, inType, outType };
+        const pipeline = this.#createPipeline(`map_${name}`, 2, code, uniformDef);
+        this.mapPipelines[name] = { pipeline, uniformDef, inType, outType };
     }
 
     /**
@@ -651,6 +815,7 @@ export class GpuKernels {
      * @param {"u32" | "f32"} inType2 Type of input voxel
      * @param {"u32" | "f32"} outType Type of output voxel
      * @param {string} snippet (multi-line allowed)
+     * @param {Object} uniforms Uniform variable defintions (can change for each invocation) {varName: type}
      * 
      * Snippet can use following variables:
      * - p: vec3f, voxel center position
@@ -663,7 +828,7 @@ export class GpuKernels {
      * 
      * You can assume vi1/vi2/vo are always different buffers.
      */
-    registerMap2Fn(name, inType1, inType2, outType, snippet) {
+    registerMap2Fn(name, inType1, inType2, outType, snippet, uniforms = {}) {
         if (this.map2Pipelines[name]) {
             throw new Error(`Map2 fn "${name}" already registered`);
         }
@@ -671,12 +836,16 @@ export class GpuKernels {
         GpuKernels.checkAllowedType(inType2);
         GpuKernels.checkAllowedType(outType);
 
-        const pipeline = this.#createPipeline(`map2_${name}`, ["storage", "storage", "storage"], true, `
+        Object.assign(uniforms, this.gridUniformDefs);
+        const uniformDef = new PipelineUniformDef(uniforms);
+
+        const pipeline = this.#createPipeline(`map2_${name}`, 3, `
             @group(0) @binding(0) var<storage, read_write> vs_in1: array<${inType1}>;
             @group(0) @binding(1) var<storage, read_write> vs_in2: array<${inType2}>;
             @group(0) @binding(2) var<storage, read_write> vs_out: array<${outType}>;
+            ${uniformDef.shaderVars()}
 
-            ${this.gridSnippet}
+            ${this.gridFns}
 
             @compute @workgroup_size(${this.wgSize})
             fn map2_${name}(@builtin(global_invocation_id) id: vec3u) {
@@ -694,8 +863,8 @@ export class GpuKernels {
                 }
                 vs_out[index] = vo;
             }
-        `);
-        this.map2Pipelines[name] = { pipeline, inType1, inType2, outType };
+        `, uniformDef);
+        this.map2Pipelines[name] = { pipeline, uniformDef, inType1, inType2, outType };
     }
 
     /**
@@ -731,7 +900,7 @@ export class GpuKernels {
             throw new Error(`Reduce fn "${name}": valType must be "u32" or "f32"`);
         }
 
-        const pipeline = this.#createPipeline(`reduce_${name}`, ["storage", "storage"], false, `
+        const pipeline = this.#createPipeline(`reduce_${name}`, 2, `
             var<workgroup> wg_buffer_accum: array<${valType}, ${this.wgSize}>;
 
             @group(0) @binding(0) var<storage, read_write> vs_in: array<${valType}>;
@@ -768,7 +937,7 @@ export class GpuKernels {
                     vs_out[gid] = ${initVal}; // prevent reading garbage in next pass
                 }
             }
-        `);
+        `, new PipelineUniformDef({}));
         this.reducePipelines[name] = { pipeline, valType };
     }
 
@@ -783,44 +952,16 @@ export class GpuKernels {
      */
     async map(fnName, inVg, outVg, uniforms = {}) {
         const grid = this.#checkGridCompat(inVg, outVg);
+        uniforms = Object.assign({}, uniforms, this.#gridUniformVars(grid));
+
         if (!this.mapPipelines[fnName]) {
             throw new Error(`Map fn "${fnName}" not registered`);
         }
-        const { pipeline, uniformBindings, inType, outType } = this.mapPipelines[fnName];
+        const { pipeline, uniformDef, inType, outType } = this.mapPipelines[fnName];
         if (inVg.type !== inType || outVg.type !== outType) {
             throw new Error(`Map fn "${fnName}" type mismatch; expected vi:${inType}, vo:${outType}, got vi:${inVg.type}, vo:${outVg.type}`);
         }
-
-        // Check uniform type compatibility.
-        const unusedVars = new Set(Object.keys(uniforms)).difference(new Set(Object.keys(uniformBindings)));
-        if (unusedVars.size > 0) {
-            console.warn("Unused uniform variables: ", unusedVars);
-        }
-        for (const [varName, binding] of Object.entries(uniformBindings)) {
-            if (uniforms[varName] === undefined) {
-                throw new Error(`Required uniform variable "${varName}" not provided`);
-            }
-            const val = uniforms[varName];
-            switch (binding.type) {
-                case "vec3f":
-                    if (!(val instanceof Vector3)) {
-                        throw new Error(`Uniform variable "${varName}: vec3f" must be a Vector3`);
-                    }
-                    break;
-                case "f32":
-                    if (typeof val !== "number") {
-                        throw new Error(`Uniform variable "${varName}: f32" must be a number`);
-                    }
-                    break;
-                case "u32":
-                    if (typeof val !== "number") {
-                        throw new Error(`Uniform variable "${varName}: u32" must be a number`);
-                    }
-                    break;
-                default:
-                    throw new Error(`Unsupported uniform variable type: ${binding.type}`);
-            }
-        }
+        uniformDef.checkInput(uniforms);
 
         let tmpBuf = null;
         let dispatchOutVg = outVg;
@@ -829,52 +970,18 @@ export class GpuKernels {
             dispatchOutVg = tmpBuf;
         }
 
-        const numsBuf = this.createUniformBuffer(32, (ptr) => {
-            new Uint32Array(ptr, 0, 4).set([
-                grid.numX, grid.numY, grid.numZ, 0,
-            ]);
-        });
-        const ofsBuf = this.createUniformBuffer(32, (ptr) => {
-            new Float32Array(ptr, 0, 4).set([
-                grid.ofs.x, grid.ofs.y, grid.ofs.z, grid.res,
-            ]);
-        });
-
-
-        const additionalEntries = [];
-        for (const [varName, binding] of Object.entries(uniformBindings)) {
-            const { bindingId, type } = binding;
-            let buf = null;
-            if (type === "vec3f") {
-                buf = this.createUniformBuffer(32, (ptr) => {
-                    new Float32Array(ptr, 0, 4).set([
-                        uniforms[varName].x, uniforms[varName].y, uniforms[varName].z, 0,
-                    ]);
-                });
-            } else if (type === "f32") {
-                buf = this.createUniformBuffer(32, (ptr) => {
-                    new Float32Array(ptr, 0, 1).set([uniforms[varName]]);
-                });
-            } else if (type === "u32") {
-                buf = this.createUniformBuffer(32, (ptr) => {
-                    new Uint32Array(ptr, 0, 1).set([uniforms[varName]]);
-                });
-            }
-            additionalEntries.push([bindingId, buf]);
-        }
+        const binds = uniformDef.createBuffers(this, uniforms);
 
         try {
             const commandEncoder = this.device.createCommandEncoder();
-            this.#dispatchKernel(commandEncoder, pipeline, [inVg.buffer, dispatchOutVg.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf, additionalEntries);
+            this.#dispatchKernel(commandEncoder, pipeline, [inVg.buffer, dispatchOutVg.buffer], grid.numX * grid.numY * grid.numZ, binds);
             this.device.queue.submit([commandEncoder.finish()]);
             if (outVg === inVg) {
                 await this.copy(tmpBuf, outVg);
                 this.destroy(tmpBuf);
             }
         } finally {
-            numsBuf.destroy();
-            ofsBuf.destroy();
-            for (const [_, buf] of additionalEntries) {
+            for (const [_, buf] of binds) {
                 buf.destroy();
             }
         }
@@ -886,15 +993,18 @@ export class GpuKernels {
      * @param {VoxelGridGpu} inVg1 
      * @param {VoxelGridGpu} inVg2 
      * @param {VoxelGridGpu} outVg 
+     * @param {Object} uniforms Uniform variable values.
      * @returns {Promise<void>}
      * @async
      */
-    async map2(fnName, inVg1, inVg2, outVg = inVg1) {
+    async map2(fnName, inVg1, inVg2, outVg = inVg1, uniforms = {}) {
         const grid = this.#checkGridCompat(inVg1, inVg2, outVg);
+        uniforms = Object.assign({}, uniforms, this.#gridUniformVars(grid));
+
         if (!this.map2Pipelines[fnName]) {
             throw new Error(`Map2 fn "${fnName}" not registered`);
         }
-        const { pipeline, inType1, inType2, outType } = this.map2Pipelines[fnName];
+        const { pipeline, uniformDef, inType1, inType2, outType } = this.map2Pipelines[fnName];
         if (inVg1.type !== inType1 || inVg2.type !== inType2 || outVg.type !== outType) {
             throw new Error(`Map2 fn "${fnName}" type mismatch; expected vi1:${inType1}, vi2:${inType2}, vo:${outType}, got vi1:${inVg1.type}, vi2:${inVg2.type}, vo:${outVg.type}`);
         }
@@ -906,27 +1016,20 @@ export class GpuKernels {
             dispatchOutVg = tmpBuf;
         }
 
-        const numsBuf = this.createUniformBuffer(32, (ptr) => {
-            new Uint32Array(ptr, 0, 4).set([
-                grid.numX, grid.numY, grid.numZ, 0,
-            ]);
-        });
-        const ofsBuf = this.createUniformBuffer(32, (ptr) => {
-            new Float32Array(ptr, 0, 4).set([
-                grid.ofs.x, grid.ofs.y, grid.ofs.z, grid.res,
-            ]);
-        });
+        const binds = uniformDef.createBuffers(this, uniforms);
+
         try {
             const commandEncoder = this.device.createCommandEncoder();
-            this.#dispatchKernel(commandEncoder, pipeline, [inVg1.buffer, inVg2.buffer, dispatchOutVg.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf);
+            this.#dispatchKernel(commandEncoder, pipeline, [inVg1.buffer, inVg2.buffer, dispatchOutVg.buffer], grid.numX * grid.numY * grid.numZ, binds);
             this.device.queue.submit([commandEncoder.finish()]);
             if (outVg === inVg1 || outVg === inVg2) {
                 await this.copy(tmpBuf, outVg);
                 this.destroy(tmpBuf);
             }
         } finally {
-            numsBuf.destroy();
-            ofsBuf.destroy();
+            for (const [_, buf] of binds) {
+                buf.destroy();
+            }
         }
     }
 
@@ -961,7 +1064,7 @@ export class GpuKernels {
             const commandEncoder = this.device.createCommandEncoder();
             let numElems = inVg.numX * inVg.numY * inVg.numZ;
             while (numElems > 1) {
-                this.#dispatchKernel(commandEncoder, pipeline, [tempBufs[activeBufIx], tempBufs[1 - activeBufIx]], numElems);
+                this.#dispatchKernel(commandEncoder, pipeline, [tempBufs[activeBufIx], tempBufs[1 - activeBufIx]], numElems, []);
                 activeBufIx = 1 - activeBufIx;
                 numElems = Math.ceil(numElems / this.wgSize);
             }
@@ -994,7 +1097,7 @@ export class GpuKernels {
      * @param {string} ty 
      */
     static checkAllowedType(ty) {
-        if (ty !== "u32" && ty !== "f32" && ty !== "vec3f" && ty !== "vec4f") {
+        if (ty !== "u32" && ty !== "f32" && ty !== "vec3f" && ty !== "vec4f" && ty !== "vec3u" && ty !== "vec4u") {
             throw new Error("Invalid type: " + ty);
         }
     }
@@ -1008,7 +1111,9 @@ export class GpuKernels {
         return {
             "u32": 4,
             "f32": 4,
+            "vec3u": 16, // 16, not 12, because of alignment. https://www.w3.org/TR/WGSL/#alignment-and-size
             "vec3f": 16, // 16, not 12, because of alignment. https://www.w3.org/TR/WGSL/#alignment-and-size
+            "vec4u": 16,
             "vec4f": 16,
         }[ty];
     }
@@ -1079,41 +1184,31 @@ export class GpuKernels {
     /**
      * Create a single pipeline.
      * @param {string} entryPoint Entry point name
-     * @param {string[]} bindings Array of binding types ("storage" | "uniform")
-     * @param {boolean} enableGridSnippet Whether shaderCode contains GridSnippet.
+     * @param {number} numStorageBindings Number of main storage buffer bindings
      * @param {string} shaderCode WGSL code
-     * @param {number[]} uniformIds Additional uniform binding IDs
+     * @param {PipelineUniformDef} pipelineUniforms Pipeline uniforms
      * @returns {GPUComputePipeline} Created pipeline
      * @private
      */
-    #createPipeline(entryPoint, bindings, enableGridSnippet, shaderCode, uniformIds = []) {
+    #createPipeline(entryPoint, numStorageBindings, shaderCode, pipelineUniforms) {
         const shaderModule = this.device.createShaderModule({ code: shaderCode, label: entryPoint });
 
-        const bindEntries = bindings.map((type, i) => ({
-            binding: i,
-            visibility: GPUShaderStage.COMPUTE,
-            buffer: { type }
-        }));
-        if (enableGridSnippet) {
-            // 100,101 must match this.gridSnippet
+        const bindEntries = [];
+        for (let i = 0; i < numStorageBindings; i++) {
             bindEntries.push({
-                binding: 100,
+                binding: i,
                 visibility: GPUShaderStage.COMPUTE,
-                buffer: { type: "uniform" }
-            });
-            bindEntries.push({
-                binding: 101,
-                visibility: GPUShaderStage.COMPUTE,
-                buffer: { type: "uniform" }
+                buffer: { type: "storage" }
             });
         }
-        for (const bindingId of uniformIds) {
+        for (const bindingId of pipelineUniforms.uniformBindingIds()) {
             bindEntries.push({
                 binding: bindingId,
                 visibility: GPUShaderStage.COMPUTE,
                 buffer: { type: "uniform" }
             });
         }
+
         const bindGroupLayout = this.device.createBindGroupLayout({ entries: bindEntries, label: entryPoint });
         return this.device.createComputePipeline({
             layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
@@ -1124,25 +1219,18 @@ export class GpuKernels {
     /**
      * Dispatch kernel.
      * @param {GPUCommandEncoder} commandEncoder Command encoder
-     * @param {GPUComputePipeline} pipeline Pipeline to use
-     * @param {GPUBuffer[]} args Array of buffers to bind (assigned to binding 0, 1, 2, ...)
+     * @param {{pipeline: GPUComputePipeline, uniforms: PipelineUniformDef}} pipeline Pipeline to use
+     * @param {GPUBuffer[]} denseBinds Array of buffers to bind (assigned to binding 0, 1, 2, ...)
      * @param {number} numThreads Number of total threads (wanted kernel execs)
-     * @param {GPUBuffer | null} numsBuf Buffer for nums (iff pipeline is created with enableGridSnippet)
-     * @param {GPUBuffer | null} ofsBuf Buffer for ofs (iff pipeline is created with enableGridSnippet)
-     * @param {[[number, GPUBuffer]]} additionalEntries Additional entries to bind (bindingId, buffer).
+     * @param {[[number, GPUBuffer]]} sparseBinds Sparse entries to bind (bindingId, buffer).
      * @private
      */
-    #dispatchKernel(commandEncoder, pipeline, args, numThreads, numsBuf = null, ofsBuf = null, additionalEntries = []) {
-        const entries = args.map((buf, i) => ({ binding: i, resource: { buffer: buf } }));
-        if (numsBuf) {
-            entries.push({ binding: 100, resource: { buffer: numsBuf } });
-        }
-        if (ofsBuf) {
-            entries.push({ binding: 101, resource: { buffer: ofsBuf } });
-        }
-        for (const [bindingId, buf] of additionalEntries) {
+    #dispatchKernel(commandEncoder, pipeline, denseBinds, numThreads, sparseBinds = []) {
+        const entries = denseBinds.map((buf, i) => ({ binding: i, resource: { buffer: buf } }));
+        for (const [bindingId, buf] of sparseBinds) {
             entries.push({ binding: bindingId, resource: { buffer: buf } });
         }
+
         const bindGroup = this.device.createBindGroup({
             layout: pipeline.getBindGroupLayout(0),
             entries: entries,
@@ -1159,10 +1247,10 @@ export class GpuKernels {
     // 3D geometry & grid
 
     #initGridUtils() {
-        this.gridSnippet = `
-            @group(0) @binding(100) var<uniform> nums: vec4u; // xyz: numX, numY, numZ. w: unused.
-            @group(0) @binding(101) var<uniform> ofs_res: vec4f; // xyz: ofs, w: res
-
+        // nums: numX, numY, numZ
+        // ofs_res: xyz=ofs, w=res
+        this.gridUniformDefs = { "nums": "vec3u", "ofs_res": "vec4f" };
+        this.gridFns = `
             fn decompose_ix(ix: u32) -> vec3u {
                 return vec3u(ix % nums.x, (ix / nums.x) % nums.y, ix / (nums.x * nums.y));
             }
@@ -1208,7 +1296,7 @@ export class GpuKernels {
               ${this.uberSdfSnippet("p", "d")}
               vo = select(0u, 1u, d <= offset);
             }
-        `, Object.assign({offset: "f32"}, this.uberSdfUniformDefs()));
+        `, Object.assign({ offset: "f32" }, this.uberSdfUniformDefs()));
         this.registerReduceFn("sum", "u32", "0u", `
             vo = vi1 + vi2;
         `);
@@ -1225,6 +1313,17 @@ export class GpuKernels {
         `);
     }
 
+    /**
+     * Gets runtime uniform variables for {@link #gridUniformDefs}.
+     * @param {VoxelGridGpu} grid
+     * @returns {Object} Runtime uniform variables.
+     */
+    #gridUniformVars(grid) {
+        return {
+            nums: [grid.numX, grid.numY, grid.numZ],
+            ofs_res: new Vector4(grid.ofs.x, grid.ofs.y, grid.ofs.z, grid.res),
+        };
+    }
 
     /**
      * Create new GPU-backed VoxelGrid, keeping shape of buf and optionally changing type.
@@ -1317,26 +1416,24 @@ export class GpuKernels {
         await this.map("df_init", inSeedVg, df);
 
         // Jump flood
+        const { pipeline, uniformDef } = this.jumpFloodPipeline;
         let numPass = Math.ceil(Math.log2(Math.max(grid.numX, grid.numY, grid.numZ)));
 
         for (let pass = 0; pass < numPass; pass++) {
             const step = 2 ** (numPass - pass - 1);
             const commandEncoder = this.device.createCommandEncoder();
-            const numsBuf = this.createUniformBuffer(32, (ptr) => {
-                new Uint32Array(ptr, 0, 4).set([
-                    grid.numX, grid.numY, grid.numZ, step,
-                ]);
-            });
-            const ofsBuf = this.createUniformBuffer(32, (ptr) => {
-                new Float32Array(ptr, 0, 4).set([
-                    grid.ofs.x, grid.ofs.y, grid.ofs.z, grid.res,
-                ]);
-            });
-            this.#dispatchKernel(commandEncoder, this.jumpFloodPipeline, [df.buffer], grid.numX * grid.numY * grid.numZ, numsBuf, ofsBuf);
+
+            const uniforms = { jump_step: step };
+            Object.assign(uniforms, this.#gridUniformVars(grid));
+            const binds = uniformDef.createBuffers(this, uniforms);
+
+            this.#dispatchKernel(commandEncoder, pipeline, [df.buffer], grid.numX * grid.numY * grid.numZ, binds);
             this.device.queue.submit([commandEncoder.finish()]);
             await this.device.queue.onSubmittedWorkDone();
-            numsBuf.destroy();
-            ofsBuf.destroy();
+
+            for (const [_, buf] of binds) {
+                buf.destroy();
+            }
         }
 
         await this.map("df_to_dist", df, outDistVg);
@@ -1344,10 +1441,17 @@ export class GpuKernels {
     }
 
     #compileJumpFloodPipeline() {
-        this.jumpFloodPipeline = this.#createPipeline(`jump_flood`, ["storage"], true, `
-            @group(0) @binding(0) var<storage, read_write> df: array<vec4f>; // xyz:seed, w:dist (-1 is invalid)
+        const uniforms = {
+            jump_step: "u32"
+        };
+        Object.assign(uniforms, this.gridUniformDefs);
+        const uniformDef = new PipelineUniformDef(uniforms);
 
-            ${this.gridSnippet} // + nums.w contain jump step
+        const pipeline = this.#createPipeline(`jump_flood`, 1, `
+            @group(0) @binding(0) var<storage, read_write> df: array<vec4f>; // xyz:seed, w:dist (-1 is invalid)
+            ${uniformDef.shaderVars()}
+
+            ${this.gridFns}
 
             @compute @workgroup_size(${this.wgSize})
             fn jump_flood(@builtin(global_invocation_id) id: vec3u) {
@@ -1372,8 +1476,8 @@ export class GpuKernels {
                     vec3i(0, 0, 1),
                 );
                 for (var i = 0; i < 6; i++) {
-                    let nix3 = vec3i(ix3) + offsets[i] * i32(nums.w);
-                    if (any(nix3 < vec3i(0)) || any(nix3 >= vec3i(nums.xyz))) {
+                    let nix3 = vec3i(ix3) + offsets[i] * i32(jump_step);
+                    if (any(nix3 < vec3i(0)) || any(nix3 >= vec3i(nums))) {
                         continue; // neighbor is out of bound
                     }
                     let nix = compose_ix(vec3u(nix3));
@@ -1388,15 +1492,16 @@ export class GpuKernels {
                 }
                 df[ix] = sd;
             }
-        `);
+        `, uniformDef);
+        this.jumpFloodPipeline = { pipeline, uniformDef };
     }
 
     #compileShapeQueryPipeline() {
-        this.shapeQueryPipeline = this.#createPipeline(`shape_query`, ["storage", "storage"], true, `
+        this.shapeQueryPipeline = this.#createPipeline(`shape_query`, 2, `
             @group(0) @binding(0) var<storage, read_write> vs_in_fine: array<u32>;
             @group(0) @binding(1) var<storage, read_write> vs_out_coarse: array<u32>;
 
-            ${this.gridSnippet} // grid data for fine grid
+            ${this.gridFns} // grid data for fine grid
             @group(0) @binding(200) var<uniform> nums_coarse: vec4u; // xyz: numX, numY, numZ. w: unused.
             @group(0) @binding(201) var<uniform> ofs_res_coarse: vec4f; // xyz: ofs, w: res
             // + custom uniforms
@@ -1533,7 +1638,7 @@ export class GpuKernels {
                 _sd_p3: new Vector3(),
             };
         } else if (shape.type === "ELH") {
-            return { 
+            return {
                 _sd_ty: 1,
                 _sd_p0: shape.p,
                 _sd_p1: shape.q,
