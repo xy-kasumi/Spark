@@ -801,11 +801,24 @@ export class GpuKernels {
                 throw new Error(`Required uniform variable "${varName}" not provided`);
             }
             const val = uniforms[varName];
-            if (binding.type === "vec3f" && !(val instanceof Vector3)) {
-                throw new Error(`Uniform variable "${varName}: vec3f" must be a Vector3`);
-            }
-            if (binding.type === "f32" && typeof val !== "number") {
-                throw new Error(`Uniform variable "${varName}: f32" must be a number`);
+            switch (binding.type) {
+                case "vec3f":
+                    if (!(val instanceof Vector3)) {
+                        throw new Error(`Uniform variable "${varName}: vec3f" must be a Vector3`);
+                    }
+                    break;
+                case "f32":
+                    if (typeof val !== "number") {
+                        throw new Error(`Uniform variable "${varName}: f32" must be a number`);
+                    }
+                    break;
+                case "u32":
+                    if (typeof val !== "number") {
+                        throw new Error(`Uniform variable "${varName}: u32" must be a number`);
+                    }
+                    break;
+                default:
+                    throw new Error(`Unsupported uniform variable type: ${binding.type}`);
             }
         }
 
@@ -841,6 +854,10 @@ export class GpuKernels {
             } else if (type === "f32") {
                 buf = this.createUniformBuffer(32, (ptr) => {
                     new Float32Array(ptr, 0, 1).set([uniforms[varName]]);
+                });
+            } else if (type === "u32") {
+                buf = this.createUniformBuffer(32, (ptr) => {
+                    new Uint32Array(ptr, 0, 1).set([uniforms[varName]]);
                 });
             }
             additionalEntries.push([bindingId, buf]);
@@ -1182,33 +1199,15 @@ export class GpuKernels {
                 select(vi2, -1e5, vi2 == ${this.invalidValue}));
         `);
 
-        this.registerMapFn("check_sdf_cylinder", "u32", "u32", `
+        this.registerMapFn("check_sdf", "u32", "u32", `
             if (vi == 0) {
               vo = 0;
             } else {
               var d = f32(0);
-              ${wgslSdfCylinderSnippet("p", "d")}
+              ${this.uberSdfSnippet("p", "d")}
               vo = select(0u, 1u, d <= offset);
             }
-        `, { _sd_p: "vec3f", _sd_n: "vec3f", _sd_r: "f32", _sd_h: "f32", offset: "f32" });
-        this.registerMapFn("check_sdf_ELH", "u32", "u32", `
-            if (vi == 0) {
-              vo = 0;
-            } else {
-              var d = f32(0);
-              ${wgslSdfElhSnippet("p", "d")}
-              vo = select(0u, 1u, d <= offset);
-            }
-        `, { _sd_p: "vec3f", _sd_q: "vec3f", _sd_n: "vec3f", _sd_r: "f32", _sd_h: "f32", offset: "f32" });
-        this.registerMapFn("check_sdf_box", "u32", "u32", `
-            if (vi == 0) {
-              vo = 0;
-            } else {
-              var d = f32(0);
-              ${wgslSdfBoxSnippet("p", "d")}
-              vo = select(0u, 1u, d <= offset);
-            }
-        `, { _sd_c: "vec3f", _sd_hv0: "vec3f", _sd_hv1: "vec3f", _sd_hv2: "vec3f", offset: "f32" });
+        `, Object.assign({offset: "f32"}, this.uberSdfUniformDefs()));
         this.registerReduceFn("sum", "u32", "0u", `
             vo = vi1 + vi2;
         `);
@@ -1288,12 +1287,12 @@ export class GpuKernels {
         // TODO: Gen candidate big voxels & dispatch them.
 
         const options = { offset: this.boundaryOffset(vg, boundary) };
-        Object.assign(options, this.sdfUniformVars(shape));
+        Object.assign(options, this.uberSdfUniformVars(shape));
 
         const dummyVg = this.createLike(vg, "u32");
         await this.fill1(dummyVg);
         const maskVg = this.createLike(vg, "u32");
-        await this.map("check_sdf_" + shape.type, dummyVg, maskVg, options);
+        await this.map("check_sdf", dummyVg, maskVg, options);
         await this.map2("or", maskVg, vg, vg);
 
         this.destroy(dummyVg);
@@ -1422,11 +1421,11 @@ export class GpuKernels {
     async anyInShape(shape, inVg, boundary) {
         // TODO: Gen candidate big voxels, and only dispatch them.
         const options = { offset: this.boundaryOffset(inVg, boundary) };
-        Object.assign(options, this.sdfUniformVars(shape));
+        Object.assign(options, this.uberSdfUniformVars(shape));
 
         let t = performance.now();
         const flagVg = this.createLike(inVg, "u32");
-        await this.map("check_sdf_" + shape.type, inVg, flagVg, options);
+        await this.map("check_sdf", inVg, flagVg, options);
         //console.log(`  anyInShape:map: ${performance.now() - t}ms`);
         t = performance.now();
         const count = await this.reduce("sum", flagVg);
@@ -1445,33 +1444,75 @@ export class GpuKernels {
         await this.map("fill1", vg, vg);
     }
 
+    uberSdfUniformDefs() {
+        return {
+            "_sd_ty": "u32",
+            "_sd_p0": "vec3f",
+            "_sd_p1": "vec3f",
+            "_sd_p2": "vec3f",
+            "_sd_p3": "vec3f",
+        };
+    }
+
+    /**
+     * Generates SDF snippet that can handle all shapes.
+     */
+    uberSdfSnippet(inVar, outVar) {
+        return `
+        {
+            if (_sd_ty == 0) {
+                let _sd_p = _sd_p0;
+                let _sd_n = _sd_p1;
+                let _sd_r = _sd_p2.x;
+                let _sd_h = _sd_p2.y;
+                ${wgslSdfCylinderSnippet(inVar, outVar)}
+            } else if (_sd_ty == 1) {
+                let _sd_p = _sd_p0;
+                let _sd_q = _sd_p1;
+                let _sd_n = _sd_p2;
+                let _sd_r = _sd_p3.x;
+                let _sd_h = _sd_p3.y;
+                ${wgslSdfElhSnippet(inVar, outVar)}
+            } else if (_sd_ty == 2) {
+                let _sd_c = _sd_p0;
+                let _sd_hv0 = _sd_p1;
+                let _sd_hv1 = _sd_p2;
+                let _sd_hv2 = _sd_p3;
+                ${wgslSdfBoxSnippet(inVar, outVar)}
+            }
+        }
+        `;
+    }
+
     /**
      * Generates SDF uniform variable dictionary.
      * @param {Object} shape 
      * @returns {Object} Uniform variable dictionary
      */
-    sdfUniformVars(shape) {
+    uberSdfUniformVars(shape) {
         if (shape.type === "cylinder") {
             return {
-                _sd_p: shape.p,
-                _sd_n: shape.n,
-                _sd_r: shape.r,
-                _sd_h: shape.h,
+                _sd_ty: 0,
+                _sd_p0: shape.p,
+                _sd_p1: shape.n,
+                _sd_p2: new Vector3(shape.r, shape.h, 0),
+                _sd_p3: new Vector3(),
             };
         } else if (shape.type === "ELH") {
-            return {
-                _sd_p: shape.p,
-                _sd_q: shape.q,
-                _sd_n: shape.n,
-                _sd_r: shape.r,
-                _sd_h: shape.h,
+            return { 
+                _sd_ty: 1,
+                _sd_p0: shape.p,
+                _sd_p1: shape.q,
+                _sd_p2: shape.n,
+                _sd_p3: new Vector3(shape.r, shape.h, 0),
             };
         } else if (shape.type === "box") {
             return {
-                _sd_c: shape.center,
-                _sd_hv0: shape.halfVec0,
-                _sd_hv1: shape.halfVec1,
-                _sd_hv2: shape.halfVec2,
+                _sd_ty: 2,
+                _sd_p0: shape.center,
+                _sd_p1: shape.halfVec0,
+                _sd_p2: shape.halfVec1,
+                _sd_p3: shape.halfVec2,
             };
         } else {
             throw new Error(`Unsupported shape type: ${shape.type}`);
