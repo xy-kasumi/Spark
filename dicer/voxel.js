@@ -555,9 +555,9 @@ class PipelineUniformDef {
      * @throws {Error} If any input is invalid.
      */
     checkInput(vars) {
-        const unusedVars = new Set(Object.keys(vars)).difference(new Set(Object.keys(this.bindings)));
-        if (unusedVars.size > 0) {
-            console.warn("Unused uniform variables: ", unusedVars);
+        const unknownVars = new Set(Object.keys(vars)).difference(new Set(Object.keys(this.bindings)));
+        if (unknownVars.size > 0) {
+            console.warn("Unknown uniform value provided: ", unknownVars);
         }
         for (const [varName, { type }] of Object.entries(this.bindings)) {
             if (vars[varName] === undefined) {
@@ -566,33 +566,21 @@ class PipelineUniformDef {
             const val = vars[varName];
             switch (type) {
                 case "vec4f":
+                case "vec4u":
                     if (this.extractArrayLikeOrVector(4, val) === null) {
-                        throw new Error(`Uniform variable "${varName}: vec4f" must be a Vector4 or array of 4 numbers`);
+                        throw new Error(`Uniform variable "${varName}: ${type}" must be a Vector4 or array of 4 numbers`);
                     }
                     break;
                 case "vec3f":
-                    if (this.extractArrayLikeOrVector(3, val) === null) {
-                        throw new Error(`Uniform variable "${varName}: vec3f" must be a Vector3 or array of 3 numbers`);
-                    }
-                    break;
-                case "vec4u":
-                    if (this.extractArrayLikeOrVector(4, val) === null) {
-                        throw new Error(`Uniform variable "${varName}: vec4u" must be a Vector4 or array of 4 numbers`);
-                    }
-                    break;
                 case "vec3u":
                     if (this.extractArrayLikeOrVector(3, val) === null) {
-                        throw new Error(`Uniform variable "${varName}: vec3u" must be a Vector3 or array of 3 numbers`);
+                        throw new Error(`Uniform variable "${varName}: ${type}" must be a Vector3 or array of 3 numbers`);
                     }
                     break;
                 case "f32":
-                    if (typeof val !== "number") {
-                        throw new Error(`Uniform variable "${varName}: f32" must be a number`);
-                    }
-                    break;
                 case "u32":
                     if (typeof val !== "number") {
-                        throw new Error(`Uniform variable "${varName}: u32" must be a number`);
+                        throw new Error(`Uniform variable "${varName}: ${type}" must be a number`);
                     }
                     break;
                 default:
