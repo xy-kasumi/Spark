@@ -133,48 +133,35 @@ const C_PARTIAL_REMAINING = 4; // current=full
 
 
 /**
- * Represents current work & target.
+ * Represents current work & target as volume, and provides shape query and removal.
  * The class ensures that work is bigger than target.
- *
- * voxel-local coordinate
- * voxel at (ix, iy, iz):
- * - occupies volume: [i * res, (i + 1) * res)
- * - has center: (i + 0.5) * res
- *
- * loc_world = loc_vx + ofs
- *
- * Each cell {
- *   target: {Full, Partial, Empty}
- *   work: {Remaining, Done} (Done if target == Full)
- * }
+ * 
+ * Under the hood, it uses {@link VoxelGridGpu} to process various queries.
  */
 class TrackingVoxelGrid {
     /**
      * @param {GpuKernels} kernels
-     * @param {number} res Voxel resolution
-     * @param {number} numX Grid width
-     * @param {number} numY Grid height
-     * @param {number} numZ Grid depth
-     * @param {THREE.Vector3} [ofs=new THREE.Vector3()] Voxel grid offset (local to world)
      */
-    constructor(kernels, res, numX, numY, numZ, ofs = new THREE.Vector3()) {
+    constructor(kernels) {
         this.kernels = kernels;
-        this.res = res;
-        this.numX = numX;
-        this.numY = numY;
-        this.numZ = numZ;
-        this.ofs = ofs.clone();
-        this.vx = new VoxelGridGpu(kernels, res, numX, numY, numZ, ofs, "u32");
     }
 
     /**
-     * Scaffold for refactoring.
+     * Configure work & target. Must be called before any other methods.
+     * 
      * @param {VoxelGridCpu} work VoxelGrid (0: empty, 128: partial, 255: full)
      * @param {VoxelGridCpu} target VoxelGrid (0: empty, 128: partial, 255: full)
      * @returns {Promise<void>}
      * @async
      */
     async setFromWorkAndTarget(work, target) {
+        this.res = work.res;
+        this.numX = work.numX;
+        this.numY = work.numY;
+        this.numZ = work.numZ;
+        this.ofs = work.ofs.clone();
+        this.vx = new VoxelGridGpu(this.kernels, this.res, this.numX, this.numY, this.numZ, this.ofs, "u32");
+
         const vxCpu = new VoxelGridCpu(this.res, this.numX, this.numY, this.numZ, this.ofs);
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
@@ -219,6 +206,7 @@ class TrackingVoxelGrid {
             }
         }
         await this.kernels.copy(vxCpu, this.vx);
+        this.distField = await this.#computeDistField();
     }
 
     /**
@@ -248,11 +236,9 @@ class TrackingVoxelGrid {
      * @async
      */
     async extractWorkWithDeviation(excludeProtectedWork = false) {
-        const dist = await this.#computeDistField();
-
-        // Convert JF data to work data.
+        // Convert dist field data to work data.
         const vxDiag = this.res * Math.sqrt(3);
-        const res = this.kernels.createLike(dist);
+        const res = this.kernels.createLike(this.vx, "f32");
         if (!this.kernels.map2Pipelines["work_deviation"]) {
             this.kernels.registerMap2Fn("work_deviation", "f32", "u32", "f32", `
                 if (vi2 == ${C_EMPTY_DONE}) {
@@ -274,16 +260,12 @@ class TrackingVoxelGrid {
             }
             */
         }
-        await this.kernels.map2("work_deviation", dist, this.vx, res);
+        await this.kernels.map2("work_deviation", this.distField, this.vx, res);
         return res;
     }
 
     /** Compute distance field (from target). This data is work-independent.*/
     async #computeDistField() {
-        if (this.distFieldCache) {
-            return this.distFieldCache;
-        }
-
         this.kernels.registerMapFn("not_tg_empty", "u32", "u32",
             `if (vi != ${C_EMPTY_DONE} && vi != ${C_EMPTY_REMAINING}) { vo = 1; } else { vo = 0; }`);
 
@@ -292,7 +274,6 @@ class TrackingVoxelGrid {
         await this.kernels.map("not_tg_empty", this.vx, initial);
         await this.kernels.distField(initial, dist);
         this.kernels.destroy(initial);
-        this.distFieldCache = dist;
         return dist;
     }
 
@@ -384,7 +365,7 @@ class TrackingVoxelGrid {
                 for (let z = 0; z < this.numZ; z++) {
                     for (let y = 0; y < this.numY; y++) {
                         for (let x = 0; x < this.numX; x++) {
-                            debug.vlogE(visDot(this.centerOf(x, y, z), "violet"));
+                            debug.vlogE(visDot(this.#centerOf(x, y, z), "violet"));
                         }
                     }
                 }
@@ -535,52 +516,6 @@ class TrackingVoxelGrid {
         return result;
     }
 
-    /**
-     * Set value at given coordinates
-     * @param {number} ix X coordinate
-     * @param {number} iy Y coordinate
-     * @param {number} iz Z coordinate
-     * @param {number} val One of C_FULL_DONE, C_EMPTY_DONE, C_EMPTY_REMAINING, C_PARTIAL_DONE, C_PARTIAL_REMAINING
-     */
-    set(ix, iy, iz, val) {
-        const i = ix + iy * this.numX + iz * this.numX * this.numY;
-        switch (val) {
-            case C_FULL_DONE:
-                this.dataT[i] = TG_FULL;
-                this.dataW[i] = W_DONE;
-                break;
-            case C_EMPTY_DONE:
-                this.dataT[i] = TG_EMPTY;
-                this.dataW[i] = W_DONE;
-                break;
-            case C_EMPTY_REMAINING:
-                this.dataT[i] = TG_EMPTY;
-                this.dataW[i] = W_REMAINING;
-                break;
-            case C_PARTIAL_DONE:
-                this.dataT[i] = TG_PARTIAL;
-                this.dataW[i] = W_DONE;
-                break;
-            case C_PARTIAL_REMAINING:
-                this.dataT[i] = TG_PARTIAL;
-                this.dataW[i] = W_REMAINING;
-                break;
-        }
-    }
-
-    /**
-     * Get value at given coordinates
-     * @param {number} ix X coordinate
-     * @param {number} iy Y coordinate
-     * @param {number} iz Z coordinate
-     * @returns {number} One of C_FULL_DONE, C_EMPTY_DONE, C_EMPTY_REMAINING, C_PARTIAL_DONE, C_PARTIAL_REMAINING
-     */
-    get(ix, iy, iz) {
-        const t = this.dataT[ix + iy * this.numX + iz * this.numX * this.numY];
-        const w = this.dataW[ix + iy * this.numX + iz * this.numX * this.numY];
-        return VoxelGridCpu.combineTargetWork(t, w);
-    }
-
     static combineTargetWork(t, w) {
         switch (t) {
             case TG_FULL:
@@ -594,35 +529,13 @@ class TrackingVoxelGrid {
     }
 
     /**
-     * Get work state at given coordinates
-     * @param {number} ix X coordinate
-     * @param {number} iy Y coordinate
-     * @param {number} iz Z coordinate
-     * @returns {number} One of W_REMAINING or W_DONE
-     */
-    getW(ix, iy, iz) {
-        return this.dataW[ix + iy * this.numX + iz * this.numX * this.numY];
-    }
-
-    /**
-     * Get target state at given coordinates
-     * @param {number} ix X coordinate
-     * @param {number} iy Y coordinate
-     * @param {number} iz Z coordinate
-     * @returns {number} One of TG_FULL, TG_PARTIAL, TG_EMPTY
-     */
-    getT(ix, iy, iz) {
-        return this.dataT[ix + iy * this.numX + iz * this.numX * this.numY];
-    }
-
-    /**
      * Get center coordinates of cell at given indices
      * @param {number} ix X coordinate
      * @param {number} iy Y coordinate
      * @param {number} iz Z coordinate
      * @returns {THREE.Vector3} Center point of cell
      */
-    centerOf(ix, iy, iz) {
+    #centerOf(ix, iy, iz) {
         return new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res).add(this.ofs);
     }
 }
@@ -1502,7 +1415,7 @@ class Planner {
         diceSurf(this.targetSurf, targVg);
         console.log(`stock: ${workVg.volume()} mm^3 (${workVg.countIf(v => v > 0).toLocaleString("en-US")} voxels) / target: ${targVg.volume()} mm^3 (${targVg.countIf(v => v > 0).toLocaleString("en-US")} voxels)`);
 
-        this.trvg = new TrackingVoxelGrid(this.kernels, workVg.res, workVg.numX, workVg.numY, workVg.numZ, workVg.ofs.clone());
+        this.trvg = new TrackingVoxelGrid(this.kernels);
         await this.trvg.setFromWorkAndTarget(workVg, targVg);
         await this.trvg.setProtectedWorkBelowZ(-this.stockCutWidth);
 
