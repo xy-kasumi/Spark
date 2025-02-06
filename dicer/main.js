@@ -408,6 +408,17 @@ class TrackingVoxelGrid {
         await this.kernels.map2("commit_min", this.vx, minVg, this.vx);
         const numRemoved = await this.kernels.reduce("sum", removedVg);
         this.kernels.destroy(removedVg);
+
+        // Invalidate any work-dependent cache.
+        if (this.cacheHasWork) {
+            this.kernels.destroy(this.cacheHasWork);
+            this.cacheHasWork = null;
+        }
+        if (this.cacheBlocked) {
+            this.kernels.destroy(this.cacheBlocked);
+            this.cacheBlocked = null;
+        }
+
         return numRemoved * this.res ** 3;
     }
 
@@ -476,11 +487,11 @@ class TrackingVoxelGrid {
                 }
             `);
         }
-
-        const blocked = this.kernels.createLike(this.vx, "u32");
-        await this.kernels.map("blocked", this.vx, blocked);
-        const result = await this.kernels.anyInShape(shape, blocked, "out");
-        this.kernels.destroy(blocked);
+        if (!this.cacheBlocked) {
+            this.cacheBlocked = this.kernels.createLike(this.vx, "u32");
+            await this.kernels.map("blocked", this.vx, this.cacheBlocked);
+        }
+        const result = await this.kernels.anyInShape(shape, this.cacheBlocked, "out");
         return result;
     }
 
@@ -501,18 +512,11 @@ class TrackingVoxelGrid {
                 }
             `);
         }
-
-        let t = performance.now();
-        const hasWork = this.kernels.createLike(this.vx, "u32");
-        await this.kernels.map("has_work", this.vx, hasWork);
-        //console.log(`queryHasWork:map: ${performance.now() - t}ms`);
-        t = performance.now();
-
-        const result = await this.kernels.anyInShape(shape, hasWork, "nearest");
-        //console.log(`queryHasWork:anyInShape: ${performance.now() - t}ms`);
-        t = performance.now();
-
-        this.kernels.destroy(hasWork);
+        if (!this.cacheHasWork) {
+            this.cacheHasWork = this.kernels.createLike(this.vx, "u32");
+            await this.kernels.map("has_work", this.vx, this.cacheHasWork);
+        }
+        const result = await this.kernels.anyInShape(shape, this.cacheHasWork, "nearest");
         return result;
     }
 
@@ -749,7 +753,7 @@ const createVgVis = (vg, label = "", mode = "occupancy") => {
                     }
 
                     const v = vg.get(ix, iy, iz);
-                    
+
                     // apply deviation color, from blue(0) to red(maxDev).
                     const t = Math.min(1, v / maxDev);
                     mesh.setColorAt(instanceIx, new THREE.Color(0.2 + t * 0.8, 0.2, 0.2 + (1 - t) * 0.8));
@@ -1511,6 +1515,7 @@ class Planner {
             const rowDir = new THREE.Vector3(0, 1, 0).transformDirection(rot);
             const feedRange = await this.trvg.queryWorkRange(feedDir);
             const rowRange = await this.trvg.queryWorkRange(rowDir);
+            console.log(`queryWorkRange took ${performance.now() - t0}ms`);
 
             const maxHeight = normalRange.max - normalRange.min;
 
