@@ -1176,6 +1176,7 @@ export class GpuKernels {
             }
         `;
         this.#compileJumpFloodPipeline();
+        // this.#compileShapeQueryPipeline();
 
         this.invalidValue = 65536; // used in boundOfAxis.
 
@@ -1390,6 +1391,30 @@ export class GpuKernels {
         `);
     }
 
+    #compileShapeQueryPipeline() {
+        this.shapeQueryPipeline = this.#createPipeline(`shape_query`, ["storage", "storage"], true, `
+            @group(0) @binding(0) var<storage, read_write> vs_in_fine: array<u32>;
+            @group(0) @binding(1) var<storage, read_write> vs_out_coarse: array<u32>;
+
+            ${this.gridSnippet} // grid data for fine grid
+            @group(0) @binding(200) var<uniform> nums_coarse: vec4u; // xyz: numX, numY, numZ. w: unused.
+            @group(0) @binding(201) var<uniform> ofs_res_coarse: vec4f; // xyz: ofs, w: res
+            // + custom uniforms
+
+            @compute @workgroup_size(${this.wgSize})
+            fn shape_query(@builtin(global_invocation_id) id: vec3u) {
+                let gix = id.x;
+                if (gix >= arrayLength(&vs_out_coarse)) {
+                    return;
+                }
+                
+                // check coarse grid center
+                
+            }
+        `);
+    }
+
+
     /**
      * Get range of non-zero cells along dir.
      * 
@@ -1422,6 +1447,15 @@ export class GpuKernels {
         // TODO: Gen candidate big voxels, and only dispatch them.
         const options = { offset: this.boundaryOffset(inVg, boundary) };
         Object.assign(options, this.uberSdfUniformVars(shape));
+
+        // IN: IN VG (detailed)
+        // OUT: FLAG VG (coarse)
+        // coarse grid dispatch (nums, ofs, res)
+        // center -> check
+        // if fail: write false & exit.
+        // if pass: scan 8^3 blocks, OR them and store result to coarse grid and exit.
+        // --
+        // apply OR to coarse grid. (reduce). copy result to CPU.
 
         let t = performance.now();
         const flagVg = this.createLike(inVg, "u32");

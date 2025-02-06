@@ -1515,7 +1515,7 @@ class Planner {
             const rowDir = new THREE.Vector3(0, 1, 0).transformDirection(rot);
             const feedRange = await this.trvg.queryWorkRange(feedDir);
             const rowRange = await this.trvg.queryWorkRange(rowDir);
-            console.log(`queryWorkRange took ${performance.now() - t0}ms`);
+            console.log(`  queryWorkRange took ${performance.now() - t0}ms`);
 
             const maxHeight = normalRange.max - normalRange.min;
 
