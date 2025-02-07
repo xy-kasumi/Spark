@@ -170,91 +170,6 @@ const createSdfBox = (center, halfVec0, halfVec1, halfVec2) => {
 };
 
 /**
- * Traverse all points that (sdf(p) <= offset), and call fn(ix, iy, iz)
- * @param {Object} vg VoxelGrid or TrackingVoxelGrid (must implement numX, numY, numZ, res, ofs, centerOf)
- * @param {Function} sdf number => number. Must be "true" SDF for this to work correctly
- * @param {number} offset Offset value
- * @param {Function} fn function(ix, iy, iz) => boolean. If true, stop traversal and return true
- * @returns {boolean} If true, stop traversal and return true
- */
-export const traverseAllPointsInside = (vg, sdf, offset, fn) => {
-    const blockSize = 8;
-    const nbx = Math.floor(vg.numX / blockSize) + 1;
-    const nby = Math.floor(vg.numY / blockSize) + 1;
-    const nbz = Math.floor(vg.numZ / blockSize) + 1;
-
-    const blockOffset = vg.res * blockSize * 0.5 * Math.sqrt(3);
-    const blocks = [];
-    for (let bz = 0; bz < nbz; bz++) {
-        for (let by = 0; by < nby; by++) {
-            for (let bx = 0; bx < nbx; bx++) {
-                const blockCenter = new Vector3(bx, by, bz).addScalar(0.5).multiplyScalar(blockSize * vg.res).add(vg.ofs);
-                if (sdf(blockCenter) <= blockOffset + offset) {
-                    blocks.push({ bx, by, bz });
-                }
-            }
-        }
-    }
-
-    for (let i = 0; i < blocks.length; i++) {
-        for (let dz = 0; dz < blockSize; dz++) {
-            const iz = blocks[i].bz * blockSize + dz;
-            if (iz >= vg.numZ) {
-                continue;
-            }
-            for (let dy = 0; dy < blockSize; dy++) {
-                const iy = blocks[i].by * blockSize + dy;
-                if (iy >= vg.numY) {
-                    continue;
-                }
-                for (let dx = 0; dx < blockSize; dx++) {
-                    const ix = blocks[i].bx * blockSize + dx;
-                    if (ix >= vg.numX) {
-                        continue;
-                    }
-
-                    if (sdf(vg.centerOf(ix, iy, iz)) <= offset) {
-                        if (fn(ix, iy, iz)) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return false;
-};
-
-/**
- * Returns true if all points (sdf(p) <= offset) are pred(p)
- * @param {Object} vg VoxelGrid or TrackingVoxelGrid (must implement numX, numY, numZ, res, ofs, centerOf)
- * @param {Function} sdf number => number
- * @param {number} offset Offset value
- * @param {Function} pred function(ix, iy, iz) => boolean
- * @returns {boolean} If true, stop traversal and return true
- */
-export const everyPointInsideIs = (vg, sdf, offset, pred) => {
-    return !traverseAllPointsInside(vg, sdf, offset, (ix, iy, iz) => {
-        return !pred(ix, iy, iz);
-    });
-};
-
-/**
- * Tests if any point inside satisfies the predicate
- * @param {Object} vg VoxelGrid or TrackingVoxelGrid (must implement numX, numY, numZ, res, ofs, centerOf)
- * @param {Function} sdf number => number
- * @param {number} offset Offset value
- * @param {Function} pred function(ix, iy, iz) => boolean
- * @returns {boolean} True if any point satisfies predicate
- */
-export const anyPointInsideIs = (vg, sdf, offset, pred) => {
-    return traverseAllPointsInside(vg, sdf, offset, (ix, iy, iz) => {
-        return pred(ix, iy, iz);
-    });
-};
-
-
-/**
  * CPU-backed voxel grid.
  * Supports very few operations, but can do per-cell read/write.
  * Can be copied to/from GPU buffer using {@link GpuKernels.copy}.
@@ -301,39 +216,6 @@ export class VoxelGridCpu {
     }
 
     /**
-     * Set cells inside the given shape to val
-     * @param {Object} shape Shape object
-     * @param {number} val Value to set to cells
-     * @param {"out" | "in" | "nearest"} roundMode "outside", "inside", or "nearest"
-     */
-    fillShape(shape, val, roundMode) {
-        const sdf = createSdf(shape);
-        const offset = this.boundaryOffset(shape, roundMode);
-        if (roundMode === "out") {
-            offset = halfDiag;
-        } else if (roundMode === "in") {
-            offset = -halfDiag;
-        } else if (roundMode === "nearest") {
-            offset = 0;
-        } else {
-            throw `Unknown round mode: ${roundMode}`;
-        }
-        traverseAllPointsInside(this, sdf, offset, (ix, iy, iz) => {
-            this.set(ix, iy, iz, val);
-        });
-    }
-
-    /**
-     * Set all cells to given value
-     * @param {number} val Value to fill
-     * @returns {VoxelGridCpu} this
-     */
-    fill(val) {
-        this.data.fill(val);
-        return this;
-    }
-
-    /**
      * Set value at given coordinates
      * @param {number} ix X coordinate
      * @param {number} iy Y coordinate
@@ -353,6 +235,31 @@ export class VoxelGridCpu {
      */
     get(ix, iy, iz) {
         return this.data[ix + iy * this.numX + iz * this.numX * this.numY];
+    }
+
+    /**
+     * Set all cells to given value
+     * @param {number} val Value to fill
+     * @returns {VoxelGridCpu} this
+     */
+    fill(val) {
+        this.data.fill(val);
+        return this;
+    }
+
+    /**
+     * Apply pred to all cells.
+     */
+    map(pred) {
+        for (let iz = 0; iz < this.numZ; iz++) {
+            for (let iy = 0; iy < this.numY; iy++) {
+                for (let ix = 0; ix < this.numX; ix++) {
+                    const pos = this.centerOf(ix, iy, iz);
+                    const val = this.get(ix, iy, iz);
+                    this.set(ix, iy, iz, pred(val, pos));
+                }
+            }
+        }
     }
 
     /**
@@ -561,6 +468,10 @@ const wgslSdfBoxSnippet = (inVar, outVar) => {
 /**
  * GPU-backed voxel grid.
  * Most of {@link GpuKernels} methods only support VoxelGrid.
+ * 
+ * voxel at (ix, iy, iz):
+ * - occupies volume: [ofs + ix * res, ofs + (ix + 1) * res)
+ * - has center: ofs + (ix + 0.5) * res
  */
 export class VoxelGridGpu {
     /**
@@ -699,13 +610,17 @@ class PipelineUniformDef {
     /**
      * Allocate buffers for binding, and put values into them.
      * Caller is responsible for destroying all the buffers.
-     * Caller is also recommended to call {@link checkInput} first, to not leak buffer by error during value conversion.
+     * In case input is invalid, no buffer will be allocated.
+     * Caller can also call {@link checkInput} first, to check for input errors before any other GPU processing.
      * 
      * @param {GpuKernels} kernels 
      * @param {Object} vars {varName: value}
+     * @throws {Error} If any input is invalid.
      * @returns {[number, GPUBuffer][]} Array of [bindingId, buffer]
      */
     createBuffers(kernels, vars) {
+        this.checkInput(vars);
+
         const binds = [];
         for (const [varName, binding] of Object.entries(this.bindings)) {
             const { bindingId, type } = binding;
@@ -762,8 +677,37 @@ export class GpuKernels {
         this.mapPipelines = {};
         this.map2Pipelines = {};
         this.reducePipelines = {};
+        this.perf = {};
 
         this.#initGridUtils();
+    }
+
+    /**
+     * Utility to measure average time-peformance of many invocations.
+     * returns end-mark function.
+     * @param {string} name 
+     * @returns {Function}
+     */
+    perfBegin(name) {
+        const t0 = performance.now();
+        const end = () => {
+            if (!this.perf[name]) {
+                this.perf[name] = {
+                    time_ms: 0,
+                    n: 0,
+                };
+            }
+            const time_ms = performance.now() - t0;
+            const p = this.perf[name];
+            p.time_ms += time_ms;
+            p.n++;
+            if (p.n % 100 === 0) {
+                console.log(`${name}: ${p.time_ms / p.n}ms (N=${p.n})`);
+            }
+        };
+        return {
+            end: end
+        };
     }
 
     /**
@@ -840,7 +784,7 @@ export class GpuKernels {
         GpuKernels.checkAllowedType(inType);
         GpuKernels.checkAllowedType(outType);
 
-        Object.assign(uniforms, this.gridUniformDefs);
+        Object.assign(uniforms, this.#gridUniformDefs());
 
         const uniformDef = new PipelineUniformDef(uniforms);
 
@@ -849,7 +793,7 @@ export class GpuKernels {
             @group(0) @binding(1) var<storage, read_write> vs_out: array<${outType}>;
             ${uniformDef.shaderVars()}
 
-            ${this.gridFns}
+            ${this.#gridFns()}
 
             @compute @workgroup_size(${this.wgSize})
             fn map_${name}(@builtin(global_invocation_id) id: vec3u) {
@@ -900,7 +844,7 @@ export class GpuKernels {
         GpuKernels.checkAllowedType(inType2);
         GpuKernels.checkAllowedType(outType);
 
-        Object.assign(uniforms, this.gridUniformDefs);
+        Object.assign(uniforms, this.#gridUniformDefs());
         const uniformDef = new PipelineUniformDef(uniforms);
 
         const pipeline = this.#createPipeline(`map2_${name}`, 3, `
@@ -909,7 +853,7 @@ export class GpuKernels {
             @group(0) @binding(2) var<storage, read_write> vs_out: array<${outType}>;
             ${uniformDef.shaderVars()}
 
-            ${this.gridFns}
+            ${this.#gridFns()}
 
             @compute @workgroup_size(${this.wgSize})
             fn map2_${name}(@builtin(global_invocation_id) id: vec3u) {
@@ -1312,24 +1256,8 @@ export class GpuKernels {
     // 3D geometry & grid
 
     #initGridUtils() {
-        // nums: numX, numY, numZ
-        // ofs_res: xyz=ofs, w=res
-        this.gridUniformDefs = { "nums": "vec3u", "ofs_res": "vec4f" };
-        this.gridFns = `
-            fn decompose_ix(ix: u32) -> vec3u {
-                return vec3u(ix % nums.x, (ix / nums.x) % nums.y, ix / (nums.x * nums.y));
-            }
-
-            fn compose_ix(ix3: vec3u) -> u32 {
-                return ix3.x + ix3.y * nums.x + ix3.z * nums.x * nums.y;
-            }
-
-            fn cell_center(ix3: vec3u) -> vec3f {
-                return (vec3f(ix3) + 0.5) * ofs_res.w + ofs_res.xyz;
-            }
-        `;
         this.#compileJumpFloodPipeline();
-        // this.#compileShapeQueryPipeline();
+        this.#compileShapeQueryPipeline();
 
         this.invalidValue = 65536; // used in boundOfAxis.
 
@@ -1378,15 +1306,39 @@ export class GpuKernels {
         `);
     }
 
+    
+    #gridUniformDefs(prefix="") {
+        // nums: numX, numY, numZ
+        // ofs_res: xyz=ofs, w=res
+        return { [prefix + "nums"]: "vec3u", [prefix + "ofs_res"]: "vec4f" };
+    }
+    
+    #gridFns(prefix="") {
+        return `
+            fn ${prefix}decompose_ix(ix: u32) -> vec3u {
+                return vec3u(ix % ${prefix}nums.x, (ix / ${prefix}nums.x) % ${prefix}nums.y, ix / (${prefix}nums.x * ${prefix}nums.y));
+            }
+
+            fn ${prefix}compose_ix(ix3: vec3u) -> u32 {
+                return ix3.x + ix3.y * ${prefix}nums.x + ix3.z * ${prefix}nums.x * ${prefix}nums.y;
+            }
+
+            fn ${prefix}cell_center(ix3: vec3u) -> vec3f {
+                return (vec3f(ix3) + 0.5) * ${prefix}ofs_res.w + ${prefix}ofs_res.xyz;
+            }
+        `;
+    }
+
     /**
      * Gets runtime uniform variables for {@link #gridUniformDefs}.
      * @param {VoxelGridGpu} grid
+     * @param {string} prefix Prefix that matches what's given to {@link #gridUniformDefs} and {@link #gridFns}.
      * @returns {Object} Runtime uniform variables.
      */
-    #gridUniformVars(grid) {
+    #gridUniformVars(grid, prefix="") {
         return {
-            nums: [grid.numX, grid.numY, grid.numZ],
-            ofs_res: new Vector4(grid.ofs.x, grid.ofs.y, grid.ofs.z, grid.res),
+            [prefix + "nums"]: [grid.numX, grid.numY, grid.numZ],
+            [prefix + "ofs_res"]: new Vector4(grid.ofs.x, grid.ofs.y, grid.ofs.z, grid.res),
         };
     }
 
@@ -1509,14 +1461,14 @@ export class GpuKernels {
         const uniforms = {
             jump_step: "u32"
         };
-        Object.assign(uniforms, this.gridUniformDefs);
+        Object.assign(uniforms, this.#gridUniformDefs());
         const uniformDef = new PipelineUniformDef(uniforms);
 
         const pipeline = this.#createPipeline(`jump_flood`, 1, `
             @group(0) @binding(0) var<storage, read_write> df: array<vec4f>; // xyz:seed, w:dist (-1 is invalid)
             ${uniformDef.shaderVars()}
 
-            ${this.gridFns}
+            ${this.#gridFns()}
 
             @compute @workgroup_size(${this.wgSize})
             fn jump_flood(@builtin(global_invocation_id) id: vec3u) {
@@ -1563,10 +1515,12 @@ export class GpuKernels {
 
     #compileShapeQueryPipeline() {
         const uniforms = {
-            coarse_block_size: "u32",
+            block_size: "u32",
+            fine_offset: "f32",
         };
-        Object.assign(uniforms, this.gridUniformDefs); // fine grid
-        Object.assign(uniforms, uberSdfUniformDefs());
+        Object.assign(uniforms, this.#gridUniformDefs()); // fine grid
+        Object.assign(uniforms, this.#gridUniformDefs("coarse_")); // coarse grid
+        Object.assign(uniforms, uberSdfUniformDefs);
         const uniformDef = new PipelineUniformDef(uniforms);
 
         const pipeline = this.#createPipeline(`shape_query`, 2, `
@@ -1574,7 +1528,14 @@ export class GpuKernels {
             @group(0) @binding(1) var<storage, read_write> vs_out_coarse: array<u32>;
             ${uniformDef.shaderVars()}
 
-            ${this.gridFns} // grid data for fine grid
+            ${this.#gridFns()} // grid data for fine grid
+            ${this.#gridFns("coarse_")} // grid data for coarse grid
+
+            fn sdf(p: vec3f) -> f32 {
+                var d = f32(0);
+                ${uberSdfSnippet("p", "d")}
+                return d;
+            }
 
             @compute @workgroup_size(${this.wgSize})
             fn shape_query(@builtin(global_invocation_id) id: vec3u) {
@@ -1582,9 +1543,38 @@ export class GpuKernels {
                 if (gix >= arrayLength(&vs_out_coarse)) {
                     return;
                 }
+                let coarse_ix3 = coarse_decompose_ix(gix);                
+
+                // prune with coarse grid
+                let coarse_p = coarse_cell_center(coarse_ix3);
+                let coarse_offset = coarse_ofs_res.w * sqrt(3) * 0.5;
+                if (sdf(coarse_p) > coarse_offset + fine_offset) {
+                    vs_out_coarse[gix] = 0; // this block don't overlap with the shape
+                    return;
+                }
                 
-                // check coarse grid center
-                
+                // check all voxels in the block
+                var num_hit = 0u;
+                for (var dz = 0u; dz < block_size; dz++) {
+                    for (var dy = 0u; dy < block_size; dy++) {
+                        for (var dx = 0u; dx < block_size; dx++) {
+                            let fine_ix3 = coarse_ix3 * block_size + vec3u(dx, dy, dz);
+                            if (any(fine_ix3 >= nums)) {
+                                continue;
+                            }
+                            let fine_ix = compose_ix(fine_ix3);
+                            let fine_p = cell_center(fine_ix3);
+                            if (vs_in_fine[fine_ix] == 0) {
+                                continue;
+                            }
+                            if (sdf(fine_p) > fine_offset) {
+                                continue;
+                            }
+                            num_hit++;
+                        }
+                    }
+                }
+                vs_out_coarse[gix] = num_hit;
             }
         `, uniformDef);
         this.shapeQueryPipeline = { pipeline, uniformDef };
@@ -1610,37 +1600,50 @@ export class GpuKernels {
     }
 
     /**
-     * Checks if any voxel exists inside shape.
+     * Count existing cells inside the shape.
      * 
      * @param {Object} shape
      * @param {VoxelGridGpu} inVg(u32). Non-zero means exist.
      * @param {"in" | "out" | "nearest"} boundary
-     * @returns {Promise<boolean>}
+     * @returns {Promise<number>}
      * @async
      */
-    async anyInShape(shape, inVg, boundary) {
-        // TODO: Gen candidate big voxels, and only dispatch them.
-        const options = { offset: this.boundaryOffset(inVg, boundary) };
-        Object.assign(options, uberSdfUniformVars(shape));
+    async countInShape(shape, inVg, boundary) {
+        const cis = this.perfBegin("  countInShape");
+        const BLOCK_SIZE = 8;
 
-        // IN: IN VG (detailed)
-        // OUT: FLAG VG (coarse)
-        // coarse grid dispatch (nums, ofs, res)
-        // center -> check
-        // if fail: write false & exit.
-        // if pass: scan 8^3 blocks, OR them and store result to coarse grid and exit.
-        // --
-        // apply OR to coarse grid. (reduce). copy result to CPU.
+        const nbx = Math.floor(inVg.numX / BLOCK_SIZE) + 1;
+        const nby = Math.floor(inVg.numY / BLOCK_SIZE) + 1;
+        const nbz = Math.floor(inVg.numZ / BLOCK_SIZE) + 1;
 
-        let t = performance.now();
-        const flagVg = this.createLike(inVg, "u32");
-        await this.map("check_sdf", inVg, flagVg, options);
-        //console.log(`  anyInShape:map: ${performance.now() - t}ms`);
-        t = performance.now();
-        const count = await this.reduce("sum", flagVg);
-        //console.log(`  anyInShape:reduce: ${performance.now() - t}ms`);
-        this.destroy(flagVg);
-        return count > 0;
+        const coarseVg = new VoxelGridGpu(this, inVg.res * BLOCK_SIZE, nbx, nby, nbz, inVg.ofs, "u32");
+
+        // Count all cells using coarse grid.
+        const { pipeline, uniformDef } = this.shapeQueryPipeline;
+        const uniforms = {
+            block_size: BLOCK_SIZE,
+            fine_offset: this.boundaryOffset(inVg, boundary),
+        };
+        Object.assign(uniforms, this.#gridUniformVars(inVg));
+        Object.assign(uniforms, this.#gridUniformVars(coarseVg, "coarse_"));
+        Object.assign(uniforms, uberSdfUniformVars(shape));
+
+        const commandEncoder = this.device.createCommandEncoder();
+        let binds = uniformDef.createBuffers(this, uniforms); // this+destroy is about 7ms. TODO: optimize
+        this.#dispatchKernel(commandEncoder, pipeline, [inVg.buffer, coarseVg.buffer], nbx * nby * nbz, binds);
+        this.device.queue.submit([commandEncoder.finish()]);
+        
+        for (const [_, buf] of binds) {
+            buf.destroy();
+        }
+        
+        // Sum all cells using coarse grid.
+        let count = await this.reduce("sum", coarseVg); // TODO: significant part of countInShape is spent here.
+        this.destroy(coarseVg);
+
+        cis.end();
+        
+        return count;
     }
 
     /**

@@ -491,8 +491,7 @@ class TrackingVoxelGrid {
             this.cacheBlocked = this.kernels.createLike(this.vx, "u32");
             await this.kernels.map("blocked", this.vx, this.cacheBlocked);
         }
-        const result = await this.kernels.anyInShape(shape, this.cacheBlocked, "out");
-        return result;
+        return await this.kernels.countInShape(shape, this.cacheBlocked, "out") > 0;
     }
 
     /**
@@ -516,8 +515,7 @@ class TrackingVoxelGrid {
             this.cacheHasWork = this.kernels.createLike(this.vx, "u32");
             await this.kernels.map("has_work", this.vx, this.cacheHasWork);
         }
-        const result = await this.kernels.anyInShape(shape, this.cacheHasWork, "nearest");
-        return result;
+        return await this.kernels.countInShape(shape, this.cacheHasWork, "nearest") > 0;
     }
 
     static combineTargetWork(t, w) {
@@ -1546,9 +1544,9 @@ class Planner {
             //   state: "blocked" | "work" | "empty" // blocked = contains non-cuttable bits, work = cuttable & has non-zero work, empty = accessible and no work
             // }
             const rows = new Array(numRows);
-            const promises = [];
+            //const promises = [];
             for (let ixRow = 0; ixRow < numRows; ixRow++) {
-                promises.push((async () => {
+                
                     const row = new Array(numSegs);
                     rows[ixRow] = row;
 
@@ -1581,9 +1579,9 @@ class Planner {
                         })());
                     }
                     await Promise.all(rowPromises);
-                })());
+                
             }
-            await Promise.all(promises);
+            //await Promise.all(promises);
 
             // From segemnts, create "scans".
             // Scan will end at scanEndBot = apBot + scanDir * scanLen. half-cylinder of toolDiameter will extrude from scanEndBot at max.

@@ -164,4 +164,24 @@ QUnit.module('gpu', function () {
             assert.equal(sum, nx * ny * nz);
         }
     });
+
+    QUnit.test('countInShape-match-cpu', async function (assert) {
+        const adapter = await navigator.gpu.requestAdapter();
+        const device = await adapter.requestDevice();
+        const kernels = new GpuKernels(device);
+
+        // Prepare arbitrary filled grids.
+        const gridCpu = new VoxelGridCpu(0.1, 10, 10, 10, new Vector3(0, 0, 0), "u32");
+        gridCpu.map((v, p) => p.z > 0.5);
+        const gridGpu = kernels.createLike(gridCpu);
+        await kernels.copy(gridCpu, gridGpu);
+
+        // Arbitrary shape.
+        const shape = createBoxShape(new Vector3(0.5, 0.5, 0.5), new Vector3(0.2, 0, 0), new Vector3(0, 0.2, 0), new Vector3(0, 0, 0.2));
+
+        const sdf = createSdf(shape);
+        const ref = gridCpu.countIf((v, p) => v > 0 && sdf(p) <= 0);
+        const test = await kernels.countInShape(shape, gridGpu, "nearest");
+        assert.equal(test, ref);
+    });
 });
