@@ -1690,12 +1690,10 @@ export class GpuKernels {
 
         const commandEncoder = this.device.createCommandEncoder();
         this.#dispatchKernel(commandEncoder, pipeline, [inVg.buffer, coarseVg.buffer], nbx * nby * nbz, uniformDef.getUniformBufs(this, uniforms));
-    
+
         // Sum all cells using coarse grid.
         this.reduceRaw("sum", coarseVg, resultBuf, resultBufOffset, commandEncoder, 1); // 1, because of previous dispatch
-
         this.device.queue.submit([commandEncoder.finish()]);
-        this.destroy(coarseVg);
     }
 
     /**

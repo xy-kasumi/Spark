@@ -28,8 +28,8 @@ const loadFont = async () => {
 };
 
 const debug = {
-    vlog: (o) => {throw new Error("not initialized yet");},
-    vlogE: (o) => {throw new Error("not initialized yet");},
+    vlog: (o) => { throw new Error("not initialized yet"); },
+    vlogE: (o) => { throw new Error("not initialized yet"); },
     strict: false, // should raise exception at logic boundary even when it can continue.
     log: true, // emit vlogs (this is useful, because currently vlogs are somewhat slow)
 };
@@ -154,16 +154,12 @@ class TrackingVoxelGrid {
             if (p.z < thresh_z && vi == ${C_EMPTY_REMAINING}) {
                 vo = ${C_FULL_DONE};
             }
-        `, { thresh_z: "f32"});
+        `, { thresh_z: "f32" });
 
-        /*
-        TODO: protectedWork logic for work_deviation
-        if (excludeProtectedWork && this.protectedWorkBelowZ !== undefined && this.centerOf(ix, iy, iz).z < this.protectedWorkBelowZ + this.res) {
-            dist.set(ix, iy, iz, -1); // protected work -> empty
-        }
-        */
         this.kernels.registerMap2Fn("work_deviation", "f32", "u32", "f32", `
-            if (vi2 == ${C_EMPTY_DONE}) {
+            if (p.z < exclude_below_z) {
+                vo = -1; // treat as empty
+            } else if (vi2 == ${C_EMPTY_DONE}) {
                 vo = -1; // empty
             } else if (vi1 == 0) {
                 vo = 0; // inside
@@ -172,12 +168,12 @@ class TrackingVoxelGrid {
                 // because of triangle inequality.
                 vo = vi1 + vx_diag;
             }
-            `, { vx_diag: "f32"}
+            `, { vx_diag: "f32", exclude_below_z: "f32" }
         );
 
         this.kernels.registerMapFn("not_tg_empty", "u32", "u32",
             `if (vi != ${C_EMPTY_DONE} && vi != ${C_EMPTY_REMAINING}) { vo = 1; } else { vo = 0; }`);
-        
+
         this.kernels.registerMapFn("extract_target", "u32", "u32", `
             if (vi == ${C_FULL_DONE}) {
                 vo = 255;
@@ -331,8 +327,9 @@ class TrackingVoxelGrid {
      * @async
      */
     async extractWorkWithDeviation(excludeProtectedWork = false) {
+        let zThresh = excludeProtectedWork ? this.protectedWorkBelowZ + this.res : -1e3; // +this.res ensures removal of cells just at the Z boundary.
         const res = this.kernels.createLike(this.vx, "f32");
-        this.kernels.map2("work_deviation", this.distField, this.vx, res, { "vx_diag": this.res * Math.sqrt(3) });
+        this.kernels.map2("work_deviation", this.distField, this.vx, res, { "vx_diag": this.res * Math.sqrt(3), "exclude_below_z": zThresh });
         return res;
     }
 
@@ -406,6 +403,9 @@ class TrackingVoxelGrid {
                 for (let z = 0; z < this.numZ; z++) {
                     for (let y = 0; y < this.numY; y++) {
                         for (let x = 0; x < this.numX; x++) {
+                            if (overcutVgCpu.get(x, y, z) == 0) {
+                                continue;
+                            }
                             debug.vlogE(visDot(this.#centerOf(x, y, z), "violet"));
                         }
                     }
@@ -428,7 +428,7 @@ class TrackingVoxelGrid {
         this.kernels.destroy(resultVg);
         const numRemoved = await this.kernels.reduce("sum", removedVg);
         this.kernels.destroy(removedVg);
-        
+
         this.#updateWorkDependentCache();
 
         return numRemoved * this.res ** 3;
@@ -512,6 +512,8 @@ class TrackingVoxelGrid {
                 this.kernels.countInShapeRaw(shape, this.cacheBlocked, "out", resultBuf, offset);
             } else if (query === "has_work") {
                 this.kernels.countInShapeRaw(shape, this.cacheHasWork, "nearest", resultBuf, offset);
+            } else {
+                throw `Invalid query type: ${query}`;
             }
         }
         const readBuf = this.kernels.createBufferForCpuRead(4 * queries.length);
@@ -649,6 +651,7 @@ const generateStockGeom = (stockRadius = 7.5, stockHeight = 15) => {
  * @returns {THREE.Object3D} Visualization object
  */
 const createVgVis = (vg, label = "", mode = "occupancy") => {
+    const t0 = performance.now();
     const cubeSize = vg.res * 1.0;
     const cubeGeom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
 
@@ -788,6 +791,7 @@ const createVgVis = (vg, label = "", mode = "occupancy") => {
         meshContainer.add(textMesh);
     }
 
+    console.log(`createVgVis took ${performance.now() - t0}ms`);
     return meshContainer;
 };
 
@@ -1321,7 +1325,7 @@ class Planner {
         this.stockDiameter = 15;
         this.workCRot = 0;
 
-        this.resMm = 0.25;
+        this.resMm = 0.1;
         this.stockCutWidth = 1.0; // width of tool blade when cutting off the work.
         this.simWorkBuffer = 1.0; // extended bottom side of the work by this amount.
 
@@ -1352,7 +1356,7 @@ class Planner {
      * @param {lilgui} gui - lilgui instance
      */
     guiHook(gui) {
-        gui.add(this, "resMm", [1e-3, 5e-2, 1e-2, 1e-1, 0.25, 0.5, 1]);
+        gui.add(this, "resMm", [0.01, 0.05, 0.1, 0.2, 0.5]);
 
         gui.add(this, "genAllSweeps");
         gui.add(this, "genNextSweep");
@@ -1570,21 +1574,21 @@ class Planner {
                     // even if above region is cuttable, it will alter tool state unexpectedly.
                     // Current logic only works correctly if scan pattern is same for different offset.
                     const qixBlocked = queries.length;
-                    queries.push({shape: segShapeAndAbove, query: "blocked"});
+                    queries.push({ shape: segShapeAndAbove, query: "blocked" });
                     const qixHasWork = queries.length;
-                    queries.push({shape: segShape, query: "has_work"});
-                    rows[ixRow][ixSeg] = {qixBlocked, qixHasWork};
+                    queries.push({ shape: segShape, query: "has_work" });
+                    rows[ixRow][ixSeg] = { qixBlocked, qixHasWork };
                 }
             }
             const queryResults = await this.trvg.parallelQuery(queries);
             for (let ixRow = 0; ixRow < numRows; ixRow++) {
                 for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
-                    const {qixBlocked, qixHasWork} = rows[ixRow][ixSeg];
+                    const { qixBlocked, qixHasWork } = rows[ixRow][ixSeg];
                     const isBlocked = queryResults[qixBlocked];
                     const hasWork = queryResults[qixHasWork];
                     const state = isBlocked ? "blocked" : (hasWork ? "work" : "empty");
                     rows[ixRow][ixSeg] = state;
-                    
+
                     if (debug.log) {
                         if (state === "blocked") {
                             if (hasWork) {
@@ -1793,6 +1797,7 @@ class Planner {
          */
         const genDrillSweep = async (normal, toolDiameter) => {
             console.log(`genDrillSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), toolDiameter: ${toolDiameter}`);
+            const t0 = performance.now();
 
             const normalRange = await this.trvg.queryWorkRange(normal);
             const depthDelta = toolDiameter;
@@ -1812,71 +1817,92 @@ class Planner {
             const scanOrigin = offsetPoint(new THREE.Vector3(), [scanDir0, scanRange0.min], [scanDir1, scanRange1.min], [normal, normalRange.max + depthDelta]);
             const numScan0 = Math.ceil((scanRange0.max - scanRange0.min) / scanRes);
             const numScan1 = Math.ceil((scanRange1.max - scanRange1.min) / scanRes);
+            const numScanDepth = Math.ceil(maxDepth / depthDelta);
 
             // grid query for drilling
             // if ok, just drill it with helical downwards path.
-            const drillHoles = [];
-            const promises = [];
+            const drillHoleQs = [];
+            const queries = [];
             for (let ixScan0 = 0; ixScan0 < numScan0; ixScan0++) {
                 for (let ixScan1 = 0; ixScan1 < numScan1; ixScan1++) {
-                    promises.push((async () => {
-                        const scanPt = offsetPoint(scanOrigin, [scanDir0, scanRes * ixScan0], [scanDir1, scanRes * ixScan1]);
-                        let currDepth = depthDelta;
+                    const scanPt = offsetPoint(scanOrigin, [scanDir0, scanRes * ixScan0], [scanDir1, scanRes * ixScan1]);
+                    const qixsBlocked = [];
+                    const qixsHasWork = [];
+                    for (let ixScanDepth = 0; ixScanDepth < numScanDepth; ixScanDepth++) {
+                        // holeTopDepth = -depthDelta * ixScanDepth
+                        const holeBot = offsetPoint(scanPt, [normal, -depthDelta * (1 + ixScanDepth)]);
+                        const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2, depthDelta);
 
-                        // Find begin depth (just before hitting work)
-                        let depthBegin = null;
-                        while (currDepth < maxDepth) {
-                            const holeBot = offsetPoint(scanPt, [normal, -currDepth]);
-                            const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2, depthDelta);
+                        const qixBlocked = queries.length;
+                        queries.push({ shape: holeShape, query: "blocked" });
+                        const qixHasWork = queries.length;
+                        queries.push({ shape: holeShape, query: "has_work" });
 
-                            if (await this.trvg.queryBlocked(holeShape)) {
-                                break; // this location was no good
-                            }
-                            if (await this.trvg.queryHasWork(holeShape)) {
-                                depthBegin = currDepth - depthDelta; // good begin depth found
-                                break;
-                            }
-                            currDepth += depthDelta;
-                        }
-                        if (depthBegin === null) {
-                            debug.vlog(visDot(scanPt, "gray"));
-                            return;
-                        }
-
-                        // Find end depth
-                        currDepth += depthDelta;
-                        let depthEnd = null;
-                        while (true) {
-                            const holeBot = offsetPoint(scanPt, [normal, -currDepth]);
-                            const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2, depthDelta);
-                            // TODO: this can stop too early (when holes span multiple separate layers).
-                            if (await this.trvg.queryBlocked(holeShape) || !await this.trvg.queryHasWork(holeShape)) {
-                                // end found
-                                depthEnd = currDepth - depthDelta;
-                                break;
-                            }
-                            currDepth += depthDelta;
-                        }
-
-                        const holeTop = offsetPoint(scanPt, [normal, -depthBegin]);
-                        const holeBot = offsetPoint(scanPt, [normal, -depthEnd]);
-                        debug.vlog(visDot(holeTop, "red"));
-                        debug.vlog(visDot(holeBot, "blue"));
-
-                        drillHoles.push({
-                            holeBot,
-                            holeTop,
-                        });
-                    })());
+                        qixsBlocked.push(qixBlocked);
+                        qixsHasWork.push(qixHasWork);
+                    }
+                    drillHoleQs.push({ scanPt, qixsBlocked, qixsHasWork });
                 }
             }
-            await Promise.all(promises);
+            console.log(`  genDrillSweep: #holeCandidates=${drillHoleQs.length}, #queries=${queries.length}`);
+            const queryResults = await this.trvg.parallelQuery(queries);
+
+            const drillHoles = [];
+            for (const hole of drillHoleQs) {
+                // Find begin depth.
+                let currDepthIx = 0;
+                let depthBegin = null;
+                while (currDepthIx < numScanDepth) {
+                    const blocked = queryResults[hole.qixsBlocked[currDepthIx]];
+                    const hasWork = queryResults[hole.qixsHasWork[currDepthIx]];
+
+                    if (blocked) {
+                        break; // this location was no good (no work before being blocked)
+                    }
+                    if (hasWork) {
+                        depthBegin = depthDelta * currDepthIx; // good begin depth = holeTop
+                        break;
+                    }
+                    currDepthIx++;
+                }
+                if (depthBegin === null) {
+                    if (debug.log) {
+                        debug.vlog(visDot(hole.scanPt, "gray"));
+                    }
+                    continue;
+                }
+
+                // Find end depth.
+                currDepthIx++;
+                let depthEnd = depthDelta * numScanDepth;
+                while (currDepthIx < numScanDepth) {
+                    const blocked = queryResults[hole.qixsBlocked[currDepthIx]];
+                    const hasWork = queryResults[hole.qixsHasWork[currDepthIx]];
+                    // TODO: this can stop too early (when holes span multiple separate layers).
+                    if (blocked || !hasWork) {
+                        depthEnd = depthDelta * currDepthIx; // end = holeTop
+                        break;
+                    }
+                    currDepthIx++;
+                }
+
+                const holeTop = offsetPoint(hole.scanPt, [normal, -depthBegin]);
+                const holeBot = offsetPoint(hole.scanPt, [normal, -depthEnd]);
+                if (debug.log) {
+                    debug.vlog(visDot(holeTop, "red"));
+                    debug.vlog(visDot(holeBot, "blue"));
+                }
+                drillHoles.push({
+                    holeBot,
+                    holeTop,
+                });
+            }
             if (drillHoles.length === 0) {
+                console.log(`genDrillSweep: took ${performance.now() - t0}ms`);
                 return null;
             }
 
             // TODO: pick best hole (= removes most work)
-
 
             // Generate paths
             const evacuateOffset = normal.clone().multiplyScalar(3);
@@ -1890,6 +1916,7 @@ class Planner {
                 sweepPath.nonRemove("move-out", hole.holeTop.clone().add(evacuateOffset));
             });
 
+            console.log(`genDrillSweep: took ${performance.now() - t0}ms`);
             return {
                 partialPath: sweepPath,
             };
@@ -1973,7 +2000,7 @@ class Planner {
                     const workDevCpu = this.kernels.createLikeCpu(workDeviation);
                     await this.kernels.copy(workDeviation, workDevCpu);
                     this.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath, false);
-                    // this.updateVis("work-vg", [createVgVis(workDevCpu, "work-vg", "deviation")], this.showWork);
+                    this.updateVis("work-vg", [createVgVis(workDevCpu, "work-vg", "deviation")], this.showWork);
                     const lastPt = this.planPath[this.planPath.length - 1];
                     this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
                     this.deviation = workDevCpu.max();
@@ -2004,7 +2031,7 @@ class Planner {
             if (this.numSweeps >= 10) {
                 const dtSec = (performance.now() - t0) / 1e3;
                 console.log(`measurement milestone reached after ${dtSec}sec tot, ${dtSec / this.numSweeps}sec/sweep`);
-                return;
+                // return;
             }
         }
 
@@ -2066,13 +2093,21 @@ class View3D {
         // Visually log debug info.
         // [in] obj: THREE.Object3D
         debug.vlog = (obj) => {
+            if (this.vlogDebugs.length > 1000000) {
+                console.warn("vlog: too many debugs, cannot log more");
+                return;
+            }
             this.vlogDebugs.push(obj);
-            this.addVis("vlog-debug", this.vlogDebugs, this.showVlogDebug);
+            this.addVis("vlog-debug", [obj], this.vlogDebugShow);
         };
 
         // Visually log errors.
         // [in] obj: THREE.Object3D
         debug.vlogE = (obj) => {
+            if (this.vlogErrors.length > 1000000) {
+                console.warn("vlogE: too many errors, cannot log more");
+                return;
+            }
             this.vlogErrors.push(obj);
             this.scene.add(obj);
         };
