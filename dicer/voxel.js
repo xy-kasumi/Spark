@@ -616,48 +616,45 @@ class PipelineUniformDef {
      * @param {GpuKernels} kernels 
      * @param {Object} vars {varName: value}
      * @throws {Error} If any input is invalid.
-     * @returns {[number, GPUBuffer][]} Array of [bindingId, buffer]
+     * @returns {[number, GPUBuffer, number, number][]} Array of [bindingId, buffer, offset, size]
      */
     createBuffers(kernels, vars) {
         this.checkInput(vars);
 
+        const entrySize = Math.max(16, kernels.device.limits.minUniformBufferOffsetAlignment);
+        const bufSize = Object.entries(this.bindings).length * entrySize;
+
         const binds = [];
-        for (const [varName, binding] of Object.entries(this.bindings)) {
-            const { bindingId, type } = binding;
-            const val = vars[varName];
-            let buf = null;
-            // To be conservative about memory alignment, always using 32-byte buffer.
-            // TODO: is this too much?
-            if (type === "vec4f") {
-                const nums = this.extractArrayLikeOrVector(4, val);
-                buf = kernels.createUniformBuffer(32, (ptr) => {
-                    new Float32Array(ptr, 0, 4).set(nums);
-                });
-            } else if (type === "vec3f") {
-                const nums = this.extractArrayLikeOrVector(3, val);
-                buf = kernels.createUniformBuffer(32, (ptr) => {
-                    new Float32Array(ptr, 0, 3).set(nums);
-                });
-            } else if (type === "vec4u") {
-                const nums = this.extractArrayLikeOrVector(4, val);
-                buf = kernels.createUniformBuffer(32, (ptr) => {
-                    new Uint32Array(ptr, 0, 4).set(nums);
-                });
-            } else if (type === "vec3u") {
-                const nums = this.extractArrayLikeOrVector(3, val);
-                buf = kernels.createUniformBuffer(32, (ptr) => {
-                    new Uint32Array(ptr, 0, 3).set(nums);
-                });
-            } else if (type === "f32") {
-                buf = kernels.createUniformBuffer(32, (ptr) => {
-                    new Float32Array(ptr, 0, 1).set([val]);
-                });
-            } else if (type === "u32") {
-                buf = kernels.createUniformBuffer(32, (ptr) => {
-                    new Uint32Array(ptr, 0, 1).set([val]);
-                });
+        const buf = kernels.createUniformBuffer(bufSize, (ptr) => {
+            let ix = 0;
+            for (const [varName, binding] of Object.entries(this.bindings)) {
+                const { bindingId, type } = binding;
+                const val = vars[varName];
+                const entryOffset = entrySize * ix;
+
+                if (type === "vec4f") {
+                    const nums = this.extractArrayLikeOrVector(4, val);
+                    new Float32Array(ptr, entryOffset, 4).set(nums);
+                } else if (type === "vec3f") {
+                    const nums = this.extractArrayLikeOrVector(3, val);
+                    new Float32Array(ptr, entryOffset, 3).set(nums);
+                } else if (type === "vec4u") {
+                    const nums = this.extractArrayLikeOrVector(4, val);
+                    new Uint32Array(ptr, entryOffset, 4).set(nums);
+                } else if (type === "vec3u") {
+                    const nums = this.extractArrayLikeOrVector(3, val);
+                    new Uint32Array(ptr, entryOffset, 3).set(nums);
+                } else if (type === "f32") {
+                    new Float32Array(ptr, entryOffset, 1).set([val]);
+                } else if (type === "u32") {
+                    new Uint32Array(ptr, entryOffset, 1).set([val]);
+                }
+                binds.push([bindingId, null, entryOffset, entrySize]);
+                ix++;
             }
-            binds.push([bindingId, buf]);
+        });
+        for (const bind of binds) {
+            bind[1] = buf;
         }
         return binds;
     }
@@ -1255,13 +1252,13 @@ export class GpuKernels {
      * @param {{pipeline: GPUComputePipeline, uniforms: PipelineUniformDef}} pipeline Pipeline to use
      * @param {GPUBuffer[]} denseBinds Array of buffers to bind (assigned to binding 0, 1, 2, ...)
      * @param {number} numThreads Number of total threads (wanted kernel execs)
-     * @param {[[number, GPUBuffer]]} sparseBinds Sparse entries to bind (bindingId, buffer).
+     * @param {[[number, GPUBuffer, number, number]]} sparseBinds Sparse entries to bind (bindingId, buffer, offset, size).
      * @private
      */
     #dispatchKernel(commandEncoder, pipeline, denseBinds, numThreads, sparseBinds = []) {
         const entries = denseBinds.map((buf, i) => ({ binding: i, resource: { buffer: buf } }));
-        for (const [bindingId, buf] of sparseBinds) {
-            entries.push({ binding: bindingId, resource: { buffer: buf } });
+        for (const [bindingId, buffer, offset, size] of sparseBinds) {
+            entries.push({ binding: bindingId, resource: { buffer, offset, size } });
         }
 
         const bindGroup = this.device.createBindGroup({
