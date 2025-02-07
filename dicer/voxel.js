@@ -721,12 +721,6 @@ export class GpuKernels {
         this.reducePipelines = {};
         this.perf = {};
 
-        this.sharedReduceResultElemSize = 4;
-        this.sharedReduceResultNumElems = 1024;
-        this.sharedReduceResultBufferSize = this.sharedReduceResultElemSize * this.sharedReduceResultNumElems;
-        this.sharedReduceResultBufferGpu = this.createBuffer(this.sharedReduceResultBufferSize);
-        this.sharedReduceResultResolves = [];
-
         this.#initGridUtils();
     }
 
@@ -1064,18 +1058,16 @@ export class GpuKernels {
     }
 
     /**
-     * Run reduction. Reduce is slow if called many times, because of GPU->CPU copy.
-     * By enabling optimizeForBulk, results is bulk-read and thus faster.
-     * However, if you forget to call {@link flushPendingReduce} when optimizeForBulk is true, reduce() call will get stuck forever.
+     * Run reduction and store result to specfied location of the buffer.
      * 
      * @param {string} fnName Function registered in {@link registerReduceFn}.
      * @param {VoxelGridGpu} inVg 
-     * @param {boolean} optimizeForBulk If true, caller need to call {@link flushPendingReduce} to unblock result return.
-     * @returns {Promise<number>}
-     * @async
+     * @param {GPUBuffer} resultBuf Buffer to store result.
+     * @param {number} resultBufOfs Result (4byte) is stored into [offset, offset+4) of resultBuf.
+     * @param {GPUCommandEncoder} cme Optional external command encoder to use (if supplied, caller must call .submit()).
+     * @param {number} uniBufIxBegin Index of begin of uniform buffer bindings, when cme !== null.
      */
-    async reduce(fnName, inVg, optimizeForBulk = false, cme = null) {
-        const redPerf = this.perfBegin(`  reduce:${fnName}`);
+    reduceRaw(fnName, inVg, resultBuf, resultBufOfs, cme = null, uniBufIxBegin = 0) {
         if (!this.reducePipelines[fnName]) {
             throw new Error(`Reduce fn "${fnName}" not registered`);
         }
@@ -1111,7 +1103,7 @@ export class GpuKernels {
 
         const commandEncoder = cme ?? this.device.createCommandEncoder();
         let numElems = inVg.numX * inVg.numY * inVg.numZ;
-        let uniBufIx = 1; // 0 is used by caller. this is mssed up
+        let uniBufIx = uniBufIxBegin;
         while (numElems > 1) {
             const binds = uniformDef.getUniformBufs(this, { num_active: numElems }, uniBufIx);
             this.#dispatchKernel(commandEncoder, pipeline, [getBuf(activeBufIx), getBuf(nextIx(activeBufIx))], numElems, binds);
@@ -1119,78 +1111,42 @@ export class GpuKernels {
             numElems = Math.ceil(numElems / this.wgSize);
             uniBufIx++;
         }
-        const ix = this.sharedReduceResultResolves.length;
-        if (optimizeForBulk) {
-
-            if (ix >= this.sharedReduceResultNumElems) {
-                throw new Error("Too many pending reduce(optimizeForBulk=true) calls");
-            }
-            commandEncoder.copyBufferToBuffer(getBuf(activeBufIx), 0, this.sharedReduceResultBufferGpu, ix * this.sharedReduceResultElemSize, this.sharedReduceResultElemSize);
-        }
-
-        this.device.queue.submit([commandEncoder.finish()]);
-
-        if (optimizeForBulk) {
-            const { promise, resolve } = this.#createSharedReduceLock();
-            this.sharedReduceResultResolves.push(resolve);
-            redPerf.end();
-            //console.log("reduce done-"+ix);
-            const v = await promise;
-            //console.log("reduce done2-"+ix);
-            return v;
-        } else {
-            const readBuf = this.createBufferForCpuRead(4);
-            await this.copyBuffer(getBuf(activeBufIx), readBuf, 4);
-            await readBuf.mapAsync(GPUMapMode.READ); // TODO: read bulk from shared buffer.
-            let result = null;
-            if (valType === "u32") {
-                result = new Uint32Array(readBuf.getMappedRange())[0];
-            } else if (valType === "f32") {
-                result = new Float32Array(readBuf.getMappedRange())[0];
-            } else {
-                throw "unexpected valType";
-            }
-
-            readBuf.unmap();
-            readBuf.destroy();
-
-            redPerf.end();
-            return result;
+        commandEncoder.copyBufferToBuffer(getBuf(activeBufIx), 0, resultBuf, resultBufOfs, 4);
+        if (!cme) {
+            this.device.queue.submit([commandEncoder.finish()]);
         }
     }
 
     /**
-     * @returns {{promise: Promise<void>, resolve: Function}}
-     */
-    #createSharedReduceLock() {
-        let resolve;
-        const promise = new Promise((r) => { resolve = r; });
-        return { promise, resolve };
-    }
-
-    /**
-     * Unblock all the pending reduce(optimizeForBulk=true) calls.
-     * @param {"u32" | "f32"} valType. Must match to reduce calls.
-     * @returns {Promise<void>}
+     * Run reduction. Reduce is slow if called many times, because of GPU->CPU copy.
+     * In that case, you can use {@link reduceRaw}.
+     * 
+     * @param {string} fnName Function registered in {@link registerReduceFn}.
+     * @param {VoxelGridGpu} inVg 
+     * @returns {Promise<number>}
      * @async
      */
-    async flushPendingReduce(valType) {
-        const constructors = {
-            "u32": Uint32Array,
-            "f32": Float32Array,
-        };
-        const readBuf = this.createBufferForCpuRead(this.sharedReduceResultBufferSize);
-        await this.copyBuffer(this.sharedReduceResultBufferGpu, readBuf, this.sharedReduceResultBufferSize);
+    async reduce(fnName, inVg) {
+        const resultBuf = this.createBuffer(4);
+        const readBuf = this.createBufferForCpuRead(4);
+
+        this.reduceRaw(fnName, inVg, resultBuf, 0);
+        const valType = this.reducePipelines[fnName].valType;
+        await this.copyBuffer(resultBuf, readBuf, 4);
+        resultBuf.destroy();
+
         await readBuf.mapAsync(GPUMapMode.READ);
-        const result = new constructors[valType](readBuf.getMappedRange());
-        console.log(`flushing ${this.sharedReduceResultResolves.length} pending reduce(optimizeForBulk=true) calls`);
-        for (let i = 0; i < this.sharedReduceResultResolves.length; i++) {
-            this.sharedReduceResultResolves[i](result[i]);
+        let result = null;
+        if (valType === "u32") {
+            result = new Uint32Array(readBuf.getMappedRange())[0];
+        } else if (valType === "f32") {
+            result = new Float32Array(readBuf.getMappedRange())[0];
+        } else {
+            throw "unexpected valType";
         }
-        //console.log("flush done");
-        this.sharedReduceResultResolves = [];
         readBuf.unmap();
         readBuf.destroy();
+        return result;
     }
 
     /**
@@ -1704,13 +1660,11 @@ export class GpuKernels {
      * @param {Object} shape
      * @param {VoxelGridGpu} inVg(u32). Non-zero means exist.
      * @param {"in" | "out" | "nearest"} boundary
-     * @returns {Promise<number>}
-     * @async
+     * @param {GPUBuffer} resultBuf
+     * @param {number} resultBufOffset result will be written to [resultBufOffset, resultBufOffset + 4) as u32.
      */
-    async countInShape(shape, inVg, boundary, optimizeForBulk = false) {
-        const cis = this.perfBegin("  countInShape");
+    countInShapeRaw(shape, inVg, boundary, resultBuf, resultBufOffset) {
         const BLOCK_SIZE = 4;
-
         const nbx = Math.floor(inVg.numX / BLOCK_SIZE) + 1;
         const nby = Math.floor(inVg.numY / BLOCK_SIZE) + 1;
         const nbz = Math.floor(inVg.numZ / BLOCK_SIZE) + 1;
@@ -1729,15 +1683,36 @@ export class GpuKernels {
 
         const commandEncoder = this.device.createCommandEncoder();
         this.#dispatchKernel(commandEncoder, pipeline, [inVg.buffer, coarseVg.buffer], nbx * nby * nbz, uniformDef.getUniformBufs(this, uniforms));
-
+    
         // Sum all cells using coarse grid.
-        let count = await this.reduce("sum", coarseVg, optimizeForBulk, commandEncoder); // TODO: significant part of countInShape is spent here.
-        //this.device.queue.submit([commandEncoder.finish()]);
+        this.reduceRaw("sum", coarseVg, resultBuf, resultBufOffset, commandEncoder, 1); // 1, because of previous dispatch
 
+        this.device.queue.submit([commandEncoder.finish()]);
         this.destroy(coarseVg);
-        cis.end();
+    }
 
-        return count;
+    /**
+     * Count existing cells inside the shape.
+     * 
+     * @param {Object} shape
+     * @param {VoxelGridGpu} inVg(u32). Non-zero means exist.
+     * @param {"in" | "out" | "nearest"} boundary
+     * @returns {Promise<number>}
+     * @async
+     */
+    async countInShape(shape, inVg, boundary) {
+        const resultBuf = this.createBuffer(4);
+        const readBuf = this.createBufferForCpuRead(4);
+
+        this.countInShapeRaw(shape, inVg, boundary, resultBuf, 0);
+        await this.copyBuffer(resultBuf, readBuf, 4);
+        resultBuf.destroy();
+
+        await readBuf.mapAsync(GPUMapMode.READ);
+        const result = new Uint32Array(readBuf.getMappedRange())[0];
+        readBuf.unmap();
+        readBuf.destroy();
+        return result;
     }
 
     /**
