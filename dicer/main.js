@@ -28,14 +28,16 @@ const loadFont = async () => {
 };
 
 const debug = {
+    vlog: (o) => {throw new Error("not initialized yet");},
+    vlogE: (o) => {throw new Error("not initialized yet");},
     strict: false, // should raise exception at logic boundary even when it can continue.
+    log: true, // emit vlogs (this is useful, because currently vlogs are somewhat slow)
 };
 
 // orange-teal-purple color palette for ABC axes.
 const axisColorA = new THREE.Color(0xe67e22);
 const axisColorB = new THREE.Color(0x1abc9c);
 const axisColorC = new THREE.Color(0x9b59b6);
-
 
 /**
  * @param {THREE.Vector3} p Start point
@@ -62,13 +64,15 @@ const visCylinder = (p, n, r, col) => {
  * Quick visualization of a point.
  * 
  * @param {THREE.Vector3} p Location in work coords
- * @param {THREE.Color} col Color
+ * @param {THREE.Color | string} col Color
  * @returns {THREE.Mesh} Sphere visualization mesh
  */
 const visDot = (p, col) => {
-    const sphGeom = new THREE.SphereGeometry(0.1);
+    if (!debug.dotGeomCache) {
+        debug.dotGeomCache = new THREE.SphereGeometry(0.1);
+    }
     const sphMat = new THREE.MeshBasicMaterial({ color: col });
-    const sph = new THREE.Mesh(sphGeom, sphMat);
+    const sph = new THREE.Mesh(debug.dotGeomCache, sphMat);
     sph.position.copy(p);
     return sph;
 }
@@ -1526,12 +1530,14 @@ class Planner {
             const numRows = Math.ceil((rowRange.max - rowRange.min + 2 * margin) / feedWidth);
             const numSegs = Math.ceil((feedRange.max - feedRange.min + 2 * margin) / segmentLength);
 
-            debug.vlog(visDot(scanOrigin, "black"));
-            debug.vlog(visQuad(
-                scanOrigin,
-                rowDir.clone().multiplyScalar(feedWidth * numRows),
-                feedDir.clone().multiplyScalar(segmentLength * numSegs),
-                "gray"));
+            if (debug.log) {
+                debug.vlog(visDot(scanOrigin, "black"));
+                debug.vlog(visQuad(
+                    scanOrigin,
+                    rowDir.clone().multiplyScalar(feedWidth * numRows),
+                    feedDir.clone().multiplyScalar(segmentLength * numSegs),
+                    "gray"));
+            }
 
             const segCenterBot = (ixRow, ixSeg) => {
                 return offsetPoint(scanOrigin, [rowDir, feedWidth * ixRow], [feedDir, segmentLength * ixSeg], [normal, -feedDepth]);
@@ -1574,16 +1580,19 @@ class Planner {
                     const hasWork = queryResults[qixHasWork];
                     const state = isBlocked ? "blocked" : (hasWork ? "work" : "empty");
                     rows[ixRow][ixSeg] = state;
-                    if (state === "blocked") {
-                        if (hasWork) {
-                            debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "orange"));
+                    
+                    if (debug.log) {
+                        if (state === "blocked") {
+                            if (hasWork) {
+                                debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "orange"));
+                            } else {
+                                debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "red"));
+                            }
+                        } else if (state === "work") {
+                            debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "green"));
                         } else {
-                            debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "red"));
+                            debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "gray"));
                         }
-                    } else if (state === "work") {
-                        debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "green"));
-                    } else {
-                        debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "gray"));
                     }
                 }
             }
@@ -1960,7 +1969,7 @@ class Planner {
                     const workDevCpu = this.kernels.createLikeCpu(workDeviation);
                     await this.kernels.copy(workDeviation, workDevCpu);
                     this.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath, false);
-                    this.updateVis("work-vg", [createVgVis(workDevCpu, "work-vg", "deviation")], this.showWork);
+                    // this.updateVis("work-vg", [createVgVis(workDevCpu, "work-vg", "deviation")], this.showWork);
                     const lastPt = this.planPath[this.planPath.length - 1];
                     this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
                     this.deviation = workDevCpu.max();
@@ -2054,7 +2063,7 @@ class View3D {
         // [in] obj: THREE.Object3D
         debug.vlog = (obj) => {
             this.vlogDebugs.push(obj);
-            this.updateVis("vlog-debug", this.vlogDebugs, this.showVlogDebug);
+            this.addVis("vlog-debug", this.vlogDebugs, this.showVlogDebug);
         };
 
         // Visually log errors.
@@ -2087,7 +2096,8 @@ class View3D {
         this.showTargetMesh = true;
         this.updateVis("stock", [generateStock(this.stockDiameter / 2, this.stockLength)], this.showStockMesh);
 
-        this.showVlogDebug = false;
+        this.vlogDebugEnable = true;
+        this.vlogDebugShow = false;
 
         this.renderAoRadius = 5;
         this.renderDistFallOff = 1.0;
@@ -2128,7 +2138,10 @@ class View3D {
             this.setVisVisibility("target", v);
         }).listen();
 
-        gui.add(this, "showVlogDebug").onChange(v => {
+        gui.add(this, "vlogDebugEnable").onChange(v => {
+            debug.log = v;
+        });
+        gui.add(this, "vlogDebugShow").onChange(v => {
             this.updateVis("vlog-debug", this.vlogDebugs, v);
         });
         gui.add(this, "clearVlogDebug");
@@ -2333,6 +2346,22 @@ class View3D {
 
         lines.push("");
         return lines.join("\n");
+    }
+
+    /**
+     * Add visualizations to a visualization group.
+     * @param {string} group Group identifier
+     * @param {Array<THREE.Object3D>} vs Array of objects to add
+     * @param {boolean} [visible=true] Whether the objects should be visible
+     */
+    addVis(group, vs, visible = true) {
+        if (this.visGroups[group]) {
+            for (const v of vs) {
+                this.scene.add(v);
+                this.visGroups[group].push(v);
+                v.visible = visible;
+            }
+        }
     }
 
     /**
