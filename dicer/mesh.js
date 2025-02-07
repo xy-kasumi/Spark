@@ -1,52 +1,44 @@
 /**
  * Triangle mesh rasterization into voxel grid.
  */
+import { VoxelGridCpu } from './voxel.js';
 import { Vector2, Vector3 } from 'three';
 
 /**
- * Voxelize a surface. Sets 255 for fully occupied, 128 for partially occupied, 0 for empty
- * TODO: this logic still missses tiny features like a screw lead. Need to sample many and reduce later.
- * 0.5mm grid is obviously not enough to capture M1 screw lead mountains.
+ * Voxelize a surface. Sets 255 for fully occupied, 128 for partially occupied, 0 for empty.
+ * To test partialness, check 8 vertices of each voxel instead of center.
  * 
  * @param {Float32Array} surf Array of float, triangle soup. [x0, y0, z0, x1, y1, z1, ...]
- * @param {Object} vg [out] VoxelGrid-like object. Needs to implement ofs, res, numX, numY, numZ, set, count, volume
- * @returns {Object} The voxel grid (same as vg)
+ * @param {VoxelGridCpu} vg [out] VoxelGrid-like object. Needs to implement ofs, res, numX, numY, numZ, set, count, volume
  */
 export const diceSurf = (surf, vg) => {
+    // Grid whose voxel centers matches vg's voxel verticies.
+    const vertVg = new VoxelGridCpu(vg.res, vg.numX + 1, vg.numY + 1, vg.numZ + 1, vg.ofs.clone().add(new Vector3(1, 1, 1).multiplyScalar(-0.5 * vg.res)));
+    for (let iz = 0; iz < vertVg.numZ; iz++) {
+        const contour = sliceSurfByPlane(surf, vertVg.ofs.z + (iz + 0.5) * vertVg.res);
+        for (let iy = 0; iy < vertVg.numY; iy++) {
+            const bnds = sliceContourByLine(contour, vertVg.ofs.y + (iy + 0.5) * vertVg.res);
+            for (let ix = 0; ix < vertVg.numX; ix++) {
+                const isInside = isValueInside(vertVg.ofs.x + (ix + 0.5) * vertVg.res, bnds);
+                vertVg.set(ix, iy, iz, isInside ? 1 : 0);
+            }
+        }
+    }
+
+    // Gather 8 vertices into voxel.
     for (let iz = 0; iz < vg.numZ; iz++) {
-        const sliceZ0 = vg.ofs.z + iz * vg.res;
-        const sliceZ1 = vg.ofs.z + (iz + 1) * vg.res;
-
-        //const cont = sliceSurfByPlane(surf, sliceZ);
-        const contZ0 = sliceSurfByPlane(surf, sliceZ0);
-        const contZ1 = sliceSurfByPlane(surf, sliceZ1);
-
         for (let iy = 0; iy < vg.numY; iy++) {
-            const sliceY0 = vg.ofs.y + iy * vg.res;
-            const sliceY1 = vg.ofs.y + (iy + 1) * vg.res;
-
-            //const bnds = sliceContourByLine(cont, sliceY);
-            const bnds00 = sliceContourByLine(contZ0, sliceY0);
-            const bnds01 = sliceContourByLine(contZ1, sliceY0);
-            const bnds10 = sliceContourByLine(contZ0, sliceY1);
-            //console.log(`Z1=${sliceZ1}, Y1=${sliceY1}`);
-            const bnds11 = sliceContourByLine(contZ1, sliceY1);
-
             for (let ix = 0; ix < vg.numX; ix++) {
-                const sliceX0 = vg.ofs.x + ix * vg.res;
-                const sliceX1 = vg.ofs.x + (ix + 1) * vg.res;
-
                 let numInside = 0;
-                numInside += isValueInside(sliceX0, bnds00) ? 1 : 0;
-                numInside += isValueInside(sliceX0, bnds01) ? 1 : 0;
-                numInside += isValueInside(sliceX0, bnds10) ? 1 : 0;
-                numInside += isValueInside(sliceX0, bnds11) ? 1 : 0;
-                numInside += isValueInside(sliceX1, bnds00) ? 1 : 0;
-                numInside += isValueInside(sliceX1, bnds01) ? 1 : 0;
-                numInside += isValueInside(sliceX1, bnds10) ? 1 : 0;
-                numInside += isValueInside(sliceX1, bnds11) ? 1 : 0;
+                numInside += vertVg.get(ix, iy, iz);
+                numInside += vertVg.get(ix, iy, iz + 1);
+                numInside += vertVg.get(ix, iy + 1, iz);
+                numInside += vertVg.get(ix, iy + 1, iz + 1);
+                numInside += vertVg.get(ix + 1, iy, iz);
+                numInside += vertVg.get(ix + 1, iy, iz + 1);
+                numInside += vertVg.get(ix + 1, iy + 1, iz);
+                numInside += vertVg.get(ix + 1, iy + 1, iz + 1);
 
-                //const isInside = isValueInside(sliceX, bnds);
                 let cellV = 0;
                 if (numInside === 8) {
                     cellV = 255;
@@ -57,23 +49,27 @@ export const diceSurf = (surf, vg) => {
             }
         }
     }
-    return vg;
 };
 
 /**
- * @param {Float32Array} surfTris Triangle soup [x0, y0, z0, x1, y1, z1, ...]
+ * @param {Float32Array} surfTris Triangle soup [x0, y0, z0, x1, y1, z1, ...] (Must be CCW)
  * @param {number} sliceZ Z coordinate of slice plane
- * @returns {Float32Array} Contour edges
+ * @returns {Float32Array} Contour edges (CCW)
  */
 const sliceSurfByPlane = (surfTris, sliceZ) => {
     const segs = [];
 
-    // tris are CCW.
+    const p0 = new Vector3();
+    const p1 = new Vector3();
+    const p2 = new Vector3();
+    const upTemp = new Vector3();
+    const downTemp = new Vector3();
+
     const numTris = surfTris.length / 9;
     for (let i = 0; i < numTris; i++) {
-        const p0 = new Vector3(surfTris[9 * i + 0], surfTris[9 * i + 1], surfTris[9 * i + 2]);
-        const p1 = new Vector3(surfTris[9 * i + 3], surfTris[9 * i + 4], surfTris[9 * i + 5]);
-        const p2 = new Vector3(surfTris[9 * i + 6], surfTris[9 * i + 7], surfTris[9 * i + 8]);
+        p0.set(surfTris[9 * i + 0], surfTris[9 * i + 1], surfTris[9 * i + 2]);
+        p1.set(surfTris[9 * i + 3], surfTris[9 * i + 4], surfTris[9 * i + 5]);
+        p2.set(surfTris[9 * i + 6], surfTris[9 * i + 7], surfTris[9 * i + 8]);
 
         const s0 = Math.sign(p0.z - sliceZ);
         const s1 = Math.sign(p1.z - sliceZ);
@@ -87,25 +83,25 @@ const sliceSurfByPlane = (surfTris, sliceZ) => {
             continue;
         }
 
-        // intersect 3 edges with
+        // intersect 3 edges with the plane.
         let up = null;
         let down = null;
         if (s0 < 0 && s1 >= 0) {
-            up = isectLine(p0, p1, sliceZ);
+            up = isectLine(p0, p1, sliceZ, upTemp);
         } else if (s0 >= 0 && s1 < 0) {
-            down = isectLine(p0, p1, sliceZ);
+            down = isectLine(p0, p1, sliceZ, downTemp);
         }
 
         if (s1 < 0 && s2 >= 0) {
-            up = isectLine(p1, p2, sliceZ);
+            up = isectLine(p1, p2, sliceZ, upTemp);
         } else if (s1 >= 0 && s2 < 0) {
-            down = isectLine(p1, p2, sliceZ);
+            down = isectLine(p1, p2, sliceZ, downTemp);
         }
 
         if (s2 < 0 && s0 >= 0) {
-            up = isectLine(p2, p0, sliceZ);
+            up = isectLine(p2, p0, sliceZ, upTemp);
         } else if (s2 >= 0 && s0 < 0) {
-            down = isectLine(p2, p0, sliceZ);
+            down = isectLine(p2, p0, sliceZ, downTemp);
         }
 
         if (up === null || down === null) {
@@ -119,16 +115,22 @@ const sliceSurfByPlane = (surfTris, sliceZ) => {
 };
 
 /**
+ * Slice contours in 2D plane by a line, to give a set of segments.
+ * 
  * @param {Float32Array} contEdges [x0, y0, x1, y1, ...]
  * @param {number} sliceY Y coordinate of slice line
  * @returns {number[]} Segment set [x0, x1, x2, ...]
  */
 const sliceContourByLine = (contEdges, sliceY) => {
+    const temp0 = new Vector2();
+    const temp1 = new Vector2();
+    const temp2 = new Vector2();
+
     const bnds = [];
     const numEdges = contEdges.length / 4;
     for (let i = 0; i < numEdges; i++) {
-        const p0 = new Vector2(contEdges[4 * i + 0], contEdges[4 * i + 1]);
-        const p1 = new Vector2(contEdges[4 * i + 2], contEdges[4 * i + 3]);
+        const p0 = temp0.set(contEdges[4 * i + 0], contEdges[4 * i + 1]);
+        const p1 = temp1.set(contEdges[4 * i + 2], contEdges[4 * i + 3]);
 
         const s0 = Math.sign(p0.y - sliceY);
         const s1 = Math.sign(p1.y - sliceY);
@@ -141,14 +143,14 @@ const sliceContourByLine = (contEdges, sliceY) => {
             continue;
         }
 
-        const isect = isectLine2(p0, p1, sliceY);
+        const isect = isectLine2(p0, p1, sliceY, temp2);
         bnds.push({ x: isect.x, isEnter: s0 >= 0 });
     }
     bnds.sort((a, b) => a.x - b.x);
 
     const bndsClean = [];
     let insideness = 0; // supports non-manifold, nested surfaces by allowing multiple enter.
-    bnds.forEach(b => {
+    for (const b of bnds) {
         if (b.isEnter) {
             insideness++;
             if (insideness === 1) {
@@ -166,7 +168,7 @@ const sliceContourByLine = (contEdges, sliceY) => {
                 //console.error("Corrupt surface data (hole)"); 
             }
         }
-    });
+    }
     if (insideness !== 0) {
         console.error("Corrupt surface data (hole)");
     }
@@ -174,6 +176,9 @@ const sliceContourByLine = (contEdges, sliceY) => {
         bndsClean.pop();
     }
 
+    if (bndsClean.length % 2 !== 0) {
+        throw "Corrupt segment set";
+    }
     return bndsClean;
 };
 
@@ -184,10 +189,6 @@ const sliceContourByLine = (contEdges, sliceY) => {
  * @returns {boolean} True if q is inside
  */
 const isValueInside = (q, xs) => {
-    if (xs.length % 2 !== 0) {
-        throw "Corrupt segment set"; // TODO: may need to handle gracefully.
-    }
-
     for (let i = 0; i < xs.length; i += 2) {
         const x0 = xs[i];
         const x1 = xs[i + 1];
@@ -206,12 +207,13 @@ const isValueInside = (q, xs) => {
  * @param {Vector3} p Start point
  * @param {Vector3} q End point
  * @param {number} z Z coordinate of plane
+ * @param {Vector3} buf [out] Buffer for intersection point
  * @returns {Vector3} Intersection point
  */
-const isectLine = (p, q, z) => {
+const isectLine = (p, q, z, buf = new Vector3()) => {
     const d = q.z - p.z;
     const t = (d === 0) ? 0.5 : (z - p.z) / d;
-    return p.clone().lerp(q, t);
+    return buf.copy(p).lerp(q, t);
 };
 
 /**
@@ -219,10 +221,11 @@ const isectLine = (p, q, z) => {
  * @param {Vector2} p Start point
  * @param {Vector2} q End point
  * @param {number} y Y coordinate of line
+ * @param {Vector2} buf [out] Buffer for intersection point
  * @returns {Vector2} Intersection point
  */
-const isectLine2 = (p, q, y) => {
+const isectLine2 = (p, q, y, buf = new Vector2()) => {
     const d = q.y - p.y;
     const t = (d === 0) ? 0.5 : (y - p.y) / d;
-    return p.clone().lerp(q, t);
+    return buf.copy(p).lerp(q, t);
 };

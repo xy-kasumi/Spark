@@ -1459,8 +1459,12 @@ class Planner {
         this.stockSurf = convGeomToSurf(stockGeom);
         const workVg = initVGForPoints(this.stockSurf, this.resMm);
         const targVg = workVg.clone();
+        const tst = performance.now();
         diceSurf(this.stockSurf, workVg);
+        console.log(`diceSurf took ${performance.now() - tst}ms`);
+        const ttg = performance.now();
         diceSurf(this.targetSurf, targVg);
+        console.log(`diceSurf took ${performance.now() - ttg}ms`);
         console.log(`stock: ${workVg.volume()} mm^3 (${workVg.countIf(v => v > 0).toLocaleString("en-US")} voxels) / target: ${targVg.volume()} mm^3 (${targVg.countIf(v => v > 0).toLocaleString("en-US")} voxels)`);
 
         this.trvg = new TrackingVoxelGrid(this.kernels);
