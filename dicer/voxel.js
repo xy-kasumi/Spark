@@ -502,7 +502,7 @@ export class VoxelGridGpu {
  * This should be used with {@link GpuKernels}.
  */
 class PipelineUniformDef {
-    static BINDING_ID_BEGIN = 200;
+    static BINDING_ID_BEGIN = 100;
 
     /**
      * @param {Object} defs {varName: type} Uniform variable defintions (can change for each invocation).
@@ -608,53 +608,98 @@ class PipelineUniformDef {
     }
 
     /**
-     * Allocate buffers for binding, and put values into them.
-     * Caller is responsible for destroying all the buffers.
-     * In case input is invalid, no buffer will be allocated.
+     * Return uniform buffers by setting given values.
      * Caller can also call {@link checkInput} first, to check for input errors before any other GPU processing.
+     * Caller MUST NOT destroy buffer, as it uses shared internal buffer.
+     * As createBuffers relies on {@link GPUQueue.writeBuffer} to copy data to GPU,
+     * so if caller is using multiple dispatches in a single {@link GPUCommandEncoder},
+     * it must provide unique uniBufIx for each dispatch.
+     * 
+     * @example
+     * // Bad Example
+     * const cme = device.createCommandEncoder();
+     * const bind1 = pipeline.createBuffers(kernels, vars1);
+     * cme.dispatch(..., bind1); // this dispatch will see vars2, not vars1.
+     * const bind2 = pipeline.createBuffers(kernels, vars2);
+     * cme.dispatch(..., bind2);
+     * queue.submit([cme.finish()]);
+     * 
+     * // Bad Example, as seen by GPU
+     * const bind1 = pipeline.createBuffers(kernels, vars1);
+     * const bind2 = pipeline.createBuffers(kernels, vars2);
+     * const cme = device.createCommandEncoder();
+     * cme.dispatch(..., bind1);
+     * cme.dispatch(..., bind2);
+     * queue.submit([cme.finish()]);
+     * 
+     * // Good Example
+     * const cme = device.createCommandEncoder();
+     * const bind1 = pipeline.createBuffers(kernels, vars1, 0);
+     * cme.dispatch(..., bind1);
+     * const bind2 = pipeline.createBuffers(kernels, vars2, 1);
+     * cme.dispatch(..., bind2);
+     * queue.submit([cme.finish()]);
      * 
      * @param {GpuKernels} kernels 
      * @param {Object} vars {varName: value}
+     * @param {number} uniBufIx Index of the uniform buffer to use. (Needed when doing multiple dispatches in single CommandBuffer)
      * @throws {Error} If any input is invalid.
      * @returns {[number, GPUBuffer, number, number][]} Array of [bindingId, buffer, offset, size]
      */
-    createBuffers(kernels, vars) {
-        this.checkInput(vars);
-
+    createBuffers(kernels, vars, uniBufIx=0) {
+        const maxNumUniBuf = 10;
+        const maxNumVars = 16;
         const entrySize = Math.max(16, kernels.device.limits.minUniformBufferOffsetAlignment);
-        const bufSize = Object.entries(this.bindings).length * entrySize;
+        if (!kernels.sharedUniBuffer) {
+            kernels.sharedUniBuffer = [];
+            for (let i = 0; i < maxNumUniBuf; i++) {
+                kernels.sharedUniBuffer.push(kernels.createUniformBufferNonMapped(entrySize * maxNumVars));
+            }
+        }
+        
+        this.checkInput(vars);
+    
+        if (Object.entries(this.bindings).length > maxNumVars) {
+            throw new Error("Too many uniform variables");
+        }
+        if (uniBufIx >= maxNumUniBuf) {
+            throw new Error("Too many uniform buffers at the same time");
+        }
 
         const binds = [];
-        const buf = kernels.createUniformBuffer(bufSize, (ptr) => {
-            let ix = 0;
-            for (const [varName, binding] of Object.entries(this.bindings)) {
-                const { bindingId, type } = binding;
-                const val = vars[varName];
-                const entryOffset = entrySize * ix;
+        const uniBuf = kernels.sharedUniBuffer[uniBufIx];
+        // Writing everything to CPU and then single writeBuffer() is faster than multiple writeBuffer() calls,
+        // despite bigger total copy size.
+        const cpuBuf = new ArrayBuffer(entrySize * Object.entries(this.bindings).length);
+        let ix = 0;
+        for (const [varName, binding] of Object.entries(this.bindings)) {
+            const { bindingId, type } = binding;
+            const val = vars[varName];
+            const entryOffset = entrySize * ix;
 
-                if (type === "vec4f") {
-                    const nums = this.extractArrayLikeOrVector(4, val);
-                    new Float32Array(ptr, entryOffset, 4).set(nums);
-                } else if (type === "vec3f") {
-                    const nums = this.extractArrayLikeOrVector(3, val);
-                    new Float32Array(ptr, entryOffset, 3).set(nums);
-                } else if (type === "vec4u") {
-                    const nums = this.extractArrayLikeOrVector(4, val);
-                    new Uint32Array(ptr, entryOffset, 4).set(nums);
-                } else if (type === "vec3u") {
-                    const nums = this.extractArrayLikeOrVector(3, val);
-                    new Uint32Array(ptr, entryOffset, 3).set(nums);
-                } else if (type === "f32") {
-                    new Float32Array(ptr, entryOffset, 1).set([val]);
-                } else if (type === "u32") {
-                    new Uint32Array(ptr, entryOffset, 1).set([val]);
-                }
-                binds.push([bindingId, null, entryOffset, entrySize]);
-                ix++;
+            if (type === "vec4f") {
+                const nums = this.extractArrayLikeOrVector(4, val);
+                new Float32Array(cpuBuf, entryOffset, 4).set(nums);
+            } else if (type === "vec3f") {
+                const nums = this.extractArrayLikeOrVector(3, val);
+                new Float32Array(cpuBuf, entryOffset, 3).set(nums);
+            } else if (type === "vec4u") {
+                const nums = this.extractArrayLikeOrVector(4, val);
+                new Uint32Array(cpuBuf, entryOffset, 4).set(nums);
+            } else if (type === "vec3u") {
+                const nums = this.extractArrayLikeOrVector(3, val);
+                new Uint32Array(cpuBuf, entryOffset, 3).set(nums);
+            } else if (type === "f32") {
+                new Float32Array(cpuBuf, entryOffset, 1).set([val]);
+            } else if (type === "u32") {
+                new Uint32Array(cpuBuf, entryOffset, 1).set([val]);
             }
-        });
+            binds.push([bindingId, null, entryOffset, entrySize]);
+            ix++;
+        }
+        kernels.device.queue.writeBuffer(uniBuf, 0, cpuBuf, 0, cpuBuf.byteLength);
         for (const bind of binds) {
-            bind[1] = buf;
+            bind[1] = uniBuf;
         }
         return binds;
     }
@@ -675,6 +720,12 @@ export class GpuKernels {
         this.map2Pipelines = {};
         this.reducePipelines = {};
         this.perf = {};
+
+        this.sharedReduceResultElemSize = 4;
+        this.sharedReduceResultNumElems = 1024;
+        this.sharedReduceResultBufferSize = this.sharedReduceResultElemSize * this.sharedReduceResultNumElems;
+        this.sharedReduceResultBufferGpu = this.createBuffer(this.sharedReduceResultBufferSize);
+        this.sharedReduceResultResolves = [];
 
         this.#initGridUtils();
     }
@@ -987,18 +1038,12 @@ export class GpuKernels {
 
         const binds = uniformDef.createBuffers(this, uniforms);
 
-        try {
-            const commandEncoder = this.device.createCommandEncoder();
-            this.#dispatchKernel(commandEncoder, pipeline, [inVg.buffer, dispatchOutVg.buffer], grid.numX * grid.numY * grid.numZ, binds);
-            this.device.queue.submit([commandEncoder.finish()]);
-            if (outVg === inVg) {
-                await this.copy(tmpBuf, outVg);
-                this.destroy(tmpBuf);
-            }
-        } finally {
-            for (const [_, buf] of binds) {
-                buf.destroy();
-            }
+        const commandEncoder = this.device.createCommandEncoder();
+        this.#dispatchKernel(commandEncoder, pipeline, [inVg.buffer, dispatchOutVg.buffer], grid.numX * grid.numY * grid.numZ, binds);
+        this.device.queue.submit([commandEncoder.finish()]);
+        if (outVg === inVg) {
+            await this.copy(tmpBuf, outVg);
+            this.destroy(tmpBuf);
         }
     }
 
@@ -1033,30 +1078,27 @@ export class GpuKernels {
 
         const binds = uniformDef.createBuffers(this, uniforms);
 
-        try {
-            const commandEncoder = this.device.createCommandEncoder();
-            this.#dispatchKernel(commandEncoder, pipeline, [inVg1.buffer, inVg2.buffer, dispatchOutVg.buffer], grid.numX * grid.numY * grid.numZ, binds);
-            this.device.queue.submit([commandEncoder.finish()]);
-            if (outVg === inVg1 || outVg === inVg2) {
-                await this.copy(tmpBuf, outVg);
-                this.destroy(tmpBuf);
-            }
-        } finally {
-            for (const [_, buf] of binds) {
-                buf.destroy();
-            }
+        const commandEncoder = this.device.createCommandEncoder();
+        this.#dispatchKernel(commandEncoder, pipeline, [inVg1.buffer, inVg2.buffer, dispatchOutVg.buffer], grid.numX * grid.numY * grid.numZ, binds);
+        this.device.queue.submit([commandEncoder.finish()]);
+        if (outVg === inVg1 || outVg === inVg2) {
+            await this.copy(tmpBuf, outVg);
+            this.destroy(tmpBuf);
         }
     }
 
     /**
-     * Run reduction.
+     * Run reduction. Reduce is slow if called many times, because of GPU->CPU copy.
+     * By enabling optimizeForBulk, results is bulk-read and thus faster.
+     * However, if you forget to call {@link flushPendingReduce} when optimizeForBulk is true, reduce() call will get stuck forever.
      * 
      * @param {string} fnName Function registered in {@link registerReduceFn}.
      * @param {VoxelGridGpu} inVg 
+     * @param {boolean} optimizeForBulk If true, caller need to call {@link flushPendingReduce} to unblock result return.
      * @returns {Promise<number>}
      * @async
      */
-    async reduce(fnName, inVg) {
+    async reduce(fnName, inVg, optimizeForBulk=false, cme=null) {
         const redPerf = this.perfBegin(`  reduce:${fnName}`);
         if (!this.reducePipelines[fnName]) {
             throw new Error(`Reduce fn "${fnName}" not registered`);
@@ -1072,10 +1114,17 @@ export class GpuKernels {
             return Math.ceil(n / 4) * 4;
         };
         const bufSize = multOf4(Math.ceil(inVg.buffer.size / this.wgSize));
-        const tempBufs = [
-            this.createBuffer(bufSize),
-            this.createBuffer(bufSize),
-        ];
+        if (!this.tempBufsCache) {
+            this.tempBufsCache = {};
+        }
+        const cacheKey = `${bufSize}`;
+        if (!this.tempBufsCache[cacheKey]) {
+            this.tempBufsCache[cacheKey] = [
+                this.createBuffer(bufSize),
+                this.createBuffer(bufSize),
+            ];
+        }
+        const tempBufs = this.tempBufsCache[cacheKey];
         let activeBufIx = -1; // -1 means inVg is active, 0 and 1 means tempBufs are active.
         const getBuf = (ix) => {
             return ix === -1 ? inVg.buffer : tempBufs[ix];
@@ -1084,25 +1133,41 @@ export class GpuKernels {
             return ix === -1 ? 0 : 1 - ix;
         };
 
-        try {
-            const commandEncoder = this.device.createCommandEncoder();
-            let numElems = inVg.numX * inVg.numY * inVg.numZ;
-            const allBinds = [];
-            while (numElems > 1) {
-                const binds = uniformDef.createBuffers(this, {num_active: numElems});
-                this.#dispatchKernel(commandEncoder, pipeline, [getBuf(activeBufIx), getBuf(nextIx(activeBufIx))], numElems, binds);
-                activeBufIx = nextIx(activeBufIx);
-                numElems = Math.ceil(numElems / this.wgSize);
-                allBinds.push(...binds);
-            }
-            this.device.queue.submit([commandEncoder.finish()]);
-            for (const [_, buf] of allBinds) {
-                buf.destroy();
-            }
+        const commandEncoder = cme ?? this.device.createCommandEncoder();
+        let numElems = inVg.numX * inVg.numY * inVg.numZ;
+        const allBinds = [];
+        let uniBufIx = 1;
+        while (numElems > 1) {
+            const binds = uniformDef.createBuffers(this, {num_active: numElems}, uniBufIx);
+            this.#dispatchKernel(commandEncoder, pipeline, [getBuf(activeBufIx), getBuf(nextIx(activeBufIx))], numElems, binds);
+            activeBufIx = nextIx(activeBufIx);
+            numElems = Math.ceil(numElems / this.wgSize);
+            allBinds.push(...binds);
+            uniBufIx++;
+        }
+        const ix = this.sharedReduceResultResolves.length;
+        if (optimizeForBulk) {
             
+            if (ix >= this.sharedReduceResultNumElems) {
+                throw new Error("Too many pending reduce(optimizeForBulk=true) calls");
+            }
+            commandEncoder.copyBufferToBuffer(getBuf(activeBufIx), 0, this.sharedReduceResultBufferGpu, ix * this.sharedReduceResultElemSize, this.sharedReduceResultElemSize);
+        }
+        
+        this.device.queue.submit([commandEncoder.finish()]);
+
+        if (optimizeForBulk) {
+            const {promise, resolve} = this.#createSharedReduceLock();
+            this.sharedReduceResultResolves.push(resolve);
+            redPerf.end();
+            //console.log("reduce done-"+ix);
+            const v = await promise;
+            //console.log("reduce done2-"+ix);
+            return v;
+        } else {
             const readBuf = this.createBufferForCpuRead(4);
             await this.copyBuffer(getBuf(activeBufIx), readBuf, 4);
-            await readBuf.mapAsync(GPUMapMode.READ);
+            await readBuf.mapAsync(GPUMapMode.READ); // TODO: read bulk from shared buffer.
             let result = null;
             if (valType === "u32") {
                 result = new Uint32Array(readBuf.getMappedRange())[0];
@@ -1117,9 +1182,41 @@ export class GpuKernels {
 
             redPerf.end();
             return result;
-        } finally {
-            tempBufs.forEach(buf => buf.destroy());
         }
+    }
+
+    /**
+     * @returns {{promise: Promise<void>, resolve: Function}}
+     */
+    #createSharedReduceLock() {
+        let resolve;
+        const promise = new Promise((r) => { resolve = r; });
+        return { promise, resolve };
+    }
+
+    /**
+     * Unblock all the pending reduce(optimizeForBulk=true) calls.
+     * @param {"u32" | "f32"} valType. Must match to reduce calls.
+     * @returns {Promise<void>}
+     * @async
+     */
+    async flushPendingReduce(valType) {
+        const constructors = {
+            "u32": Uint32Array,
+            "f32": Float32Array,
+        };
+        const readBuf = this.createBufferForCpuRead(this.sharedReduceResultBufferSize);
+        await this.copyBuffer(this.sharedReduceResultBufferGpu, readBuf, this.sharedReduceResultBufferSize);
+        await readBuf.mapAsync(GPUMapMode.READ);
+        const result = new constructors[valType](readBuf.getMappedRange());
+        console.log(`flushing ${this.sharedReduceResultResolves.length} pending reduce(optimizeForBulk=true) calls`);
+        for (let i = 0; i < this.sharedReduceResultResolves.length; i++) {
+            this.sharedReduceResultResolves[i](result[i]);
+        }
+        //console.log("flush done");
+        this.sharedReduceResultResolves = [];
+        readBuf.unmap();
+        readBuf.destroy();
     }
 
     /**
@@ -1179,6 +1276,19 @@ export class GpuKernels {
         initFn(buf.getMappedRange(0, size));
         buf.unmap();
         return buf;
+    }
+
+    /**
+     * Create non-mapped uniform buffer. Use GPUQueue.writeBuffer to populate.
+     * @param {number} size Size in bytes
+     * @returns {GPUBuffer} Created buffer
+     */
+    createUniformBufferNonMapped(size) {
+        return this.device.createBuffer({
+            label: "buf-uniform-nm",
+            size: size,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
     }
 
     /**
@@ -1468,10 +1578,6 @@ export class GpuKernels {
             this.#dispatchKernel(commandEncoder, pipeline, [df.buffer], grid.numX * grid.numY * grid.numZ, binds);
             this.device.queue.submit([commandEncoder.finish()]);
             await this.device.queue.onSubmittedWorkDone();
-
-            for (const [_, buf] of binds) {
-                buf.destroy();
-            }
         }
 
         await this.map("df_to_dist", df, outDistVg);
@@ -1629,9 +1735,9 @@ export class GpuKernels {
      * @returns {Promise<number>}
      * @async
      */
-    async countInShape(shape, inVg, boundary) {
+    async countInShape(shape, inVg, boundary, optimizeForBulk=false) {
         const cis = this.perfBegin("  countInShape");
-        const BLOCK_SIZE = 8;
+        const BLOCK_SIZE = 4;
 
         const nbx = Math.floor(inVg.numX / BLOCK_SIZE) + 1;
         const nby = Math.floor(inVg.numY / BLOCK_SIZE) + 1;
@@ -1652,16 +1758,12 @@ export class GpuKernels {
         const commandEncoder = this.device.createCommandEncoder();
         let binds = uniformDef.createBuffers(this, uniforms); // this+destroy is about 7ms. TODO: optimize
         this.#dispatchKernel(commandEncoder, pipeline, [inVg.buffer, coarseVg.buffer], nbx * nby * nbz, binds);
-        this.device.queue.submit([commandEncoder.finish()]);
-        
-        for (const [_, buf] of binds) {
-            buf.destroy();
-        }
         
         // Sum all cells using coarse grid.
-        let count = await this.reduce("sum", coarseVg); // TODO: significant part of countInShape is spent here.
-        this.destroy(coarseVg);
+        let count = await this.reduce("sum", coarseVg, optimizeForBulk, commandEncoder); // TODO: significant part of countInShape is spent here.
+        //this.device.queue.submit([commandEncoder.finish()]);
 
+        this.destroy(coarseVg);
         cis.end();
         
         return count;

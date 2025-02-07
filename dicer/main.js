@@ -477,7 +477,7 @@ class TrackingVoxelGrid {
      * @returns {Promise<boolean>} true if blocked, false otherwise
      * @async
      */
-    async queryBlocked(shape) {
+    async queryBlocked(shape, optimizeForBulk=false) {
         if (!this.kernels.mapPipelines["blocked"]) {
             this.kernels.registerMapFn("blocked", "u32", "u32", `
                 if (vi == ${C_FULL_DONE} || vi == ${C_PARTIAL_DONE} || vi == ${C_PARTIAL_REMAINING}) {
@@ -491,7 +491,7 @@ class TrackingVoxelGrid {
             this.cacheBlocked = this.kernels.createLike(this.vx, "u32");
             await this.kernels.map("blocked", this.vx, this.cacheBlocked);
         }
-        return await this.kernels.countInShape(shape, this.cacheBlocked, "out") > 0;
+        return await this.kernels.countInShape(shape, this.cacheBlocked, "out", optimizeForBulk) > 0;
     }
 
     /**
@@ -501,7 +501,7 @@ class TrackingVoxelGrid {
      * @returns {Promise<boolean>} true if has work, false otherwise
      * @async
      */
-    async queryHasWork(shape) {
+    async queryHasWork(shape, optimizeForBulk=false) {
         if (!this.kernels.mapPipelines["has_work"]) {
             this.kernels.registerMapFn("has_work", "u32", "u32", `
                 if (vi == ${C_EMPTY_REMAINING} || vi == ${C_PARTIAL_REMAINING}) {
@@ -515,7 +515,7 @@ class TrackingVoxelGrid {
             this.cacheHasWork = this.kernels.createLike(this.vx, "u32");
             await this.kernels.map("has_work", this.vx, this.cacheHasWork);
         }
-        return await this.kernels.countInShape(shape, this.cacheHasWork, "nearest") > 0;
+        return await this.kernels.countInShape(shape, this.cacheHasWork, "nearest", optimizeForBulk) > 0;
     }
 
     static combineTargetWork(t, w) {
@@ -1497,7 +1497,8 @@ class Planner {
          */
         const genPlanarSweep = async (normal, offset, toolDiameter) => {
             console.log(`genPlanarSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), offset: ${offset}, toolDiameter: ${toolDiameter}`);
-            const t0 = performance.now();
+            let t0True = performance.now();
+            let t0 = performance.now();
             const normalRange = await this.trvg.queryWorkRange(normal);
             if (normalRange.max < offset) {
                 throw "contradicting offset for genPlanarSweep";
@@ -1537,6 +1538,9 @@ class Planner {
                 return offsetPoint(scanOrigin, [rowDir, feedWidth * ixRow], [feedDir, segmentLength * ixSeg], [normal, -feedDepth]);
             };
 
+            await this.kernels.device.queue.onSubmittedWorkDone();
+            t0 = performance.now();
+
             // rows : [row]
             // row : [segment]
             // segment : {
@@ -1544,22 +1548,27 @@ class Planner {
             //   state: "blocked" | "work" | "empty" // blocked = contains non-cuttable bits, work = cuttable & has non-zero work, empty = accessible and no work
             // }
             const rows = new Array(numRows);
-            //const promises = [];
+            const promises = [];
             for (let ixRow = 0; ixRow < numRows; ixRow++) {
+                //console.log("ixRow-"+ixRow+" numSegs-"+numSegs);
                 
                     const row = new Array(numSegs);
                     rows[ixRow] = row;
 
-                    const rowPromises = [];
+                    //const rowPromises = [];
                     for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
-                        rowPromises.push((async() => {
+                        promises.push((async() => {
                             const segShapeAndAbove = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, maxHeight], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
                             const segShape = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, feedDepth], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
                             // Maybe should check any-non work for above, instead of blocked?
                             // even if above region is cuttable, it will alter tool state unexpectedly.
                             // Current logic only works correctly if scan pattern is same for different offset.
-                            const isBlocked = await this.trvg.queryBlocked(segShapeAndAbove);
-                            const hasWork = await this.trvg.queryHasWork(segShape);
+                            //console.log(`seg-${ixRow}-${ixSeg} A`);
+                            const pBlocked = this.trvg.queryBlocked(segShapeAndAbove, true);
+                            //console.log(`seg-${ixRow}-${ixSeg} B`);
+                            const pHasWork = this.trvg.queryHasWork(segShape, true);
+                            const [isBlocked, hasWork] = await Promise.all([pBlocked, pHasWork]);
+                            //console.log(`seg-${ixRow}-${ixSeg} C`);
                             const state = isBlocked ? "blocked" : (hasWork ? "work" : "empty");
                             row[ixSeg] = state;
 
@@ -1578,10 +1587,19 @@ class Planner {
                                 */
                         })());
                     }
-                    await Promise.all(rowPromises);
+                    
+                    //await this.kernels.flushPendingReduce("u32"); // for queryHasWork
+                    //console.log("flushPendingReduce done");
+                    // await this.trvg.vx.flushPendingReduce("u32");
+                    
+                    //console.log("rowPromises done");
                 
             }
+            await this.kernels.flushPendingReduce("u32");
+            await Promise.all(promises);
+            //await this.kernels.device.queue.onSubmittedWorkDone();
             //await Promise.all(promises);
+            console.log(`  shape queries took ${performance.now() - t0}ms`);
 
             // From segemnts, create "scans".
             // Scan will end at scanEndBot = apBot + scanDir * scanLen. half-cylinder of toolDiameter will extrude from scanEndBot at max.
@@ -1755,10 +1773,10 @@ class Planner {
                 sweepPath.discardToolTip(feedDepthWithExtra);
             }
 
+            console.log(`genPlanarSweep: took ${performance.now() - t0True}ms`);
             if (sweepPath.getPath().length === 0) {
                 return null;
             }
-            console.log(`genPlanarSweep: took ${performance.now() - t0}ms`);
             return {
                 partialPath: sweepPath,
             };
@@ -2008,7 +2026,8 @@ class Planner {
         }
 
         // not done, but out of choices
-        console.log(`possible sweep exhausted after ${(performance.now() - t0) / 1e3}sec`);
+        const dt = performance.now() - t0;
+        console.log(`possible sweep exhausted after ${dt / 1e3}sec (${dt / this.numSweeps}ms/sweep)`);
     }
 
 
