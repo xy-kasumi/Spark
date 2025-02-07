@@ -206,7 +206,7 @@ class TrackingVoxelGrid {
             }
         }
         await this.kernels.copy(vxCpu, this.vx);
-        this.distField = await this.#computeDistField();
+        this.distField = this.#computeDistField();
     }
 
     /**
@@ -225,7 +225,10 @@ class TrackingVoxelGrid {
                 }
             `);
         }
-        await this.kernels.map("set_protected_work_below_z", this.vx, this.vx);
+        const tempVg = this.kernels.createLike(this.vx);
+        await this.kernels.copy(this.vx, tempVg);
+        this.kernels.map("set_protected_work_below_z", tempVg, this.vx);
+        this.kernels.destroy(tempVg);
     }
 
     /**
@@ -260,19 +263,19 @@ class TrackingVoxelGrid {
             }
             */
         }
-        await this.kernels.map2("work_deviation", this.distField, this.vx, res);
+        this.kernels.map2("work_deviation", this.distField, this.vx, res);
         return res;
     }
 
     /** Compute distance field (from target). This data is work-independent.*/
-    async #computeDistField() {
+    #computeDistField() {
         this.kernels.registerMapFn("not_tg_empty", "u32", "u32",
             `if (vi != ${C_EMPTY_DONE} && vi != ${C_EMPTY_REMAINING}) { vo = 1; } else { vo = 0; }`);
 
         const initial = this.kernels.createLike(this.vx, "u32");
         const dist = this.kernels.createLike(this.vx, "f32");
-        await this.kernels.map("not_tg_empty", this.vx, initial);
-        await this.kernels.distField(initial, dist);
+        this.kernels.map("not_tg_empty", this.vx, initial);
+        this.kernels.distField(initial, dist);
         this.kernels.destroy(initial);
         return dist;
     }
@@ -296,7 +299,7 @@ class TrackingVoxelGrid {
         }
 
         const temp = this.kernels.createLike(this.vx, "u32");
-        await this.kernels.map("extract_target", this.vx, temp);
+        this.kernels.map("extract_target", this.vx, temp);
 
         const res = new VoxelGridCpu(this.res, this.numX, this.numY, this.numZ, this.ofs);
         await this.kernels.copy(temp, res);
@@ -339,7 +342,7 @@ class TrackingVoxelGrid {
             `);
         }
         const reversalVg = this.kernels.createLike(this.vx, "u32");
-        await this.kernels.map2("check_reversal", minVg, maxVg, reversalVg);
+        this.kernels.map2("check_reversal", minVg, maxVg, reversalVg);
         const numReversals = await this.kernels.reduce("sum", reversalVg);
         this.kernels.destroy(reversalVg);
         if (numReversals > 0) {
@@ -357,7 +360,7 @@ class TrackingVoxelGrid {
                     }
                 `);
             }
-            await this.kernels.map2("check_overcut", this.vx, maxVg, overcutVg);
+            this.kernels.map2("check_overcut", this.vx, maxVg, overcutVg);
             const numDamages = await this.kernels.reduce("sum", overcutVg);
             if (numDamages > 0) {
                 const overcutVgCpu = this.kernels.createLikeCpu(overcutVg);
@@ -379,8 +382,6 @@ class TrackingVoxelGrid {
         }
 
         // Finally ready to commit min cuts.
-        //await this.kernels.fill1(minVg);
-        
         const removedVg = this.kernels.createLike(this.vx, "u32");
         if (!this.kernels.map2Pipelines["check_removed"]) {
             // vi2 > 0 && 
@@ -404,8 +405,11 @@ class TrackingVoxelGrid {
                 }
             `);
         }
-        await this.kernels.map2("check_removed", this.vx, minVg, removedVg);
-        await this.kernels.map2("commit_min", this.vx, minVg, this.vx);
+        this.kernels.map2("check_removed", this.vx, minVg, removedVg);
+        const resultVg = this.kernels.createLike(this.vx, "u32");
+        this.kernels.map2("commit_min", this.vx, minVg, resultVg);
+        await this.kernels.copy(resultVg, this.vx);
+        this.kernels.destroy(resultVg);
         const numRemoved = await this.kernels.reduce("sum", removedVg);
         this.kernels.destroy(removedVg);
 
@@ -438,7 +442,7 @@ class TrackingVoxelGrid {
         }
 
         const flagVg = this.kernels.createLike(this.vx, "u32");
-        await this.kernels.map("work_remaining", this.vx, flagVg);
+        this.kernels.map("work_remaining", this.vx, flagVg);
         const cnt = await this.kernels.reduce("sum", flagVg);
         this.kernels.destroy(flagVg);
         return cnt * this.res ** 3;
@@ -464,7 +468,7 @@ class TrackingVoxelGrid {
         }
 
         const work = this.kernels.createLike(this.vx, "u32");
-        await this.kernels.map("work_remaining", this.vx, work);
+        this.kernels.map("work_remaining", this.vx, work);
         const result = await this.kernels.boundOfAxis(dir, work, "out");
         this.kernels.destroy(work);
         return result;
@@ -477,7 +481,7 @@ class TrackingVoxelGrid {
      * @returns {Promise<boolean>} true if blocked, false otherwise
      * @async
      */
-    async queryBlocked(shape, optimizeForBulk=false) {
+    async queryBlocked(shape, optimizeForBulk = false) {
         if (!this.kernels.mapPipelines["blocked"]) {
             this.kernels.registerMapFn("blocked", "u32", "u32", `
                 if (vi == ${C_FULL_DONE} || vi == ${C_PARTIAL_DONE} || vi == ${C_PARTIAL_REMAINING}) {
@@ -489,7 +493,7 @@ class TrackingVoxelGrid {
         }
         if (!this.cacheBlocked) {
             this.cacheBlocked = this.kernels.createLike(this.vx, "u32");
-            await this.kernels.map("blocked", this.vx, this.cacheBlocked);
+            this.kernels.map("blocked", this.vx, this.cacheBlocked);
         }
         return await this.kernels.countInShape(shape, this.cacheBlocked, "out", optimizeForBulk) > 0;
     }
@@ -501,7 +505,7 @@ class TrackingVoxelGrid {
      * @returns {Promise<boolean>} true if has work, false otherwise
      * @async
      */
-    async queryHasWork(shape, optimizeForBulk=false) {
+    async queryHasWork(shape, optimizeForBulk = false) {
         if (!this.kernels.mapPipelines["has_work"]) {
             this.kernels.registerMapFn("has_work", "u32", "u32", `
                 if (vi == ${C_EMPTY_REMAINING} || vi == ${C_PARTIAL_REMAINING}) {
@@ -513,7 +517,7 @@ class TrackingVoxelGrid {
         }
         if (!this.cacheHasWork) {
             this.cacheHasWork = this.kernels.createLike(this.vx, "u32");
-            await this.kernels.map("has_work", this.vx, this.cacheHasWork);
+            this.kernels.map("has_work", this.vx, this.cacheHasWork);
         }
         return await this.kernels.countInShape(shape, this.cacheHasWork, "nearest", optimizeForBulk) > 0;
     }
@@ -1551,49 +1555,49 @@ class Planner {
             const promises = [];
             for (let ixRow = 0; ixRow < numRows; ixRow++) {
                 //console.log("ixRow-"+ixRow+" numSegs-"+numSegs);
-                
-                    const row = new Array(numSegs);
-                    rows[ixRow] = row;
 
-                    //const rowPromises = [];
-                    for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
-                        promises.push((async() => {
-                            const segShapeAndAbove = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, maxHeight], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
-                            const segShape = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, feedDepth], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
-                            // Maybe should check any-non work for above, instead of blocked?
-                            // even if above region is cuttable, it will alter tool state unexpectedly.
-                            // Current logic only works correctly if scan pattern is same for different offset.
-                            //console.log(`seg-${ixRow}-${ixSeg} A`);
-                            const pBlocked = this.trvg.queryBlocked(segShapeAndAbove, true);
-                            //console.log(`seg-${ixRow}-${ixSeg} B`);
-                            const pHasWork = this.trvg.queryHasWork(segShape, true);
-                            const [isBlocked, hasWork] = await Promise.all([pBlocked, pHasWork]);
-                            //console.log(`seg-${ixRow}-${ixSeg} C`);
-                            const state = isBlocked ? "blocked" : (hasWork ? "work" : "empty");
-                            row[ixSeg] = state;
+                const row = new Array(numSegs);
+                rows[ixRow] = row;
 
-                            /*
-                            if (state === "blocked") {
-                                if (hasWork) {
-                                    debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "orange"));
-                                } else {
-                                    debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "red"));
-                                }
-                            } else if (state === "work") {
-                                debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "green"));
+                //const rowPromises = [];
+                for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
+                    promises.push((async () => {
+                        const segShapeAndAbove = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, maxHeight], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
+                        const segShape = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, feedDepth], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
+                        // Maybe should check any-non work for above, instead of blocked?
+                        // even if above region is cuttable, it will alter tool state unexpectedly.
+                        // Current logic only works correctly if scan pattern is same for different offset.
+                        //console.log(`seg-${ixRow}-${ixSeg} A`);
+                        const pBlocked = this.trvg.queryBlocked(segShapeAndAbove, true);
+                        //console.log(`seg-${ixRow}-${ixSeg} B`);
+                        const pHasWork = this.trvg.queryHasWork(segShape, true);
+                        const [isBlocked, hasWork] = await Promise.all([pBlocked, pHasWork]);
+                        //console.log(`seg-${ixRow}-${ixSeg} C`);
+                        const state = isBlocked ? "blocked" : (hasWork ? "work" : "empty");
+                        row[ixSeg] = state;
+
+                        /*
+                        if (state === "blocked") {
+                            if (hasWork) {
+                                debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "orange"));
                             } else {
-                                debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "gray"));
+                                debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "red"));
                             }
-                                */
-                        })());
-                    }
-                    
-                    //await this.kernels.flushPendingReduce("u32"); // for queryHasWork
-                    //console.log("flushPendingReduce done");
-                    // await this.trvg.vx.flushPendingReduce("u32");
-                    
-                    //console.log("rowPromises done");
-                
+                        } else if (state === "work") {
+                            debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "green"));
+                        } else {
+                            debug.vlog(visDot(segCenterBot(ixRow, ixSeg), "gray"));
+                        }
+                            */
+                    })());
+                }
+
+                //await this.kernels.flushPendingReduce("u32"); // for queryHasWork
+                //console.log("flushPendingReduce done");
+                // await this.trvg.vx.flushPendingReduce("u32");
+
+                //console.log("rowPromises done");
+
             }
             await this.kernels.flushPendingReduce("u32");
             await Promise.all(promises);

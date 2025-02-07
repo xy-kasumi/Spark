@@ -60,7 +60,7 @@ QUnit.module('gpu-sdf', function () {
         const readVg = kernels.createLikeCpu(vg);
         kernels.registerMapFn("sdf", "f32", "f32", uberSdfSnippet("p", "vo"), uberSdfUniformDefs);
 
-        await kernels.map("sdf", vg /* not used */, vg, uberSdfUniformVars(shape));
+        kernels.map("sdf", kernels.createLike(vg), vg, uberSdfUniformVars(shape));
         await kernels.copy(vg, readVg);
         const sdfRef = createSdf(shape);
         for (let iz = 0; iz < num; iz++) {
@@ -86,7 +86,7 @@ QUnit.module('gpu-sdf', function () {
         const readVg = kernels.createLikeCpu(vg);
         kernels.registerMapFn("sdf", "f32", "f32", uberSdfSnippet("p", "vo"), uberSdfUniformDefs);
 
-        await kernels.map("sdf", vg /* not used */, vg, uberSdfUniformVars(shape));
+        kernels.map("sdf", kernels.createLike(vg), vg, uberSdfUniformVars(shape));
         await kernels.copy(vg, readVg);
         const sdfRef = createSdf(shape);
         for (let iz = 0; iz < num; iz++) {
@@ -112,7 +112,7 @@ QUnit.module('gpu-sdf', function () {
         const readVg = kernels.createLikeCpu(vg);
         kernels.registerMapFn("sdf", "f32", "f32", uberSdfSnippet("p", "vo"), uberSdfUniformDefs);
 
-        await kernels.map("sdf", vg /* not used */, vg, uberSdfUniformVars(shape));
+        kernels.map("sdf", kernels.createLike(vg), vg, uberSdfUniformVars(shape));
         await kernels.copy(vg, readVg);
         const sdfRef = createSdf(shape);
         for (let iz = 0; iz < num; iz++) {
@@ -159,7 +159,7 @@ QUnit.module('gpu', function () {
 
         for (const [nx, ny, nz] of testCases) {
             const vg = new VoxelGridGpu(kernels, 1, nx, ny, nz, new Vector3(), "u32");
-            await kernels.fill1(vg);
+            kernels.fill1(vg);
             const sum = await kernels.reduce("sum", vg);
             assert.equal(sum, nx * ny * nz);
         }
