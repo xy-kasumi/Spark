@@ -1669,7 +1669,14 @@ export class GpuKernels {
         const nby = Math.floor(inVg.numY / BLOCK_SIZE) + 1;
         const nbz = Math.floor(inVg.numZ / BLOCK_SIZE) + 1;
 
-        const coarseVg = new VoxelGridGpu(this, inVg.res * BLOCK_SIZE, nbx, nby, nbz, inVg.ofs, "u32");
+        const cacheKey = `${nbx}x${nby}x${nbz}`;
+        if (!this.countInShapeCache) {
+            this.countInShapeCache = {};
+        }
+        if (!this.countInShapeCache[cacheKey]) {
+            this.countInShapeCache[cacheKey] = new VoxelGridGpu(this, inVg.res * BLOCK_SIZE, nbx, nby, nbz, inVg.ofs, "u32");
+        }
+        const coarseVg = this.countInShapeCache[cacheKey];
 
         // Count all cells using coarse grid.
         const { pipeline, uniformDef } = this.shapeQueryPipeline;
