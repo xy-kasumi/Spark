@@ -693,16 +693,20 @@ export class GpuKernels {
         const end = () => {
             if (!this.perf[name]) {
                 this.perf[name] = {
-                    time_ms: 0,
+                    time_ms_accum: 0,
+                    time_ms_min: Infinity,
+                    time_ms_max: 0,
                     n: 0,
                 };
             }
             const time_ms = performance.now() - t0;
             const p = this.perf[name];
-            p.time_ms += time_ms;
+            p.time_ms_accum += time_ms;
+            p.time_ms_min = Math.min(p.time_ms_min, time_ms);
+            p.time_ms_max = Math.max(p.time_ms_max, time_ms);
             p.n++;
             if (p.n % 100 === 0) {
-                console.log(`${name}: ${p.time_ms / p.n}ms (N=${p.n})`);
+                console.log(`${name}: avg=${(p.time_ms_accum / p.n).toFixed(2)}ms (N=${p.n} min=${p.time_ms_min.toFixed(2)}ms max=${p.time_ms_max.toFixed(2)}ms)`);
             }
         };
         return {
@@ -712,13 +716,16 @@ export class GpuKernels {
 
     /**
      * Copy data from inBuf to outBuf. This can cross CPU/GPU boundary.
+     * Normally, size of inBuf and outBuf must match.
+     * But if size is specified, size can differ as long as they're both same or larger than size.
      * 
-     * @param {ArrayBuffer | GPUBuffer} inBuf 
+     * @param {ArrayBuffer | GPUBuffer} inBuf
      * @param {ArrayBuffer | GPUBuffer} outBuf
+     * @param {number} [copySize] Size of data to copy.
      * @returns {Promise<void>}
      * @async
      */
-    async copyBuffer(inBuf, outBuf) {
+    async copyBuffer(inBuf, outBuf, copySize = null) {
         if (inBuf === outBuf) {
             return;
         }
@@ -726,37 +733,39 @@ export class GpuKernels {
         const outIsCpu = outBuf instanceof ArrayBuffer;
         const inSize = inIsCpu ? inBuf.byteLength : inBuf.size;
         const outSize = outIsCpu ? outBuf.byteLength : outBuf.size;
-        if (inSize !== outSize) {
-            throw new Error(`Buffer size mismatch: ${inSize} !== ${outSize}`);
+        if (copySize === null) {
+            if (inSize !== outSize) {
+                throw new Error(`Buffer size mismatch: ${inSize} !== ${outSize}`);
+            }
+            copySize = inSize;
+        } else if (inSize < copySize || outSize < copySize) {
+            throw new Error(`Buffer is smaller than copySize: ${inSize} < ${copySize} || ${outSize} < ${copySize}`);
         }
-        const bufSize = inSize;
-
+     
         if (inIsCpu && outIsCpu) {
             // CPU->CPU: just clone
-            new Uint8Array(outBuf).set(new Uint8Array(inBuf));
+            new Uint8Array(outBuf, 0, copySize).set(new Uint8Array(inBuf, 0, copySize));
         } else if (inIsCpu && !outIsCpu) {
             // CPU->GPU: direct API.
-            this.device.queue.writeBuffer(outBuf, 0, inBuf, 0, bufSize);
+            this.device.queue.writeBuffer(outBuf, 0, inBuf, 0, copySize);
         } else if (!inIsCpu && outIsCpu) {
             // GPU->CPU: via cpu-read buffer
-            const tempBuf = this.createBufferForCpuRead(bufSize);
+            const tempBuf = this.createBufferForCpuRead(copySize);
             const commandEncoder = this.device.createCommandEncoder();
-            commandEncoder.copyBufferToBuffer(inBuf, 0, tempBuf, 0, bufSize);
+            commandEncoder.copyBufferToBuffer(inBuf, 0, tempBuf, 0, copySize);
             this.device.queue.submit([commandEncoder.finish()]);
-            // await this.device.queue.onSubmittedWorkDone();
+            
             await tempBuf.mapAsync(GPUMapMode.READ);
-            new Uint8Array(outBuf).set(new Uint8Array(tempBuf.getMappedRange(0, bufSize)));
+            new Uint8Array(outBuf, 0, copySize).set(new Uint8Array(tempBuf.getMappedRange(0, copySize)));
             tempBuf.unmap();
             tempBuf.destroy();
         } else {
             // GPU->GPU: direct copy
             const commandEncoder = this.device.createCommandEncoder();
-            commandEncoder.copyBufferToBuffer(inBuf, 0, outBuf, 0, bufSize);
+            commandEncoder.copyBufferToBuffer(inBuf, 0, outBuf, 0, copySize);
             this.device.queue.submit([commandEncoder.finish()]);
-            // await this.device.queue.onSubmittedWorkDone();
         }
     }
-
 
     /**
      * Register WGSL snippet for use in {@link map}.
@@ -908,18 +917,22 @@ export class GpuKernels {
             throw new Error(`Reduce fn "${name}": valType must be "u32" or "f32"`);
         }
 
+        const uniforms = {num_active: "u32"};
+        const uniformDef = new PipelineUniformDef(uniforms);
+
         const pipeline = this.#createPipeline(`reduce_${name}`, 2, `
             var<workgroup> wg_buffer_accum: array<${valType}, ${this.wgSize}>;
 
             @group(0) @binding(0) var<storage, read_write> vs_in: array<${valType}>;
             @group(0) @binding(1) var<storage, read_write> vs_out: array<${valType}>;
+            ${uniformDef.shaderVars()}
 
             @compute @workgroup_size(${this.wgSize})
-            fn reduce_${name}(@builtin(global_invocation_id) gid_raw: vec3u, @builtin(local_invocation_index) lid: u32, @builtin(num_workgroups) num_wg: vec3u) {
+            fn reduce_${name}(@builtin(global_invocation_id) gid_raw: vec3u, @builtin(local_invocation_index) lid: u32) {
                 let gid = gid_raw.x;
 
                 var accum = ${initVal};
-                if (gid < arrayLength(&vs_in)) {
+                if (gid < num_active) {
                     accum = vs_in[gid];
                 }
                 wg_buffer_accum[lid] = accum;
@@ -941,12 +954,9 @@ export class GpuKernels {
                 if (lid == 0) {
                     vs_out[gid / ${this.wgSize}] = wg_buffer_accum[0];
                 }
-                if (gid >= num_wg.x) {
-                    vs_out[gid] = ${initVal}; // prevent reading garbage in next pass
-                }
             }
-        `, new PipelineUniformDef({}));
-        this.reducePipelines[name] = { pipeline, valType };
+        `, uniformDef);
+        this.reducePipelines[name] = { pipeline, valType, uniformDef };
     }
 
     /**
@@ -1050,51 +1060,65 @@ export class GpuKernels {
      * @async
      */
     async reduce(fnName, inVg) {
+        const redPerf = this.perfBegin(`  reduce:${fnName}`);
         if (!this.reducePipelines[fnName]) {
             throw new Error(`Reduce fn "${fnName}" not registered`);
         }
-        const { pipeline, valType } = this.reducePipelines[fnName];
+        const { pipeline, valType, uniformDef } = this.reducePipelines[fnName];
         if (inVg.type !== valType) {
             throw new Error(`Reduce fn "${fnName}" type mismatch; expected ${valType}, got ${inVg.type}`);
         }
 
-        let t0 = performance.now();
+        // Dispatch like the following to minimize copy.
+        // inVg -(reduce)-> buf0 -(reduce)-> buf1 -(reduce)-> buf0 -> ...
+        const multOf4 = (n) => {
+            return Math.ceil(n / 4) * 4;
+        };
+        const bufSize = multOf4(Math.ceil(inVg.buffer.size / this.wgSize));
         const tempBufs = [
-            this.createBuffer(inVg.buffer.size),
-            this.createBuffer(inVg.buffer.size),
+            this.createBuffer(bufSize),
+            this.createBuffer(bufSize),
         ];
-
-        let activeBufIx = 0;
-        await this.copyBuffer(inVg.buffer, tempBufs[activeBufIx]);
-        //console.log(`    reduce:copyBuffer: ${performance.now() - t0}ms`);
-        t0 = performance.now();
+        let activeBufIx = -1; // -1 means inVg is active, 0 and 1 means tempBufs are active.
+        const getBuf = (ix) => {
+            return ix === -1 ? inVg.buffer : tempBufs[ix];
+        };
+        const nextIx = (ix) => {
+            return ix === -1 ? 0 : 1 - ix;
+        };
 
         try {
             const commandEncoder = this.device.createCommandEncoder();
             let numElems = inVg.numX * inVg.numY * inVg.numZ;
+            const allBinds = [];
             while (numElems > 1) {
-                this.#dispatchKernel(commandEncoder, pipeline, [tempBufs[activeBufIx], tempBufs[1 - activeBufIx]], numElems, []);
-                activeBufIx = 1 - activeBufIx;
+                const binds = uniformDef.createBuffers(this, {num_active: numElems});
+                this.#dispatchKernel(commandEncoder, pipeline, [getBuf(activeBufIx), getBuf(nextIx(activeBufIx))], numElems, binds);
+                activeBufIx = nextIx(activeBufIx);
                 numElems = Math.ceil(numElems / this.wgSize);
+                allBinds.push(...binds);
             }
             this.device.queue.submit([commandEncoder.finish()]);
-            //await this.device.queue.onSubmittedWorkDone();
-            //console.log(`    reduce:dispatchKernel: ${performance.now() - t0}ms`);
-            t0 = performance.now();
-            const readBuf = this.createBufferForCpuRead(inVg.buffer.size);
-            await this.copyBuffer(tempBufs[activeBufIx], readBuf);
-            await readBuf.mapAsync(GPUMapMode.READ, 0, 4);
+            for (const [_, buf] of allBinds) {
+                buf.destroy();
+            }
+            
+            const readBuf = this.createBufferForCpuRead(4);
+            await this.copyBuffer(getBuf(activeBufIx), readBuf, 4);
+            await readBuf.mapAsync(GPUMapMode.READ);
             let result = null;
             if (valType === "u32") {
-                result = new Uint32Array(readBuf.getMappedRange(0, 4))[0];
+                result = new Uint32Array(readBuf.getMappedRange())[0];
             } else if (valType === "f32") {
-                result = new Float32Array(readBuf.getMappedRange(0, 4))[0];
+                result = new Float32Array(readBuf.getMappedRange())[0];
             } else {
                 throw "unexpected valType";
             }
-            //console.log(`    reduce:read: ${performance.now() - t0}ms`);
+            
             readBuf.unmap();
             readBuf.destroy();
+
+            redPerf.end();
             return result;
         } finally {
             tempBufs.forEach(buf => buf.destroy());
