@@ -10,7 +10,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from './N8AO.js';
 import { diceSurf } from './mesh.js';
-import { createSdf, createELHShape, createCylinderShape, createBoxShape, anyPointInsideIs, everyPointInsideIs, VoxelGridGpu, VoxelGridCpu, GpuKernels } from './voxel.js';
+import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, VoxelGridCpu, GpuKernels } from './voxel.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Basis

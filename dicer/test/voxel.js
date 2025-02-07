@@ -1,10 +1,11 @@
 import { Vector3 } from 'three';
-import { createSdfBox, createSdfCylinder, createSdfElh, GpuKernels, VoxelGridCpu, VoxelGridGpu, wgslSdfCylinderSnippet, wgslSdfElhSnippet, wgslSdfBoxSnippet } from '../voxel.js';
+import { createBoxShape, createCylinderShape, createELHShape, createSdf, uberSdfSnippet, uberSdfUniformDefs, uberSdfUniformVars, GpuKernels, VoxelGridCpu, VoxelGridGpu } from '../voxel.js';
 
 QUnit.module('cpu-sdf', function () {
     QUnit.test('sdf cube', function (assert) {
         // create box [0,1]^3.
-        const sdf = createSdfBox(new Vector3(0.5, 0.5, 0.5), new Vector3(0.5, 0, 0), new Vector3(0, 0.5, 0), new Vector3(0, 0, 0.5));
+        const shape = createBoxShape(new Vector3(0.5, 0.5, 0.5), new Vector3(0.5, 0, 0), new Vector3(0, 0.5, 0), new Vector3(0, 0, 0.5));
+        const sdf = createSdf(shape);
 
         assert.equal(sdf(new Vector3(0, 0, 0)), 0, "corner");
         assert.equal(sdf(new Vector3(0, 0, 1)), 0, "corner");
@@ -26,7 +27,8 @@ QUnit.module('cpu-sdf', function () {
     });
 
     QUnit.test('sdf box', function (assert) {
-        const sdf = createSdfBox(new Vector3(0, 0, 0), new Vector3(0.5, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1.5));
+        const shape = createBoxShape(new Vector3(0, 0, 0), new Vector3(0.5, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1.5));
+        const sdf = createSdf(shape);
         assert.equal(sdf(new Vector3(0, 0, 0)), -0.5, "center");
         assert.equal(sdf(new Vector3(-0.5, 0, 0)), 0, "X-");
         assert.equal(sdf(new Vector3(0, -1, 0)), 0, "Y-");
@@ -34,7 +36,8 @@ QUnit.module('cpu-sdf', function () {
     });
 
     QUnit.test('sdf cylinder', function (assert) {
-        const sdf = createSdfCylinder(new Vector3(0, 0, 0), new Vector3(0, 0, 1), 0.5, 2);
+        const shape = createCylinderShape(new Vector3(0, 0, 0), new Vector3(0, 0, 1), 0.5, 2);
+        const sdf = createSdf(shape);
         assert.equal(sdf(new Vector3(0, 0, -1)), 1, "bottom-1");
         assert.equal(sdf(new Vector3(0, 0, 0)), 0, "bottom");
         assert.equal(sdf(new Vector3(0, 0, 1)), -0.5, "center");
@@ -51,17 +54,15 @@ QUnit.module('gpu-sdf', function () {
 
         const num = 10;
 
+        const shape = createCylinderShape(new Vector3(0, 0, 0), new Vector3(0, 0, 1), 0.5, 2);
+
         const vg = new VoxelGridGpu(kernels, 0.4, num, num, num, new Vector3(-2, -2, -2), "f32");
         const readVg = kernels.createLikeCpu(vg);
-        kernels.registerMapFn("sdf", "f32", "f32", wgslSdfCylinderSnippet("p", "vo"), { _sd_p: "vec3f", _sd_n: "vec3f", _sd_r: "f32", _sd_h: "f32" });
+        kernels.registerMapFn("sdf", "f32", "f32", uberSdfSnippet("p", "vo"), uberSdfUniformDefs);
 
-        const p = new Vector3(0, 0, -1);
-        const n = new Vector3(0, 0, 1);
-        const r = 1;
-        const h = 0.1;
-        await kernels.map("sdf", vg /* not used */, vg, { _sd_p: p, _sd_n: n, _sd_r: r, _sd_h: h });
+        await kernels.map("sdf", vg /* not used */, vg, uberSdfUniformVars(shape));
         await kernels.copy(vg, readVg);
-        const sdfRef = createSdfCylinder(p, n, r, h);
+        const sdfRef = createSdf(shape);
         for (let iz = 0; iz < num; iz++) {
             for (let iy = 0; iy < num; iy++) {
                 for (let ix = 0; ix < num; ix++) {
@@ -79,18 +80,15 @@ QUnit.module('gpu-sdf', function () {
 
         const num = 10;
 
+        const shape = createELHShape(new Vector3(0, 0, -1), new Vector3(0, 1, -1), new Vector3(0, 0, 1), 1, 0.1);
+
         const vg = new VoxelGridGpu(kernels, 0.4, num, num, num, new Vector3(-2, -2, -2), "f32");
         const readVg = kernels.createLikeCpu(vg);
-        kernels.registerMapFn("sdf", "f32", "f32", wgslSdfElhSnippet("p", "vo"), { _sd_p: "vec3f", _sd_q: "vec3f", _sd_n: "vec3f", _sd_r: "f32", _sd_h: "f32" });
+        kernels.registerMapFn("sdf", "f32", "f32", uberSdfSnippet("p", "vo"), uberSdfUniformDefs);
 
-        const p = new Vector3(0, 0, -1);
-        const q = new Vector3(0, 1, -1);
-        const n = new Vector3(0, 0, 1);
-        const r = 1;
-        const h = 0.1;
-        await kernels.map("sdf", vg /* not used */, vg, { _sd_p: p, _sd_q: q, _sd_n: n, _sd_r: r, _sd_h: h });
+        await kernels.map("sdf", vg /* not used */, vg, uberSdfUniformVars(shape));
         await kernels.copy(vg, readVg);
-        const sdfRef = createSdfElh(p, q, n, r, h);
+        const sdfRef = createSdf(shape);
         for (let iz = 0; iz < num; iz++) {
             for (let iy = 0; iy < num; iy++) {
                 for (let ix = 0; ix < num; ix++) {
@@ -108,17 +106,15 @@ QUnit.module('gpu-sdf', function () {
 
         const num = 10;
 
+        const shape = createBoxShape(new Vector3(0, 0, 0.5), new Vector3(3, 0, 0), new Vector3(0, 2, 0), new Vector3(0, 0, -1));
+
         const vg = new VoxelGridGpu(kernels, 0.4, num, num, num, new Vector3(-2, -2, -2), "f32");
         const readVg = kernels.createLikeCpu(vg);
-        kernels.registerMapFn("sdf", "f32", "f32", wgslSdfBoxSnippet("p", "vo"), { _sd_c: "vec3f", _sd_hv0: "vec3f", _sd_hv1: "vec3f", _sd_hv2: "vec3f" });
+        kernels.registerMapFn("sdf", "f32", "f32", uberSdfSnippet("p", "vo"), uberSdfUniformDefs);
 
-        const c = new Vector3(0, 0, 0.5);
-        const hv0 = new Vector3(3, 0, 0);
-        const hv1 = new Vector3(0, 2, 0);
-        const hv2 = new Vector3(0, 0, -1);
-        await kernels.map("sdf", vg /* not used */, vg, { _sd_c: c, _sd_hv0: hv0, _sd_hv1: hv1, _sd_hv2: hv2 });
+        await kernels.map("sdf", vg /* not used */, vg, uberSdfUniformVars(shape));
         await kernels.copy(vg, readVg);
-        const sdfRef = createSdfBox(c, hv0, hv1, hv2);
+        const sdfRef = createSdf(shape);
         for (let iz = 0; iz < num; iz++) {
             for (let iy = 0; iy < num; iy++) {
                 for (let ix = 0; ix < num; ix++) {
