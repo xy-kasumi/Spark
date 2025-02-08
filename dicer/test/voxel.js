@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import { Vector3 } from 'three';
 import { createBoxShape, createCylinderShape, createELHShape, createSdf, uberSdfSnippet, uberSdfUniformDefs, uberSdfUniformVars, GpuKernels, VoxelGridCpu, VoxelGridGpu } from '../voxel.js';
 

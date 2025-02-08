@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /**
  * WebGPU-accelerated voxel operations and SDF (signed distance function) based queries.
  * 

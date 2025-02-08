@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /**
  * To get reliable GATE/DETECT handling, we use dual core.
  * Pin control responsibility is cleanly separated.
