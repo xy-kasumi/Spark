@@ -261,9 +261,9 @@ void init_reg_rw_i2c() {
 // Main loops for each core.
 
 void core1_main() {
-  bool prev_gate = false;
-  uint8_t prev_pol = POL_OFF;
-  uint8_t prev_pcurr = 1;
+  bool curr_gate = false;
+  uint8_t curr_pol = POL_OFF;
+  uint8_t curr_pcurr = 1;
 
   // Each loop is expected to finish well within 1us.
   // But when applying changes to pol/pcurr, it can take as long as it needs.
@@ -281,7 +281,7 @@ void core1_main() {
     critical_section_exit(&csec_pulse);
 
     // For POL off, apply immediately (stronger than GATE).
-    if (prev_pol != new_pol && new_pol == POL_OFF) {
+    if (curr_pol != new_pol && new_pol == POL_OFF) {
       gpio_put(PIN_DETECT, 0);
       // LONG PROCESS
       set_out_level(0);
@@ -289,16 +289,16 @@ void core1_main() {
       gpio_put(PIN_MUX_EN, 0);
       sleep_ms(RELAY_MAX_SETTLE_TIME_MS);
       gpio_put(PIN_LED_POWER, 0);
-      prev_pol = new_pol;
+      curr_pol = new_pol;
     }
 
     // Only apply other changes when GATE is off.
-    if (!prev_gate && (prev_pol != new_pol || prev_pcurr != new_pcurr)) {
+    if (!curr_gate && (curr_pol != new_pol || curr_pcurr != new_pcurr)) {
       gpio_put(PIN_DETECT, 0);
       // LONG PROCESS
       set_out_level(0);
       sleep_us(DISCHARGE_MAX_SETTLE_TIME_US);
-      if (prev_pol != new_pol) {
+      if (curr_pol != new_pol) {
         // Since POL_OFF case is already handled, new_pol must be one of four ON
         // configs.
         gpio_put(PIN_LED_POWER, true);
@@ -307,29 +307,29 @@ void core1_main() {
         gpio_put(PIN_MUX_POL, new_pol == POL_TPWN || new_pol == POL_TPGN);
         sleep_ms(RELAY_MAX_SETTLE_TIME_MS);
       }
-      if (prev_pcurr != new_pcurr) {
+      if (curr_pcurr != new_pcurr) {
         set_thresh_level(new_th_on_cyc);
         sleep_ms(THRESH_MAX_SETTLE_TIME_MS);
       }
-      prev_pol = new_pol;
-      prev_pcurr = new_pcurr;
+      curr_pol = new_pol;
+      curr_pcurr = new_pcurr;
     }
 
     // Copy value from curr trigger to detect.
     gpio_put(PIN_DETECT, gpio_get(PIN_CURR_TRIGGER));
 
     // Apply GATE change.
-    bool curr_gate = gpio_get(PIN_GATE);
-    if (curr_gate != prev_gate) {
-      if (curr_gate) {
+    bool new_gate = gpio_get(PIN_GATE);
+    if (new_gate != curr_gate) {
+      if (new_gate) {
         // turn on
-        set_out_level(new_pcurr);
+        set_out_level(curr_pcurr);
       } else {
         // turn off
         set_out_level(0);
       }
+      curr_gate = new_gate;
     }
-    prev_gate = curr_gate;
   }
 
 fatal_error:
