@@ -71,7 +71,7 @@ void set_out_level(uint8_t level) {
 void init_thresh_pwm(uint8_t cyc) {
   gpio_set_function(PIN_CURR_THRESH_PWM, GPIO_FUNC_PWM);
   pwm_set_wrap(PWM_CURR_THRESH_PWM, PWM_THRESH_NUM_CYCLE - 1);
-  pwm_set_chan_level(PWM_CURR_THRESH_PWM, PWM_CHAN_CURR_THRESH_PWM, 0);
+  pwm_set_chan_level(PWM_CURR_THRESH_PWM, PWM_CHAN_CURR_THRESH_PWM, cyc);
   pwm_set_enabled(PWM_CURR_THRESH_PWM, true);
 }
 
@@ -91,7 +91,7 @@ uint8_t compute_th_on_cyc(uint8_t pcurr) {
   const float PCURR_TO_THRESH_VOLT =
       PCURR_TO_FB_VOLT * 0.25; // target 25% threshold.
   const float PCURR_TO_THRESH_ON_CYC =
-      PCURR_TO_FB_VOLT *
+      PCURR_TO_THRESH_VOLT *
       ((1 / 3.3) * PWM_THRESH_NUM_CYCLE); // /3.3: volt to duty factor.
 
   float on_cyc = pcurr * PCURR_TO_THRESH_ON_CYC;
@@ -183,7 +183,7 @@ static uint8_t i2c_reg_ptr = 0;
 void write_reg(uint8_t reg, uint8_t val) {
   switch (reg) {
   case REG_POLARITY:
-    if (val > POL_TNGP) {
+    if (val != POL_OFF && val != POL_TPWN && val != POL_TNWP && val != POL_TPGN && val != POL_TNGP) {
       val = POL_OFF; // treat unknown value as OFF for safety.
     }
     critical_section_enter_blocking(&csec_pulse);

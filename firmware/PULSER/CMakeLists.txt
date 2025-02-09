@@ -81,6 +81,12 @@ add_executable(PULSER_fw
     main.c
     )
 
+target_compile_options(PULSER_fw PRIVATE
+    -Wall
+    -Wextra
+    -Werror  # Treat all warnings as errors
+)
+
 # pull in common dependencies
 target_link_libraries(PULSER_fw pico_stdlib)
 target_link_libraries(PULSER_fw pico_i2c_slave)
