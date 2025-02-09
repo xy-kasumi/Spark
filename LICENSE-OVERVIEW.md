@@ -33,4 +33,7 @@ AGPL, CERN-OHL, and Apache-2.0 also include *patent retaliation* clauses, promot
 | N8AO                | CC0 1.0          | <https://github.com/N8python/n8ao>                      |
 | WebGPU-Radix-Sort   | MIT              | <https://github.com/kishimisu/WebGPU-Radix-Sort>        |
 | Source Sans 3       | SIL OFL 1.1      | <https://fonts.google.com/specimen/Source+Sans+3>       |
+| lil-gui             | MIT              | <https://github.com/georgealways/lil-gui>               |
+| qunit               | MIT              | <https://github.com/qunitjs/qunit>                      |
 
+Also see [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt) for full details.
