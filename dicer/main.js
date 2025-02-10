@@ -649,9 +649,10 @@ const generateStockGeom = (stockRadius = 7.5, stockHeight = 15) => {
  * @param {VoxelGridCpu} vg Voxel grid to visualize
  * @param {string} [label=""] Optional label to display on the voxel grid
  * @param {string} [mode="occupancy"] "occupancy" | "deviation". "occupancy" treats 255:full, 128:partial, 0:empty. "deviation" is >=0 as deviation and -1 as empty
+ * @param {number} [maxDev=3] Maximum deviation to visualize. Only used in "deviation" mode.
  * @returns {THREE.Object3D} Visualization object
  */
-const createVgVis = (vg, label = "", mode = "occupancy") => {
+const createVgVis = (vg, label = "", mode = "occupancy", maxDev = 3) => {
     const t0 = performance.now();
     const cubeSize = vg.res * 1.0;
     const cubeGeom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
@@ -751,7 +752,6 @@ const createVgVis = (vg, label = "", mode = "occupancy") => {
         // Pass 2: copy visible voxel data into buffer.
         const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), numVisibleVoxels);
         let instanceIx = 0;
-        const maxDev = 3;
         for (let iz = 0; iz < vg.numZ; iz++) {
             for (let iy = 0; iy < vg.numY; iy++) {
                 for (let ix = 0; ix < vg.numX; ix++) {
@@ -794,6 +794,36 @@ const createVgVis = (vg, label = "", mode = "occupancy") => {
 
     console.log(`createVgVis took ${performance.now() - t0}ms`);
     return meshContainer;
+};
+
+/**
+ * Visualize "max deviation" in voxel grid.
+ * @param {VoxelGridCpu} vg - Voxel grid to visualize
+ * @param {number} - Maximum deviation to visualize
+ * @returns {THREE.Object3D} Visualization object
+ */
+const createMaxDeviationVis = (vg, maxDev) => {
+    const MAX_NUM_VIS = 100;
+    const vis = new THREE.Object3D();
+    let numAdded = 0;
+    for (let iz = 0; iz < vg.numZ; iz++) {
+        for (let iy = 0; iy < vg.numY; iy++) {
+            for (let ix = 0; ix < vg.numX; ix++) {
+                const v = vg.get(ix, iy, iz);
+                if (v < 0) {
+                    continue;
+                }
+                if (v >= maxDev) {
+                    vis.add(visDot(vg.centerOf(ix, iy, iz), "red"));
+                    numAdded++;
+                    if (numAdded >= MAX_NUM_VIS) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    return vis;
 };
 
 /**
@@ -2001,10 +2031,11 @@ class Planner {
                     const workDevCpu = this.kernels.createLikeCpu(workDeviation);
                     await this.kernels.copy(workDeviation, workDevCpu);
                     this.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath, false);
-                    this.updateVis("work-vg", [createVgVis(workDevCpu, "work-vg", "deviation")], this.showWork);
+                    this.deviation = workDevCpu.max();
+                    this.updateVis("work-vg", [createVgVis(workDevCpu, "work-vg", "deviation", this.deviation)], this.showWork);
                     const lastPt = this.planPath[this.planPath.length - 1];
                     this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
-                    this.deviation = workDevCpu.max();
+                    this.updateVis("work-max-dev", [createMaxDeviationVis(workDevCpu, this.deviation)]);
                     return true;
                 }
             } finally {
