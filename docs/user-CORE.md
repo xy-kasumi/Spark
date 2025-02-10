@@ -103,14 +103,12 @@ Interface behavior:
 #### `find <board_ix> <distance>`
 * **Description:** Moves up to a specified distance or until the electrode touches the work.  
   Uses a hot electrode scan and may cause slight damage to the work.
-* **Important:** Must be issued after `edon`.
 * **Parameters:**
   * `board_ix`: 0, 1, or 2
   * `distance`: float (in mm)
 
 #### `drill <board_ix> <distance>`
 * **Description:** Drills by a specified distance. Actual drill depth may be less due to tool wear.
-* **Important:** Must be issued after `edon`.
 * **Parameters:**
   * `board_ix`: 0, 1, or 2
   * `distance`: float (in mm)
