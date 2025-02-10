@@ -318,8 +318,16 @@ void core1_main() {
     // Copy value from curr trigger to detect.
     gpio_put(PIN_DETECT, gpio_get(PIN_CURR_TRIGGER));
 
-    // Apply GATE change.
+    // Get noise-filtered gate value.
     bool new_gate = gpio_get(PIN_GATE);
+    for (uint8_t i = 0; i < 15; i++) {
+      // each cycle is about 10 cycle
+      bool new_gate_verify = gpio_get(PIN_GATE);
+      if (new_gate_verify != new_gate) {
+        continue; // signal unstable; ignore
+      }
+    }
+    // Apply GATE change.
     if (new_gate != curr_gate) {
       if (new_gate) {
         // turn on

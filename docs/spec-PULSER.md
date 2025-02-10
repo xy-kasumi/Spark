@@ -57,6 +57,11 @@ uC operating environment
 
 * N/C: No Connection
 
+### Gate input filter
+Since correctness of GATE is critical and it's used in noisy environment,
+it should employ noise-filtering. (i.e. only detect change if the value persists for more than 1us).
+
+
 ### Pulse generator (CURR_GATE_PWM, CURR_THRESH_PWM, DETECT)
 Main MOSFET current flow
 ```
