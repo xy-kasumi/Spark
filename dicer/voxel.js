@@ -933,9 +933,10 @@ export class GpuKernels {
      * @param {Object} uniforms Uniform variable defintions (can change for each invocation) {varName: type}
      * 
      * Snippet can use following variables:
-     * - p: vec3f, voxel center position
-     * - vi: value of the voxel
-     * - vo: result
+     * - p: vec3f: voxel center position
+     * - vi: <inType>: value of the voxel
+     * - vo: <outType>: result
+     * - (advanced) index: u32: raw array index
      * 
      * At the end of snippet, vo must be assigned a value.
      * e.g. "vo = 0; if (vi == 1) { vo = 1; } else if (p.x > 0.5) { vo = 2; }"
@@ -1131,7 +1132,7 @@ export class GpuKernels {
 
         const storages = { vs_in: inVg, vs_out: outVg };
         uniforms = Object.assign({}, uniforms, this.#gridUniformVars(grid));
-        
+
         pipeline.storageDef.checkInput(storages);
         pipeline.uniformDef.checkInput(uniforms);
 
@@ -1437,9 +1438,10 @@ export class GpuKernels {
     #initGridUtils() {
         this.#compileJumpFloodPipeline();
         this.#compileShapeQueryPipeline();
-
+        this.compileConnRegSweepPipeline();
         this.invalidValue = 65536; // used in boundOfAxis.
 
+        this.registerMapFn("connreg_init", "u32", "u32", `if (vi > 0) { vo = i; } else { vo = 0xffffffff; } `);
         this.registerMapFn("df_init", "u32", "vec4f", `if (vi > 0) { vo = vec4f(p, 0); } else { vo = vec4f(0, 0, 0, -1); }`);
         this.registerMapFn("df_to_dist", "vec4f", "f32", `vo = vi.w;`);
         this.registerMapFn("project_to_dir", "u32", "f32", `
@@ -1838,6 +1840,119 @@ export class GpuKernels {
         readBuf.unmap();
         readBuf.destroy();
         return result;
+    }
+
+    /**
+     * Mark each connected region with unique ID, using 6-neighbor.
+     * O(numFlood) dispatches, O(N^3 * numFlood) compute.
+     * 
+     * @param {VoxelGridGpu<u32>} inVg exists flag (non-zero: exists, 0: not exists)
+     * @param {VoxelGridGpu<u32>} outVg output; contains ID that denotes connected region. 0xffffffff means no cell.
+     * @param {number} numFlood Number of floodings. For very simple shape, 1 is fine, and for "real-world" shape, 4 should be plenty.
+     *   However, pathological shape would require 100s of passes. If numFlood is not enough, connected regions will return different IDs.
+     */
+    connectedRegions(inVg, outVg, numFlood = 4) {
+        const grid = this.#checkGridCompat(inVg, outVg);
+        this.map("connreg_init", inVg, outVg);
+
+        const commandEncoder = this.device.createCommandEncoder();
+        const uniformsX = {axis: 0};
+        Object.assign(uniformsX, this.#gridUniformVars(grid));
+        const uniformsY = {axis: 1};
+        Object.assign(uniformsY, this.#gridUniformVars(grid));
+        const uniformsZ = {axis: 2};
+        Object.assign(uniformsZ, this.#gridUniformVars(grid));
+        for (let i = 0; i < numFlood; i++) {
+            // Since uniform variables are independent of i and only depends on axis, it's ok to reuse uniBufIx.
+            this.#dispatchKernel(commandEncoder, this.connRegSweepPipeline, grid.numY * grid.numZ, { vs: outVg }, uniformsX, 0);
+            this.#dispatchKernel(commandEncoder, this.connRegSweepPipeline, grid.numZ * grid.numX, { vs: outVg }, uniformsY, 1);
+            this.#dispatchKernel(commandEncoder, this.connRegSweepPipeline, grid.numX * grid.numY, { vs: outVg }, uniformsZ, 2);
+        }
+        this.device.queue.submit([commandEncoder.finish()]);
+    }
+
+    compileConnRegSweepPipeline() {
+        const storageDef = new PipelineStorageDef({ vs: "u32" });
+        // axis={0, 1, 2} (X, Y, Z)
+        // X-scan: dispatchIx = iy + num_y * iz
+        // Y-scan: dispatchIx = iz + num_z * ix
+        // Z-scan: dispatchIx = ix + num_x * iy
+        const uniforms = { axis: "u32" };
+        Object.assign(uniforms, this.#gridUniformDefs());
+        const uniformDef = new PipelineUniformDef(uniforms);
+
+        this.connRegSweepPipeline = this.#createPipeline(`connreg_sweep`, storageDef, uniformDef, `
+            ${storageDef.shaderVars()}
+            ${uniformDef.shaderVars()}
+
+            ${this.#gridFns()}
+
+            const u32 INVALID = 0xffffffff;
+
+            @compute @workgroup_size(${this.wgSize})
+            fn connreg_sweep(@builtin(global_invocation_id) id: vec3u) {
+                let ix = id.x;
+
+                var dir = vec3u(0);
+                var num = u32(0);
+                var ix3 = vec3u(0);
+                if (axis == 0) {
+                    if (ix >= nums.y * nums.z) {
+                        return;
+                    }
+                    dir = vec3u(1, 0, 0);
+                    num = nums.x;
+                    ix3 = vec3u(0, ix % nums.y, ix / nums.y);
+                } else if (axis == 1) {
+                    if (ix >= nums.z * nums.x) {
+                        return;
+                    }
+                    dir = vec3u(0, 1, 0);
+                    num = nums.y;
+                    ix3 = vec3u(ix / nums.z, 0, ix % nums.z);
+                } else {
+                    if (ix >= nums.x * nums.y) {
+                        return;
+                    }
+                    dir = vec3u(0, 0, 1);
+                    num = nums.z;
+                    ix3 = vec3u(ix % nums.x, ix / nums.x, 0);
+                }
+
+                // + scan
+                for (var i = 0u; i < num - 1; i++) {
+                    let prev_ix = compose_ix(ix3 + dir * i);
+                    let curr_ix = compose_ix(ix3 + dir * (i + 1));
+                    let prev = vs[prev_ix];
+                    let curr = vs[curr_ix];
+                    if (prev != INVALID && curr != INVALID) {
+                        vs[curr_ix] = min(prev, curr);
+                    }
+                }
+
+                // - scan
+                for (var i = 0u; i < num - 1; i++) {
+                    let prev_ix = compose_ix(ix3 + dir * (num - i));
+                    let curr_ix = compose_ix(ix3 + dir * (num - i - 1));
+                    let prev = vs[prev_ix];
+                    let curr = vs[curr_ix];
+                    if (prev != INVALID && curr != INVALID) {
+                        vs[curr_ix] = min(prev, curr);
+                    }
+                }
+            }
+        `);
+    }
+
+    /**
+     * Count top 4 labels, ignoring 0xffffffff.
+     * 
+     * @param {VoxelGridGpu<u32>} vg 
+     * @returns {Promise<Object<string, number>>}
+     * @async
+     */
+    top4Labels(vg) {
+
     }
 
     /**
