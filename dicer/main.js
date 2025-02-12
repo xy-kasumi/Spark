@@ -171,6 +171,22 @@ class TrackingVoxelGrid {
             }
             `, { vx_diag: "f32", exclude_below_z: "f32" }
         );
+        this.kernels.registerMapFn("extract_work", "u32", "u32", `
+            if (p.z < exclude_below_z) {
+                vo = 0;
+            } else if (vi == ${C_EMPTY_DONE}) {
+                vo = 0;
+            } else {
+                vo = 1;
+            }
+        `, { exclude_below_z: "f32" });
+        this.kernels.registerMapFn("extract_region_by_id", "u32", "u32", `
+            if (vi != reg_id) {
+                vo = 0;
+            } else {
+                vo = 1;
+            }
+        `, { reg_id: "u32" });
 
         this.kernels.registerMapFn("not_tg_empty", "u32", "u32",
             `if (vi != ${C_EMPTY_DONE} && vi != ${C_EMPTY_REMAINING}) { vo = 1; } else { vo = 0; }`);
@@ -324,13 +340,24 @@ class TrackingVoxelGrid {
      * Extract work volume as voxels. Each cell will contain deviation from target shape.
      * positive value indicates deviation. 0 for perfect finish or inside. -1 for empty regions.
      * @param {boolean} [excludeProtectedWork=false] If true, exclude protected work.
-     * @returns {Promise<VoxelGridGpu>} (f32)
-     * @async
+     * @returns {VoxelGridGpu} (f32)
      */
-    async extractWorkWithDeviation(excludeProtectedWork = false) {
+    extractWorkWithDeviation(excludeProtectedWork = false) {
         let zThresh = excludeProtectedWork ? this.protectedWorkBelowZ + this.res : -1e3; // +this.res ensures removal of cells just at the Z boundary.
         const res = this.kernels.createLike(this.vx, "f32");
         this.kernels.map2("work_deviation", this.distField, this.vx, res, { "vx_diag": this.res * Math.sqrt(3), "exclude_below_z": zThresh });
+        return res;
+    }
+
+    /**
+     * Extract work volume as voxels. Each cell will contain 1 if it has work, 0 otherwise.
+     * @param {boolean} excludeProtectedWork 
+     * @returns {VoxelGridGpu} (u32) 1 exists
+     */
+    extractWorkFlag(excludeProtectedWork = false) {
+        let zThresh = excludeProtectedWork ? this.protectedWorkBelowZ + this.res : -1e3; // +this.res ensures removal of cells just at the Z boundary.
+        const res = this.kernels.createLike(this.vx, "u32");
+        this.kernels.map("extract_work", this.vx, res, { "exclude_below_z": zThresh });
         return res;
     }
 
@@ -429,6 +456,42 @@ class TrackingVoxelGrid {
         this.kernels.destroy(resultVg);
         const numRemoved = await this.kernels.reduce("sum", removedVg);
         this.kernels.destroy(removedVg);
+
+        // Remove disconnected fluffs.
+        const workFlag = this.extractWorkFlag(true);
+        const connRegs = this.kernels.createLike(this.vx, "u32");
+        this.kernels.connectedRegions(workFlag, connRegs);
+        const connRegStats = await this.kernels.top4Labels(connRegs);
+        
+        if (connRegStats.size > 1) {
+            // something was disconnected.
+            const regVg = this.kernels.createLike(this.vx, "u32");
+            const resultVg = this.kernels.createLike(this.vx, "u32");
+
+            const maxRegSize = Math.max(...connRegStats.values());
+            for (const [regId, size] of connRegStats.entries()) {
+                if (size === maxRegSize) {
+                    continue;
+                }
+                if (size > maxRegSize * 0.5) {
+                    // big part fell off; something is terribly wrong.
+                    throw `Big region (ID=${regId}, size=${size}) fell off: ${JSON.stringify(connRegStats)}`;
+                }
+                // remove small things.
+                // TODO: need to check gravity direction and shape of the region, to decide it can safely fall off.
+                this.kernels.map("extract_region_by_id", connRegs, regVg, { reg_id: regId });
+
+                this.kernels.map2("commit_min", this.vx, regVg, resultVg);
+                await this.kernels.copy(resultVg, this.vx);
+                console.log(`Small fragment of volume ${(size * this.res ** 3).toFixed(9)} mm^3 fell off.`);
+            }
+            this.kernels.destroy(regVg);
+            this.kernels.destroy(resultVg);
+
+            // TODO: maybe shoudl re-check overcut?
+        }
+        this.kernels.destroy(connRegs);
+        this.kernels.destroy(workFlag);
 
         this.#updateWorkDependentCache();
 
@@ -1507,7 +1570,7 @@ class Planner {
         await this.trvg.setProtectedWorkBelowZ(-this.stockCutWidth);
 
         this.planPath = [];
-        const workDevGpu = await this.trvg.extractWorkWithDeviation();
+        const workDevGpu = this.trvg.extractWorkWithDeviation();
         const workDevCpu = this.kernels.createLikeCpu(workDevGpu);
         await this.kernels.copy(workDevGpu, workDevCpu);
         this.updateVis("work-vg", [createVgVis(workDevCpu, "work", "deviation")], this.showWork);
