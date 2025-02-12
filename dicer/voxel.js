@@ -506,14 +506,23 @@ class PipelineStorageDef {
     static BINDING_ID_BEGIN = 0;
 
     /**
-     * @param {Object<string, string>} defs {varName: elemType} Storage variable defintions (can change for each invocation).
+     * @param {Object<string, string>} defs {varName: elemType} Storage array<> variable defintions (can change for each invocation).
+     * @param {Object<string, string>} [atomicDefs] {varName: elemType} Storage atomic<> variable defintions (can change for each invocation).
      */
-    constructor(defs) {
+    constructor(defs, atomicDefs = {}) {
         let bindingId = PipelineStorageDef.BINDING_ID_BEGIN;
         const shaderLines = [];
         this.bindings = {};
         for (const [varName, elemType] of Object.entries(defs)) {
             shaderLines.push(`@group(0) @binding(${bindingId}) var<storage, read_write> ${varName}: array<${elemType}>;`);
+            this.bindings[varName] = {
+                bindingId: bindingId,
+                elemType: elemType,
+            };
+            bindingId++;
+        }
+        for (const [varName, elemType] of Object.entries(atomicDefs)) {
+            shaderLines.push(`@group(0) @binding(${bindingId}) var<storage, read_write> ${varName}: atomic<${elemType}>;`);
             this.bindings[varName] = {
                 bindingId: bindingId,
                 elemType: elemType,
@@ -936,7 +945,9 @@ export class GpuKernels {
      * - p: vec3f: voxel center position
      * - vi: <inType>: value of the voxel
      * - vo: <outType>: result
+     * - index3: vec3u: raw 3-D array index
      * - index: u32: raw 1-D array index
+     * -
      * 
      * At the end of snippet, vo must be assigned a value.
      * e.g. "vo = 0; if (vi == 1) { vo = 1; } else if (p.x > 0.5) { vo = 2; }"
@@ -968,7 +979,8 @@ export class GpuKernels {
                     return;
                 }
 
-                let p = cell_center(decompose_ix(index));
+                let index3 = decompose_ix(index);
+                let p = cell_center(index3);
                 let vi = vs_in[index];
                 var vo = ${outType}();
                 {
@@ -1273,6 +1285,55 @@ export class GpuKernels {
     }
 
     /**
+     * Filter data voxels by mask=1, and tightly pack resulting data into a buffer from the front.
+     * This method does not provide final count; you need to get size using e.g. {@link reduce}.
+     * 
+     * @param {VoxelGridGpu<u32>} maskVg 
+     * @param {VoxelGridGpu<vec4f>} dataVg 
+     * @param {GPUBuffer<vec4f>} outBuf
+     */
+    packRaw(maskVg, dataVg, outBuf) {
+        const grid = this.#checkGridCompat(maskVg, dataVg);
+
+        const uniforms = this.#gridUniformVars(grid);
+        const bufCount = this.createBuffer(4);
+        const commandEncoder = this.device.createCommandEncoder();
+        this.#dispatchKernel(commandEncoder, this.packPipeline, grid.numX * grid.numY * grid.numZ, {
+            vs_data: dataVg,
+            vs_mask: maskVg,
+            arr_out: outBuf,
+            arr_index: bufCount,
+        }, uniforms, 0);
+        this.device.queue.submit([commandEncoder.finish()]);
+        bufCount.destroy();
+    }
+
+    #compilePackPipeline() {
+        const storageDef = new PipelineStorageDef({vs_data: "vec4f", vs_mask: "u32", arr_out: "vec4f"}, {arr_index: "u32"});
+        const uniformDef = new PipelineUniformDef(this.#gridUniformDefs());
+
+        this.packPipeline = this.#createPipeline("pack", storageDef, uniformDef, `
+            ${storageDef.shaderVars()}
+            ${uniformDef.shaderVars()}
+
+            ${this.#gridFns()}
+
+            @compute @workgroup_size(${this.wgSize})
+            fn pack(@builtin(global_invocation_id) id: vec3u) {
+                let index = id.x;
+                if (index >= arrayLength(&vs_data)) {
+                    return;
+                }
+
+                let index3 = decompose_ix(index);
+                if (vs_mask[index] > 0) {
+                    arr_out[atomicAdd(&arr_index, 1u)] = vs_data[index];
+                }
+            }
+        `);
+    }
+
+    /**
      * Throws error if ty is not allowed in map/map2 or grid types.
      * @param {string} ty 
      */
@@ -1455,7 +1516,8 @@ export class GpuKernels {
     #initGridUtils() {
         this.#compileJumpFloodPipeline();
         this.#compileShapeQueryPipeline();
-        this.compileConnRegSweepPipeline();
+        this.#compileConnRegSweepPipeline();
+        this.#compilePackPipeline();
         this.invalidValue = 65536; // used in boundOfAxis.
 
         this.registerMapFn("connreg_init", "u32", "u32", `if (vi > 0) { vo = index; } else { vo = 0xffffffff; } `);
@@ -1529,6 +1591,9 @@ export class GpuKernels {
         `, Object.assign({ offset: "f32" }, uberSdfUniformDefs));
         this.registerReduceFn("sum", "u32", "0u", `
             vo = vi1 + vi2;
+        `);
+        this.registerReduceFn("max", "f32", "f32(0)", `
+            vo = max(vi1, vi2);
         `);
 
         this.registerMapFn("fill1", "u32", "u32", `
@@ -1927,7 +1992,7 @@ export class GpuKernels {
         this.device.queue.submit([commandEncoder.finish()]);
     }
 
-    compileConnRegSweepPipeline() {
+    #compileConnRegSweepPipeline() {
         const storageDef = new PipelineStorageDef({ vs: "u32" });
         // axis={0, 1, 2} (X, Y, Z)
         // X-scan: dispatchIx = iy + num_y * iz

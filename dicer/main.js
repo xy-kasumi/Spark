@@ -338,7 +338,9 @@ class TrackingVoxelGrid {
 
     /**
      * Extract work volume as voxels. Each cell will contain deviation from target shape.
-     * positive value indicates deviation. 0 for perfect finish or inside. -1 for empty regions.
+     * Positive value indicates deviation. 0 for perfect finish or inside. -1 for empty regions.
+     * Caller must destroy the returned voxel grid.
+     * 
      * @param {boolean} [excludeProtectedWork=false] If true, exclude protected work.
      * @returns {VoxelGridGpu} (f32)
      */
@@ -462,7 +464,7 @@ class TrackingVoxelGrid {
         const connRegs = this.kernels.createLike(this.vx, "u32");
         this.kernels.connectedRegions(workFlag, connRegs);
         const connRegStats = await this.kernels.top4Labels(connRegs);
-        
+
         if (connRegStats.size > 1) {
             // something was disconnected.
             const regVg = this.kernels.createLike(this.vx, "u32");
@@ -708,14 +710,15 @@ const generateStockGeom = (stockRadius = 7.5, stockHeight = 15) => {
 
 
 /**
- * Create visualization for voxel grid
- * @param {VoxelGridCpu} vg Voxel grid to visualize
- * @param {string} [label=""] Optional label to display on the voxel grid
- * @param {string} [mode="occupancy"] "occupancy" | "deviation". "occupancy" treats 255:full, 128:partial, 0:empty. "deviation" is >=0 as deviation and -1 as empty
- * @param {number} [maxDev=3] Maximum deviation to visualize. Only used in "deviation" mode.
+ * Create occupancy voxel grid visualization.
+ * @param {VoxelGridCpu<u32>} vg Voxel grid to visualize (255:full, 128:partial, 0:empty)
  * @returns {THREE.Object3D} Visualization object
  */
-const createVgVis = (vg, label = "", mode = "occupancy", maxDev = 3) => {
+const createOccupancyVis = (vg) => {
+    if (vg.type !== "u32") {
+        throw `Invalid vg type for occupancy: ${vg.type}`;
+    }
+
     const t0 = performance.now();
     const cubeSize = vg.res * 1.0;
     const cubeGeom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
@@ -725,166 +728,192 @@ const createVgVis = (vg, label = "", mode = "occupancy", maxDev = 3) => {
     const axesHelper = new THREE.AxesHelper();
     axesHelper.scale.set(vg.res * vg.numX, vg.res * vg.numY, vg.res * vg.numZ);
 
-    if (mode === "occupancy") {
-        if (vg.type !== "u32") {
-            throw `Invalid vg type for occupancy: ${vg.type}`;
-        }
+    const meshFull = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), vg.countIf(val => val === 255));
+    const meshPartial = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial({ transparent: true, opacity: 0.25 }), vg.countIf(val => val === 128));
 
-        const meshFull = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), vg.countIf(val => val === 255));
-        const meshPartial = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial({ transparent: true, opacity: 0.25 }), vg.countIf(val => val === 128));
-
-        let instanceIxFull = 0;
-        let instanceIxPartial = 0;
-        for (let iz = 0; iz < vg.numZ; iz++) {
-            for (let iy = 0; iy < vg.numY; iy++) {
-                for (let ix = 0; ix < vg.numX; ix++) {
-                    const v = vg.get(ix, iy, iz);
-                    if (v === 0) {
-                        continue;
-                    }
-
-                    // whatever different color gradient
-                    meshFull.setColorAt(instanceIxFull, new THREE.Color(ix * 0.01 + 0.5, iy * 0.01 + 0.5, iz * 0.01 + 0.5));
-
-                    const mtx = new THREE.Matrix4();
-                    mtx.compose(
-                        new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res),
-                        new THREE.Quaternion(),
-                        new THREE.Vector3(1, 1, 1).multiplyScalar(v === 255 ? 1.0 : 0.8));
-
-                    if (v === 255) {
-                        meshFull.setMatrixAt(instanceIxFull, mtx);
-                        instanceIxFull++;
-                    } else {
-                        meshPartial.setMatrixAt(instanceIxPartial, mtx);
-                        instanceIxPartial++;
-                    }
-                }
-            }
-        }
-
-        meshContainer.add(meshFull);
-        meshContainer.add(meshPartial);
-        meshFull.add(axesHelper);
-    } else if (mode === "deviation") {
-        if (vg.type !== "f32") {
-            throw `Invalid vg type for deviation: ${vg.type}`;
-        }
-
-        const neighborOffsets = [
-            [1, 0, 0],
-            [-1, 0, 0],
-            [0, 1, 0],
-            [0, -1, 0],
-            [0, 0, 1],
-            [0, 0, -1],
-        ];
-        const isVisible = (ix, iy, iz) => {
-            const v = vg.get(ix, iy, iz);
-            if (v < 0) {
-                return false;
-            }
-            let numFilledNeighbors = 0;
-            for (let [dx, dy, dz] of neighborOffsets) {
-                const nx = ix + dx;
-                const ny = iy + dy;
-                const nz = iz + dz;
-                if (nx < 0 || nx >= vg.numX || ny < 0 || ny >= vg.numY || nz < 0 || nz >= vg.numZ) {
-                    continue;
-                }
-                const nv = vg.get(nx, ny, nz);
-                if (nv >= 0) {
-                    numFilledNeighbors++;
-                }
-            }
-            return numFilledNeighbors < neighborOffsets.length; // if any neighbor is not filled, this cell is visible.
-        };
-
-        // Pass 1: count visible voxels
-        let numVisibleVoxels = 0;
-        for (let iz = 0; iz < vg.numZ; iz++) {
-            for (let iy = 0; iy < vg.numY; iy++) {
-                for (let ix = 0; ix < vg.numX; ix++) {
-                    if (isVisible(ix, iy, iz)) {
-                        numVisibleVoxels++;
-                    }
-                }
-            }
-        }
-
-        // Pass 2: copy visible voxel data into buffer.
-        const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), numVisibleVoxels);
-        let instanceIx = 0;
-        for (let iz = 0; iz < vg.numZ; iz++) {
-            for (let iy = 0; iy < vg.numY; iy++) {
-                for (let ix = 0; ix < vg.numX; ix++) {
-                    if (!isVisible(ix, iy, iz)) {
-                        continue;
-                    }
-
-                    const v = vg.get(ix, iy, iz);
-
-                    // apply deviation color, from blue(0) to red(maxDev).
-                    const t = Math.min(1, v / maxDev);
-                    mesh.setColorAt(instanceIx, new THREE.Color(0.2 + t * 0.8, 0.2, 0.2 + (1 - t) * 0.8));
-
-                    const mtx = new THREE.Matrix4();
-                    mtx.compose(
-                        new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res),
-                        new THREE.Quaternion(),
-                        new THREE.Vector3(1, 1, 1));
-                    mesh.setMatrixAt(instanceIx, mtx);
-                    instanceIx++;
-                }
-            }
-        }
-
-        meshContainer.add(mesh);
-        mesh.add(axesHelper);
-    } else {
-        throw `Invalid mode: ${mode}`;
-    }
-
-    if (label !== "") {
-        const textGeom = new TextGeometry(label, {
-            font,
-            size: 2,
-            depth: 0.1,
-        });
-        const textMesh = new THREE.Mesh(textGeom, new THREE.MeshBasicMaterial({ color: "#222222" }));
-        meshContainer.add(textMesh);
-    }
-
-    console.log(`createVgVis took ${performance.now() - t0}ms`);
-    return meshContainer;
-};
-
-/**
- * Visualize "max deviation" in voxel grid.
- * @param {VoxelGridCpu} vg - Voxel grid to visualize
- * @param {number} - Maximum deviation to visualize
- * @returns {THREE.Object3D} Visualization object
- */
-const createMaxDeviationVis = (vg, maxDev) => {
-    const MAX_NUM_VIS = 100;
-    const vis = new THREE.Object3D();
-    let numAdded = 0;
+    let instanceIxFull = 0;
+    let instanceIxPartial = 0;
     for (let iz = 0; iz < vg.numZ; iz++) {
         for (let iy = 0; iy < vg.numY; iy++) {
             for (let ix = 0; ix < vg.numX; ix++) {
                 const v = vg.get(ix, iy, iz);
-                if (v < 0) {
+                if (v === 0) {
                     continue;
                 }
-                if (v >= maxDev) {
-                    vis.add(visDot(vg.centerOf(ix, iy, iz), "red"));
-                    numAdded++;
-                    if (numAdded >= MAX_NUM_VIS) {
-                        break;
-                    }
+
+                // whatever different color gradient
+                meshFull.setColorAt(instanceIxFull, new THREE.Color(ix * 0.01 + 0.5, iy * 0.01 + 0.5, iz * 0.01 + 0.5));
+
+                const mtx = new THREE.Matrix4();
+                mtx.compose(
+                    new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res),
+                    new THREE.Quaternion(),
+                    new THREE.Vector3(1, 1, 1).multiplyScalar(v === 255 ? 1.0 : 0.8));
+
+                if (v === 255) {
+                    meshFull.setMatrixAt(instanceIxFull, mtx);
+                    instanceIxFull++;
+                } else {
+                    meshPartial.setMatrixAt(instanceIxPartial, mtx);
+                    instanceIxPartial++;
                 }
             }
         }
+    }
+
+    meshContainer.add(meshFull);
+    meshContainer.add(meshPartial);
+    meshFull.add(axesHelper);
+
+    console.log(`  createOccupancyVis took ${performance.now() - t0}ms`);
+    return meshContainer;
+};
+
+const initCreateDeviationVis = (kernels) => {
+    // input: deviation (>=0: dev, -1: empty)
+    // output: mask (1: visible, 0: hidden)
+    // TODO: This uses lots of "hidden" impl detail of map. maybe better to move to voxel.js?
+    kernels.registerMapFn("visible_dev_mask", "f32", "u32", `
+        if (vi < 0) {
+            vo = 0;
+        } else if (any(index3 == vec3u(0)) || any(index3 + 1 == nums)) {
+            vo = 1; // boundary voxel is visible regardless of neighbors.
+        } else {
+            let ofs = array<vec3i, 6>(
+                vec3i(1, 0, 0),
+                vec3i(-1, 0, 0),
+                vec3i(0, 1, 0),
+                vec3i(0, -1, 0),
+                vec3i(0, 0, 1),
+                vec3i(0, 0, -1),
+            );
+            var has_empty_neighbor = false;
+            for (var i = 0u; i < 6u; i++) {
+                let nix3 = vec3u(vec3i(index3) + ofs[i]);
+                let nv = vs_in[compose_ix(nix3)];
+                if (nv < 0) {
+                    has_empty_neighbor = true;
+                    break;
+                }
+            }
+            // this voxel is visible through empty neighbor.
+            vo = select(0u, 1u, has_empty_neighbor);
+        }
+    `);
+
+    kernels.registerMapFn("cv_dev_data", "f32", "vec4f", `
+        vo = vec4f(p, vi);
+    `);
+
+    kernels.registerMapFn("max_dev_mask", "f32", "u32", `
+        vo = select(0u, 1u, vi >= max_dev);
+    `, { max_dev: "f32" });
+};
+
+/**
+ * Get max deviation from voxel grid.
+ * @param {GpuKernels} kernels
+ * @param {VoxelGridGpu<f32>} vg
+ * @returns {Promise<number>} Maximum deviation
+ * @async
+ */
+const getMaxDeviation = async (kernels, vg) => {
+    return await kernels.reduce("max", vg);
+};
+
+/**
+ * Create deviation voxel grid visualization. (blue: 0 deviation, red: maxDev deviation)
+ * @param {GpuKernels} kernels
+ * @param {VoxelGridGpu<f32>} vgCpu Voxel grid to visualize (>=0: deviation, -1: empty)
+ * @param {number} [maxDev=3] Maximum deviation to visualize.
+ * @returns {Promise<THREE.Object3D>} Visualization object
+ * @async
+ */
+const createDeviationVis = async (kernels, vg, maxDev = 3) => {
+    if (vg.type !== "f32") {
+        throw `Invalid vg type for deviation: ${vg.type}`;
+    }
+
+    const t0 = performance.now();
+
+    const cubeSize = vg.res * 1.0;
+    const cubeGeom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+
+    const resultVis = new THREE.Object3D();
+    const axesHelper = new THREE.AxesHelper();
+    axesHelper.scale.set(vg.res * vg.numX, vg.res * vg.numY, vg.res * vg.numZ);
+    axesHelper.position.copy(vg.ofs);
+
+    // Extract visible voxels.
+    const maskVg = kernels.createLike(vg, "u32");
+    const dataVg = kernels.createLike(vg, "vec4f");
+    kernels.map("visible_dev_mask", vg, maskVg);
+    kernels.map("cv_dev_data", vg, dataVg);
+    const numVisible = await kernels.reduce("sum", maskVg);
+    const packedResultBuf = kernels.createBuffer(16 * numVisible);
+    kernels.packRaw(maskVg, dataVg, packedResultBuf);
+    const packedResultBufCpu = new ArrayBuffer(16 * numVisible);
+    await kernels.copyBuffer(packedResultBuf, packedResultBufCpu);
+    packedResultBuf.destroy();
+    kernels.destroy(maskVg);
+    kernels.destroy(dataVg);
+
+    // Transform them into InstancedMesh.
+    const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), numVisible);
+    const resultArr = new Float32Array(packedResultBufCpu); // px, py, pz, dev
+    const mtx = new THREE.Matrix4();
+    const col = new THREE.Color();
+    for (let i = 0; i < numVisible; i++) {
+        // set position
+        mtx.makeTranslation(resultArr[i * 4 + 0], resultArr[i * 4 + 1], resultArr[i * 4 + 2]);
+        mesh.setMatrixAt(i, mtx);
+
+        // set color, from blue(dev=0) to red(dev=maxDev).
+        const dev = resultArr[i * 4 + 3];
+        const t = Math.min(1, dev / maxDev);
+        mesh.setColorAt(i, col.setRGB(0.2 + t * 0.8, 0.2, 0.2 + (1 - t) * 0.8));
+    }
+
+    resultVis.add(mesh);
+    resultVis.add(axesHelper);
+
+    console.log(`  createDeviationVis took ${performance.now() - t0}ms`);
+    return resultVis;
+};
+
+/**
+ * Visualize "max deviation" in voxel grid.
+ * @param {GpuKernels} kernels
+ * @param {VoxelGridGpu<f32>} vg - Voxel grid to visualize
+ * @param {number} - Maximum deviation to visualize
+ * @returns {Promise<THREE.Object3D>} Visualization object
+ * @async
+ */
+const createMaxDeviationVis = async (kernels, vg, maxDev) => {
+    // Extract cells where dev == max_dev, and pack into array.
+    const maskVg = kernels.createLike(vg, "u32");
+    kernels.map("max_dev_mask", vg, maskVg, { max_dev: maxDev });
+
+    const dataVg = kernels.createLike(vg, "vec4f");
+    kernels.map("cv_dev_data", vg, dataVg);
+
+    const numLocs = await kernels.reduce("sum", maskVg);
+    const locsBuf = kernels.createBuffer(16 * numLocs);
+    kernels.packRaw(maskVg, dataVg, locsBuf);
+
+    const locsBufCpu = new ArrayBuffer(16 * numLocs);
+    await kernels.copyBuffer(locsBuf, locsBufCpu);
+    kernels.destroy(maskVg);
+    kernels.destroy(dataVg);
+    locsBuf.destroy();
+
+    // Convert to instanced mesh.
+    const locsArr = new Float32Array(locsBufCpu);
+    const mtx = new THREE.Matrix4();
+    const vis = new THREE.InstancedMesh(new THREE.SphereGeometry(0.1), new THREE.MeshLambertMaterial({ color: "red" }), numLocs);
+    for (let i = 0; i < numLocs; i++) {
+        mtx.makeTranslation(locsArr[i * 4 + 0], locsArr[i * 4 + 1], locsArr[i * 4 + 2]);
+        vis.setMatrixAt(i, mtx);
     }
     return vis;
 };
@@ -1443,6 +1472,7 @@ class Planner {
         (async () => {
             const adapter = await navigator.gpu.requestAdapter();
             this.kernels = new GpuKernels(await adapter.requestDevice());
+            initCreateDeviationVis(this.kernels);
         })();
     }
 
@@ -1570,11 +1600,8 @@ class Planner {
         await this.trvg.setProtectedWorkBelowZ(-this.stockCutWidth);
 
         this.planPath = [];
-        const workDevGpu = this.trvg.extractWorkWithDeviation();
-        const workDevCpu = this.kernels.createLikeCpu(workDevGpu);
-        await this.kernels.copy(workDevGpu, workDevCpu);
-        this.updateVis("work-vg", [createVgVis(workDevCpu, "work", "deviation")], this.showWork);
-        this.updateVis("targ-vg", [createVgVis(await this.trvg.extractTarget())], this.showTarget);
+        this.updateVis("work-vg", [await createDeviationVis(this.kernels, this.trvg.extractWorkWithDeviation())], this.showWork);
+        this.updateVis("targ-vg", [createOccupancyVis(await this.trvg.extractTarget())], this.showTarget);
         this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
 
         ////////////////////////////////////////
@@ -2090,15 +2117,16 @@ class Planner {
                     this.showingSweep++;
 
                     // update visualizations
-                    const workDeviation = await this.trvg.extractWorkWithDeviation(true);
-                    const workDevCpu = this.kernels.createLikeCpu(workDeviation);
-                    await this.kernels.copy(workDeviation, workDevCpu);
+                    const workDeviation = this.trvg.extractWorkWithDeviation(true);
+                    this.deviation = await getMaxDeviation(this.kernels, workDeviation);
+                    this.updateVis("work-vg", [await createDeviationVis(this.kernels, workDeviation, this.deviation)], this.showWork);
+                    this.updateVis("work-max-dev", [await createMaxDeviationVis(this.kernels, workDeviation, this.deviation)]);
+                    this.kernels.destroy(workDeviation);
+
                     this.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath, false);
-                    this.deviation = workDevCpu.max();
-                    this.updateVis("work-vg", [createVgVis(workDevCpu, "work-vg", "deviation", this.deviation)], this.showWork);
                     const lastPt = this.planPath[this.planPath.length - 1];
                     this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
-                    this.updateVis("work-max-dev", [createMaxDeviationVis(workDevCpu, this.deviation)]);
+
                     return true;
                 }
             } finally {
@@ -2130,7 +2158,7 @@ class Planner {
             }
         }
 
-        // yield "break";
+        yield "break";
 
         // rough drills
         for (const normal of candidateNormals) {
