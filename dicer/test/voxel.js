@@ -257,4 +257,21 @@ QUnit.module('gpu', function () {
         assert.equal(resCpu.get(0, 0, 0), resCpu.get(1, 0, 0)); // region 1
         assert.notEqual(resCpu.get(0, 0, 0), resCpu.get(3, 0, 0)); // region 1 ID != region 2 ID
     });
+
+    QUnit.test(`top4labels`, async function (assert) {
+        const adapter = await navigator.gpu.requestAdapter();
+        const device = await adapter.requestDevice();
+        const kernels = new GpuKernels(device);
+
+        const vgCpu = new VoxelGridCpu(1, 8, 1, 1, new Vector3(), "u32");
+        const vgGpu = kernels.createLike(vgCpu);
+        vgCpu.data.set([0, 0, 0, 0, -1, 1, 2, 1]);
+        await kernels.copy(vgCpu, vgGpu);
+
+        const result = await kernels.top4Labels(vgGpu);
+        assert.equal(result.size, 3);
+        assert.equal(result.get(0), 4);
+        assert.equal(result.get(1), 2);
+        assert.equal(result.get(2), 1);
+    });
 });

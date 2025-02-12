@@ -1068,9 +1068,11 @@ export class GpuKernels {
             throw new Error(`Reduce fn "${name}" already registered`);
         }
         GpuKernels.checkAllowedType(valType);
+        /*
         if (valType !== "u32" && valType !== "f32") {
             throw new Error(`Reduce fn "${name}": valType must be "u32" or "f32"`);
         }
+            */
 
         const storageDef = new PipelineStorageDef({ vs_in: valType, vs_out: valType });
 
@@ -1187,12 +1189,15 @@ export class GpuKernels {
         }
         pipeline.storageDef.checkInput({ vs_in: inVg }, true);
 
+        const valType = this.reducePipelines[fnName].storageDef.bindings["vs_in"].elemType; // A bit of hack.
+        const valSize = GpuKernels.sizeOfType(valType);
+
         // Dispatch like the following to minimize copy.
         // inVg -(reduce)-> buf0 -(reduce)-> buf1 -(reduce)-> buf0 -> ...
-        const multOf4 = (n) => {
-            return Math.ceil(n / 4) * 4;
+        const multOfValSize = (n) => {
+            return Math.ceil(n / valSize) * valSize;
         };
-        const bufSize = multOf4(Math.ceil(inVg.buffer.size / this.wgSize));
+        const bufSize = multOfValSize(Math.ceil(inVg.buffer.size / this.wgSize));
         if (!this.tempBufsCache) {
             this.tempBufsCache = {};
         }
@@ -1223,7 +1228,7 @@ export class GpuKernels {
             numElems = Math.ceil(numElems / this.wgSize);
             uniBufIx++;
         }
-        commandEncoder.copyBufferToBuffer(getBuf(activeBufIx), 0, resultBuf, resultBufOfs, 4);
+        commandEncoder.copyBufferToBuffer(getBuf(activeBufIx), 0, resultBuf, resultBufOfs, valSize);
         if (!cme) {
             this.device.queue.submit([commandEncoder.finish()]);
         }
@@ -1235,16 +1240,19 @@ export class GpuKernels {
      * 
      * @param {string} fnName Function registered in {@link registerReduceFn}.
      * @param {VoxelGridGpu} inVg 
-     * @returns {Promise<number>}
+     * @returns {Promise<number | Uint32Array>}
      * @async
      */
     async reduce(fnName, inVg) {
-        const resultBuf = this.createBuffer(4);
-        const readBuf = this.createBufferForCpuRead(4);
+        const valType = this.reducePipelines[fnName].storageDef.bindings["vs_in"].elemType; // A bit of hack.
+        const valSize = GpuKernels.sizeOfType(valType);
+
+        const resultBuf = this.createBuffer(valSize);
+        const readBuf = this.createBufferForCpuRead(valSize);
 
         this.reduceRaw(fnName, inVg, resultBuf, 0);
-        const valType = this.reducePipelines[fnName].storageDef.bindings["vs_in"].elemType; // A bit of hack.
-        await this.copyBuffer(resultBuf, readBuf, 4);
+        
+        await this.copyBuffer(resultBuf, readBuf, valSize);
         resultBuf.destroy();
 
         await readBuf.mapAsync(GPUMapMode.READ);
@@ -1253,6 +1261,9 @@ export class GpuKernels {
             result = new Uint32Array(readBuf.getMappedRange())[0];
         } else if (valType === "f32") {
             result = new Float32Array(readBuf.getMappedRange())[0];
+        } else if (valType === "array<u32,8>") {
+            result = new Uint32Array(8);
+            result.set(new Uint32Array(readBuf.getMappedRange()));
         } else {
             throw "unexpected valType";
         }
@@ -1266,6 +1277,10 @@ export class GpuKernels {
      * @param {string} ty 
      */
     static checkAllowedType(ty) {
+        // Special handling for now, because array is only used in one place.
+        if (ty === "array<u32,8>") {
+            return;
+        }
         if (ty !== "u32" && ty !== "f32" && ty !== "vec3f" && ty !== "vec4f" && ty !== "vec3u" && ty !== "vec4u") {
             throw new Error("Invalid type: " + ty);
         }
@@ -1284,6 +1299,7 @@ export class GpuKernels {
             "vec3f": 16, // 16, not 12, because of alignment. https://www.w3.org/TR/WGSL/#alignment-and-size
             "vec4u": 16,
             "vec4f": 16,
+            "array<u32,8>": 32,
         }[ty];
     }
 
@@ -1393,6 +1409,7 @@ export class GpuKernels {
 
         const bindGroupLayout = this.device.createBindGroupLayout({ entries: bindEntries, label: entryPoint });
         const pipeline = this.device.createComputePipeline({
+            label: entryPoint,
             layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
             compute: { module: shaderModule, entryPoint }
         });
@@ -1442,6 +1459,45 @@ export class GpuKernels {
         this.invalidValue = 65536; // used in boundOfAxis.
 
         this.registerMapFn("connreg_init", "u32", "u32", `if (vi > 0) { vo = index; } else { vo = 0xffffffff; } `);
+        this.registerMapFn("count_top4_init", "u32", "array<u32,8>", `vo = array<u32,8>(vi,1, 0xffffffff,0, 0xffffffff,0, 0xffffffff,0);`);
+        this.registerReduceFn("count_top4_approx", "array<u32,8>", "array<u32,8>(0xffffffff,0, 0xffffffff,0, 0xffffffff,0, 0xffffffff,0)", `
+            vo = vi1;
+            // insert vi2
+            for (var i2 = 0u; i2 < 4u; i2++) {
+                let label2 = vi2[i2 * 2 + 0];
+                let count2 = vi2[i2 * 2 + 1];
+                if (label2 == 0xffffffff) {
+                    break; // vi2 ended here
+                }
+                
+                // Find insert location for existing label.
+                var inserted = false;
+                for (var io = 0u; io < 4u; io++) {
+                    let labelo = vo[io * 2 + 0];
+                    let counto = vo[io * 2 + 1];
+                    if (labelo == label2) {
+                        vo[io * 2 + 1] = counto + count2;
+                        inserted = true;
+                        break;
+                    }
+                }
+                if (inserted) {
+                    continue;
+                }
+                // Find insert location for empty slot.
+                for (var io = 0u; io < 4u; io++) {
+                    let labelo = vo[io * 2 + 0];
+                    if (labelo == 0xffffffff) {
+                        vo[io * 2 + 0] = label2;
+                        vo[io * 2 + 1] = count2;
+                        break;
+                    }
+                }
+                // don't do anything even if insertion failed.
+            }
+        `);
+
+
         this.registerMapFn("df_init", "u32", "vec4f", `if (vi > 0) { vo = vec4f(p, 0); } else { vo = vec4f(0, 0, 0, -1); }`);
         this.registerMapFn("df_to_dist", "vec4f", "f32", `vo = vi.w;`);
         this.registerMapFn("project_to_dir", "u32", "f32", `
@@ -1946,13 +2002,30 @@ export class GpuKernels {
 
     /**
      * Count top 4 labels, ignoring 0xffffffff.
+     * Count will be approximate; correct for largest-by-far region,
+     * but might discard smaller similar-sized regions even if they're in top-4.
      * 
      * @param {VoxelGridGpu<u32>} vg 
-     * @returns {Promise<Object<string, number>>}
+     * @returns {Promise<Map<number, number>>}
      * @async
      */
-    top4Labels(vg) {
+    async top4Labels(vg) {
+        const histogramVg = this.createLike(vg, "array<u32,8>");
+        this.map("count_top4_init", vg, histogramVg);
+        
+        const result = await this.reduce("count_top4_approx", histogramVg);
+        this.destroy(histogramVg);
 
+        const resultMap = new Map();
+        for (let i = 0; i < 4; i++) {
+            const label = result[i * 2 + 0];
+            const count = result[i * 2 + 1];
+            if (label === 0xffffffff) {
+                break;
+            }
+            resultMap.set(label, count);
+        }
+        return resultMap;
     }
 
     /**
