@@ -185,4 +185,76 @@ QUnit.module('gpu', function () {
         const test = await kernels.countInShape(shape, gridGpu, "nearest");
         assert.equal(test, ref);
     });
+
+    QUnit.test('connectedRegions-all', async function (assert) {
+        const adapter = await navigator.gpu.requestAdapter();
+        const device = await adapter.requestDevice();
+        const kernels = new GpuKernels(device);
+
+        // prepare solid fill pattern
+        const patternVgCpu = new VoxelGridCpu(1, 3, 3, 3, new Vector3(0, 0, 0), "u32");
+        patternVgCpu.fill(1);
+        const patternVgGpu = kernels.createLike(patternVgCpu);
+        await kernels.copy(patternVgCpu, patternVgGpu);
+
+        const resGpu = kernels.createLike(patternVgGpu);
+        kernels.connectedRegions(patternVgGpu, resGpu);
+        const resCpu = kernels.createLikeCpu(resGpu);
+        await kernels.copy(resGpu, resCpu);
+
+        // result must be same valid ID for every cell
+        const cell0 = resCpu.get(0, 0, 0);
+        assert.notEqual(cell0, 0xffffffff);
+        for (const data of resCpu.data) {
+            assert.equal(data, cell0);
+        }
+    });
+
+    QUnit.test('connectedRegions-none', async function (assert) {
+        const adapter = await navigator.gpu.requestAdapter();
+        const device = await adapter.requestDevice();
+        const kernels = new GpuKernels(device);
+
+        // prepare solid fill pattern
+        const patternVgCpu = new VoxelGridCpu(1, 3, 3, 3, new Vector3(0, 0, 0), "u32");
+        patternVgCpu.fill(0);
+        const patternVgGpu = kernels.createLike(patternVgCpu);
+        await kernels.copy(patternVgCpu, patternVgGpu);
+
+        const resGpu = kernels.createLike(patternVgGpu);
+        kernels.connectedRegions(patternVgGpu, resGpu);
+        const resCpu = kernels.createLikeCpu(resGpu);
+        await kernels.copy(resGpu, resCpu);
+
+        // result must be invalid ID for every cell
+        for (const data of resCpu.data) {
+            assert.equal(data, 0xffffffff);
+        }
+    });
+
+    QUnit.test('connectedRegions-linear', async function (assert) {
+        const adapter = await navigator.gpu.requestAdapter();
+        const device = await adapter.requestDevice();
+        const kernels = new GpuKernels(device);
+
+        // prepare solid fill pattern
+        const patternVgCpu = new VoxelGridCpu(1, 5, 1, 1, new Vector3(0, 0, 0), "u32");
+        patternVgCpu.data.set([1, 1, 0, 1, 0]); // 2 region should be detected
+        const patternVgGpu = kernels.createLike(patternVgCpu);
+        await kernels.copy(patternVgCpu, patternVgGpu);
+
+        const resGpu = kernels.createLike(patternVgGpu);
+        kernels.connectedRegions(patternVgGpu, resGpu);
+        const resCpu = kernels.createLikeCpu(resGpu);
+        await kernels.copy(resGpu, resCpu);
+
+        assert.notEqual(resCpu.get(0, 0, 0), 0xffffffff);
+        assert.notEqual(resCpu.get(1, 0, 0), 0xffffffff);
+        assert.equal(resCpu.get(2, 0, 0), 0xffffffff);
+        assert.notEqual(resCpu.get(3, 0, 0), 0xffffffff);
+        assert.equal(resCpu.get(4, 0, 0), 0xffffffff);
+
+        assert.equal(resCpu.get(0, 0, 0), resCpu.get(1, 0, 0)); // region 1
+        assert.notEqual(resCpu.get(0, 0, 0), resCpu.get(3, 0, 0)); // region 1 ID != region 2 ID
+    });
 });

@@ -936,7 +936,7 @@ export class GpuKernels {
      * - p: vec3f: voxel center position
      * - vi: <inType>: value of the voxel
      * - vo: <outType>: result
-     * - (advanced) index: u32: raw array index
+     * - index: u32: raw 1-D array index
      * 
      * At the end of snippet, vo must be assigned a value.
      * e.g. "vo = 0; if (vi == 1) { vo = 1; } else if (p.x > 0.5) { vo = 2; }"
@@ -1441,7 +1441,7 @@ export class GpuKernels {
         this.compileConnRegSweepPipeline();
         this.invalidValue = 65536; // used in boundOfAxis.
 
-        this.registerMapFn("connreg_init", "u32", "u32", `if (vi > 0) { vo = i; } else { vo = 0xffffffff; } `);
+        this.registerMapFn("connreg_init", "u32", "u32", `if (vi > 0) { vo = index; } else { vo = 0xffffffff; } `);
         this.registerMapFn("df_init", "u32", "vec4f", `if (vi > 0) { vo = vec4f(p, 0); } else { vo = vec4f(0, 0, 0, -1); }`);
         this.registerMapFn("df_to_dist", "vec4f", "f32", `vo = vi.w;`);
         this.registerMapFn("project_to_dir", "u32", "f32", `
@@ -1887,7 +1887,7 @@ export class GpuKernels {
 
             ${this.#gridFns()}
 
-            const u32 INVALID = 0xffffffff;
+            const INVALID = u32(0xffffffff);
 
             @compute @workgroup_size(${this.wgSize})
             fn connreg_sweep(@builtin(global_invocation_id) id: vec3u) {
