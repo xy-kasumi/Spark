@@ -192,7 +192,7 @@ QUnit.module('gpu', function () {
         const kernels = new GpuKernels(device);
 
         // prepare solid fill pattern
-        const patternVgCpu = new VoxelGridCpu(1, 3, 3, 3, new Vector3(0, 0, 0), "u32");
+        const patternVgCpu = new VoxelGridCpu(1, 3, 5, 7, new Vector3(0, 0, 0), "u32");
         patternVgCpu.fill(1);
         const patternVgGpu = kernels.createLike(patternVgCpu);
         await kernels.copy(patternVgCpu, patternVgGpu);

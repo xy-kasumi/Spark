@@ -1988,8 +1988,8 @@ export class GpuKernels {
 
                 // - scan
                 for (var i = 0u; i < num - 1; i++) {
-                    let prev_ix = compose_ix(ix3 + dir * (num - i));
-                    let curr_ix = compose_ix(ix3 + dir * (num - i - 1));
+                    let prev_ix = compose_ix(ix3 + dir * (num - i - 1));
+                    let curr_ix = compose_ix(ix3 + dir * (num - i - 2));
                     let prev = vs[prev_ix];
                     let curr = vs[curr_ix];
                     if (prev != INVALID && curr != INVALID) {
