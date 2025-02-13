@@ -1600,7 +1600,9 @@ class Planner {
         await this.trvg.setProtectedWorkBelowZ(-this.stockCutWidth);
 
         this.planPath = [];
-        this.updateVis("work-vg", [await createDeviationVis(this.kernels, this.trvg.extractWorkWithDeviation())], this.showWork);
+        const workDev = this.trvg.extractWorkWithDeviation();
+        this.updateVis("work-vg", [await createDeviationVis(this.kernels, workDev)], this.showWork);
+        this.kernels.destroy(workDev);
         this.updateVis("targ-vg", [createOccupancyVis(await this.trvg.extractTarget())], this.showTarget);
         this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
 
