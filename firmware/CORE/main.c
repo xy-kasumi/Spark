@@ -229,7 +229,7 @@ typedef struct {
 static const uint32_t MD_FEED_MAX_WAIT_US =
     10000; // 0.01mm/sec (0.6mm/min ~ 1.0mm^3/min for D1.5 electrode drill)
 static const uint32_t MD_FEED_MIN_WAIT_US =
-    200; // 0.5mm/sec, empirically found stable value
+    100; // 0.5mm/sec, empirically found stable value
 static const uint32_t MD_MOVE_MIN_WAIT_US = 25; // 0.78mm/sec
 static const uint16_t ED_IG_US_TARGET = 200;
 
@@ -488,7 +488,7 @@ void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
         stats.n_retract++;
         ed.successive_shorts = 0;
       } else if (ed.successive_shorts >= 1) {
-        md.wait_us = 2000;
+        md.wait_us = 1000;
       }
     }
 
