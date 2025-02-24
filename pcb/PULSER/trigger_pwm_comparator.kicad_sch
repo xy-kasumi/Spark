@@ -1,13 +1,13 @@
 (kicad_sch
-	(version 20231120)
+	(version 20250114)
 	(generator "eeschema")
-	(generator_version "8.0")
+	(generator_version "9.0")
 	(uuid "8b9e1b8f-d913-4808-b418-fd6be025d266")
 	(paper "A4")
 	(title_block
-		(title "CTRL-MINI-ED")
-		(date "2024-12-11")
-		(rev "1")
+		(title "PULSER")
+		(date "2025-02-14")
+		(rev "2")
 		(company "Spark Project")
 		(comment 1 "Author: 夕月霞 (xyx)")
 		(comment 2 "EDM Pulse Generator Board")
@@ -98,24 +98,6 @@
 					)
 				)
 				(pin power_in line
-					(at -2.54 -7.62 90)
-					(length 3.81)
-					(name "V-"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "2"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin power_in line
 					(at -2.54 7.62 270)
 					(length 3.81)
 					(name "V+"
@@ -133,19 +115,17 @@
 						)
 					)
 				)
-			)
-			(symbol "LMV7219M5_1_1"
-				(pin output line
-					(at 7.62 0 180)
-					(length 2.54)
-					(name "~"
+				(pin power_in line
+					(at -2.54 -7.62 90)
+					(length 3.81)
+					(name "V-"
 						(effects
 							(font
 								(size 1.27 1.27)
 							)
 						)
 					)
-					(number "1"
+					(number "2"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -153,6 +133,8 @@
 						)
 					)
 				)
+			)
+			(symbol "LMV7219M5_1_1"
 				(pin input line
 					(at -7.62 2.54 0)
 					(length 2.54)
@@ -189,12 +171,35 @@
 						)
 					)
 				)
+				(pin output line
+					(at 7.62 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
 			)
+			(embedded_fonts no)
 		)
 		(symbol "Connector:TestPoint_Small"
-			(pin_numbers hide)
+			(pin_numbers
+				(hide yes)
+			)
 			(pin_names
-				(offset 0.762) hide)
+				(offset 0.762)
+				(hide yes)
+			)
 			(exclude_from_sim no)
 			(in_bom yes)
 			(on_board yes)
@@ -292,11 +297,16 @@
 					)
 				)
 			)
+			(embedded_fonts no)
 		)
 		(symbol "Device:C_Small"
-			(pin_numbers hide)
+			(pin_numbers
+				(hide yes)
+			)
 			(pin_names
-				(offset 0.254) hide)
+				(offset 0.254)
+				(hide yes)
+			)
 			(exclude_from_sim no)
 			(in_bom yes)
 			(on_board yes)
@@ -366,10 +376,10 @@
 			(symbol "C_Small_0_1"
 				(polyline
 					(pts
-						(xy -1.524 -0.508) (xy 1.524 -0.508)
+						(xy -1.524 0.508) (xy 1.524 0.508)
 					)
 					(stroke
-						(width 0.3302)
+						(width 0.3048)
 						(type default)
 					)
 					(fill
@@ -378,10 +388,10 @@
 				)
 				(polyline
 					(pts
-						(xy -1.524 0.508) (xy 1.524 0.508)
+						(xy -1.524 -0.508) (xy 1.524 -0.508)
 					)
 					(stroke
-						(width 0.3048)
+						(width 0.3302)
 						(type default)
 					)
 					(fill
@@ -427,9 +437,12 @@
 					)
 				)
 			)
+			(embedded_fonts no)
 		)
 		(symbol "Device:R"
-			(pin_numbers hide)
+			(pin_numbers
+				(hide yes)
+			)
 			(pin_names
 				(offset 0)
 			)
@@ -548,12 +561,17 @@
 					)
 				)
 			)
+			(embedded_fonts no)
 		)
 		(symbol "power:GND"
 			(power)
-			(pin_numbers hide)
+			(pin_numbers
+				(hide yes)
+			)
 			(pin_names
-				(offset 0) hide)
+				(offset 0)
+				(hide yes)
+			)
 			(exclude_from_sim no)
 			(in_bom yes)
 			(on_board yes)
@@ -644,12 +662,17 @@
 					)
 				)
 			)
+			(embedded_fonts no)
 		)
 		(symbol "power:VCC"
 			(power)
-			(pin_numbers hide)
+			(pin_numbers
+				(hide yes)
+			)
 			(pin_names
-				(offset 0) hide)
+				(offset 0)
+				(hide yes)
+			)
 			(exclude_from_sim no)
 			(in_bom yes)
 			(on_board yes)
@@ -721,7 +744,7 @@
 				)
 				(polyline
 					(pts
-						(xy 0 0) (xy 0 2.54)
+						(xy 0 2.54) (xy 0.762 1.27)
 					)
 					(stroke
 						(width 0)
@@ -733,7 +756,7 @@
 				)
 				(polyline
 					(pts
-						(xy 0 2.54) (xy 0.762 1.27)
+						(xy 0 0) (xy 0 2.54)
 					)
 					(stroke
 						(width 0)
@@ -764,7 +787,41 @@
 					)
 				)
 			)
+			(embedded_fonts no)
 		)
+	)
+	(text "RATING\nPWM input: 0~3.3V 1MHz+ PWM\nAnalog input: 0~3.3V analog\noutput: 3.3V digital\n"
+		(exclude_from_sim no)
+		(at 71.12 26.67 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "6103527a-14b7-46fe-85ac-61f0f15fd73c")
+	)
+	(text "Fc=1.6kHz\n1st order LPF"
+		(exclude_from_sim no)
+		(at 80.01 43.18 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "b3ead357-0dfa-4394-8a83-04ccff1bf151")
+	)
+	(text "100us- response to step input\n1MHz+ PWM is recommended"
+		(exclude_from_sim no)
+		(at 80.264 46.228 0)
+		(effects
+			(font
+				(size 0.6 0.6)
+			)
+			(justify left)
+		)
+		(uuid "c813aa3e-252e-4025-8fbc-cabd4a1c31fe")
 	)
 	(junction
 		(at 81.28 48.26)
@@ -1107,46 +1164,30 @@
 			"M9XTyjzXJYwiwTzXJZjmYWFnqpe0w26SVo9JNAs7U73k9bYlrR6TYBZ2pgYJW0nZys7UwMLO1CJp"
 			"4ZK0ekyCWdiZWsxzXcAo9v1YUwMLO1OLPV0XsB1b2ZmqWdiZqkjfmi5gpus6tjNTbillXRdhmoOF"
 			"namOFyRzFTVkDylMdSzsTHVSCb1lTF47jEkoCztTraSGSlLrMgljYWeqk9wVVFLrMgljYWeqNc91"
-			"AeOY57oA0xws7Ey1krqCSmpdJmEs7Ey1khoqSa3LJMz/BzS5D5EH5SGfAAAAAElFTkSuQmCC"
+			"AeOY57oA0xws7Ey1krqCSmpdJmEs7Ey1khoqSa3LJMz/BzS5D5EH5SGfAAAAAElFTkSuQmCCT8IJ"
+			"CNhv/wKA0J/QvtC70YPQttC40YDQvdGL0LkAAAAA3AkO2AAAA4BOZ2hpw6puZwAAAAAAAAAAwGfl"
+			"RM8BAADeCQzYAAEDgEJvbGQgSXRhbGljAAACAoBDOi9XSU5ET9gJEthvAgOAAAAAAAAAAAA5Grt7"
+			"ZgAAAHDxzETPAQAA2gkQ2AADA4AGAAAAEAAAAPButv//////AAAAAAAAAADUCRbYAAQDgFNlZ29l"
+			"IFVJIEJsYWNrAIAAAAAAAAAAANYJFNgABQOAVmV0IEN1cnNpZWYAAAAAAAAAAAAAAAAA0Aka2M8G"
+			"A4AAAAAAAAAAADhA/mwAAAAA0PbMRM8BAADSCRjYAAcDgEt1cnNpdm9pdHUA2AAGAoDw+MxEzwEA"
+			"AOwJHtgACAOABgAAABAAAAAga7b//////wAAAAAAAAAA7gkc2AAJA4BQb2dydWJpb255AAAAAAAA"
+			"QPHMRM8BAADoCSLYAAoDgFBvxaFldm5vAAkj2AAIAoBQ88xEzwEAAOoJINgACwOA0J/QvtC70YPQ"
+			"ttC40YDQvdGL0LkAAAAA5Akm2AAMA4BTZWdvZSBVSQBTL2ZvbnRzXHZnYXN5c3LmCSTYAA0DgFNl"
+			"Z29lIFVJAAkl2M8KAoAAAAAAAAAAAOAJKtgADgOABgAAABAAAADwL7b//////wAAAAAAAAAA4gko"
+			"2AAPA4BTZWdvZSBVSQAAAAAAAAAAgKDoRM8BAAD8CS7YABADgNCa0YPRgNGB0LjQsgAMAoAAAAAA"
+			"AAAAAP4JLNgAEQOASXTDoWxpY28AAAAAAAAAAAAAAAAAAAAA+Aky2AASA4BTZWdvZSBVSSBTZW1p"
+			"bGlnaHQARM8BAAD6CTDYABMDgFR1xI1uw6kgS3VyesOtdmEA8sxEzwEAAPQJNtgAFAOAAAAAAAAA"
+			"AACnIqiqAAAAANDyzETPAQAA9gk02AAVA4BOZWdyaXRhIEN1cnNpdmEAQGflRM8BAADwCTrYABYD"
+			"gFNlbWlsaWdodAA72AAQAoAAAAAAAAAAAPIJONgAFwOARsOpbGvDtnbDqXIgRMWRbHQAAAAAAAAA"
+			"jAk+2AAYA4BUdcSNbsOhIEt1cnrDrXZhAGflRM8BAACOCTzYABkDgFNlZ29lIFVJAAk92M8SAoDQ"
+			"+sxEzwEAAIgJQtgAGgOAS2FsxLFuIMSwdGFsaWsAAAAAAAAAAAAAiglA2AAbA4BMaWhhdm9pdHUA"
+			"AAAAAAAA8GflRM8BAACECUbYABwDgE5lZ3JldGEgQ3Vyc2l2YQAA+MxEzwEAAIYJRNgAHQOAAAAA"
+			"AAAAAACIacCqAAAAAHD3zETPAQAAgAlK2AAeA4BTZWdvZSBVSSBMaWdodAAAUGflRM8BAA=="
 		)
-	)
-	(text "RATING\nPWM input: 0~3.3V 1MHz+ PWM\nAnalog input: 0~3.3V analog\noutput: 3.3V digital\n"
-		(exclude_from_sim no)
-		(at 71.12 26.67 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "6103527a-14b7-46fe-85ac-61f0f15fd73c")
-	)
-	(text "Fc=1.6kHz\n1st order LPF"
-		(exclude_from_sim no)
-		(at 80.01 43.18 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "b3ead357-0dfa-4394-8a83-04ccff1bf151")
-	)
-	(text "100us- response to step input\n1MHz+ PWM is recommended"
-		(exclude_from_sim no)
-		(at 80.264 46.228 0)
-		(effects
-			(font
-				(size 0.6 0.6)
-			)
-			(justify left)
-		)
-		(uuid "c813aa3e-252e-4025-8fbc-cabd4a1c31fe")
 	)
 	(hierarchical_label "PWM_IN"
 		(shape input)
 		(at 60.96 48.26 180)
-		(fields_autoplaced yes)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -1158,7 +1199,6 @@
 	(hierarchical_label "TRIG_OUT"
 		(shape output)
 		(at 60.96 71.12 180)
-		(fields_autoplaced yes)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -1170,7 +1210,6 @@
 	(hierarchical_label "ANALOG_IN"
 		(shape input)
 		(at 124.46 68.58 0)
-		(fields_autoplaced yes)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -1418,7 +1457,7 @@
 		(lib_id "power:GND")
 		(at 81.28 55.88 0)
 		(unit 1)
-		(exclude_from_sim yes)
+		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
@@ -1874,7 +1913,7 @@
 		(lib_id "power:GND")
 		(at 71.12 107.95 0)
 		(unit 1)
-		(exclude_from_sim yes)
+		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
@@ -1939,7 +1978,7 @@
 		(lib_id "power:GND")
 		(at 95.25 82.55 0)
 		(unit 1)
-		(exclude_from_sim yes)
+		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)

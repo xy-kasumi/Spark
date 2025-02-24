@@ -431,7 +431,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "CTRL-MINI-ED.kicad_pro",
+    "filename": "PULSER-sim-dchg.kicad_pro",
     "version": 1
   },
   "net_settings": {
@@ -611,7 +611,7 @@
         "version": 0
       },
       "model_mode": 4,
-      "workbook_filename": ""
+      "workbook_filename": "PULSER-sim-dchg.wbk"
     },
     "page_layout_descr_file": "",
     "plot_directory": "",
