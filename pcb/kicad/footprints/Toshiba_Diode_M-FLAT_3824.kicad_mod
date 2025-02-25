@@ -443,7 +443,7 @@
 			)
 		)
 	)
-	(model "C:/Users/xyx/Documents/repos/Spark/discharge-board/kicad/footprints/Toshiba_Diode_M-FLAT_3824.step"
+	(model "C:/Users/xyx/Documents/repos/Spark/pcb/kicad/footprints/Toshiba_Diode_M-FLAT_3824.step"
 		(offset
 			(xyz 0 0 0)
 		)

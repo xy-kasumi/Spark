@@ -308,7 +308,7 @@
 			)
 		)
 	)
-	(model "C:/Users/xyx/Documents/repos/Spark/discharge-board/kicad/footprints/Bourns_Fuse_SF_6.1x2.6.step"
+	(model "C:/Users/xyx/Documents/repos/Spark/pcb/kicad/footprints/Bourns_Fuse_SF_6.1x2.6.step"
 		(offset
 			(xyz 0 0 0)
 		)

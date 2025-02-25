@@ -1,4 +1,4 @@
 (fp_lib_table
   (version 7)
-  (lib (name "SparkAll")(type "KiCad")(uri "C:/Users/xyx/Documents/repos/Spark/discharge-board/kicad/footprints")(options "")(descr ""))
+  (lib (name "SparkAll")(type "KiCad")(uri "C:/Users/xyx/Documents/repos/Spark/pcb/kicad/footprints")(options "")(descr ""))
 )

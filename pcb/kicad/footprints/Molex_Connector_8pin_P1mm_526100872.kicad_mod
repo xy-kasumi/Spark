@@ -437,7 +437,7 @@
 		(layers "F.Cu" "F.Paste" "F.Mask")
 		(uuid "a7153fa2-75a0-4ab1-a6c0-6d280328c64a")
 	)
-	(model "C:/Users/xyx/Documents/repos/Spark/discharge-board/kicad/footprints/Molex_Connector_8pin_P1mm_526100872.step"
+	(model "C:/Users/xyx/Documents/repos/Spark/pcb/kicad/footprints/Molex_Connector_8pin_P1mm_526100872.step"
 		(offset
 			(xyz 0 -1.75 0)
 		)

@@ -184,7 +184,7 @@
 		(solder_mask_margin 0.102)
 		(uuid "013dd092-26a4-4485-8bc2-6e33af94530f")
 	)
-	(model "C:/Users/xyx/Documents/repos/Spark/discharge-board/kicad/footprints/Wurth_TerminalBlock_2pin_P5mm_691137710002.stp"
+	(model "C:/Users/xyx/Documents/repos/Spark/pcb/kicad/footprints/Wurth_TerminalBlock_2pin_P5mm_691137710002.stp"
 		(offset
 			(xyz -5 -4 0)
 		)
