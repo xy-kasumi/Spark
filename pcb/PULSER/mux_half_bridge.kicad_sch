@@ -1337,6 +1337,17 @@
 		)
 		(uuid "53fb7af1-4bda-4933-9f67-b0fcb5bc484a")
 	)
+	(text "Parts Height\nTo make heatsink (shim) attachment easier,\nmake sure all parts (other than the IC) is shorter than MOSFETs.\n\nBSC110N15NS5: 1.05mm\nUCC27288DR: 1.75mm\n\nCL10A105KB8NNNC (1uF 50V, 0603): 0.8mm\nCC0603KRX7R9BB104 (100nF 50V, 0603): 0.8mm\nRB168VAM150TR (150V diode, SOD-323): 0.6mm"
+		(exclude_from_sim no)
+		(at 90.678 128.778 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "8646b0a8-4ec2-45a5-97f9-bfa08bcf7768")
+	)
 	(junction
 		(at 96.52 72.39)
 		(diameter 0)
@@ -2184,7 +2195,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C13585"
+		(property "LCSC" "C15849"
 			(at 74.93 134.62 0)
 			(effects
 				(font
@@ -2608,7 +2619,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Diode_SMD:D_SOD-123F"
+		(property "Footprint" "Diode_SMD:D_SOD-323"
 			(at 74.93 69.85 0)
 			(effects
 				(font
@@ -2635,7 +2646,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C42376925"
+		(property "LCSC" "C2842811"
 			(at 74.93 69.85 0)
 			(effects
 				(font
@@ -2834,7 +2845,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C13585"
+		(property "LCSC" "C14663"
 			(at 96.52 78.74 0)
 			(effects
 				(font
