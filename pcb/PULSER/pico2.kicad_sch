@@ -1428,6 +1428,12 @@
 		(uuid "291a9a31-04af-4213-925c-4bdad4bd08d8")
 	)
 	(junction
+		(at 101.6 147.32)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "2ce041e7-f324-42a1-833b-9e0ae6f82561")
+	)
+	(junction
 		(at 116.84 72.39)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -1440,12 +1446,6 @@
 		(uuid "584eb6ba-47bb-4ac9-9ccf-830137f2029f")
 	)
 	(junction
-		(at 101.6 143.51)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "5ebd78eb-e326-4bc1-b279-4e6cf03a3ed8")
-	)
-	(junction
 		(at 148.59 102.87)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -1456,12 +1456,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "843e70cd-0a7b-4638-9260-7ab02f73742f")
-	)
-	(junction
-		(at 101.6 147.32)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "88f2ae34-7ddb-40f2-901f-b51cc7fd325e")
 	)
 	(junction
 		(at 148.59 90.17)
@@ -1523,7 +1517,7 @@
 	)
 	(wire
 		(pts
-			(xy 101.6 143.51) (xy 106.68 143.51)
+			(xy 99.06 143.51) (xy 106.68 143.51)
 		)
 		(stroke
 			(width 0)
@@ -1563,6 +1557,16 @@
 	)
 	(wire
 		(pts
+			(xy 101.6 147.32) (xy 109.22 147.32)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "18e65776-df40-4208-b5cc-245d3ebbd844")
+	)
+	(wire
+		(pts
 			(xy 114.3 107.95) (xy 121.92 107.95)
 		)
 		(stroke
@@ -1583,16 +1587,6 @@
 	)
 	(wire
 		(pts
-			(xy 99.06 143.51) (xy 101.6 143.51)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "24bc150d-54a2-4dec-b2c9-4155baee9836")
-	)
-	(wire
-		(pts
 			(xy 115.57 102.87) (xy 121.92 102.87)
 		)
 		(stroke
@@ -1603,7 +1597,7 @@
 	)
 	(wire
 		(pts
-			(xy 101.6 147.32) (xy 109.22 147.32)
+			(xy 92.71 147.32) (xy 101.6 147.32)
 		)
 		(stroke
 			(width 0)
@@ -1873,16 +1867,6 @@
 	)
 	(wire
 		(pts
-			(xy 101.6 143.51) (xy 101.6 147.32)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c49e5f82-cc94-4e55-802c-46f0d09dd631")
-	)
-	(wire
-		(pts
 			(xy 121.92 115.57) (xy 115.57 115.57)
 		)
 		(stroke
@@ -1893,6 +1877,16 @@
 	)
 	(wire
 		(pts
+			(xy 101.6 140.97) (xy 101.6 147.32)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d318928b-a34a-4582-87e6-b13e62b2b67e")
+	)
+	(wire
+		(pts
 			(xy 121.92 77.47) (xy 115.57 77.47)
 		)
 		(stroke
@@ -1900,16 +1894,6 @@
 			(type default)
 		)
 		(uuid "d3c31044-a0ba-41dc-9d09-5079ccdda3c8")
-	)
-	(wire
-		(pts
-			(xy 101.6 140.97) (xy 101.6 143.51)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d5f78e65-7274-45ba-829a-cc8521423272")
 	)
 	(wire
 		(pts
@@ -1930,16 +1914,6 @@
 			(type default)
 		)
 		(uuid "dfea0059-c524-4f08-a37d-d039b27cdb31")
-	)
-	(wire
-		(pts
-			(xy 92.71 147.32) (xy 101.6 147.32)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "e3ba6d7e-f75a-4614-8f04-4dc292757fa4")
 	)
 	(wire
 		(pts
@@ -3194,6 +3168,24 @@
 			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 			"AA=="
 		)
 	)
@@ -3422,7 +3414,25 @@
 			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABgIHAAAAAAD5"
-			"/fgAAAAAAAAAAAAFAgcACQQLAAkECwAJBAsACQQLAAAAAAAAAAAAAAAAAAAAAAAJBAsACw=="
+			"/fgAAAAAAAAAAAAFAgcACQQLAAkECwAJBAsACQQLAAAAAAAAAAAAAAAAAAAAAAAJBAsACydthwBl"
+			"BIDA8QqyywIAAAMAAAAAAAAAAH5wvssCAAABAAAAAAAAAAAAAAAAAAAAZicShwBmBIAAAAAAAAAA"
+			"AAMAAAAAAAAAMM9tvssCAAABAAAAAAAAAAAAAAAAAAAAYScXhwBnBIAAAAAAAAAAAAMAAAAAAAAA"
+			"wIBwvssCAAABAAAAAAAAAAAAAAAAAAAAbCcUhwBoBIAAAAAAAAAAAAgAAAAAAAAAII5uvssCAAAB"
+			"AAAAAAAAAAAAAAAAAAAAbycZhwBpBIBA7QqyywIAAAMAAAAAAAAAIH9wvssCAAABAAAAAAAAAAAA"
+			"AAAAAAAAaicehwBqBICg8wqyywIAAAMAAAAAAAAAcH5wvssCAAABAAAAAAAAAAAAAAAAAAAAdScD"
+			"hwBrBIBDOi9XSU5ET1dTL2ZvbnRzXHNlZ29lc2MudHRmAAAAAAAAAAAAAAAAcCcAhwBsBIBDOi9X"
+			"SU5ET1dTL2ZvbnRzXHNlZ29lcHIudHRmAAAAAAAAAAAAAAAAcycFhwBtBIAAAAAAAAAAAAQAAAAA"
+			"AAAAAQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAficKhwBuBICQ7gqyywIAAAMAAAAAAAAA8M5tvssC"
+			"AAABAAAAAAAAAAAAAAAAAAAAeScPhwBvBIAAAAAAAAAAAAMAAAAAAAAA4H9wvssCAAABAAAAAAAA"
+			"AAAAAAAAAAAARCcMhwBwBIAAAAAAAAAAAAMAAAAAAAAAsH5wvssCAAABAAAAAAAAAAAAAAAAAAAA"
+			"RycxhwBxBIAAAAAAAAAAAAMAAAAAAAAA8MltvssCAAABAAAAAAAAAAAAAAAAAAAAQic2hwByBIAA"
+			"AAAAAAAAAAQAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAAAAAAAAAAATSc7hwBzBIAAAAAAAAAAAAMA"
+			"AAAAAAAAUPUKsssCAAABAAAAAAAAAAAAAAAAAAAASCc4hwB0BIAw9wqyywIAAAMAAAAAAAAAoH9w"
+			"vssCAAABAAAAAAAAAAAAAAAAAAAASyc9hwB1BIDg8gqyywIAAAMAAAAAAAAAEM9tvssCAAABAAAA"
+			"AAAAAAAAAAAAAAAAVicihwB2BIDQ7QqyywIAAAMAAAAAAAAAUNFtvssCAAABAAAAAAAAAAAAAAAA"
+			"AAAAUScnhwB3BIAQ8AqyywIAAAMAAAAAAAAA8MptvssCAAABAAAAAAAAAAAAAAAAAAAAXCckhwB4"
+			"BIDA9wqyywIAAAMAAAAAAAAAkMttvssCAAABAAAAAAAAAAAAAAAAAAAAXycphwB5BIBg9AqyywIA"
+			"AAMAAAAAAAAAsIBwvssCAAABAAAAAAAAAAAAAAAAAAAAWicuhwB6BIAAAAAAAAAAAAgAAA=="
 		)
 	)
 	(image
@@ -5071,7 +5081,25 @@
 			"/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//"
 			"AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8A"
 			"ru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu"
-			"7/8Aru//AK7v/w=="
+			"7/8Aru//AK7v/////wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////"
+			"AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A"
+			"////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AACu7ogA"
+			"ru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7wh////wD///8A////AP///wD///8A////AP//"
+			"/wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////"
+			"AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A"
+			"////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD/"
+			"//8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP//"
+			"/wD///8AAK/wIwCu75EAru73AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v"
+			"/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//"
+			"AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8A"
+			"ru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu"
+			"7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v"
+			"/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//"
+			"AK7v/wCu7/8Aru//AK7wQgCq/wMAru/qAK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8A"
+			"ru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu"
+			"7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v"
+			"/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//"
+			"AK7v/wCu7/8Arg=="
 		)
 	)
 	(label "5VPROT"
@@ -5381,6 +5409,22 @@
 					(size 1.27 1.27)
 				)
 				(hide yes)
+			)
+		)
+		(property "Sim.Device" ""
+			(at 135.89 97.79 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Sim.Pins" ""
+			(at 135.89 97.79 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
 			)
 		)
 		(pin "9"
@@ -5737,6 +5781,22 @@
 				(hide yes)
 			)
 		)
+		(property "Sim.Device" ""
+			(at 116.84 62.23 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Sim.Pins" ""
+			(at 116.84 62.23 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "2"
 			(uuid "298441d4-f291-46f6-9bc5-a80148801849")
 		)
@@ -5839,6 +5899,22 @@
 					(size 1.27 1.27)
 				)
 				(hide yes)
+			)
+		)
+		(property "Sim.Device" ""
+			(at 151.13 71.12 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Sim.Pins" ""
+			(at 151.13 71.12 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
 			)
 		)
 		(pin "1"
@@ -5944,6 +6020,22 @@
 				(hide yes)
 			)
 		)
+		(property "Sim.Device" ""
+			(at 119.38 62.23 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Sim.Pins" ""
+			(at 119.38 62.23 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "2"
 			(uuid "e65a317e-4276-45a9-bc53-c86c035105b9")
 		)
@@ -6019,6 +6111,22 @@
 					(size 1.27 1.27)
 				)
 				(hide yes)
+			)
+		)
+		(property "Sim.Device" ""
+			(at 127 95.25 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Sim.Pins" ""
+			(at 127 95.25 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
 			)
 		)
 		(pin "9"
@@ -6178,6 +6286,22 @@
 				(hide yes)
 			)
 		)
+		(property "Sim.Device" ""
+			(at 99.06 137.16 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Sim.Pins" ""
+			(at 99.06 137.16 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "2"
 			(uuid "5227c9ac-d308-44d9-a17d-19a623c2c367")
 		)
@@ -6279,6 +6403,22 @@
 					(size 1.27 1.27)
 				)
 				(hide yes)
+			)
+		)
+		(property "Sim.Device" ""
+			(at 101.6 137.16 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Sim.Pins" ""
+			(at 101.6 137.16 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
 			)
 		)
 		(pin "2"
