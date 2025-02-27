@@ -1334,12 +1334,6 @@
 		(uuid "899049fd-41e9-4ff2-ba21-67cde49808ad")
 	)
 	(junction
-		(at 175.26 59.69)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "a1d1e737-aacd-4cb7-ab0f-cb2df8ed54ca")
-	)
-	(junction
 		(at 133.35 92.71)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -1374,12 +1368,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "c9e4fbb6-7e44-4235-b953-cc21bfbf2940")
-	)
-	(junction
-		(at 175.26 77.47)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "cb0fb609-1be2-4a01-a33f-965d65195373")
 	)
 	(junction
 		(at 162.56 92.71)
@@ -1445,7 +1433,7 @@
 	)
 	(wire
 		(pts
-			(xy 175.26 73.66) (xy 175.26 77.47)
+			(xy 175.26 73.66) (xy 175.26 92.71)
 		)
 		(stroke
 			(width 0)
@@ -1495,16 +1483,6 @@
 	)
 	(wire
 		(pts
-			(xy 182.88 77.47) (xy 175.26 77.47)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "2fe31d66-85ea-4686-85e2-a81f470f1098")
-	)
-	(wire
-		(pts
 			(xy 72.39 76.2) (xy 76.2 76.2)
 		)
 		(stroke
@@ -1522,16 +1500,6 @@
 			(type default)
 		)
 		(uuid "32933356-1c18-402f-adb7-4d6a6e2785ec")
-	)
-	(wire
-		(pts
-			(xy 182.88 59.69) (xy 175.26 59.69)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "33fd5777-4434-4f91-a6ac-7e2fdb7bb967")
 	)
 	(wire
 		(pts
@@ -1665,16 +1633,6 @@
 	)
 	(wire
 		(pts
-			(xy 182.88 73.66) (xy 182.88 77.47)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "5f993f1c-e187-4381-9457-32d8b0c6a36d")
-	)
-	(wire
-		(pts
 			(xy 132.08 63.5) (xy 144.78 63.5)
 		)
 		(stroke
@@ -1745,16 +1703,6 @@
 	)
 	(wire
 		(pts
-			(xy 175.26 77.47) (xy 175.26 92.71)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "81e57574-4f15-4214-8ee0-d5db6e4f1d3d")
-	)
-	(wire
-		(pts
 			(xy 139.7 66.04) (xy 139.7 50.8)
 		)
 		(stroke
@@ -1802,16 +1750,6 @@
 			(type default)
 		)
 		(uuid "8a378253-27c4-4ce0-88f4-ae2610ccc541")
-	)
-	(wire
-		(pts
-			(xy 175.26 59.69) (xy 175.26 50.8)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "8d4bf520-34e0-499e-9844-36e419172b23")
 	)
 	(wire
 		(pts
@@ -1996,7 +1934,7 @@
 	)
 	(wire
 		(pts
-			(xy 175.26 66.04) (xy 175.26 59.69)
+			(xy 175.26 50.8) (xy 175.26 66.04)
 		)
 		(stroke
 			(width 0)
@@ -2013,16 +1951,6 @@
 			(type default)
 		)
 		(uuid "f8130464-2e9c-4bb7-9446-e2ee512137a8")
-	)
-	(wire
-		(pts
-			(xy 182.88 66.04) (xy 182.88 59.69)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "fc5f4f88-f4c7-41ff-a0f8-de534bf864a4")
 	)
 	(image
 		(at 276.86 173.99)
@@ -3017,128 +2945,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:C")
-		(at 182.88 69.85 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "8cdad78f-51fd-4814-821f-f8327280ff0e")
-		(property "Reference" "C19"
-			(at 183.896 67.564 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "100nF 200V"
-			(at 186.69 71.1199 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
-			(at 183.8452 73.66 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 182.88 69.85 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Unpolarized capacitor"
-			(at 182.88 69.85 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "LCSC" "C342865"
-			(at 182.88 69.85 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Sim.Library" ""
-			(at 182.88 69.85 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Sim.Name" ""
-			(at 182.88 69.85 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Sim.Type" ""
-			(at 182.88 69.85 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Sim.Device" ""
-			(at 182.88 69.85 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Sim.Pins" ""
-			(at 182.88 69.85 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "754213ba-9bd1-423e-b74a-a5e6e6eb64f5")
-		)
-		(pin "2"
-			(uuid "ff9428fa-896c-4670-adcc-756361480886")
-		)
-		(instances
-			(project "CTRL-MINI-ED"
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "C19")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Device:R")
 		(at 72.39 80.01 180)
 		(unit 1)
@@ -3681,7 +3487,7 @@
 			)
 		)
 		(property "Value" "100nF 200V"
-			(at 176.53 72.898 0)
+			(at 176.022 72.644 0)
 			(effects
 				(font
 					(size 1.27 1.27)
