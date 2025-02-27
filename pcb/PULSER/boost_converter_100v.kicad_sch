@@ -1161,14 +1161,14 @@
 			(embedded_fonts no)
 		)
 	)
-	(text "RATING\nOutput: 100V, 100mA"
+	(text "Output: 100V, 100mA"
 		(exclude_from_sim no)
-		(at 81.026 15.494 0)
+		(at 213.106 16.764 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left)
+			(justify left top)
 		)
 		(uuid "359bcecd-c795-474c-9928-00738a16fe3a")
 	)
@@ -1203,7 +1203,7 @@
 		)
 		(uuid "7f2d4de1-7de3-46f4-a169-38bdac8b983c")
 	)
-	(text "results in 100V ± 10V\nif 5% resistor is used\n"
+	(text "FBX=1.6V\nresults in 102V"
 		(exclude_from_sim no)
 		(at 162.56 96.774 0)
 		(effects
@@ -1215,7 +1215,7 @@
 	)
 	(text "based on the \"9V~30V Input / 125V Output\" example\nin LT8365 datasheet\n"
 		(exclude_from_sim no)
-		(at 81.28 34.544 0)
+		(at 86.106 114.808 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -1244,6 +1244,19 @@
 		)
 		(uuid "d416bd3f-4c7e-4aad-b98e-cf02999f8314")
 	)
+	(text "Rating"
+		(exclude_from_sim no)
+		(at 212.852 14.478 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.254)
+				(bold yes)
+			)
+			(justify left top)
+		)
+		(uuid "da9caedc-e1c0-41df-bd9f-99799587bbb3")
+	)
 	(text "RT=100k ->\nfosc=400kHz~450kHz"
 		(exclude_from_sim no)
 		(at 138.938 97.79 0)
@@ -1271,18 +1284,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "10b99f34-a3e4-49c7-855e-fd3af76596ae")
-	)
-	(junction
-		(at 162.56 73.66)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "1b975566-eaa7-43ea-a98d-41ee86b9d816")
-	)
-	(junction
-		(at 162.56 87.63)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "1cf72adc-d560-4058-9573-386cf8f134ee")
 	)
 	(junction
 		(at 156.21 71.12)
@@ -1534,17 +1535,7 @@
 	)
 	(wire
 		(pts
-			(xy 162.56 73.66) (xy 165.1 73.66)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "3479803d-3f56-4cb9-944e-f940411598f6")
-	)
-	(wire
-		(pts
-			(xy 160.02 77.47) (xy 160.02 73.66)
+			(xy 162.56 71.12) (xy 162.56 77.47)
 		)
 		(stroke
 			(width 0)
@@ -1584,7 +1575,7 @@
 	)
 	(wire
 		(pts
-			(xy 162.56 87.63) (xy 162.56 92.71)
+			(xy 162.56 85.09) (xy 162.56 92.71)
 		)
 		(stroke
 			(width 0)
@@ -1664,16 +1655,6 @@
 	)
 	(wire
 		(pts
-			(xy 160.02 85.09) (xy 160.02 87.63)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "52b846cb-5a9b-4668-872d-d3ed6d03bf99")
-	)
-	(wire
-		(pts
 			(xy 76.2 68.58) (xy 58.42 68.58)
 		)
 		(stroke
@@ -1721,16 +1702,6 @@
 			(type default)
 		)
 		(uuid "6f21f273-2845-4d89-9973-ce9901543621")
-	)
-	(wire
-		(pts
-			(xy 162.56 87.63) (xy 165.1 87.63)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "761cbf85-36f2-4952-90fc-466d92c540d3")
 	)
 	(wire
 		(pts
@@ -1852,6 +1823,17 @@
 		)
 		(uuid "8e67faf2-788e-4265-9977-de99a1faa3ce")
 	)
+	(polyline
+		(pts
+			(xy 210.82 12.7) (xy 210.82 165.1)
+		)
+		(stroke
+			(width 0.15)
+			(type solid)
+			(color 132 0 0 1)
+		)
+		(uuid "8ed486f7-174b-4577-b43e-abefa7b5f855")
+	)
 	(wire
 		(pts
 			(xy 162.56 69.85) (xy 162.56 71.12)
@@ -1881,16 +1863,6 @@
 			(type default)
 		)
 		(uuid "98272995-a8c6-497a-83ff-ea8f96c4dc31")
-	)
-	(wire
-		(pts
-			(xy 165.1 73.66) (xy 165.1 77.47)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a2f4d92b-279f-42ce-9e87-3e37da1b1a30")
 	)
 	(wire
 		(pts
@@ -1934,16 +1906,6 @@
 	)
 	(wire
 		(pts
-			(xy 160.02 73.66) (xy 162.56 73.66)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "bb29cc0d-1919-4fc1-b574-0a2f272d3f0b")
-	)
-	(wire
-		(pts
 			(xy 43.18 72.39) (xy 43.18 92.71)
 		)
 		(stroke
@@ -1984,16 +1946,6 @@
 	)
 	(wire
 		(pts
-			(xy 160.02 87.63) (xy 162.56 87.63)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d318fe63-23cc-48b8-8cc9-388497e302a9")
-	)
-	(wire
-		(pts
 			(xy 71.12 50.8) (xy 76.2 50.8)
 		)
 		(stroke
@@ -2014,16 +1966,6 @@
 	)
 	(wire
 		(pts
-			(xy 162.56 71.12) (xy 162.56 73.66)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d74fd2c1-f9b5-4749-9033-1c863bc99b4d")
-	)
-	(wire
-		(pts
 			(xy 152.4 50.8) (xy 162.56 50.8)
 		)
 		(stroke
@@ -2031,16 +1973,6 @@
 			(type default)
 		)
 		(uuid "dd31b427-fbd8-4509-be42-0672771024a3")
-	)
-	(wire
-		(pts
-			(xy 165.1 85.09) (xy 165.1 87.63)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "de196aeb-57ff-4a6b-a870-9575f5073c14")
 	)
 	(wire
 		(pts
@@ -2844,7 +2776,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "LT8365HMSE-PBF"
+		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2411220036_Analog-Devices-LT8365EMSE-PBF_C673785.pdf"
 			(at 76.2 63.5 0)
 			(effects
 				(font
@@ -2958,125 +2890,6 @@
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
 					(reference "U4")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R")
-		(at 165.1 81.28 180)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "77b6e979-e038-4b12-8376-5b7d092d383f")
-		(property "Reference" "R21"
-			(at 168.148 81.534 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "33k 150V"
-			(at 170.942 83.82 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
-			(at 166.878 81.28 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 165.1 81.28 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor"
-			(at 165.1 81.28 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "LCSC" "C17633"
-			(at 165.1 81.28 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Sim.Library" ""
-			(at 165.1 81.28 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Sim.Name" ""
-			(at 165.1 81.28 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Sim.Type" ""
-			(at 165.1 81.28 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Sim.Device" ""
-			(at 165.1 81.28 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Sim.Pins" ""
-			(at 165.1 81.28 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "776813ab-3b1a-4373-8514-c0701b5d0b06")
-		)
-		(pin "2"
-			(uuid "5c85525a-b4c9-449a-8278-be1ddbbd68d5")
-		)
-		(instances
-			(project "CTRL-MINI-ED"
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/dca0d9d7-f6d9-4f4d-a773-79bfbc8c332f/8e7d2a38-9570-47b2-a3a0-f33e26444a39"
-					(reference "R21")
 					(unit 1)
 				)
 			)
@@ -3449,7 +3262,7 @@
 		(at 128.27 50.8 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "8f549a1d-5621-497a-819e-5f95bd6da72d")
@@ -3462,13 +3275,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 130.81 48.7679 0)
+		(property "Value" "TestPoint_Small"
+			(at 128.27 48.768 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -3654,7 +3466,7 @@
 		(at 156.21 71.12 270)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "9b939fc1-6ea7-4fb4-bafb-a6a658005815")
@@ -3667,13 +3479,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 158.2421 73.66 0)
+		(property "Value" "TestPoint_Small"
+			(at 158.242 71.12 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -3989,7 +3800,7 @@
 				)
 			)
 		)
-		(property "Value" "150V, 1A"
+		(property "Value" "150V 1A, Schottky bigger"
 			(at 153.9875 46.99 0)
 			(effects
 				(font
@@ -4093,7 +3904,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 160.02 81.28 180)
+		(at 162.56 81.28 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -4101,23 +3912,23 @@
 		(dnp no)
 		(uuid "f7ef6fc5-77c7-408e-a187-3aa7caaab25f")
 		(property "Reference" "R20"
-			(at 157.226 81.534 0)
+			(at 159.004 80.01 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Value" "10k 150V"
-			(at 153.67 83.82 0)
+		(property "Value" "7.5k"
+			(at 159.004 82.296 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
-			(at 161.798 81.28 90)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 164.338 81.28 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4126,7 +3937,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 160.02 81.28 0)
+			(at 162.56 81.28 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4135,7 +3946,7 @@
 			)
 		)
 		(property "Description" "Resistor"
-			(at 160.02 81.28 0)
+			(at 162.56 81.28 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4143,8 +3954,8 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C17414"
-			(at 160.02 81.28 0)
+		(property "LCSC" "C23234"
+			(at 162.56 81.28 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4153,7 +3964,7 @@
 			)
 		)
 		(property "Sim.Library" ""
-			(at 160.02 81.28 0)
+			(at 162.56 81.28 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4162,7 +3973,7 @@
 			)
 		)
 		(property "Sim.Name" ""
-			(at 160.02 81.28 0)
+			(at 162.56 81.28 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4171,7 +3982,7 @@
 			)
 		)
 		(property "Sim.Type" ""
-			(at 160.02 81.28 0)
+			(at 162.56 81.28 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4180,7 +3991,7 @@
 			)
 		)
 		(property "Sim.Device" ""
-			(at 160.02 81.28 0)
+			(at 162.56 81.28 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4188,7 +3999,7 @@
 			)
 		)
 		(property "Sim.Pins" ""
-			(at 160.02 81.28 0)
+			(at 162.56 81.28 0)
 			(effects
 				(font
 					(size 1.27 1.27)

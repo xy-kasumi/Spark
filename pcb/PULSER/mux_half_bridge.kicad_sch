@@ -1886,7 +1886,7 @@
 		(at 96.52 72.39 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "3c1b1aca-a691-4453-bc37-5e08fbbb9b5c")
@@ -1991,7 +1991,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "UCC27288DR"
+		(property "Datasheet" "~"
 			(at 92.456 69.596 0)
 			(effects
 				(font
@@ -2024,6 +2024,15 @@
 				(font
 					(size 1.27 1.27)
 				)
+			)
+		)
+		(property "LCSC" "C2866142"
+			(at 54.356 80.01 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
 			)
 		)
 		(pin "3"
@@ -2168,7 +2177,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_1206_3216Metric"
+		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
 			(at 75.8952 138.43 0)
 			(effects
 				(font
@@ -2275,7 +2284,7 @@
 		(at 118.11 67.31 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "6bab8e1b-b2de-4683-8999-2e423d08df9d")
@@ -2439,7 +2448,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "Q_NMOS"
+		(property "Value" "N-ch, Vds>=200V, fast switch, low Rds"
 			(at 134.62 95.2499 0)
 			(effects
 				(font
@@ -2492,6 +2501,15 @@
 				)
 			)
 		)
+		(property "LCSC" "C501501"
+			(at 128.27 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "D"
 			(uuid "6197f5b4-d404-485c-a90d-21d0f8514a24")
 		)
@@ -2523,7 +2541,7 @@
 		(at 118.11 93.98 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "a447477f-d199-46d0-b917-839475cce54f")
@@ -2611,7 +2629,7 @@
 				)
 			)
 		)
-		(property "Value" "150V"
+		(property "Value" "150V 1A, Schottky"
 			(at 75.2475 66.04 0)
 			(effects
 				(font
@@ -2712,7 +2730,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "Q_NMOS"
+		(property "Value" "N-ch, Vds>=200V, fast switch, low Rds"
 			(at 134.62 68.5799 0)
 			(effects
 				(font
@@ -2763,6 +2781,15 @@
 				(font
 					(size 1.27 1.27)
 				)
+			)
+		)
+		(property "LCSC" "C501501"
+			(at 128.27 67.31 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
 			)
 		)
 		(pin "G"
@@ -2818,7 +2845,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_1206_3216Metric"
+		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
 			(at 95.5548 74.93 0)
 			(effects
 				(font

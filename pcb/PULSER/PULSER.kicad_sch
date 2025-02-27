@@ -2387,6 +2387,30 @@
 		)
 		(uuid "04e19cc2-11c5-40d0-995a-91cdea6f1ad2")
 	)
+	(text "Rating"
+		(exclude_from_sim no)
+		(at 13.716 145.034 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.254)
+				(bold yes)
+			)
+			(justify left top)
+		)
+		(uuid "08746948-2d23-4194-b89b-199b207c200b")
+	)
+	(text "Input1: 36V 16A\nInput2: 12V 2A\n\nPulse ignition voltage: 100V\nPulse current (max): 20A"
+		(exclude_from_sim no)
+		(at 13.97 147.32 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left top)
+		)
+		(uuid "0bf2fb1b-5b50-4d0f-ba94-367f16310353")
+	)
 	(text "to fan\nin pulse shaper\n\nXH Connector\n12V, 500mA-"
 		(exclude_from_sim no)
 		(at 234.95 114.554 0)
@@ -2429,7 +2453,7 @@
 		)
 		(uuid "3c43cd89-90fc-496a-9c3b-7333c4527d69")
 	)
-	(text "close to D9 (hottest)\nmeasures chip/PCB temp\ndon't connect to heatsink"
+	(text "middle of hot area\nmeasures chip/PCB temp\ndon't connect to heatsink"
 		(exclude_from_sim no)
 		(at 197.866 122.174 0)
 		(effects
@@ -2484,14 +2508,14 @@
 		)
 		(uuid "74f81640-54d7-4229-830e-f0c7e5d8005c")
 	)
-	(text "Netclass\n* HVHC: High Voltage (100V), High Current (10A+)\n* HC: High Current (10A+)\n* HV: High Voltage (100V)\n* PWR: Normal power line (~few Amps)"
+	(text "* HVHC: High Voltage (100V), High Current (10A+)\n* HC: High Current (10A+)\n* HV: High Voltage (100V)\n* PWR: Normal power line (~few Amps)"
 		(exclude_from_sim no)
-		(at 59.436 159.512 0)
+		(at 48.006 147.828 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left)
+			(justify left top)
 		)
 		(uuid "7605966b-de07-40f1-b258-b5f8f2a7026f")
 	)
@@ -2537,6 +2561,19 @@
 			(justify left)
 		)
 		(uuid "ec1d74e2-dfae-43bc-bc81-341d9cc76578")
+	)
+	(text "Netclass"
+		(exclude_from_sim no)
+		(at 47.498 145.288 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.254)
+				(bold yes)
+			)
+			(justify left top)
+		)
+		(uuid "ec29a7f7-0390-4955-8e4f-9ba6aff5d621")
 	)
 	(text "VSYS (5V)"
 		(exclude_from_sim no)
@@ -3045,6 +3082,17 @@
 			(type default)
 		)
 		(uuid "90c45892-dc27-45ee-8e03-9dfc70dadcfc")
+	)
+	(polyline
+		(pts
+			(xy 12.7 143.51) (xy 283.21 143.51)
+		)
+		(stroke
+			(width 0.127)
+			(type solid)
+			(color 132 0 0 1)
+		)
+		(uuid "997cc3b6-43dd-4fc9-81ea-cc8ef9d4e20c")
 	)
 	(wire
 		(pts
@@ -3728,7 +3776,7 @@
 		(at 64.77 30.48 180)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "04620dea-fa0a-4a1f-97da-6da1edddbe9f")
@@ -3741,13 +3789,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 62.23 32.5121 0)
+		(property "Value" "TestPoint_Small"
+			(at 64.77 32.512 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -3823,7 +3870,7 @@
 				)
 			)
 		)
-		(property "Value" "TMP102xxDRL"
+		(property "Value" "TMP102"
 			(at 195.834 111.76 0)
 			(effects
 				(font
@@ -3874,6 +3921,15 @@
 				(font
 					(size 1.27 1.27)
 				)
+			)
+		)
+		(property "LCSC" "C99269"
+			(at 187.96 120.65 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
 			)
 		)
 		(pin "5"
@@ -4039,7 +4095,7 @@
 				)
 			)
 		)
-		(property "Value" "Screw_Terminal_01x02"
+		(property "Value" "Screw_Terminal 2pin"
 			(at 38.1 70.104 0)
 			(effects
 				(font
@@ -4211,7 +4267,7 @@
 		(at 161.29 85.09 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "0e956f33-9a7d-4196-8245-bf5be86d90ec")
@@ -4224,13 +4280,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 163.83 83.0579 0)
+		(property "Value" "TestPoint_Small"
+			(at 161.29 83.058 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -4307,7 +4362,7 @@
 				)
 			)
 		)
-		(property "Value" "Conn_01x08_Pin"
+		(property "Value" "FFC 8pin"
 			(at 45.212 91.948 0)
 			(effects
 				(font
@@ -4432,7 +4487,7 @@
 		(at 66.04 110.49 270)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "1789046e-620f-4d4b-9cd2-94f0402c3576")
@@ -4445,13 +4500,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 68.0721 113.03 0)
+		(property "Value" "TestPoint_Small"
+			(at 68.072 110.49 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -4529,7 +4583,7 @@
 				(justify right)
 			)
 		)
-		(property "Value" "Conn_01x02_Pin"
+		(property "Value" "XH 2pin"
 			(at 238.506 125.222 0)
 			(effects
 				(font
@@ -4637,7 +4691,7 @@
 		(at 161.29 87.63 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "22960e25-9456-4bb0-8836-27ebb309fcbc")
@@ -4650,13 +4704,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 163.83 85.5979 0)
+		(property "Value" "TestPoint_Small"
+			(at 161.29 85.598 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -4720,7 +4773,7 @@
 		(at 67.31 59.69 180)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "2eca32f4-471b-4987-a3a2-468d9401b40b")
@@ -4733,13 +4786,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 64.77 61.7221 0)
+		(property "Value" "TestPoint_Small"
+			(at 67.31 61.722 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -4803,7 +4855,7 @@
 		(at 161.29 77.47 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "2f66b6d0-5e88-4c90-9d7f-c5220cca1825")
@@ -4816,13 +4868,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 163.83 75.4379 0)
+		(property "Value" "TestPoint_Small"
+			(at 161.29 75.438 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -4886,7 +4937,7 @@
 		(at 158.75 118.11 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "2f73539a-2289-46a2-a7be-8767a2b7cd92")
@@ -4967,7 +5018,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "Screw_Terminal_01x03"
+		(property "Value" "Screw_Terminal 3pin"
 			(at 255.27 63.246 0)
 			(effects
 				(font
@@ -5019,6 +5070,15 @@
 				)
 			)
 		)
+		(property "LCSC" "C8270"
+			(at 256.54 68.58 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "c13fe15d-0655-4050-810a-ce299d7bec6d")
 		)
@@ -5042,7 +5102,7 @@
 		(at 214.63 68.58 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "3f3e7759-2bf8-4dce-a9ff-6da134670bcc")
@@ -5055,13 +5115,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 217.17 66.5479 0)
+		(property "Value" "TestPoint_Small"
+			(at 214.63 66.548 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -5191,7 +5250,7 @@
 		(at 161.29 68.58 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "4559175b-5879-4ae5-a197-a8d7cf721819")
@@ -5204,13 +5263,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 163.83 66.5479 0)
+		(property "Value" "TestPoint_Small"
+			(at 161.29 66.548 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -5274,7 +5332,7 @@
 		(at 214.63 66.04 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "52d03bb1-b4cb-4ea0-9971-aa44f5377753")
@@ -5287,13 +5345,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 217.17 64.0079 0)
+		(property "Value" "TestPoint_Small"
+			(at 214.63 64.008 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -5357,7 +5414,7 @@
 		(at 158.75 115.57 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "563bd16d-9a70-4855-8ed5-73987313edf6")
@@ -5609,7 +5666,7 @@
 		(at 66.04 113.03 270)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "8bcfbbc8-6a51-455c-8218-a51379409297")
@@ -5622,13 +5679,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 68.0721 115.57 0)
+		(property "Value" "TestPoint_Small"
+			(at 68.072 113.03 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -5757,7 +5813,7 @@
 		(at 161.29 66.04 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "9600e937-b0d8-4ede-a186-fd6d754642d1")
@@ -5770,13 +5826,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 163.83 64.0079 0)
+		(property "Value" "TestPoint_Small"
+			(at 161.29 64.008 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -5981,7 +6036,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C19702"
+		(property "LCSC" "C57112"
 			(at 201.93 115.57 0)
 			(effects
 				(font
@@ -6275,7 +6330,7 @@
 		(at 161.29 71.12 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "b918d919-26b5-4579-a263-b4dee2303a5a")
@@ -6288,13 +6343,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 163.83 69.0879 0)
+		(property "Value" "TestPoint_Small"
+			(at 161.29 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -6358,7 +6412,7 @@
 		(at 66.04 102.87 270)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "c5af557c-12c1-4a7b-ae26-cac00c998bf4")
@@ -6371,13 +6425,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 68.0721 105.41 0)
+		(property "Value" "TestPoint_Small"
+			(at 68.072 102.87 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -6441,7 +6494,7 @@
 		(at 161.29 90.17 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "cde8d124-8cb4-4cab-9862-7f645fd83d27")
@@ -6454,13 +6507,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 163.83 88.1379 0)
+		(property "Value" "TestPoint_Small"
+			(at 161.29 88.138 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -6590,7 +6642,7 @@
 		(at 161.29 80.01 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "d74fc74f-f106-4679-ab63-68f128b4267c")
@@ -6603,13 +6655,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 163.83 77.9779 0)
+		(property "Value" "TestPoint_Small"
+			(at 161.29 77.978 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -6673,7 +6724,7 @@
 		(at 66.04 107.95 270)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "d7d326d2-4a08-494b-92fb-c6fa930b9644")
@@ -6686,13 +6737,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 68.0721 110.49 0)
+		(property "Value" "TestPoint_Small"
+			(at 68.072 107.95 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -6821,7 +6871,7 @@
 		(at 161.29 82.55 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "e2499a99-b8d0-42e0-9419-57b34c9935df")
@@ -6834,13 +6884,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 163.83 80.5179 0)
+		(property "Value" "TestPoint_Small"
+			(at 161.29 80.518 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -6916,7 +6965,7 @@
 				)
 			)
 		)
-		(property "Value" "Screw_Terminal_01x02"
+		(property "Value" "Screw_Terminal 2pin"
 			(at 38.1 40.894 0)
 			(effects
 				(font
@@ -7154,7 +7203,7 @@
 		(at 97.79 50.8 180)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "f34c07af-704b-40be-9488-c55e731c4a25")
@@ -7167,13 +7216,12 @@
 				(justify left)
 			)
 		)
-		(property "Value" "TestPoint"
-			(at 95.25 52.8321 0)
+		(property "Value" "TestPoint_Small"
+			(at 97.79 52.832 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 				(hide yes)
 			)
 		)

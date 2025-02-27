@@ -1415,6 +1415,22 @@
 			(embedded_fonts no)
 		)
 	)
+	(text "Should set PS=1 (GPIO23) to decrease voltage ripple"
+		(exclude_from_sim no)
+		(at 185.166 66.802 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "6479388e-85d7-4ef1-8953-1f0cbb07cd2f")
+	)
+	(junction
+		(at 153.67 95.25)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "166c02d3-6647-42b0-9996-fca0b9b345f8")
+	)
 	(junction
 		(at 115.57 115.57)
 		(diameter 0)
@@ -1657,6 +1673,16 @@
 	)
 	(wire
 		(pts
+			(xy 153.67 85.09) (xy 153.67 87.63)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4c99ad93-8b20-4dd0-87cd-c67faaf1538a")
+	)
+	(wire
+		(pts
 			(xy 114.3 100.33) (xy 121.92 100.33)
 		)
 		(stroke
@@ -1757,7 +1783,7 @@
 	)
 	(wire
 		(pts
-			(xy 140.97 95.25) (xy 151.13 95.25)
+			(xy 140.97 95.25) (xy 153.67 95.25)
 		)
 		(stroke
 			(width 0)
@@ -1804,6 +1830,16 @@
 			(type default)
 		)
 		(uuid "97d54a5b-34b9-44ca-9558-a880e075d801")
+	)
+	(wire
+		(pts
+			(xy 153.67 95.25) (xy 156.21 95.25)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "99015c6c-3952-4706-aca8-040f76683f0b")
 	)
 	(wire
 		(pts
@@ -5123,6 +5159,16 @@
 		(uuid "8d7cfb9d-2217-465c-9e7d-ae2cf09f06a7")
 	)
 	(label "3V3"
+		(at 153.67 87.63 90)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "8f06c8c8-7303-4d3e-aeeb-96c491bbe75d")
+	)
+	(label "3V3"
 		(at 119.38 52.07 270)
 		(effects
 			(font
@@ -5241,7 +5287,7 @@
 	)
 	(hierarchical_label "CURR_DETECT"
 		(shape input)
-		(at 151.13 95.25 0)
+		(at 156.21 95.25 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5367,8 +5413,8 @@
 				)
 			)
 		)
-		(property "Value" "~"
-			(at 138.684 66.802 0)
+		(property "Value" "Socket 20pin, 2.54mm"
+			(at 134.112 96.012 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5814,6 +5860,126 @@
 	)
 	(symbol
 		(lib_id "Device:D_Schottky")
+		(at 153.67 91.44 270)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "8ffc41ac-cd3c-4fc1-8712-2372d5a1c5bf")
+		(property "Reference" "D9"
+			(at 156.464 91.44 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Schottky Diode"
+			(at 157.48 91.1225 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "Diode_SMD:D_SOD-323"
+			(at 153.67 91.44 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 153.67 91.44 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Schottky diode"
+			(at 153.67 91.44 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Sim.Library" ""
+			(at 153.67 91.44 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Sim.Name" ""
+			(at 153.67 91.44 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Sim.Type" ""
+			(at 153.67 91.44 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C191023"
+			(at 153.67 91.44 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Sim.Device" ""
+			(at 153.67 91.44 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Sim.Pins" ""
+			(at 153.67 91.44 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "9ef9be10-89f1-4a3b-8c4a-b07f05ee929f")
+		)
+		(pin "2"
+			(uuid "96bf2d0f-53ae-43ae-9369-2a0229924508")
+		)
+		(instances
+			(project "PULSER"
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/cf5a37a3-2763-4a74-bd3b-b36fa59ab4bb"
+					(reference "D9")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:D_Schottky")
 		(at 151.13 71.12 90)
 		(unit 1)
 		(exclude_from_sim no)
@@ -5829,7 +5995,7 @@
 				)
 			)
 		)
-		(property "Value" "D_Schottky"
+		(property "Value" "Schottky Diode"
 			(at 147.32 71.4375 0)
 			(effects
 				(font
@@ -6069,8 +6235,8 @@
 				)
 			)
 		)
-		(property "Value" "~"
-			(at 125.222 67.056 0)
+		(property "Value" "Socket 20pin, 2.54mm"
+			(at 129.032 96.012 90)
 			(effects
 				(font
 					(size 1.27 1.27)

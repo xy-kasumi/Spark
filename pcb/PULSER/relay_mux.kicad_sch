@@ -13,18 +13,80 @@
 		(comment 2 "EDM Pulse Generator Board")
 	)
 	(lib_symbols)
-	(text "4.4W x 2 = 8.8W\nheight=1.0mm (area: 6.1x5.3), RΘJC=1C/W\n--\nOn Power: 20A^2 x 11mΩ = 4.4W"
+	(text "100V, 20A switching"
 		(exclude_from_sim no)
-		(at 93.472 54.864 0)
+		(at 180.848 17.78 0)
 		(effects
 			(font
-				(size 0.6 0.6)
+				(size 1.27 1.27)
+			)
+			(justify left top)
+		)
+		(uuid "438d43b5-cac1-4ab7-8a18-a900a4d841cf")
+	)
+	(text "Control Requirements"
+		(exclude_from_sim no)
+		(at 180.848 45.212 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.254)
+				(bold yes)
+			)
+			(justify left top)
+		)
+		(uuid "5ace9e3c-df35-4f90-8c45-744039d1bd57")
+	)
+	(text "Rating"
+		(exclude_from_sim no)
+		(at 180.594 15.494 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.254)
+				(bold yes)
+			)
+			(justify left top)
+		)
+		(uuid "99f27831-4a24-4827-a200-9bf24449205e")
+	)
+	(text "9W heat output\n\n4.4W x 2 = 8.8W\nheight=1.0mm (area: 6.1x5.3), RΘJC=1C/W\nOn Power: 20A^2 x 11mΩ = 4.4W\n"
+		(exclude_from_sim no)
+		(at 180.848 29.464 0)
+		(effects
+			(font
+				(size 1.2 1.2)
 				(thickness 0.1588)
 				(color 221 133 0 1)
 			)
-			(justify left)
+			(justify left top)
 		)
-		(uuid "e4ab80ac-61f0-4274-9c2c-d8e1eb575f05")
+		(uuid "9c3b5ef3-934a-4180-9d6f-88bb85c54392")
+	)
+	(text "User is responsible for shoot-through prevention\n\nLow-side of unused output must be H (at least ocassionally)\nto charge gate driver's bootstrap capacitor."
+		(exclude_from_sim no)
+		(at 180.848 47.752 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left top)
+		)
+		(uuid "eacb194e-6082-43b1-acf3-51e63a56ddef")
+	)
+	(text "Thermal"
+		(exclude_from_sim no)
+		(at 180.848 26.924 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.254)
+				(bold yes)
+				(color 204 102 0 1)
+			)
+			(justify left top)
+		)
+		(uuid "f79c75ad-d67f-459e-b476-c96541ae86fa")
 	)
 	(junction
 		(at 107.95 63.5)
@@ -139,6 +201,17 @@
 			(type default)
 		)
 		(uuid "60782951-d303-4541-8d9f-ba728fa37384")
+	)
+	(polyline
+		(pts
+			(xy 177.8 12.7) (xy 177.8 165.1)
+		)
+		(stroke
+			(width 0.127)
+			(type solid)
+			(color 132 0 0 1)
+		)
+		(uuid "639c429a-b945-4555-8b05-e0ba02132202")
 	)
 	(wire
 		(pts
