@@ -18,6 +18,7 @@ _autosave-*
 fp-info-cache
 \#auto_saved_files\#
 ~*.lck
+backups/
 
 # Netlist files (exported from Eeschema)
 *.net
@@ -25,8 +26,3 @@ fp-info-cache
 # Autorouter files (exported from Pcbnew)
 *.dsn
 *.ses
-
-# Exported BOM, gerber, CPL files
-*.xml
-*.csv
-production/

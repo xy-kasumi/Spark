@@ -34066,28 +34066,6 @@
 		(layer "F.SilkS")
 		(uuid "f9e3f0df-5745-4f9a-968a-7b2269f9d2e8")
 	)
-	(gr_rect
-		(start 140 65)
-		(end 185 145)
-		(stroke
-			(width 0.5)
-			(type solid)
-		)
-		(fill no)
-		(layer "Cmts.User")
-		(uuid "5684bc07-e198-49ef-9082-26f6e0f2c2c0")
-	)
-	(gr_rect
-		(start 140 80)
-		(end 180 130)
-		(stroke
-			(width 0.5)
-			(type solid)
-		)
-		(fill no)
-		(layer "Cmts.User")
-		(uuid "70902568-63e1-484b-b997-ea2884398e1c")
-	)
 	(gr_circle
 		(center 55 55)
 		(end 56.6 55)
@@ -34459,7 +34437,25 @@
 			"MHR1p8wCAAAwdHWnzAIAAIBXowLMAgAAAAvrg8wCAABQwJC7ywIAAFDAkLvLAgAAUMCQu8sCAABQ"
 			"wJC7ywIAAIA5owLMAgAAgDmjAswCAADwaKMCzAIAAACBdKfMAgAAUMCQu8sCAABQwJC7ywIAAIDm"
 			"w4fLAgAAgObDh8sCAADAAuuDzAIAAMAC64PMAgAAUMCQu8sCAABQwJC7ywIAAOALRRvNAgAA4AtF"
-			"G80CAAAwLcSHywIAAABrdafMAgAAgHjrg8wCAACAeOuDzAIAADCZdKfMAgAAMJl0p8wCAA=="
+			"G80CAAAwLcSHywIAAABrdafMAgAAgHjrg8wCAACAeOuDzAIAADCZdKfMAgAAMJl0p8wCAPL4Zd6m"
+			"IWxbZT4SWh8JQ39i0Odud7A73pft7j7sdwdL+R83vHuzd74xg2AjrB7eOb0P4O3nt5F+gxUM/I5V"
+			"MUy/J4DZ7/4bZp8+b4T4ZiV+QJAjP1E0ST9W25/HsH9sygeIJ/ddwD5uaPfANi2BZLLy68ub1fU2"
+			"RXdz8UN34HfJ/OXZj5eGF56h3Ty0muc4sPagMTHsAwddpUGeSNjlDg2C8E2q4Jk/Sd9vCHtHdftn"
+			"qH617LyjGoQUBkVe1Cu8/gpLBrw+eN/lANQubBiFxQQXAcveFcC/BVVz9uu7Ff6ZrB+6sr/P8MOE"
+			"jqHldczCFkZUeOf66L6Hxf/f3dmsxg1DUXjfx8iuCxNJlvzzItkW/RkCoRRK37/flTTJeGLDgGea"
+			"oYtsh8u1dM65iq2P9286PS4mycVBxt2g0vcEfLZcpasv3V6pta1lj56aCvrGGDhB3bJwN7adQKqE"
+			"QUHIGaBsZg16U4fjTd0tlcC9V2y1k1WxkdvqufUQdIqG/2L14FETOASs0mWxqXd5KsZ7bAVsFPvK"
+			"F0P+Z8yVpYkoCBT0HS0qCwIB89C3np5BCOnoR3qZuODbsrmEehSBOtiQtXAjg3seNMioGbJVgq9G"
+			"5ARExugyg5eC9RMi/EDvi5aU30X7noo/NGU6PW/WOtHtwy7q4727Wyyv+S39/uH/IEdvYDI/LOV+"
+			"PoIuTSkRVHAPGsZr79AAEQB2/dwnCAG5ydQVPlLPlkSlW8NwETc1EuBhmbupjdQCH8NFai2r2f0k"
+			"IjFnRlUwCXlSXBsPKg08GiSaHBTPDeSE8wXEcWxfCpf2KhNpXRNA3aXd6RAl6o4dL2wxZRNAiO6z"
+			"gFYsczdmBzTnuNztVLrlIRUMVLu60rqUQsjw2zqhWqF1SUG4AsYFFgbmieIF+r5pwhFj3tC6X3se"
+			"UkutzV2VSnDm2wAoFLH32N2CIjPE9R2nRWTdBPPNlqHi2OPfLXXTQ1pfhe2y9mbQPx7MIM4B8Q2R"
+			"BisdnANA4PTUj3YZtLnBCtgo9us9pK8ru4Zf2Un8XXpI5W78lx4S08iBDvto9MyOPHnFkYNg2QCc"
+			"QnkBzZOrSl3hIS/llLAMaa1jj2siDaXyEKNIrWXTRAxekQyClybImjaAhw1KgyV14ICQEUgtN9iY"
+			"O9L8eRJpXdsykTABMLMMSZkTZSIeEY5gmjszzspNpD+OIv6liTRCoNCh1lrngbkNA8fJfRQO1cSh"
+			"uJfjTWMCXGGQPC4X3tOdhPnzHHIG9lxXqvjuYSS/C1GVlg6zlUBsOq0WLfDXEOvJ/Z0q3bKQM+7i"
+			"ulb5N4LiQtsO7Bk6QsAhlUKssoslvwvx29xnZPp6B2kp7sJBvn/7C6cGBXwAAAAAAAAAAA=="
 		)
 		(uuid "f77fb8b6-75c5-44a1-a936-1d71fe849ef3")
 	)
@@ -34833,32 +34829,6 @@
 			(font
 				(size 2 2)
 				(thickness 0.4)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-	)
-	(gr_text "heatsink\nand fan"
-		(at 150 110 0)
-		(layer "Cmts.User")
-		(uuid "2075b4fc-3ae3-4bb7-8524-8b2cc03bbadc")
-		(effects
-			(font
-				(size 4 4)
-				(thickness 0.5)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-	)
-	(gr_text "min:40x50\nmax:45x80"
-		(at 150 142.5 0)
-		(layer "Cmts.User")
-		(uuid "d8ef8853-b50b-4166-9b3b-ae4d6f0cced1")
-		(effects
-			(font
-				(size 4 4)
-				(thickness 0.5)
 				(bold yes)
 			)
 			(justify left bottom)
@@ -47092,7 +47062,7 @@
 		(polygon
 			(pts
 				(xy 176.022 90.17) (xy 168.91 90.17) (xy 168.91 86.36) (xy 170.688 86.36) (xy 170.688 85.344) (xy 172.466 85.344)
-				(xy 172.466 85.344) (xy 176.022 85.344)
+				(xy 176.022 85.344)
 			)
 		)
 		(filled_polygon
@@ -47696,9 +47666,9 @@
 		)
 		(polygon
 			(pts
-				(xy 165.608 71.12) (xy 165.608 82.423) (xy 167.005 83.82) (xy 167.005 101.219) (xy 167.005 101.219)
-				(xy 167.005 97.917) (xy 165.354 99.568) (xy 165.354 116.332) (xy 167.894 118.618) (xy 167.894 126.238)
-				(xy 147.701 126.238) (xy 147.701 109.982) (xy 156.21 109.982) (xy 157.48 108.585) (xy 157.48 71.12)
+				(xy 165.608 71.12) (xy 165.608 82.423) (xy 167.005 83.82) (xy 167.005 101.219) (xy 167.005 97.917)
+				(xy 165.354 99.568) (xy 165.354 116.332) (xy 167.894 118.618) (xy 167.894 126.238) (xy 147.701 126.238)
+				(xy 147.701 109.982) (xy 156.21 109.982) (xy 157.48 108.585) (xy 157.48 71.12)
 			)
 		)
 		(filled_polygon
@@ -48713,8 +48683,8 @@
 			(pts
 				(xy 200 80) (xy 200 60) (xy 190 60) (xy 190 50) (xy 60 50) (xy 60 60) (xy 50 60) (xy 50 140) (xy 60 140)
 				(xy 60 150) (xy 190 150) (xy 190 140) (xy 200 140) (xy 200 130) (xy 135 130) (xy 135 135) (xy 115 135)
-				(xy 135 135) (xy 65 135) (xy 65 135) (xy 60 135) (xy 60 65) (xy 65 65) (xy 65 60) (xy 185 60) (xy 185 65)
-				(xy 195 65) (xy 195 80)
+				(xy 135 135) (xy 65 135) (xy 60 135) (xy 60 65) (xy 65 65) (xy 65 60) (xy 185 60) (xy 185 65) (xy 195 65)
+				(xy 195 80)
 			)
 		)
 		(filled_polygon
