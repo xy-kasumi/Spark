@@ -1182,6 +1182,19 @@
 		)
 		(uuid "4f0685f5-2f88-4bec-a98d-0644b200d2ef")
 	)
+	(text "Alternative Parts Sourcing"
+		(exclude_from_sim no)
+		(at 213.106 21.844 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.254)
+				(bold yes)
+			)
+			(justify left top)
+		)
+		(uuid "63cf4dad-3685-40b7-8e13-238b4c9cb6d5")
+	)
 	(text "DMAX=64%\neta=50%\nILMAX=550mA\nΔISW = 0.6A (< 1.9A)\nL = 96uH"
 		(exclude_from_sim no)
 		(at 102.362 54.356 0)
@@ -1192,6 +1205,17 @@
 			(justify left)
 		)
 		(uuid "66631bf5-fbef-43ca-92b2-2f595580d109")
+	)
+	(text "L2 (PCB layout)\n* Sumida CDRH127NP-101MC\n* PROD Tech PSPHAQ127-101M"
+		(exclude_from_sim no)
+		(at 213.36 24.384 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left top)
+		)
+		(uuid "6bc0d6ac-907e-415f-b2e2-4c950321c4f8")
 	)
 	(text "100V"
 		(exclude_from_sim no)

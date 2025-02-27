@@ -2794,7 +2794,7 @@
 		)
 		(uuid "1ac23e0b-2c4a-4157-afd9-3bfc88bfbec9")
 	)
-	(text "L1 (PCB layout & height compatible)\n* Sumida 125CDMCCDS-1R0MC\n* BOURNS SRP1245A-1R0M\n\nL4 (probably PCB layout compatible)\n* Ruishen RSPQ2918-100M\n* FANGCHENG FC-SE2915-100M\n\nD2\n* STMicro STPS40170CG-TR"
+	(text "L1 (PCB layout & height compatible)\n* Sumida 125CDMCCDS-1R0MC\n* BOURNS SRP1245A-1R0M\n\nL4 (probably PCB layout compatible)\n* Ruishen RSPQ2918-100M\n* FANGCHENG FC-SE2915-100M\n\nD2\n* STMicro STPS40170CG-TR\n\nD12\n* onsemi 1SMB5951BT3G (Vz=120V instead of 130V)"
 		(exclude_from_sim no)
 		(at 231.902 107.696 0)
 		(effects
