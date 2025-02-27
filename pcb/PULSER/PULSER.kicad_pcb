@@ -657,7 +657,7 @@
 		(descr "Capacitor SMD 0603 (1608 Metric), square (rectangular) end terminal, IPC_7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf), generated with kicad-footprint-generator")
 		(tags "capacitor")
 		(property "Reference" "C25"
-			(at 0 -1.43 180)
+			(at 3.035 0 180)
 			(layer "F.SilkS")
 			(uuid "28e3df0e-ade7-4186-bca0-25f4ba7519db")
 			(effects
@@ -34459,6 +34459,18 @@
 		)
 		(uuid "f77fb8b6-75c5-44a1-a936-1d71fe849ef3")
 	)
+	(gr_text "K"
+		(at 167.164 70.494 0)
+		(layer "F.SilkS")
+		(uuid "0cd60aa0-9df0-481b-94c8-57e65cfdbd06")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1)
+			)
+			(justify left bottom)
+		)
+	)
 	(gr_text "CORE"
 		(at 80.264 59.944 0)
 		(layer "F.SilkS")
@@ -34484,6 +34496,30 @@
 			(justify left bottom)
 		)
 	)
+	(gr_text "K"
+		(at 174.498 83.566 0)
+		(layer "F.SilkS")
+		(uuid "27dd1a1e-67bd-41c4-a398-9565ee8426da")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1)
+			)
+			(justify left bottom)
+		)
+	)
+	(gr_text "K"
+		(at 70.612 131.572 0)
+		(layer "F.SilkS")
+		(uuid "312270e2-6877-4a80-9054-6ffcaab6498c")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1)
+			)
+			(justify left bottom)
+		)
+	)
 	(gr_text "GND"
 		(at 75.692 148.082 0)
 		(layer "F.SilkS")
@@ -34505,6 +34541,18 @@
 				(size 1.2 1.2)
 				(thickness 0.2)
 				(bold yes)
+			)
+			(justify left bottom)
+		)
+	)
+	(gr_text "K"
+		(at 125.91 126.492 0)
+		(layer "F.SilkS")
+		(uuid "400306ee-b63c-4d41-8e3b-23aee63e542e")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1)
 			)
 			(justify left bottom)
 		)
@@ -34546,6 +34594,18 @@
 			(justify left bottom)
 		)
 	)
+	(gr_text "K"
+		(at 84.462 73.572 0)
+		(layer "F.SilkS")
+		(uuid "4beecd77-9b81-4ecf-84d4-537636639c7e")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1)
+			)
+			(justify left bottom)
+		)
+	)
 	(gr_text "PWR"
 		(at 173.1645 59.7535 0)
 		(layer "F.SilkS")
@@ -34580,6 +34640,18 @@
 				(size 2 2)
 				(thickness 0.4)
 				(bold yes)
+			)
+			(justify left bottom)
+		)
+	)
+	(gr_text "K"
+		(at 104.648 131.826 0)
+		(layer "F.SilkS")
+		(uuid "56f15245-8c91-4961-a768-93d109d4f579")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1)
 			)
 			(justify left bottom)
 		)
@@ -34634,6 +34706,18 @@
 			(justify left bottom)
 		)
 	)
+	(gr_text "K"
+		(at 174.244 108.712 0)
+		(layer "F.SilkS")
+		(uuid "716d1f65-d115-4a69-9006-3c1545a8bb40")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1)
+			)
+			(justify left bottom)
+		)
+	)
 	(gr_text "GND"
 		(at 194.056 136.652 90)
 		(layer "F.SilkS")
@@ -34654,6 +34738,18 @@
 			(font
 				(size 1 1)
 				(thickness 0.15)
+			)
+			(justify left bottom)
+		)
+	)
+	(gr_text "K"
+		(at 174.752 117.348 0)
+		(layer "F.SilkS")
+		(uuid "7f556f31-ab19-403f-8f03-0571f39b0894")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1)
 			)
 			(justify left bottom)
 		)
@@ -34732,6 +34828,18 @@
 			(justify left bottom)
 		)
 	)
+	(gr_text "pin 1"
+		(at 82.042 51.816 0)
+		(layer "F.SilkS")
+		(uuid "b1b865e6-6a5d-46a0-8695-065e4a47f200")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1)
+			)
+			(justify left bottom)
+		)
+	)
 	(gr_text "HIGH VOLTAGE"
 		(at 160 83 90)
 		(layer "F.SilkS")
@@ -34741,6 +34849,18 @@
 				(size 1.5 1.5)
 				(thickness 0.3)
 				(bold yes)
+			)
+			(justify left bottom)
+		)
+	)
+	(gr_text "K"
+		(at 76.454 85.852 0)
+		(layer "F.SilkS")
+		(uuid "cffb113d-2cc8-46a8-8c9e-8c85d5659bcd")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1)
 			)
 			(justify left bottom)
 		)
@@ -34830,6 +34950,18 @@
 				(size 2 2)
 				(thickness 0.4)
 				(bold yes)
+			)
+			(justify left bottom)
+		)
+	)
+	(gr_text "K"
+		(at 171.704 58.359 0)
+		(layer "F.SilkS")
+		(uuid "ff5d82e2-45c4-482d-aba1-54941551c691")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1)
 			)
 			(justify left bottom)
 		)
