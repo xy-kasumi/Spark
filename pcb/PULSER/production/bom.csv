@@ -11,7 +11,7 @@ C30,0603,1,470pF,C1620
 "C5, C6",1812,2,1uF 200V,C3037685
 C8,0603,1,10nF,C57112
 D1,0603,1,White LED,C2290
-"D10, D11, D4, D6",D_SOD-323,4,"150V 1A, Schottky",C2842811
+"D10, D11, D4, D6",D_TUMD2,4,"150V 1A, Schottky",C2842811
 D12,D_SMB,1,"130V, Zener",C236106
 D2,TO-263-2,1,"Dual Schottky Diode, Common K",C2845075
 D3,0603,1,Red LED,C2286
@@ -24,7 +24,7 @@ J6,Molex_Connector_8pin_P1mm_526100872,1,FFC 8pin,C2915520
 J7,Wurth_TerminalBlock_3pin_P5mm_691137710003,1,Screw_Terminal 3pin,C8270
 "J8, J9",PinSocket_1x20_P2.54mm_Vertical,2,"Socket 20pin, 2.54mm",C5224030
 L1,L_12x12mm_H6mm,1,1u,C230666
-L2,L_12x12mm_H8mm,1,"100uH, Isat=2.7A",C2047286
+L2,L_12x12mm_H8mm,1,"100uH, Isat=2.7A",C2453104
 L4,BOURNS-PQ2614B,1,10u,C1330029
 "Q14, Q15, Q16, Q17, Q18, Q19, Q7",Infineon-TG-TDSON-8-NMOS,7,"N-ch, Vds>=200V, fast switch, low Rds",C501501
 "Q2, Q6",Infineon-TG-TDSON-8-NMOS,2,"N-ch, Vds>=60V, fast switch, low Rds",C24199
