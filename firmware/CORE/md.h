@@ -3,10 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-
 #define MD_NUM_BOARDS 3
-#define MD_STEPS_PER_MM ((float)(256.0 * 100.0))  // 256 microsteps, (maybe) 3.6deg/step, 1mm/rot
-#define MD_MM_PER_STEP ((float)(1.0 / MD_STEPS_PER_MM))
 
 /** Denotes individual STPDRV board status.
  * All errors are irrecoverable (needs system reset).

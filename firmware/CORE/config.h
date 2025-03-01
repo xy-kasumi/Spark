@@ -15,6 +15,8 @@ static const uint8_t ED_I2C_ADDR = 0x3b;  // I2C Device Address
 static const uint ED_I2C_BAUD = 100000; // I2C target baud (Hz)
 static const uint ED_I2C_MAX_TX_US = 1000; // Max time for I2C transaction
 
+#define MD_STEPS_PER_MM ((float)(256.0 * 6.25))  // 256 microsteps, 1.8deg/step, 16teeth, 2mm pitch
+#define MD_MM_PER_STEP ((float)(1.0 / MD_STEPS_PER_MM)) // auto-computed
 
 /**
  * GPIO pin definitions & internal parts-specific parameters.
