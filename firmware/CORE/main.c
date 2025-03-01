@@ -455,6 +455,7 @@ void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
       return;
     }
 
+    // TODO: this is very fragile and ad-hoc control code. improve.
     // hopefully md_wait_time oscillates such that ig_time is kept around
     // ED_IG_US_TARGET.
     if (md.state == MD_DRILL_OK && ig_time >= 0) {
@@ -472,7 +473,6 @@ void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
     }
 
     if (md.state == MD_DRILL_OK) {
-      // TODO: this is very fragile and ad-hoc control code. improve.
       if (stats.n_pulse >= last_pump_pulse + PUMP_PULSE_INTERVAL) {
         md_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MD_MOVE_WAIT_US);
         last_pump_pulse = stats.n_pulse;

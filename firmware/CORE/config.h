@@ -28,8 +28,9 @@ static const uint ED_I2C_MAX_TX_US = 1000; // Max time for I2C transaction
 
 #define MD_MM_PER_STEP ((float)(1.0 / MD_STEPS_PER_MM)) // auto-computed
 
-static const uint32_t MD_FEED_MAX_WAIT_US = 1000000 / (FEED_MAX_SPEED_MM_PER_S * MD_STEPS_PER_MM);
-static const uint32_t MD_FEED_MIN_WAIT_US = 1000000 / (FEED_MIN_SPEED_MM_PER_S * MD_STEPS_PER_MM);
+// MAX SPEED = MIN WAIT, MIN SPEED = MAX WAIT
+static const uint32_t MD_FEED_MIN_WAIT_US = 1000000 / (FEED_MAX_SPEED_MM_PER_S * MD_STEPS_PER_MM);
+static const uint32_t MD_FEED_MAX_WAIT_US = 1000000 / (FEED_MIN_SPEED_MM_PER_S * MD_STEPS_PER_MM);
 static const uint32_t MD_FEED_DELTA_WAIT_US = 1000000 / (FEED_SPEED_DELTA_MM_PER_S * MD_STEPS_PER_MM);
 static const uint32_t MD_MOVE_WAIT_US = 1000000 / (MOVE_SPEED_MM_PER_S * MD_STEPS_PER_MM);
 static const uint32_t MD_FIND_WAIT_US = 1000000 / (FIND_SPEED_MM_PER_S * MD_STEPS_PER_MM);
