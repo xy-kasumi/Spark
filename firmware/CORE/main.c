@@ -135,8 +135,6 @@ void exec_command_regwrite(char board_id, uint8_t addr, uint32_t data) {
 }
 
 void exec_command_find(uint8_t md_ix, float distance) {
-  const uint32_t WAIT_US = 25;
-
   int32_t steps = abs((int32_t)(MD_STEPS_PER_MM * distance));
   bool is_plus = distance > 0;
 
@@ -154,7 +152,7 @@ void exec_command_find(uint8_t md_ix, float distance) {
     }
 
     absolute_time_t t1 = get_absolute_time();
-    if (absolute_time_diff_us(t_prev_step, t1) >= WAIT_US) {
+    if (absolute_time_diff_us(t_prev_step, t1) >= MD_FIND_WAIT_US) {
       md_step(md_ix, is_plus);
       ix++;
       t_prev_step = t1;
@@ -226,11 +224,6 @@ typedef struct {
   uint32_t max_successive_short;
 } drill_stats_t;
 
-static const uint32_t MD_FEED_MAX_WAIT_US =
-    10000; // 0.01mm/sec (0.6mm/min ~ 1.0mm^3/min for D1.5 electrode drill)
-static const uint32_t MD_FEED_MIN_WAIT_US =
-    100; // 0.5mm/sec, empirically found stable value
-static const uint32_t MD_MOVE_MIN_WAIT_US = 25; // 0.78mm/sec
 static const uint16_t ED_IG_US_TARGET = 200;
 
 void reset_ig_delay(drill_stats_t* stats) {
@@ -480,11 +473,11 @@ void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
 
     if (md.state == MD_DRILL_OK) {
       if (stats.n_pulse >= last_pump_pulse + PUMP_PULSE_INTERVAL) {
-        md_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MD_MOVE_MIN_WAIT_US);
+        md_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MD_MOVE_WAIT_US);
         last_pump_pulse = stats.n_pulse;
       } else if (ed.successive_shorts >= 5) {
         md.wait_us = 5000;
-        md_to_pullpush(&md, MD_RETRACT_DIST_STEPS, 0, MD_MOVE_MIN_WAIT_US);
+        md_to_pullpush(&md, MD_RETRACT_DIST_STEPS, 0, MD_MOVE_WAIT_US);
         stats.n_retract++;
         ed.successive_shorts = 0;
       } else if (ed.successive_shorts >= 1) {
@@ -727,7 +720,7 @@ void try_exec_command(char* buf, ctrl_config_t* config) {
     if (!parser.success) {
       return;
     }
-    exec_command_step(md_ix, distance * MD_STEPS_PER_MM, 25);
+    exec_command_step(md_ix, distance * MD_STEPS_PER_MM, MD_MOVE_WAIT_US);
   } else if (strcmp(command, "home") == 0) {
     uint8_t md_ix = parse_int(&parser, 0, MD_NUM_BOARDS - 1);
     bool dir_plus = parse_dir(&parser);

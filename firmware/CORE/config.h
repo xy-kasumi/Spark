@@ -16,7 +16,21 @@ static const uint ED_I2C_BAUD = 100000; // I2C target baud (Hz)
 static const uint ED_I2C_MAX_TX_US = 1000; // Max time for I2C transaction
 
 #define MD_STEPS_PER_MM ((float)(256.0 * 6.25))  // 256 microsteps, 1.8deg/step, 16teeth, 2mm pitch
+#define FEED_MAX_SPEED_MM_PER_S  0.4 // = 24mm/min
+#define FEED_MIN_SPEED_MM_PER_S 0.004 // = 0.24mm/min
+#define MOVE_SPEED_MM_PER_S 25
+#define FIND_SPEED_MM_PER_S 5
+
+/**
+ * Auto-computed parameters. Don't edit directly.
+ */
+
 #define MD_MM_PER_STEP ((float)(1.0 / MD_STEPS_PER_MM)) // auto-computed
+
+static const uint32_t MD_FEED_MAX_WAIT_US = 1000000 / (FEED_MAX_SPEED_MM_PER_S * MD_STEPS_PER_MM);
+static const uint32_t MD_FEED_MIN_WAIT_US = 1000000 / (FEED_MIN_SPEED_MM_PER_S * MD_STEPS_PER_MM);
+static const uint32_t MD_MOVE_WAIT_US = 1000000 / (MOVE_SPEED_MM_PER_S * MD_STEPS_PER_MM);
+static const uint32_t MD_FIND_WAIT_US = 1000000 / (FIND_SPEED_MM_PER_S * MD_STEPS_PER_MM);
 
 /**
  * GPIO pin definitions & internal parts-specific parameters.
