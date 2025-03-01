@@ -459,12 +459,12 @@ void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
     // ED_IG_US_TARGET.
     if (md.state == MD_DRILL_OK && ig_time >= 0) {
       if (ig_time < ED_IG_US_TARGET) {
-        md.wait_us = md.wait_us + 1;
+        md.wait_us = md.wait_us + MD_FEED_DELTA_WAIT_US;
         if (md.wait_us >= MD_FEED_MAX_WAIT_US) {
           md.wait_us = MD_FEED_MAX_WAIT_US;
         }
       } else {
-        md.wait_us = md.wait_us - 1;
+        md.wait_us = md.wait_us - MD_FEED_DELTA_WAIT_US;
         if (md.wait_us < MD_FEED_MIN_WAIT_US) {
           md.wait_us = MD_FEED_MIN_WAIT_US;
         }
@@ -472,16 +472,17 @@ void exec_command_drill(uint8_t md_ix, float distance, ctrl_config_t* config) {
     }
 
     if (md.state == MD_DRILL_OK) {
+      // TODO: this is very fragile and ad-hoc control code. improve.
       if (stats.n_pulse >= last_pump_pulse + PUMP_PULSE_INTERVAL) {
         md_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MD_MOVE_WAIT_US);
         last_pump_pulse = stats.n_pulse;
       } else if (ed.successive_shorts >= 5) {
-        md.wait_us = 5000;
+        md.wait_us = MD_FEED_MIN_WAIT_US * 50;
         md_to_pullpush(&md, MD_RETRACT_DIST_STEPS, 0, MD_MOVE_WAIT_US);
         stats.n_retract++;
         ed.successive_shorts = 0;
       } else if (ed.successive_shorts >= 1) {
-        md.wait_us = 1000;
+        md.wait_us = MD_FEED_MIN_WAIT_US * 10;
       }
     }
 
