@@ -7,24 +7,35 @@
 
 /**
  * Externally observable parameters.
+ * Parameters are ordered by frequency of adjustment needed (most frequently adjusted parameters first).
  */
-#define LED_INTERVAL_MS 1000
-#define LED_FLASH_MS 50
+// MD_MICROSTEP & MD_STEPS_PER_MM should result in resolution of 5um or less. But too little and CORE cannot drive pulse fast enough (slows down movement).
+#define MD_MICROSTEP 32 // must be power of 2 between 1 and 256.
+#define MD_STEPS_PER_MM ((float)(MD_MICROSTEP * 6.25))  // 200 step/rot (1.8 deg/step) / (16 teeth * 2mm pitch)
+#define FEED_MAX_SPEED_MM_PER_S 0.4 // = 24mm/min
+#define FEED_MIN_SPEED_MM_PER_S 0.004 // = 0.24mm/min
+#define MOVE_SPEED_MM_PER_S 25
+#define FIND_SPEED_MM_PER_S 5
+#define MAX_ACC_MM_PER_S2 1000  // mainly constarained by mass & friction (vs. motor driving capability)
+#define MAX_SPEED_MM_PER_S 50 // mainly constrained by motor pulse-torque characteristics & safety (current motor can go 500, but reduced for safety)
+
+#define CONTROL_LOOP_HZ 1000 // Set this so that CONTROL_LOOP_INTERVAL_US becomes an integer.
 
 static const uint8_t ED_I2C_ADDR = 0x3b;  // I2C Device Address
 static const uint ED_I2C_BAUD = 100000; // I2C target baud (Hz)
 static const uint ED_I2C_MAX_TX_US = 1000; // Max time for I2C transaction
 
-#define MD_STEPS_PER_MM ((float)(256.0 * 6.25))  // 256 microsteps, 1.8deg/step, 16teeth, 2mm pitch
-#define FEED_MAX_SPEED_MM_PER_S  0.4 // = 24mm/min
-#define FEED_MIN_SPEED_MM_PER_S 0.004 // = 0.24mm/min
-#define MOVE_SPEED_MM_PER_S 25
-#define FIND_SPEED_MM_PER_S 5
+#define MIN_STEP_DUR_US 1 // Specifies driver chip capability rather than mechanical limit or safety limit. Max pulse rate = 1e6 / (MIN_STEP_PULSE_DUR_US * 2).
+
+#define LED_INTERVAL_MS 1000
+#define LED_FLASH_MS 50
 
 /**
  * Auto-computed parameters. Don't edit directly.
  */
 
+#define CONTROL_LOOP_INTERVAL_US (1000000 / CONTROL_LOOP_HZ)
+#define MAX_STEP_IN_LOOP 25 // must be small enough to avoid crippling uC by interrupts
 #define MD_MM_PER_STEP ((float)(1.0 / MD_STEPS_PER_MM)) // auto-computed
 
 // MAX SPEED = MIN WAIT, MIN SPEED = MAX WAIT
