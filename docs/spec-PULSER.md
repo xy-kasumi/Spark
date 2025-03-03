@@ -31,7 +31,7 @@ uC operating environment
 |GP0 | I2C0 SDA    | I2C_SDA | to host; pulled up to 3.3V by 10kΩ on PCB |
 |GP1 | I2C0 SCL    | I2C_SCL | to host; pulled up to 3.3V by 10kΩ on PCB |
 |GP2 | GPIO (IN)   | GATE    | to host; direct |
-|GP3 | GPIO (OUT)  | DETECT  | to host; direct |
+|GP3 | GPIO (OUT)  | DETECT  | to host; direct (no longer used) |
 |GP4 | GPIO (OUT)  | LED_STATUS | white LED, digital H = ON |
 |GP5 | GPIO (OUT)  | LED_POWER  | red, digital H = ON |
 |GP6 | -           | N/C | |

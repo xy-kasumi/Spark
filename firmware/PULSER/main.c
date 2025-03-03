@@ -12,7 +12,7 @@
  * - PIN_TEMP_HS
  *
  * Core1: fast, simple (no IRQ)
- * - PIN_GATE, PIN_DETECT, PIN_CURR_TRIGGER
+ * - PIN_GATE, PIN_CURR_TRIGGER
  * - PIN_CURR_GATE_PWM
  * - PIN_LED_POWER
  * - PIN_CURR_THRESH_PWM
@@ -35,14 +35,25 @@
 #include "config.h"
 
 // core0, core1 shared
-static _Atomic bool error_mode = false; // reading & writing true is allowed. never write false.
+static _Atomic bool error_mode =
+    false; // reading & writing true is allowed. never write false.
 
 // core0, core1 shared, only accessed in csec_pulse section or initialization.
 static critical_section_t csec_pulse;
 static uint8_t csec_pulse_pol;
 static uint8_t csec_pulse_pcurr;
+static uint16_t csec_pulse_pdur;
+static uint8_t csec_pulse_max_duty;
 static uint8_t csec_pulse_th_on_cyc;
 
+// core0, core1 shared, only accessed in csec_stat section.
+static critical_section_t csec_stat;
+static uint32_t csec_stat_n_pulse = 0;
+static uint64_t csec_stat_accum_igt_us = 0;
+static uint32_t csec_stat_dur = 0;
+static uint32_t csec_stat_dur_pulse = 0;
+static uint32_t csec_stat_dur_short = 0;
+static uint32_t csec_stat_dur_open = 0;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Core1: Gate & current threshold PWM driving and computation.
@@ -102,7 +113,6 @@ uint8_t compute_th_on_cyc(uint8_t pcurr) {
   }
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 // Core0: Temperature sensor
 
@@ -146,11 +156,8 @@ int16_t convert_hs_temp(uint16_t raw_adc_value) {
   }
 }
 
-
 // Update current_temp by doing ADC read.
-void update_temp_blocking() {
-  current_temp = convert_hs_temp(adc_read());
-}
+void update_temp_blocking() { current_temp = convert_hs_temp(adc_read()); }
 
 // returns: true if ok, false if bad.
 bool init_temp_sensor_and_check_sanity() {
@@ -162,13 +169,19 @@ bool init_temp_sensor_and_check_sanity() {
   return current_temp != TEMP_INVALID && current_temp <= MAX_ALLOWED_TEMP;
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 // Core0: Register read/write & I2C
 
 static const uint8_t REG_POLARITY = 0x01;
 static const uint8_t REG_PULSE_CURRENT = 0x02;
 static const uint8_t REG_TEMPERATURE = 0x03;
+static const uint8_t REG_PULSE_DUR = 0x04;
+static const uint8_t REG_MAX_DUTY = 0x05;
+static const uint8_t REG_CKP_N_PULSE = 0x10;
+static const uint8_t REG_T_IGNITION = 0x11;
+static const uint8_t REG_R_PULSE = 0x12;
+static const uint8_t REG_R_SHORT = 0x13;
+static const uint8_t REG_R_OPEN = 0x14;
 
 static const uint8_t POL_OFF = 0;
 static const uint8_t POL_TPWN = 1; // Tool+, Work-
@@ -179,11 +192,18 @@ static const uint8_t POL_TNGP = 4; // Tool-, Grinder+
 static bool i2c_ptr_written = false;
 static uint8_t i2c_reg_ptr = 0;
 
+static uint8_t visible_n_pulse = 0;
+static uint16_t visible_igt_us = 0;
+static uint8_t visible_r_pulse = 0;
+static uint8_t visible_r_short = 0;
+static uint8_t visible_r_open = 0;
+
 // write to register. ignores invalid reg address.
 void write_reg(uint8_t reg, uint8_t val) {
   switch (reg) {
   case REG_POLARITY:
-    if (val != POL_OFF && val != POL_TPWN && val != POL_TNWP && val != POL_TPGN && val != POL_TNGP) {
+    if (val != POL_OFF && val != POL_TPWN && val != POL_TNWP &&
+        val != POL_TPGN && val != POL_TNGP) {
       val = POL_OFF; // treat unknown value as OFF for safety.
     }
     critical_section_enter_blocking(&csec_pulse);
@@ -203,16 +223,46 @@ void write_reg(uint8_t reg, uint8_t val) {
     csec_pulse_th_on_cyc = cyc;
     critical_section_exit(&csec_pulse);
     break;
+  case REG_PULSE_DUR:
+    // Truncate to valid range.
+    if (val < 5) {
+      val = 5;
+    } else if (val > 100) {
+      val = 100;
+    }
+    critical_section_enter_blocking(&csec_pulse);
+    csec_pulse_pdur = val * 10; // convert to us
+    critical_section_exit(&csec_pulse);
+    break;
+  case REG_MAX_DUTY:
+    // Truncate to valid range.
+    if (val < 1) {
+      val = 1;
+    } else if (val > 95) {
+      val = 95;
+    }
+    critical_section_enter_blocking(&csec_pulse);
+    csec_pulse_max_duty = val;
+    critical_section_exit(&csec_pulse);
+    break;
   }
 }
 
 // read register. return0 for invalid reg address.
 uint8_t read_reg(uint8_t reg) {
   switch (reg) {
-  case REG_POLARITY:
-    return csec_pulse_pol;
-  case REG_PULSE_CURRENT:
-    return csec_pulse_pcurr;
+  case REG_POLARITY: {
+    critical_section_enter_blocking(&csec_pulse);
+    uint8_t val = csec_pulse_pol;
+    critical_section_exit(&csec_pulse);
+    return val;
+  }
+  case REG_PULSE_CURRENT: {
+    critical_section_enter_blocking(&csec_pulse);
+    uint8_t val = csec_pulse_pcurr;
+    critical_section_exit(&csec_pulse);
+    return val;
+  }
   case REG_TEMPERATURE:
     if (current_temp == TEMP_INVALID) {
       return 255;
@@ -223,6 +273,54 @@ uint8_t read_reg(uint8_t reg) {
     } else {
       return current_temp;
     }
+  case REG_PULSE_DUR: {
+    critical_section_enter_blocking(&csec_pulse);
+    uint8_t val = csec_pulse_pdur / 10; // convert from us to 10us unit
+    critical_section_exit(&csec_pulse);
+    return val;
+  }
+  case REG_MAX_DUTY: {
+    critical_section_enter_blocking(&csec_pulse);
+    uint8_t val = csec_pulse_max_duty;
+    critical_section_exit(&csec_pulse);
+    return val;
+  }
+  case REG_CKP_N_PULSE: {
+    // Move content to visible buffer and reset internal buffer.
+    // Copy to temp vars to leave critical section ASAP to avoid distrupting
+    // core1.
+    critical_section_enter_blocking(&csec_stat);
+    uint32_t stat_n_pulse = csec_stat_n_pulse;
+    uint64_t stat_accum_igt_us = csec_stat_accum_igt_us;
+    uint32_t stat_dur = csec_stat_dur;
+    uint32_t stat_dur_pulse = csec_stat_dur_pulse;
+    uint32_t stat_dur_short = csec_stat_dur_short;
+    uint32_t stat_dur_open = csec_stat_dur_open;
+    // reset
+    csec_stat_n_pulse = 0;
+    csec_stat_accum_igt_us = 0;
+    csec_stat_dur = 0;
+    csec_stat_dur_pulse = 0;
+    csec_stat_dur_short = 0;
+    csec_stat_dur_open = 0;
+    critical_section_exit(&csec_stat);
+
+    // convert
+    visible_n_pulse = stat_n_pulse > 255 ? 255 : stat_n_pulse;
+    visible_igt_us = stat_n_pulse == 0 ? 0 : (stat_accum_igt_us / stat_n_pulse);
+    visible_r_pulse = (uint64_t)stat_dur_pulse * 255 / stat_dur;
+    visible_r_short = (uint64_t)stat_dur_short * 255 / stat_dur;
+    visible_r_open = (uint64_t)stat_dur_open * 255 / stat_dur;
+    return visible_n_pulse;
+  }
+  case REG_T_IGNITION:
+    return visible_igt_us / 5;
+  case REG_R_PULSE:
+    return visible_r_pulse;
+  case REG_R_SHORT:
+    return visible_r_short;
+  case REG_R_OPEN:
+    return visible_r_open;
   }
   return 0;
 }
@@ -236,10 +334,12 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event) {
       i2c_ptr_written = true;
     } else {
       write_reg(i2c_reg_ptr, i2c_read_byte_raw(i2c));
+      i2c_reg_ptr++;
     }
     break;
   case I2C_SLAVE_REQUEST:
     i2c_write_byte_raw(i2c, read_reg(i2c_reg_ptr));
+    i2c_reg_ptr++;
     break;
   case I2C_SLAVE_FINISH:
     i2c_ptr_written = false;
@@ -256,12 +356,19 @@ void init_reg_rw_i2c() {
   i2c_slave_init(HOST_I2C, I2C_DEV_ADDR, &i2c_slave_handler);
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 // Main loops for each core.
 
+// Treat ignition time of this or smaller as short.
+static const uint16_t IG_THRESH_SHORT_US = 5;
+// Treat ignition time of this or larger as open.
+static const uint16_t IG_THRESH_OPEN_US = 1000;
+
+static const uint16_t COOLDOWN_SHORT_US = 100;
+
+static const uint16_t COOLDOWN_PULSE_MIN_US = 5;
+
 void core1_main() {
-  bool curr_gate = false;
   uint8_t curr_pol = POL_OFF;
   uint8_t curr_pcurr = 1;
 
@@ -278,66 +385,114 @@ void core1_main() {
     uint8_t new_pol = csec_pulse_pol;
     uint8_t new_pcurr = csec_pulse_pcurr;
     uint8_t new_th_on_cyc = csec_pulse_th_on_cyc;
+    uint16_t pdur = csec_pulse_pdur;
+    uint8_t max_duty = csec_pulse_max_duty;
     critical_section_exit(&csec_pulse);
+    uint16_t pinterval = (uint32_t)pdur * 100 / (uint32_t)max_duty;
 
-    // For POL off, apply immediately (stronger than GATE).
-    if (curr_pol != new_pol && new_pol == POL_OFF) {
-      gpio_put(PIN_DETECT, 0);
+    // Apply POL change.
+    if (curr_pol != new_pol) {
       // LONG PROCESS
-      set_out_level(0);
       sleep_us(DISCHARGE_MAX_SETTLE_TIME_US);
-      gpio_put(PIN_MUX_EN, 0);
-      sleep_ms(RELAY_MAX_SETTLE_TIME_MS);
-      gpio_put(PIN_LED_POWER, 0);
-      curr_pol = new_pol;
-    }
-
-    // Only apply other changes when GATE is off.
-    if (!curr_gate && (curr_pol != new_pol || curr_pcurr != new_pcurr)) {
-      gpio_put(PIN_DETECT, 0);
-      // LONG PROCESS
-      set_out_level(0);
-      sleep_us(DISCHARGE_MAX_SETTLE_TIME_US);
-      if (curr_pol != new_pol) {
-        // Since POL_OFF case is already handled, new_pol must be one of four ON
-        // configs.
+      if (new_pol == POL_OFF) {
+        gpio_put(PIN_MUX_EN, 0);
+        sleep_ms(RELAY_MAX_SETTLE_TIME_MS);
+        gpio_put(PIN_LED_POWER, 0);
+      } else {
         gpio_put(PIN_LED_POWER, true);
         gpio_put(PIN_MUX_EN, true);
         gpio_put(PIN_MUX_WG, new_pol == POL_TPGN || new_pol == POL_TNGP);
         gpio_put(PIN_MUX_POL, new_pol == POL_TPWN || new_pol == POL_TPGN);
         sleep_ms(RELAY_MAX_SETTLE_TIME_MS);
       }
-      if (curr_pcurr != new_pcurr) {
-        set_thresh_level(new_th_on_cyc);
-        sleep_ms(THRESH_MAX_SETTLE_TIME_MS);
-      }
-      curr_pol = new_pol;
-      curr_pcurr = new_pcurr;
     }
+    curr_pol = new_pol;
 
-    // Copy value from curr trigger to detect.
-    gpio_put(PIN_DETECT, gpio_get(PIN_CURR_TRIGGER));
+    // Apply current change.
+    if (curr_pcurr != new_pcurr) {
+      // LONG PROCESS
+      set_thresh_level(new_th_on_cyc);
+      sleep_ms(THRESH_MAX_SETTLE_TIME_MS);
+    }
+    curr_pcurr = new_pcurr;
 
     // Get noise-filtered gate value.
-    bool new_gate = gpio_get(PIN_GATE);
+    bool gate = gpio_get(PIN_GATE);
     for (uint8_t i = 0; i < 15; i++) {
       // each cycle is about 10 cycle
-      bool new_gate_verify = gpio_get(PIN_GATE);
-      if (new_gate_verify != new_gate) {
+      bool gate_verify = gpio_get(PIN_GATE);
+      if (gate_verify != gate) {
         continue; // signal unstable; ignore
       }
     }
-    // Apply GATE change.
-    if (new_gate != curr_gate) {
-      if (new_gate) {
-        // turn on
-        set_out_level(curr_pcurr);
-      } else {
-        // turn off
-        set_out_level(0);
-      }
-      curr_gate = new_gate;
+
+    if (!gate) {
+      continue;
     }
+
+    /////
+    //  Emit single pulse if gate is HIGH.
+
+    // turn on and wait for discharge to happen.
+    set_out_level(curr_pcurr);
+    uint16_t igt_us = 0;
+    while (true) {
+      if (!gpio_get(PIN_GATE)) {
+        set_out_level(0);
+        goto pulse_ended;
+      }
+      if (gpio_get(PIN_CURR_TRIGGER)) {
+        // discharge started.
+        break;
+      }
+      sleep_us(1);
+      critical_section_enter_blocking(&csec_stat);
+      csec_stat_dur++;
+      csec_stat_dur_open++;
+      critical_section_exit(&csec_stat);
+      if (igt_us < IG_THRESH_OPEN_US) {
+        igt_us++;
+      }
+    }
+
+    if (igt_us < IG_THRESH_SHORT_US) {
+      // short; turn-off and short-cooldown.
+      set_out_level(0);
+      sleep_us(COOLDOWN_SHORT_US);
+      critical_section_enter_blocking(&csec_stat);
+      csec_stat_dur += COOLDOWN_SHORT_US;
+      csec_stat_dur_short += COOLDOWN_SHORT_US;
+      critical_section_exit(&csec_stat);
+    } else {
+      // normal pulse; update stats & wait for pulse duration.
+      critical_section_enter_blocking(&csec_stat);
+      csec_stat_n_pulse++;
+      csec_stat_accum_igt_us += igt_us;
+      critical_section_exit(&csec_stat);
+      for (uint16_t i = 0; i < pdur; i++) {
+        if (!gpio_get(PIN_GATE)) {
+          set_out_level(0);
+          goto pulse_ended;
+        }
+        sleep_us(1);
+        critical_section_enter_blocking(&csec_stat);
+        csec_stat_dur++;
+        csec_stat_dur_pulse++;
+        critical_section_exit(&csec_stat);
+      }
+
+      // turn-off and cooldown.
+      set_out_level(0);
+      int32_t cooldown_time = pinterval - (int32_t)(igt_us + pdur);
+      if (cooldown_time < COOLDOWN_PULSE_MIN_US) {
+        cooldown_time = COOLDOWN_PULSE_MIN_US;
+      }
+      sleep_us(cooldown_time);
+      critical_section_enter_blocking(&csec_stat);
+      csec_stat_dur += cooldown_time;
+      critical_section_exit(&csec_stat);
+    }
+  pulse_ended:
   }
 
 fatal_error:
@@ -355,7 +510,6 @@ fatal_error:
 
   // Stop spurious signals.
   set_thresh_level(0); // no effect, but just settle on known state.
-  gpio_put(PIN_DETECT, 0);
 
   while (true) {
     // "error blink" forever
@@ -374,13 +528,13 @@ int main() {
   csec_pulse_pcurr = PCURR_ON_RESET;
   csec_pulse_th_on_cyc = th_cyc_on_reset;
   critical_section_init(&csec_pulse);
+  critical_section_init(&csec_stat);
 
   // Init I/O to safe state.
   const uint32_t output_mask =
       (1 << PIN_LED_STATUS) | (1 << PIN_LED_POWER) | (1 << PIN_I2C_SDA) |
-      (1 << PIN_I2C_SCL) | (1 << PIN_DETECT) | (1 << PIN_MUX_POL) |
-      (1 << PIN_MUX_WG) | (1 << PIN_MUX_EN) | (1 << PIN_CURR_GATE_PWM) |
-      (1 << PIN_CURR_THRESH_PWM);
+      (1 << PIN_I2C_SCL) | (1 << PIN_MUX_POL) | (1 << PIN_MUX_WG) |
+      (1 << PIN_MUX_EN) | (1 << PIN_CURR_GATE_PWM) | (1 << PIN_CURR_THRESH_PWM);
 
   const uint32_t input_mask =
       (1 << PIN_GATE) | (1 << PIN_CURR_TRIGGER) | (1 << PIN_TEMP_HS);
@@ -392,7 +546,7 @@ int main() {
 
   ////////////////////////////////////////////////////////////
   // Initialize "modules" with sanity checks, starting from safe ones.
-  
+
   if (gpio_get(PIN_GATE)) {
     // Sanity check; master must not be driving GATE high when turning on ED.
     goto fatal_error;

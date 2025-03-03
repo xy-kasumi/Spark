@@ -10,7 +10,7 @@ Improper use of PULSER may cause death, fire, or damage to nearby devices.
 
 ![photo](./PULSER-r1-photo.jpeg)
 
-PULSER is an EDM discharge board, controllable via digital IOs and I2C.
+PULSER is an EDM discharge board, controllable via I2C and digital IOs.
 
 * Max pulse current: 8A (at duty factor=50%)
 * Open voltage: 100V
@@ -18,9 +18,9 @@ PULSER is an EDM discharge board, controllable via digital IOs and I2C.
   * (Tool+, Work-), (Tool-, Work+)
   * (Tool+, Grinder-), (Tool-, Grinder+)
   * Disconnected
-* Single-pulse discharge timing control, and pulse current detection via GATE/DETECT digital IOs
-* Pulse current, detection threshold, polarity control, temperature monitoring via I2C
-
+* Continuous pulse operation
+* Pulse statistics readout via I2C for position control
+* Temperature monitoring via I2C
 
 ### Power Supply
 Screw terminal on the left side
@@ -78,24 +78,23 @@ PULSER is designed to be safe (de-energized) to be turned on with "Control Conne
 5. Don't Connect
 6. I2C SCL
 7. GATE
-8. DETECT
+8. Don't Connect
 
 Note: Type-A (terminals on same-side) means cross-cable. Thus, pinout at host and PULSER board is flipped.
 
-* I2C SDA/SCL: 3.3V I/O. Standard Mode (~100kHz). Pulled-up in PULSER board.
+* I2C SDA/SCL: 3.3V I/O. Standard Mode (~400kHz). Pulled-up in PULSER board.
 * GATE: 3.3V digital input
-* DETECT: 3.3V digital output
 
 
 ### I2C layer
 
 * Device Address: 0x3B
-* Speed: Standard Mode (~100kHz clock)
+* Speed: Fast Mode (~400kHz clock)
 
 Within the device, there are registers with 1-byte address and 1-byte data.
 Write command writes to a single register, Read command read from a single register.
 
-They involve internal pointer. They don't auto-increment.
+They share an internal pointer. Reading or writing register will auto-increment the pointer.
 
 **Write**
 * M: START
@@ -125,47 +124,75 @@ This also sets the internal pointer to Register Addr.
 
 (M: master, S: slave)
 
+## Typical usecases
 
-### Logical layer
+### Simplest usecase (not practical but good for initial testing)
 
-### GATE/DETECT
-The host can initiate a single pulse by setting GATE to HIGH.
-If the discharge condition is good, discharge will happen after a random Tig (ignition time).
-Tig is inherently random, but typically ranges from 10μs to 500μs, and becomes shorter if the gap is narrower.
+1. Host configures POLARITY
+2. Host sets GATE to HIGH
 
-If DETECT becomes HIGH very quickly (within 5μs), it is highly likely that the discharge gap is short-circuited.
-In that case, the host should set GATE to LOW immediately.
+In this case, host does not configure pulses or monitor anything.
+The device still operates with reasonable default values.
+Default values are not max-power for safety reasons.
 
-Generally, GATE can be thought of as directly driving the MOSFET gate. However, for safety and device longevity,
-actual driving can be suppressed. See the "Timing wrt. GATE/DETECT" section for details.
+### Optimal usecase
 
-DETECT becomes HIGH whenever discharge current is detected.
-The host is responsible for monitoring DETECT and setting GATE to LOW after the desired pulse duration time.
-The current detection threshold is auto-set to 25% of pulse current by the PULSER board.
+1. Host configures PULSE_CURRENT, PULSE_DUR, MAX_DUTY, POLARITY
+2. Host sets GATE to HIGH
+3. Host polls (100Hz ~ 1 kHz) CHK_N_PULSE~R_OPEN registers to control gap distance
 
-When POLARITY or PULSE_CURRENT is updated, DETECT can become LOW even when actual discharge
-current is still flowing.
-
-![photo](./PULSER-GD-signal-timing.png)
+In this case, host extensively monitor discharge statistics.
+In EDM, gap distance should be controled in closed-loop (typically 10um~100um)
+The distance should be large enough to avoid too much shorts,
+and small enough to reduce average ignition time (more time discharging).
 
 There is a constraint for combinations of pulse time, pulse current, and duty factor.
 See the "Pulse Shaping" section for details.
 
-Safety note: electrodes are **energized even when GATE is LOW**
+
+## Logical layer
+
+### GATE
+
+When GATE is LOW, discharge current will be suppressed.
+When changing to LOW, ongoing discharge will be also terminated within 5us.
+
+When POLARITY is not OFF and GATE is HIGH, electrodes are fully energized (100V),
+and will wait for discharge to happen.
+
+If the gap is too big, no discharge will happen.
+You can see this via CHK_N_PULSE being 0 or R_OPEN being close to 1.0.
+
+If the gap is too small, gap will short-circuit.
+In this case, PULSER quickly shuts down the current and periodically checks until the gap is not short-circuited.
+You can see this via R_SHORT having large (> 0.5) value.
+
+If the gap distance is ok, discharge will happen after random time (called *ignition time*, Tig).
+Tig typically ranges from 10μs to 500μs, and becomes shorter if the gap is narrower.
+
+
+Safety note: electrodes are **high-voltage even when GATE is LOW**
 
 Setting GATE to LOW merely means turning down the current close to 0.
 However, open voltage of 100V is still present on the electrodes,
 and the driver will allow more than 10mA current to flow, which is enough to kill you.
 
-To actually turn them off, you need to set POLARITY to OFF.
+To actually turn them off completely, you need to set POLARITY to OFF.
 
 
 ### Control Registers
-|Address| Register      | Access | Resets to | Description |
-|-------|---------------|--------|-----------|-------------|
-| 0x01  | POLARITY      | RW     | 0         | 0: OFF, 1~4: energize with certain polarity. |
-| 0x02  | PULSE_CURRENT | RW     | 10        | pulse current in 100mA step. 1 (100mA) ~ 80 (8A) is allowed. |
-| 0x03  | TEMPERATURE   | R      | N/A       | current heatsink temperature in ℃. 80 means 80℃. 255 means temp reading is unavailable due to severe issue. |
+| Address | Register      | Access      | Resets to | Description |
+|---------|---------------|-------------|-----------|-------------|
+| 0x01    | POLARITY      | RW          | 0         | 0: OFF, 1~4: energize with certain polarity. |
+| 0x02    | PULSE_CURRENT | RW          | 10        | pulse current in 100mA step. 1 (100mA) ~ 80 (8A) is allowed. |
+| 0x03    | TEMPERATURE   | R           | N/A       | current heatsink temperature in ℃. 80 means 80℃. 255 means temp reading is unavailable due to severe issue. |
+| 0x04    | PULSE_DUR     | RW          | 50        | pulse duration in 10 us unit. 5 (50us) ~ 100 (1000us) is allowed. Default is 500us. |
+| 0x05    | MAX_DUTY      | RW          | 25        | Maximum duty factor allowed in percent. 1~95 is allowed. Default is 25%. |
+| 0x10    | CKP_N_PULSE   | R (special) | N/A       | Number of pulse started in the interval. Reading this register creates checkpoint. |
+| 0x11    | T_IGNITION    | R           | N/A       | average ignition time in the interval. Unit of 5us. 0:0us, 255:1275us. |
+| 0x12    | R_PULSE       | R           | N/A       | Ratio of duration spent discharging in the interval. Values from [0.0, 1.0], calculated as R_PULSE/255 |
+| 0x13    | R_SHORT       | R           | N/A       | Ratio of duration spent shorted and not discharging in the interval. Values from [0.0, 1.0], calculated as R_SHORT/255 |
+| 0x14    | R_OPEN        | R           | N/A       | Ratio of duration spent waiting for discharge to happen in the interval. Values from [0.0, 1.0], calculated as R_OPEN/255 |
 
 Register access:
 * RW: read-write
@@ -176,18 +203,88 @@ Invalid value writes are:
 * set to nearest valid value (e.g. PULSE_CURRENT)
 * ignored for read-only or unused registers (e.g. TEMPERATURE)
 
-#### Timing wrt. GATE/DETECT
+### Checkpointed read
+In normal operation mode, host will poll discharge statistics.
+For the host to not miss any data because of I2C latency,
+the registers are double-buffered.
+
+Reading CKP_N_PULSE register "flips" the buffer.
+N_PULSE value indicates number of pulse in previous interval.
+IGT_H~R_OPEN also shows values in previous interval.
+
+This ensures host will not miss any pulse count as long as they're polling fast enough to not allow overflow.
+
+When N_PULSE overflows, it will stay in 255.
+When N_PULSE Is 255, IGT_H / IGT_L will still indicates the average value in previous interval,
+but they will be weighted by recency.
+
+R_PULSE, R_SHORT, R_OPEN will be accurate even if the polling duration is long.
+However, after 4300 seconds, measurements won't be accurate.
+
+Reading CKP_N_PULSE register resets the internal counter and recovers the accuracy.
+
+
+### Time measurement
+
+Time can be divided into these categories.
+* operating
+  * pulse
+  * short
+  * open
+  * cooldown
+* configuring (applying POL or pulse parameter changes)
+
+And then,
+* R_PULSE = pulse / operating
+* R_SHORT = short / operating
+* R_OPEN = open / operating
+
+
+| V | C | Time |
+|---|---|------|
+| H | H | Short or Pulse |
+| H | L | Open |
+| L | L | Short or Cooldown |
+
+(V: voltage, C: current)
+
+#### Example: Repeated short
+![repeated short](./pulser-time-short.png)
+
+When short (C rises too quickly when V rises), V is shutdown quickly to prevent arc welding.
+To stabilize the gap, V is kept off for some fixed time, short (cooldown). This still counts as "short".
+
+Even when gap is short, C might not rise immediately due to inductance or measurement latency.
+These spans will be counted as "open".
+
+This case won't affect pulse count or average ignition time.
+
+#### Example: Normal pulsing
+![normal pulse](./pulser-time-normal.png)
+
+For normal pulse condition, C takes more time ("ignition time") to rise.
+When this happens, V is kept high for pulse duration (PULSE_DUR), then turns off.
+
+After pulse is ended, V is kept off for cooldown to satisfy both of the following conditions:
+* pulse / (pulse + cooldown) <= MAX_DUTY
+* cooldown >= a few us (internal fixed threshold): to prevent always-on case
+
+When succesful pulse has started, pulse count is incremented.
+Open time can be very long if the gap is wide.
+To avoid skewing ignition time statistics, ignition time is capped at 1000us.
+
+
+### Timing relation between I2C and GATE
 
 Writes to POLARITY & PULSE_CURRENT immediately updates the register.
 However, when register is changed during GATE is HIGH,
-* change will take effect from the next pulse (once GATE become LOW)
+* change will take effect from the next pulse
 * actual EDM driver will be suppressed for 1ms (PULSE_CURRENT change) and 20ms (POLARITY change)
-  * this will lead to very large observed DETECT from the host
 
 As an exception to the delay above, setting POLARITY to OFF immediately shutdown EDM driver.
 
 
-#### POLARITY
+### POLARITY
 
 * 0: OFF
 * 1: TPWN (Tool+, Work-)
@@ -197,16 +294,6 @@ As an exception to the delay above, setting POLARITY to OFF immediately shutdown
 
 
 ### Pulse Shaping
-
-Pulse current is limited due to the internal capacitor bank.
-* Always: Ip <= 8A (enforced by register)
-* When Ip >= 4A: Tp <= 8mC / Ip
-  * Tp (max) = 1ms @ Ip = 8A
-  * Tp (max) = 1.3ms @ Ip = 6A
-* When Ip >= 4A: Ip * DF <= 4A
-  * DF (max) = 50% @ Ip = 8A
-
-If DF or pulse duration exceeds these values, discharge current will dwindle to 4A (power supply current) or cause an abrupt voltage drop.
 
 The PULSER board driver is optimized for EDM. It uses a combination of:
 * 100V low-capacity "ignition supply"

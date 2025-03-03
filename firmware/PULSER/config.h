@@ -21,7 +21,6 @@
 static const uint8_t PIN_I2C_SDA = 0;  // I2C0
 static const uint8_t PIN_I2C_SCL = 1;  // I2C0
 static const uint8_t PIN_GATE = 2;
-static const uint8_t PIN_DETECT = 3;
 static const uint8_t PIN_LED_STATUS = 4;
 static const uint8_t PIN_LED_POWER = 5;
 static const uint8_t PIN_MUX_POL = 8;   // Relay POL control
