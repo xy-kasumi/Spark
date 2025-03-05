@@ -122,6 +122,25 @@ This also sets the internal pointer to Register Addr.
 * M: NACK
 * M: STOP
 
+**Multi-byte read**
+(write pointer)
+* M: START
+* M: Device Addr (7bit; 0x3B) + Write flag (1bit; 1)
+* S: ACK
+* M: Register Addr (8bit)
+* S: ACK
+(read data from pointer)
+* M: Repeated START
+* M: Device Addr (7bit; 0x3B) + Read flag (1bit; 1)
+* S: Data 0 (8bit)
+* M: ACK
+* S: Data 1 (8bit)
+* M: ACK
+* ...
+* S: Data N-1 (8bit)
+* M: NACK
+* M: STOP
+
 (M: master, S: slave)
 
 ## Typical usecases
