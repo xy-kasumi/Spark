@@ -113,29 +113,14 @@ Interface behavior:
   * `board_ix`: 0, 1, or 2
   * `distance`: float (in mm)
 
-### Motor Driver (MD) Commands
 
-#### `step <board_ix> <step> <wait>`
-* **Description:** Steps one motor in one direction at a constant speed.
-* **Parameters:**
-  * `board_ix`: 0, 1, or 2
-  * `step`: integer (negative or positive), in microsteps
-  * `wait`: integer, wait time after each microstep, in microseconds
-
-#### `home <board_ix> <direction> <timeout_ms>`
-* **Description:** Moves the motor to the home position (where it stalls).
-* **Parameters:**
-  * `board_ix`: 0, 1, or 2
-  * `direction`: `-` or `+`
-  * `timeout_ms`: integer, timeout in milliseconds
+### Low-Level Commands
 
 #### `regread <board_id> <addr>`
 * **Description:** Reads a register from peripheral boards.
 * **Parameters:**
   * `board_id`: 0, 1, 2, E
   * `addr`: hexadecimal value from `00` to `7f`
-
-### Low-Level Commands
 
 #### `regwrite <board_id> <addr> <data>`
 * **Description:** Writes to a register on the peripheral boards.

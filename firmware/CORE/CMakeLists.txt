@@ -79,8 +79,8 @@ pico_sdk_init()
 
 add_executable(CORE_fw
     main.c
-    ed.c
-    md.c
+    pulser.c
+    stpdrv.c
     )
 
 # pull in common dependencies
