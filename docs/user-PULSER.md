@@ -209,9 +209,10 @@ To actually turn them off completely, you need to set POLARITY to OFF.
 | 0x05    | MAX_DUTY      | RW          | 25        | Maximum duty factor allowed in percent. 1~95 is allowed. Default is 25%. |
 | 0x10    | CKP_N_PULSE   | R (special) | N/A       | Number of pulse started in the interval. Reading this register creates checkpoint. |
 | 0x11    | T_IGNITION    | R           | N/A       | average ignition time in the interval. Unit of 5us. 0:0us, 255:1275us. |
-| 0x12    | R_PULSE       | R           | N/A       | Ratio of duration spent discharging in the interval. Values from [0.0, 1.0], calculated as R_PULSE/255 |
-| 0x13    | R_SHORT       | R           | N/A       | Ratio of duration spent shorted and not discharging in the interval. Values from [0.0, 1.0], calculated as R_SHORT/255 |
-| 0x14    | R_OPEN        | R           | N/A       | Ratio of duration spent waiting for discharge to happen in the interval. Values from [0.0, 1.0], calculated as R_OPEN/255 |
+| 0x12    | T_IGNITION_SD | R           | N/A       | standard deviation of ignition time in the interval. Unit of 5us. 0:0us, 255:1275us. |
+| 0x13    | R_PULSE       | R           | N/A       | Ratio of duration spent discharging in the interval. Values from [0.0, 1.0], calculated as R_PULSE/255 |
+| 0x14    | R_SHORT       | R           | N/A       | Ratio of duration spent shorted and not discharging in the interval. Values from [0.0, 1.0], calculated as R_SHORT/255 |
+| 0x15    | R_OPEN        | R           | N/A       | Ratio of duration spent waiting for discharge to happen in the interval. Values from [0.0, 1.0], calculated as R_OPEN/255 |
 
 Register access:
 * RW: read-write

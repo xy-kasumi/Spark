@@ -31,7 +31,7 @@
 #include "pico/sync.h"
 #include <inttypes.h>
 #include <stdatomic.h>
-
+#include <math.h>
 #include "config.h"
 
 // core0, core1 shared
@@ -50,6 +50,7 @@ static uint8_t csec_pulse_th_on_cyc;
 static critical_section_t csec_stat;
 static uint32_t csec_stat_n_pulse = 0;
 static uint64_t csec_stat_accum_igt_us = 0;
+static uint64_t csec_stat_accum_igt_sq_us = 0;
 static uint32_t csec_stat_dur = 0;
 static uint32_t csec_stat_dur_pulse = 0;
 static uint32_t csec_stat_dur_short = 0;
@@ -179,9 +180,10 @@ static const uint8_t REG_PULSE_DUR = 0x04;
 static const uint8_t REG_MAX_DUTY = 0x05;
 static const uint8_t REG_CKP_N_PULSE = 0x10;
 static const uint8_t REG_T_IGNITION = 0x11;
-static const uint8_t REG_R_PULSE = 0x12;
-static const uint8_t REG_R_SHORT = 0x13;
-static const uint8_t REG_R_OPEN = 0x14;
+static const uint8_t REG_T_IGNITION_SD = 0x12;
+static const uint8_t REG_R_PULSE = 0x13;
+static const uint8_t REG_R_SHORT = 0x14;
+static const uint8_t REG_R_OPEN = 0x15;
 
 static const uint8_t POL_OFF = 0;
 static const uint8_t POL_TPWN = 1; // Tool+, Work-
@@ -193,7 +195,8 @@ static bool i2c_ptr_written = false;
 static uint8_t i2c_reg_ptr = 0;
 
 static uint8_t visible_n_pulse = 0;
-static uint16_t visible_igt_us = 0;
+static uint8_t visible_igt_5us = 0;
+static uint8_t visible_igt_sd_5us = 0;
 static uint8_t visible_r_pulse = 0;
 static uint8_t visible_r_short = 0;
 static uint8_t visible_r_open = 0;
@@ -292,6 +295,7 @@ uint8_t read_reg(uint8_t reg) {
     critical_section_enter_blocking(&csec_stat);
     uint32_t stat_n_pulse = csec_stat_n_pulse;
     uint64_t stat_accum_igt_us = csec_stat_accum_igt_us;
+    uint64_t stat_accum_igt_sq_us = csec_stat_accum_igt_sq_us;
     uint32_t stat_dur = csec_stat_dur;
     uint32_t stat_dur_pulse = csec_stat_dur_pulse;
     uint32_t stat_dur_short = csec_stat_dur_short;
@@ -299,6 +303,7 @@ uint8_t read_reg(uint8_t reg) {
     // reset
     csec_stat_n_pulse = 0;
     csec_stat_accum_igt_us = 0;
+    csec_stat_accum_igt_sq_us = 0;
     csec_stat_dur = 0;
     csec_stat_dur_pulse = 0;
     csec_stat_dur_short = 0;
@@ -307,14 +312,29 @@ uint8_t read_reg(uint8_t reg) {
 
     // convert
     visible_n_pulse = stat_n_pulse > 255 ? 255 : stat_n_pulse;
-    visible_igt_us = stat_n_pulse == 0 ? 0 : (stat_accum_igt_us / stat_n_pulse);
+    if (stat_n_pulse == 0) {
+      visible_igt_5us = 0;
+      visible_igt_sd_5us = 0;
+    } else {
+      uint16_t igt_avg = stat_accum_igt_us / stat_n_pulse;
+      // Quantization error might cause negative value, so use signed and clamp.
+      int32_t igt_var = (int32_t) (stat_accum_igt_sq_us / stat_n_pulse) - (int32_t) (igt_avg * igt_avg);
+      if (igt_var < 0) {
+        igt_var = 0;
+      }
+      uint16_t igt_sd = sqrt(igt_var);
+      visible_igt_5us = igt_avg / 5;
+      visible_igt_sd_5us = igt_sd / 5;
+    }
     visible_r_pulse = (uint64_t)stat_dur_pulse * 255 / stat_dur;
     visible_r_short = (uint64_t)stat_dur_short * 255 / stat_dur;
     visible_r_open = (uint64_t)stat_dur_open * 255 / stat_dur;
     return visible_n_pulse;
   }
   case REG_T_IGNITION:
-    return visible_igt_us / 5;
+    return visible_igt_5us;
+  case REG_T_IGNITION_SD:
+    return visible_igt_sd_5us;
   case REG_R_PULSE:
     return visible_r_pulse;
   case REG_R_SHORT:
@@ -468,6 +488,7 @@ void core1_main() {
       critical_section_enter_blocking(&csec_stat);
       csec_stat_n_pulse++;
       csec_stat_accum_igt_us += igt_us;
+      csec_stat_accum_igt_sq_us += igt_us * igt_us;
       critical_section_exit(&csec_stat);
       for (uint16_t i = 0; i < pdur; i++) {
         if (!gpio_get(PIN_GATE)) {
