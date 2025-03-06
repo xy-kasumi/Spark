@@ -106,7 +106,7 @@ void pulser_init() {
   // Poll ED board until 1000ms (typ PSU turn on time x2).
   for (int i = 0; i < 10; i++) {
     // Check temperature sanity.
-    int temp;
+    uint8_t temp;
     if (read_reg(REG_TEMPERATURE, &temp)) {
       if (temp == TEMP_INVALID_VALUE) {
         return; // temp sensor not working
@@ -128,7 +128,7 @@ int pulser_temp() {
   if (mode != PULSER_OK) {
     return 255;
   }
-  int temp;
+  uint8_t temp;
   if (!read_reg(REG_TEMPERATURE, &temp)) {
     return 255;
   }
