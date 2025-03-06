@@ -77,7 +77,9 @@ typedef struct {
   int stpdrv_ix;
 
   ctrl_op_t op;
-  int targ_ig_us; // op == OP_FEED
+  int targ_igt_us; // op == OP_FEED
+  int avg_igt_us;  // op == OP_FEED
+  int sd_igt_us;   // op == OP_FEED
   float pos_limit_min;
   float pos_limit_max;
 
@@ -205,8 +207,8 @@ void tick_motor_step(ctrl_motor_step_t* step, float curr_pos_mm) {
 }
 
 void tick_feed_control(control_t* control) {
-  // TODO: slow loop. (1 Hz??) maximize avg. pulse duration by optimizing
-  // targ_ig.
+  // TODO: slow loop to control targ_ig. (1 Hz??) maximize avg. pulse duration
+  // by optimizing targ_ig.
 
   // Coefficient that converts: Tig stddev [us] -> Tig allowed range of
   // deviation [us]. Smaller value: possibly faster response, but might lead to
@@ -225,15 +227,13 @@ void tick_feed_control(control_t* control) {
   int r_open;
   pulser_checkpoint_read(&n_pulse, &avg_igt_us, &sd_igt_us, &r_pulse, &r_short,
                          &r_open);
-
-  // TODO: Maybe smooth with previous avgs?
-  if (n_pulse == 0) {
-    avg_igt_us = 500; // assume big number
-    sd_igt_us = 500;  // assume big number
+  if (n_pulse > 0) {
+    control->avg_igt_us = avg_igt_us;
+    control->sd_igt_us = sd_igt_us;
   }
 
-  float allowed_deviation = DEADBAND_PARAM * sd_igt_us;
-  float error = avg_igt_us - control->targ_ig_us;
+  float allowed_deviation = DEADBAND_PARAM * control->sd_igt_us;
+  float error = control->avg_igt_us - control->targ_igt_us;
 
   if (abs(error) > allowed_deviation) {
     // only change velocity when it's outside of allowed range.
@@ -298,7 +298,9 @@ void control_start_feed(control_t* control, float targ_pos_mm) {
     control->pos_limit_max =
         control->motor_motion.curr_pos_mm + 1; // whatever offset
   }
-  control->targ_ig_us = 200;
+  control->targ_igt_us = 200;
+  control->avg_igt_us = 500; // assume big number
+  control->sd_igt_us = 500;  // assume big number
 }
 
 void control_start_find(control_t* control, float lim_pos_mm) {
@@ -434,14 +436,14 @@ void exec_command_move(int stpdrv_ix, float distance, app_t* app) {
       control_abort(&app->control);
       print_time();
       printf("move: ABORTED\n");
-      return;
+      break;
     }
 
     if (app->control.motor_motion.curr_pos_mm == targ_pos &&
         app->control.motor_motion.curr_vel_mm_per_s == 0) {
       print_time();
       printf("move: DONE\n");
-      return;
+      break;
     }
   }
 }
@@ -463,26 +465,24 @@ void exec_command_find(int stpdrv_ix, float distance, app_t* app) {
   while (true) {
     if (abort_requested()) {
       control_abort(&app->control);
-      pulser_unsafe_set_gate(false);
-      pulser_set_energize(false);
       print_time();
-      printf("find: ABORTED\n");
-      return;
+      printf("find: ABORTED");
+      break;
     }
     bool reason_is_limit;
     if (control_check_status(&app->control, &reason_is_limit)) {
-      control_abort(&app->control);
-      pulser_unsafe_set_gate(false);
-      pulser_set_energize(false);
       print_time();
       if (reason_is_limit) {
-        printf("find: DONE (not found)\n");
+        printf("find: DONE (not found)");
       } else {
-        printf("find: DONE (found)\n");
+        printf("find: DONE (found)");
       }
-      return;
+      break;
     }
   }
+  printf(" (x=%.2f)\n", app->control.motor_motion.curr_pos_mm);
+  pulser_unsafe_set_gate(false);
+  pulser_set_energize(false);
 }
 
 void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
@@ -503,22 +503,21 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
   while (true) {
     if (abort_requested()) {
       control_abort(&app->control);
-      pulser_unsafe_set_gate(false);
-      pulser_set_energize(false);
       print_time();
-      printf("feed: ABORTED\n");
-      return;
+      printf("feed: ABORTED");
+      break;
     }
     bool reason_is_limit;
     if (control_check_status(&app->control, &reason_is_limit)) {
-      control_abort(&app->control);
-      pulser_unsafe_set_gate(false);
-      pulser_set_energize(false);
       print_time();
-      printf("feed: DONE\n");
-      return;
+      printf("feed: DONE");
+      break;
     }
   }
+
+  printf(" (x=%.2f)\n", app->control.motor_motion.curr_pos_mm);
+  pulser_unsafe_set_gate(false);
+  pulser_set_energize(false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
