@@ -112,9 +112,11 @@ int64_t control_loop_step_motor(alarm_id_t aid, void* data) {
   ctrl_motor_step_t* ctrl_step = data;
   if (ctrl_step->remaining_steps > 0) {
     stpdrv_step(ctrl_step->stpdrv_ix, true);
+    ctrl_step->mot_curr_step++;
     ctrl_step->remaining_steps--;
   } else {
     stpdrv_step(ctrl_step->stpdrv_ix, false);
+    ctrl_step->mot_curr_step--;
     ctrl_step->remaining_steps++;
   }
 
@@ -128,7 +130,6 @@ int64_t control_loop_step_motor(alarm_id_t aid, void* data) {
 void tick_motor_motion(ctrl_motor_motion_t* motion) {
   const float MAX_DVEL = MAX_ACC_MM_PER_S2 * CTRL_DT_S;
   const float EPS_VEL = MAX_ACC_MM_PER_S2 * CTRL_DT_S * 2;
-  const float EPS_DIST = MAX_SPEED_MM_PER_S * CTRL_DT_S * 2;
 
   bool pos_override = false;
   if (motion->mode == CTRL_VEL) {
@@ -146,8 +147,7 @@ void tick_motor_motion(ctrl_motor_motion_t* motion) {
     float pos_targ = motion->targ_value;
 
     float delta_pos = pos_targ - motion->curr_pos_mm;
-    if (fabsf(delta_pos) < EPS_DIST &&
-        fabsf(motion->curr_vel_mm_per_s) < EPS_VEL) {
+    if (fabsf(delta_pos) < 1e-3 && fabsf(motion->curr_vel_mm_per_s) < EPS_VEL) {
       // already close enough (pos~targ and vel~0).
       motion->curr_vel_mm_per_s = 0;
       pos_override = true;
@@ -169,14 +169,14 @@ void tick_motor_motion(ctrl_motor_motion_t* motion) {
       float stop_dist = 0.5 * MAX_ACC_MM_PER_S2 * square(stop_time);
 
       float dist_pos = fabsf(delta_pos);
-      if (dist_pos < stop_dist + EPS_DIST) {
+      if (dist_pos <= stop_dist) {
         // decel
         motion->curr_vel_mm_per_s -= copysignf(MAX_DVEL, delta_pos);
-      } else if (dist_pos > stop_dist + EPS_DIST * 2) {
-        // we can accelerate to reach faster.
-        motion->curr_vel_mm_per_s += copysignf(MAX_DVEL, delta_pos);
       } else {
-        // cruise; do nothing.
+        if (fabsf(motion->curr_vel_mm_per_s) < MAX_SPEED_MM_PER_S - EPS_VEL) {
+          // not max speed yet; we can accelerate to reach faster.
+          motion->curr_vel_mm_per_s += copysignf(MAX_DVEL, delta_pos);
+        }
       }
     }
   }
@@ -193,7 +193,7 @@ void tick_motor_step(ctrl_motor_step_t* step, float curr_pos_mm) {
     return; // keep executing previous alarm without adding new alarms.
   }
 
-  int targ_step = curr_pos_mm / STEPS_PER_MM;
+  int targ_step = roundf(curr_pos_mm * STEPS_PER_MM);
   int delta_step = targ_step - step->mot_curr_step;
   if (delta_step != 0) {
     if (delta_step > MAX_STEP_IN_LOOP) {
@@ -212,8 +212,8 @@ void tick_feed_control(control_t* control) {
   // by optimizing targ_ig.
 
   // Coefficient that converts: Tig stddev [us] -> Tig allowed range of
-  // deviation [us]. Smaller value: possibly faster response, but might lead to
-  // oscillation. Larger value: stable, but might be slow.
+  // deviation [us]. Smaller value: possibly faster response, but might lead
+  // to oscillation. Larger value: stable, but might be slow.
   const float DEADBAND_PARAM = 2.0;
 
   // Converts: Tig error [us] -> change in velocity [mm/s], per unit time
@@ -415,8 +415,7 @@ void exec_command_status(app_t* app) {
   printf("control: pos=%.2f (step=%d) vel=%.2f (tick=%llu, max_load=%dus)\n",
          app->control.motor_motion.curr_pos_mm,
          app->control.motor_step.mot_curr_step,
-         app->control.motor_motion.curr_vel_mm_per_s,
-         app->control.tick,
+         app->control.motor_motion.curr_vel_mm_per_s, app->control.tick,
          app->control.max_load_us);
 }
 
@@ -464,17 +463,18 @@ void exec_command_move(int stpdrv_ix, float distance, app_t* app) {
     if (abort_requested()) {
       control_abort(&app->control);
       print_time();
-      printf("move: ABORTED\n");
+      printf("move: ABORTED");
       break;
     }
 
     if (app->control.motor_motion.curr_pos_mm == targ_pos &&
         app->control.motor_motion.curr_vel_mm_per_s == 0) {
       print_time();
-      printf("move: DONE\n");
+      printf("move: DONE");
       break;
     }
   }
+  printf(" (x=%.2f)\n", app->control.motor_motion.curr_pos_mm);
 }
 
 void exec_command_find(int stpdrv_ix, float distance, app_t* app) {
@@ -756,7 +756,8 @@ char parse_board_id(parser_t* parser) {
 
 /**
  * Tries to execute a single command. Errors will be printed to stdout.
- * @param buf command string, without newlines. will be modified during parsing.
+ * @param buf command string, without newlines. will be modified during
+ * parsing.
  */
 void try_exec_command(char* buf, app_t* app) {
   parser_t parser;

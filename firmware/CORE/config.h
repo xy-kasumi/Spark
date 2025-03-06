@@ -28,11 +28,11 @@
 #define FIND_SPEED_MM_PER_S 5
 
 // mainly constarained by mass & friction (vs. motor driving capability)
-#define MAX_ACC_MM_PER_S2 1000
+#define MAX_ACC_MM_PER_S2 500
 
 // mainly constrained by motor pulse-torque characteristics & safety
 // (current motor can go 500, but reduced for safety)
-#define MAX_SPEED_MM_PER_S 50
+#define MAX_SPEED_MM_PER_S 25
 
 // Set this so that CONTROL_LOOP_INTERVAL_US becomes an integer.
 #define CONTROL_LOOP_HZ 1000
