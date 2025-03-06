@@ -3,6 +3,7 @@
 #include "pico/stdlib.h"
 #include <ctype.h>
 #include <inttypes.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,11 +12,8 @@
 #include "pulser.h"
 #include "stpdrv.h"
 
-typedef struct {
-  uint32_t pulse_dur_us;
-  uint8_t duty_pct;
-  uint16_t current_ma;
-} ctrl_config_t;
+////////////////////////////////////////////////////////////////////////////////
+// Basic I/O
 
 void pico_led_init() {
   gpio_init(PICO_DEFAULT_LED_PIN);
@@ -26,21 +24,341 @@ void pico_led_set(bool on) { gpio_put(PICO_DEFAULT_LED_PIN, on); }
 
 // flash led off for a short time.
 void pico_led_flash() {
-  const uint32_t LED_OFF_TIME_MS = 100;
+  const int LED_OFF_TIME_MS = 100;
   pico_led_set(false);
   sleep_ms(LED_OFF_TIME_MS);
   pico_led_set(true);
 }
 
 void print_time() {
-  uint32_t t = to_ms_since_boot(get_absolute_time());
-  uint32_t t_sec = t / 1000;
-  uint32_t t_ms = t % 1000;
+  int t = to_ms_since_boot(get_absolute_time());
+  int t_sec = t / 1000;
+  int t_ms = t % 1000;
   printf("%d.%03d ", t_sec, t_ms);
 }
 
-void exec_command_status(ctrl_config_t* config) {
-  for (uint8_t i = 0; i < STPDRV_NUM_BOARDS; i++) {
+////////////////////////////////////////////////////////////////////////////////
+// Control loop
+
+// Target value control for ctrl_motor_motion_t.
+typedef enum {
+  CTRL_POS, // try to stop at target pos.
+  CTRL_VEL, // try to reach target vel. don't care about pos.
+} ctrl_mode_t;
+
+// Motor's velocity/position controller.
+// Main purpose: plan trajectory while satisfying max acc/vel constraints.
+// Frequency: CONTROL_LOOP_HZ
+typedef struct {
+  float curr_vel_mm_per_s;
+  float curr_pos_mm;
+  ctrl_mode_t mode;
+  // target pos (if mode == CTRL_POS) or target vel (if mode == CTRL_VEL)
+  float targ_value;
+} ctrl_motor_motion_t;
+
+// Plan motor's step sequence to satisfy position requirement.
+// Frequency: multiple of CONTROL_LOOP_HZ.
+typedef struct {
+  int stpdrv_ix;
+  int mot_curr_step;
+  int remaining_steps;
+  int us_between_steps;
+} ctrl_motor_step_t;
+
+typedef enum {
+  OP_NONE,
+  OP_FEED,
+  OP_FIND,
+} ctrl_op_t;
+
+typedef struct {
+  uint64_t tick;
+  int stpdrv_ix;
+
+  ctrl_op_t op;
+  int targ_ig_us; // op == OP_FEED
+  float pos_limit_min;
+  float pos_limit_max;
+
+  ctrl_motor_motion_t motor_motion;
+  ctrl_motor_step_t motor_step;
+} control_t;
+
+void set_target_vel(ctrl_motor_motion_t* ctrl_motion, float targ_vel_mm_per_s) {
+  // Limit for safety.
+  if (targ_vel_mm_per_s > MAX_SPEED_MM_PER_S) {
+    targ_vel_mm_per_s = MAX_SPEED_MM_PER_S;
+  } else if (targ_vel_mm_per_s < -MAX_SPEED_MM_PER_S) {
+    targ_vel_mm_per_s = -MAX_SPEED_MM_PER_S;
+  }
+
+  ctrl_motion->mode = CTRL_VEL;
+  ctrl_motion->targ_value = targ_vel_mm_per_s;
+}
+
+void set_target_pos(ctrl_motor_motion_t* ctrl_motion, float targ_pos_mm) {
+  ctrl_motion->mode = CTRL_POS;
+  ctrl_motion->targ_value = targ_pos_mm;
+}
+
+static inline float square(float x) { return x * x; }
+
+// Distribute steps evenly in loop interval.
+int64_t control_loop_step_motor(alarm_id_t aid, void* data) {
+  ctrl_motor_step_t* ctrl_step = data;
+  if (ctrl_step->remaining_steps > 0) {
+    stpdrv_step(ctrl_step->stpdrv_ix, true);
+    ctrl_step->remaining_steps--;
+  } else {
+    stpdrv_step(ctrl_step->stpdrv_ix, false);
+    ctrl_step->remaining_steps++;
+  }
+
+  if (ctrl_step->remaining_steps == 0) {
+    return 0; // stepping in this loop is done. cancel alarm.
+  } else {
+    return -ctrl_step->us_between_steps; // keep periodic stepping
+  }
+}
+
+void tick_motor_motion(ctrl_motor_motion_t* motion) {
+  const float MAX_DVEL = MAX_ACC_MM_PER_S2 * CTRL_DT_S;
+  const float EPS_VEL = MAX_ACC_MM_PER_S2 * CTRL_DT_S * 2;
+  const float EPS_DIST = MAX_SPEED_MM_PER_S * CTRL_DT_S * 2;
+
+  bool pos_override = false;
+  if (motion->mode == CTRL_VEL) {
+    float vel_targ = motion->targ_value;
+
+    float delta_vel = vel_targ - motion->curr_vel_mm_per_s;
+    if (fabsf(delta_vel) <= MAX_DVEL) {
+      // already close enough velocity.
+      motion->curr_vel_mm_per_s = vel_targ;
+    } else {
+      // accel or decel at max.
+      motion->curr_vel_mm_per_s += copysignf(MAX_DVEL, delta_vel);
+    }
+  } else if (motion->mode == CTRL_POS) {
+    float pos_targ = motion->targ_value;
+
+    float delta_pos = pos_targ - motion->curr_pos_mm;
+    if (fabsf(delta_pos) < EPS_DIST &&
+        fabsf(motion->curr_vel_mm_per_s) < EPS_VEL) {
+      // already close enough (pos~targ and vel~0).
+      motion->curr_vel_mm_per_s = 0;
+      pos_override = true;
+      motion->curr_pos_mm = pos_targ;
+    } else if ((delta_pos > 0 && motion->curr_vel_mm_per_s < 0) ||
+               (delta_pos < 0 && motion->curr_vel_mm_per_s > 0)) {
+      // currently going in opossite direction. need to slow down to V=0 first.
+      if (delta_pos > 0) {
+        motion->curr_vel_mm_per_s =
+            fminf(0, motion->curr_vel_mm_per_s + MAX_DVEL);
+      } else {
+        motion->curr_vel_mm_per_s =
+            fmaxf(0, motion->curr_vel_mm_per_s - MAX_DVEL);
+      }
+    } else {
+      // stopped or going towards target.
+      // we have 3 choices: cruise, decelerate, accelerate
+      float stop_time = fabsf(motion->curr_vel_mm_per_s) / MAX_ACC_MM_PER_S2;
+      float stop_dist = 0.5 * MAX_ACC_MM_PER_S2 * square(stop_time);
+
+      float dist_pos = fabsf(delta_pos);
+      if (dist_pos < stop_dist + EPS_DIST) {
+        // decel
+        motion->curr_vel_mm_per_s -= copysignf(MAX_DVEL, delta_pos);
+      } else if (dist_pos > stop_dist + EPS_DIST * 2) {
+        // we can accelerate to reach faster.
+        motion->curr_vel_mm_per_s += copysignf(MAX_DVEL, delta_pos);
+      } else {
+        // cruise; do nothing.
+      }
+    }
+  }
+  if (!pos_override) {
+    motion->curr_pos_mm += motion->curr_vel_mm_per_s * CTRL_DT_S;
+  }
+}
+
+void tick_motor_step(ctrl_motor_step_t* step, float curr_pos_mm) {
+  if (step->remaining_steps != 0) {
+    // shouldn't happen.
+    // uC is probably overloaded.
+    // TODO: display some kind of error
+    return; // keep executing previous alarm without adding new alarms.
+  }
+
+  int targ_step = curr_pos_mm / STEPS_PER_MM;
+  int delta_step = targ_step - step->mot_curr_step;
+  if (delta_step != 0) {
+    if (delta_step > MAX_STEP_IN_LOOP) {
+      delta_step = MAX_STEP_IN_LOOP;
+    } else if (delta_step < -MAX_STEP_IN_LOOP) {
+      delta_step = -MAX_STEP_IN_LOOP;
+    }
+    step->remaining_steps = delta_step;
+    step->us_between_steps = CTRL_DT_US / abs(delta_step);
+    add_alarm_in_us(0, &control_loop_step_motor, step, true);
+  }
+}
+
+void tick_feed_control(control_t* control) {
+  // TODO: slow loop. (1 Hz??) maximize avg. pulse duration by optimizing
+  // targ_ig.
+
+  // Coefficient that converts: Tig stddev [us] -> Tig allowed range of
+  // deviation [us]. Smaller value: possibly faster response, but might lead to
+  // oscillation. Larger value: stable, but might be slow.
+  const float DEADBAND_PARAM = 2.0;
+
+  // Converts: Tig error [us] -> change in velocity [mm/s], per unit time
+  // [mm/s^2].
+  const float GAIN = MAX_ACC_MM_PER_S2 / 250;
+
+  int n_pulse;
+  int avg_igt_us;
+  int sd_igt_us;
+  int r_pulse;
+  int r_short;
+  int r_open;
+  pulser_checkpoint_read(&n_pulse, &avg_igt_us, &sd_igt_us, &r_pulse, &r_short,
+                         &r_open);
+
+  // TODO: Maybe smooth with previous avgs?
+  if (n_pulse == 0) {
+    avg_igt_us = 500; // assume big number
+    sd_igt_us = 500;  // assume big number
+  }
+
+  float allowed_deviation = DEADBAND_PARAM * sd_igt_us;
+  float error = avg_igt_us - control->targ_ig_us;
+
+  if (abs(error) > allowed_deviation) {
+    // only change velocity when it's outside of allowed range.
+    // Accelerate if Tig is bigger than target, decelerate if Tig is smaller.
+    float targ_vel_mm_per_s = control->motor_motion.curr_vel_mm_per_s +
+                              error * GAIN * (CTRL_DT_US * 1e-6);
+    set_target_vel(&control->motor_motion, targ_vel_mm_per_s);
+  }
+}
+
+void tick_find_control(control_t* control) {
+  int n_pulse;
+  int avg_igt_us;
+  int sd_igt_us;
+  int r_pulse;
+  int r_short;
+  int r_open;
+  pulser_checkpoint_read(&n_pulse, &avg_igt_us, &sd_igt_us, &r_pulse, &r_short,
+                         &r_open);
+  if (n_pulse > 0 || r_short > 0) {
+    // found
+    set_target_vel(&control->motor_motion, 0);
+    control->op = OP_NONE;
+  }
+}
+
+// Main control loop at CONTROL_LOOP_HZ.
+bool tick_control_loop(repeating_timer_t* rt) {
+  control_t* control = (control_t*)rt->user_data;
+
+  if (control->op == OP_FEED) {
+    tick_feed_control(control);
+  } else if (control->op == OP_FIND) {
+    tick_find_control(control);
+  }
+  tick_motor_motion(&control->motor_motion);
+  if (control->op != OP_NONE) {
+    if (control->motor_motion.curr_pos_mm < control->pos_limit_min) {
+      control->motor_motion.curr_pos_mm = control->pos_limit_min;
+      control->motor_motion.curr_vel_mm_per_s = 0;
+      control->op = OP_NONE;
+    } else if (control->motor_motion.curr_pos_mm > control->pos_limit_max) {
+      control->motor_motion.curr_pos_mm = control->pos_limit_max;
+      control->motor_motion.curr_vel_mm_per_s = 0;
+      control->op = OP_NONE;
+    }
+  }
+  tick_motor_step(&control->motor_step, control->motor_motion.curr_pos_mm);
+
+  control->tick++;
+  return true;
+}
+
+void control_start_feed(control_t* control, float targ_pos_mm) {
+  control->op = OP_FEED;
+  if (targ_pos_mm > control->motor_motion.curr_pos_mm) {
+    control->pos_limit_min =
+        control->motor_motion.curr_pos_mm - 1; // whatever offset
+    control->pos_limit_max = targ_pos_mm;
+  } else {
+    control->pos_limit_min = targ_pos_mm;
+    control->pos_limit_max =
+        control->motor_motion.curr_pos_mm + 1; // whatever offset
+  }
+  control->targ_ig_us = 200;
+}
+
+void control_start_find(control_t* control, float lim_pos_mm) {
+  control->op = OP_FIND;
+  if (lim_pos_mm > control->motor_motion.curr_pos_mm) {
+    control->pos_limit_min =
+        control->motor_motion.curr_pos_mm - 1; // whatever offset
+    control->pos_limit_max = lim_pos_mm;
+    set_target_vel(&control->motor_motion, MAX_SPEED_MM_PER_S);
+  } else {
+    control->pos_limit_min = lim_pos_mm;
+    control->pos_limit_max =
+        control->motor_motion.curr_pos_mm + 1; // whatever offset
+    set_target_vel(&control->motor_motion, -MAX_SPEED_MM_PER_S);
+  }
+}
+
+void control_abort(control_t* control) {
+  control->op = OP_NONE;
+  set_target_vel(&control->motor_motion, 0);
+}
+
+bool control_is_ready(control_t* control) {
+  return control->op == OP_NONE && control->motor_motion.curr_vel_mm_per_s == 0;
+}
+
+// reason_is_limit is set to true if op is ended because of position limit.
+// returns: true if op is ended or hasn't started.
+bool control_check_status(control_t* control, bool* reason_is_limit) {
+  if (control->op != OP_NONE) {
+    return false;
+  }
+
+  *reason_is_limit =
+      (control->motor_motion.curr_pos_mm <= control->pos_limit_min &&
+       control->motor_motion.curr_pos_mm >= control->pos_limit_max);
+  return true;
+}
+
+void control_loop_init(control_t* control, repeating_timer_t* rt) {
+  control->pos_limit_min = -200;
+  control->pos_limit_max = 200;
+  alarm_pool_add_repeating_timer_us(alarm_pool_get_default(), CTRL_DT_US,
+                                    &tick_control_loop, control, rt);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Commands
+
+bool abort_requested();
+
+typedef struct {
+  control_t control;
+  int pulse_dur_us;
+  int duty_pct;
+  int current_ma;
+} app_t;
+
+void exec_command_status(app_t* app) {
+  for (int i = 0; i < STPDRV_NUM_BOARDS; i++) {
     stpdrv_board_status_t status = stpdrv_get_status(i);
 
     printf("MD %d: ", i);
@@ -62,432 +380,149 @@ void exec_command_status(ctrl_config_t* config) {
   pulser_dump_state(pulser_state, sizeof(pulser_state));
   printf("ED: %s\n", pulser_state);
 
-  printf("PULSE: dur_us=%u, duty=%u, curr_ma=%u\n", config->pulse_dur_us,
-         config->duty_pct, config->current_ma);
+  printf("PULSE: dur_us=%u, duty=%u, curr_ma=%u\n", app->pulse_dur_us,
+         app->duty_pct, app->current_ma);
+
+  printf("CTRL: pos=%.2f (step=%d) vel=%.2f\n",
+         app->control.motor_motion.curr_pos_mm,
+         app->control.motor_step.mot_curr_step,
+         app->control.motor_motion.curr_vel_mm_per_s);
 }
 
-void exec_command_step(uint8_t stpdrv_ix, int step, uint32_t wait) {
-  for (int i = 0; i < abs(step); i++) {
-    stpdrv_step(stpdrv_ix, step > 0);
-    sleep_us(wait);
-  }
+void exec_command_edparam(int pulse_dur_us, int duty_pct, int curr_ma,
+                          app_t* app) {
+  app->pulse_dur_us = pulse_dur_us;
+  app->duty_pct = duty_pct;
+  app->current_ma = curr_ma;
+
   print_time();
-  printf("step: DONE\n");
+  printf("New pulse: dur_us=%u, duty=%u%%, curr_ma=%u\n", app->pulse_dur_us,
+         app->duty_pct, app->current_ma);
 }
 
-void exec_command_regread(char board_id, uint8_t addr) {
+void exec_command_regread(char board_id, int addr) {
   if (board_id == 'E') {
-    uint8_t value = pulser_read_register(addr);
+    int value = pulser_read_register(addr);
     printf("board E: reg 0x%02x = 0x%02x (%d)\n", addr, value, value);
   } else {
-    uint32_t value = stpdrv_read_register(board_id - '0', addr);
+    int value = stpdrv_read_register(board_id - '0', addr);
     printf("board %c: reg 0x%02x = 0x%08x\n", board_id, addr, value);
   }
 }
 
-void exec_command_regwrite(char board_id, uint8_t addr, uint32_t data) {
+void exec_command_regwrite(char board_id, int addr, int data) {
   if (board_id == 'E') {
-    pulser_write_register(addr, (uint8_t)data);
-    printf("board E: reg 0x%02x set to 0x%02x\n", addr, (uint8_t)data);
+    pulser_write_register(addr, (int)data);
+    printf("board E: reg 0x%02x set to 0x%02x\n", addr, (int)data);
   } else {
     stpdrv_write_register(board_id - '0', addr, data);
     printf("board %c: reg 0x%02x set to 0x%08x\n", board_id, addr, data);
   }
 }
 
-void exec_command_find(uint8_t stpdrv_ix, float distance) {
-  int32_t steps = abs((int32_t)(STEPS_PER_MM * distance));
+void exec_command_move(int stpdrv_ix, float distance, app_t* app) {
+  if (!control_is_ready(&app->control)) {
+    printf("move: not ready\n");
+    return;
+  }
+
+  float targ_pos = app->control.motor_motion.curr_pos_mm + distance;
+  set_target_pos(&app->control.motor_motion, targ_pos);
+
+  while (true) {
+    if (abort_requested()) {
+      control_abort(&app->control);
+      print_time();
+      printf("move: ABORTED\n");
+      return;
+    }
+
+    if (app->control.motor_motion.curr_pos_mm == targ_pos &&
+        app->control.motor_motion.curr_vel_mm_per_s == 0) {
+      print_time();
+      printf("move: DONE\n");
+      return;
+    }
+  }
+}
+
+void exec_command_find(int stpdrv_ix, float distance, app_t* app) {
+  if (!control_is_ready(&app->control)) {
+    printf("find: not ready\n");
+    return;
+  }
+
   bool is_plus = distance > 0;
+  float pos_limit = app->control.motor_motion.curr_pos_mm + distance;
 
   pulser_set_current(100);
   pulser_set_energize(true);
   pulser_unsafe_set_gate(true);
-  int32_t ix = 0;
-  bool found = false;
-  absolute_time_t t_prev_step = get_absolute_time();
-  while (ix < steps) {
-    bool detect = pulser_unsafe_get_detect();
-    if (detect) {
-      found = true;
-      break;
-    }
+  control_start_find(&app->control, pos_limit);
 
-    absolute_time_t t1 = get_absolute_time();
-    if (absolute_time_diff_us(t_prev_step, t1) >= FIND_WAIT_US) {
-      stpdrv_step(stpdrv_ix, is_plus);
-      ix++;
-      t_prev_step = t1;
-    }
-  }
-  pulser_unsafe_set_gate(false); // immediate turn off to avoid work damage
-
-  print_time();
-  if (found) {
-    float x_mm = MM_PER_STEP * ix;
-    printf("find: found at %.3f\n", x_mm);
-  } else {
-    printf("find: not found\n");
-  }
-  pulser_set_energize(false);
-}
-
-typedef enum {
-  STPDRV_DRILL_OK = 0,
-  STPDRV_DRILL_PULL = 1,
-  STPDRV_DRILL_PUSH = 2,
-} stpdrv_drill_state_t;
-
-typedef struct {
-  int8_t board_ix;
-  bool is_plus;
-  int32_t steps;
-
-  stpdrv_drill_state_t state;
-  int32_t pos;
-  uint32_t wait_us;
-
-  uint32_t pullpush_wait_us;
-  int32_t pullpush_curr_steps;
-  int32_t pull_target_steps;
-  int32_t push_target_steps;
-
-  int32_t timer;
-} stpdrv_drill_t;
-
-typedef enum {
-  PULSER_DRILL_WAITING_IGNITION = 1,
-  PULSER_DRILL_DISCHARGING = 2,
-  PULSER_DRILL_COOLDOWN = 3,
-  PULSER_DRILL_SHORT_COOLDOWN = 4,
-} pulser_drill_state_t;
-
-typedef struct {
-  pulser_drill_state_t state;
-  int16_t successive_shorts;
-  int32_t timer;
-
-  uint16_t pulse_dur_us;
-  uint16_t cooldown_us;
-} pulser_drill_t;
-
-typedef struct {
-  int32_t n_tick_miss;
-  uint32_t n_short;
-  uint32_t n_pulse;
-  uint32_t n_retract;
-  int64_t last_dump_tick;
-
-  uint64_t accum_ig_delay;
-  uint64_t cnt_ig_delay;
-  uint16_t max_ig_delay;
-  uint16_t min_ig_delay;
-
-  uint32_t max_successive_short;
-} drill_stats_t;
-
-static const uint16_t PULSER_IG_US_TARGET = 200;
-
-void reset_ig_delay(drill_stats_t* stats) {
-  stats->accum_ig_delay = 0;
-  stats->cnt_ig_delay = 0;
-  stats->max_ig_delay = 0;
-  stats->min_ig_delay = UINT16_MAX;
-}
-
-void init_drill_stats(drill_stats_t* stats) {
-  stats->n_tick_miss = 0;
-  stats->n_short = 0;
-  stats->n_pulse = 0;
-  stats->n_retract = 0;
-  stats->last_dump_tick = 0;
-  stats->max_successive_short = 0;
-  reset_ig_delay(stats);
-}
-
-void record_ig_delay(drill_stats_t* stats, uint16_t ig_delay) {
-  stats->accum_ig_delay += ig_delay;
-  stats->cnt_ig_delay++;
-  if (ig_delay > stats->max_ig_delay) {
-    stats->max_ig_delay = ig_delay;
-  }
-  if (ig_delay < stats->min_ig_delay) {
-    stats->min_ig_delay = ig_delay;
-  }
-}
-
-/** Must be called when ed.state == STPDRV_DRILL_OK. */
-void stpdrv_to_pullpush(stpdrv_drill_t* md, int32_t pull_steps,
-                        int32_t push_steps, uint32_t wait_us) {
-  md->state = STPDRV_DRILL_PULL;
-  md->pullpush_curr_steps = 0;
-  md->pull_target_steps = pull_steps;
-  md->push_target_steps = push_steps;
-  md->pullpush_wait_us = wait_us;
-  md->timer = 0;
-}
-
-void init_stpdrv_drill(stpdrv_drill_t* md, uint8_t stpdrv_ix, float distance) {
-  // MD constants
-  const float STPDRV_INITIAL_FEED_RATE = 0.05; // mm/sec
-
-  const uint32_t stpdrv_initial_wait_us =
-      1e6 / (STPDRV_INITIAL_FEED_RATE * STEPS_PER_MM);
-
-  md->board_ix = stpdrv_ix;
-  md->is_plus = distance > 0;
-  md->steps = abs((int32_t)(STEPS_PER_MM * distance));
-
-  md->state = STPDRV_DRILL_OK;
-  md->wait_us = stpdrv_initial_wait_us;
-  md->pos = 0;
-  md->timer = 0;
-}
-
-void tick_stpdrv_drill(stpdrv_drill_t* md, drill_stats_t* stats) {
-  switch (md->state) {
-  case STPDRV_DRILL_OK:
-    if (md->timer >= md->wait_us) {
-      stpdrv_step(md->board_ix, md->is_plus);
-      md->timer = 0;
-      md->pos++;
-    }
-    break;
-  case STPDRV_DRILL_PULL:
-    if (md->pullpush_curr_steps >= md->pull_target_steps) {
-      md->state = STPDRV_DRILL_PUSH;
-      md->timer = 0;
-      md->pullpush_curr_steps = 0;
-    } else if (md->timer >= md->pullpush_wait_us) {
-      stpdrv_step(md->board_ix, !md->is_plus);
-      md->timer = 0;
-      md->pos--;
-      md->pullpush_curr_steps++;
-    }
-    break;
-  case STPDRV_DRILL_PUSH:
-    if (md->pullpush_curr_steps >= md->push_target_steps) {
-      md->state = STPDRV_DRILL_OK;
-      md->timer = 0;
-    } else if (md->timer >= md->pullpush_wait_us) {
-      stpdrv_step(md->board_ix, md->is_plus);
-      md->timer = 0;
-      md->pos++;
-      md->pullpush_curr_steps++;
-    }
-    break;
-  }
-  md->timer++;
-}
-
-void init_pulser_drill(pulser_drill_t* ed, uint16_t pulse_dur_us,
-                       uint8_t duty_pct) {
-  ed->state = PULSER_DRILL_WAITING_IGNITION;
-  ed->successive_shorts = 0;
-
-  ed->pulse_dur_us = pulse_dur_us;
-  ed->cooldown_us = (pulse_dur_us * 100) / ((uint16_t)duty_pct) - pulse_dur_us;
-}
-
-/**
- * Execute single tick of ED drill.
- *
- * @param [out] ig_time ignition time in us. -1 means no ignition. 10000 means
- * timeout.
- */
-void tick_pulser_drill(pulser_drill_t* ed, drill_stats_t* stats,
-                       uint16_t* ig_time) {
-  const uint16_t PULSER_SHORT_COOLDOWN_US = 1000;
-
-  const uint16_t PULSER_IG_US_SHORT_THRESH = 5;
-  const uint16_t PULSER_IG_US_MAX_WAIT = 500;
-
-  *ig_time = -1;
-  switch (ed->state) {
-  case PULSER_DRILL_WAITING_IGNITION:
-    pulser_unsafe_set_gate(true);
-
-    if (ed->timer >= PULSER_IG_US_MAX_WAIT) {
-      // too long; reset
-      ed->state = PULSER_DRILL_WAITING_IGNITION;
-      ed->timer = 0;
-      ed->successive_shorts = 0;
-      *ig_time = 10000; // timeout
-    } else if (pulser_unsafe_get_detect()) {
-      *ig_time = ed->timer;
-      if (ed->timer <= PULSER_IG_US_SHORT_THRESH) {
-        // short detected; immediately enter cooldown
-        ed->state = PULSER_DRILL_SHORT_COOLDOWN;
-        ed->timer = 0;
-        ed->successive_shorts++;
-        if (ed->successive_shorts > stats->max_successive_short) {
-          stats->max_successive_short = ed->successive_shorts;
-        }
-        stats->n_short++;
-      } else {
-        // normal discharge
-        ed->state = PULSER_DRILL_DISCHARGING;
-        ed->timer = 0;
-        ed->successive_shorts = 0;
-        stats->n_pulse++;
-        record_ig_delay(stats, *ig_time);
-      }
-    }
-    break;
-  case PULSER_DRILL_DISCHARGING:
-    pulser_unsafe_set_gate(true);
-    if (ed->timer >= ed->pulse_dur_us) {
-      ed->state = PULSER_DRILL_COOLDOWN;
-      ed->timer = 0;
-    }
-    break;
-  case PULSER_DRILL_COOLDOWN:
-    pulser_unsafe_set_gate(false);
-    if (ed->timer >= ed->cooldown_us) {
-      ed->state = PULSER_DRILL_WAITING_IGNITION;
-      ed->timer = 0;
-    }
-    break;
-  case PULSER_DRILL_SHORT_COOLDOWN:
-    pulser_unsafe_set_gate(false);
-    if (ed->timer >= PULSER_SHORT_COOLDOWN_US) {
-      ed->state = PULSER_DRILL_WAITING_IGNITION;
-      ed->timer = 0;
-    }
-    break;
-  }
-  ed->timer++;
-}
-
-void drill_print_stats(int64_t tick, stpdrv_drill_t* md, pulser_drill_t* ed,
-                       drill_stats_t* stats) {
-  print_time();
-  int32_t avg_ig = -1;
-  int32_t min_ig = -1;
-  int32_t max_ig = -1;
-  if (stats->cnt_ig_delay > 0) {
-    avg_ig = stats->accum_ig_delay / stats->cnt_ig_delay;
-    min_ig = stats->min_ig_delay;
-    max_ig = stats->max_ig_delay;
-  }
-  printf("drill: tick=%" PRId64 " step=%d wait=%d #pulse=%d #short=%d "
-         "#retract=%d / max_short=%d avg_ig=%d min_ig=%d max_ig=%d\n",
-         tick, md->pos, md->wait_us, stats->n_pulse, stats->n_short,
-         stats->n_retract, stats->max_successive_short, avg_ig, min_ig, max_ig);
-
-  reset_ig_delay(stats);
-  stats->max_successive_short = 0;
-
-  stats->last_dump_tick = tick;
-}
-
-void exec_command_drill(uint8_t stpdrv_ix, float distance,
-                        ctrl_config_t* config) {
-  const uint32_t STPDRV_RETRACT_DIST_STEPS = 10e-3 * STEPS_PER_MM; // 10um
-
-  stpdrv_drill_t md;
-  init_stpdrv_drill(&md, stpdrv_ix, distance);
-
-  uint32_t PUMP_STEPS = md.steps + (uint32_t)(0.5 * STEPS_PER_MM);
-
-  pulser_drill_t ed;
-  init_pulser_drill(&ed, config->pulse_dur_us, config->duty_pct);
-
-  const int32_t PUMP_PULSE_INTERVAL = 10000;
-  int32_t last_pump_pulse = 0;
-
-  absolute_time_t t0 = get_absolute_time();
-  int64_t tick = 0;
-
-  drill_stats_t stats;
-  init_drill_stats(&stats);
-
-  pulser_set_current(config->current_ma);
-  pulser_set_energize(true);
-  while (md.pos < md.steps) {
-    /* Exec */
-    uint16_t ig_time;
-    tick_pulser_drill(&ed, &stats, &ig_time); // < 200ns
-    tick_stpdrv_drill(&md, &stats);           // < 350ns
-
-    /* Compute */
-    if (ed.successive_shorts >= 1000) {
-      // CONTINUED short; abort
+  while (true) {
+    if (abort_requested()) {
+      control_abort(&app->control);
       pulser_unsafe_set_gate(false);
       pulser_set_energize(false);
       print_time();
-      printf("drill: ABORTED due to continued 10000 shorts\n");
+      printf("find: ABORTED\n");
       return;
     }
-
-    // TODO: this is very fragile and ad-hoc control code. improve.
-    // hopefully stpdrv_wait_time oscillates such that ig_time is kept around
-    // PULSER_IG_US_TARGET.
-    if (md.state == STPDRV_DRILL_OK && ig_time >= 0) {
-      if (ig_time < PULSER_IG_US_TARGET) {
-        md.wait_us = md.wait_us + FEED_DELTA_WAIT_US;
-        if (md.wait_us >= FEED_MAX_WAIT_US) {
-          md.wait_us = FEED_MAX_WAIT_US;
-        }
+    bool reason_is_limit;
+    if (control_check_status(&app->control, &reason_is_limit)) {
+      control_abort(&app->control);
+      pulser_unsafe_set_gate(false);
+      pulser_set_energize(false);
+      print_time();
+      if (reason_is_limit) {
+        printf("find: DONE (not found)\n");
       } else {
-        md.wait_us = md.wait_us - FEED_DELTA_WAIT_US;
-        if (md.wait_us < FEED_MIN_WAIT_US) {
-          md.wait_us = FEED_MIN_WAIT_US;
-        }
+        printf("find: DONE (found)\n");
       }
-    }
-
-    if (md.state == STPDRV_DRILL_OK) {
-      if (stats.n_pulse >= last_pump_pulse + PUMP_PULSE_INTERVAL) {
-        stpdrv_to_pullpush(&md, PUMP_STEPS, PUMP_STEPS, MOVE_WAIT_US);
-        last_pump_pulse = stats.n_pulse;
-      } else if (ed.successive_shorts >= 5) {
-        md.wait_us = FEED_MIN_WAIT_US * 50;
-        stpdrv_to_pullpush(&md, STPDRV_RETRACT_DIST_STEPS, 0, MOVE_WAIT_US);
-        stats.n_retract++;
-        ed.successive_shorts = 0;
-      } else if (ed.successive_shorts >= 1) {
-        md.wait_us = FEED_MIN_WAIT_US * 10;
-      }
-    }
-
-    /* Debug dump every 1.0 sec. */
-    // relatively safe to prolong cooldown period.
-    if (ed.state != PULSER_DRILL_DISCHARGING &&
-        tick > stats.last_dump_tick + 1000000) {
-      drill_print_stats(tick, &md, &ed, &stats);
-    }
-
-    // wait until 1us passes.
-    while (true) {
-      int64_t new_tick = absolute_time_diff_us(t0, get_absolute_time());
-      if (new_tick > tick) {
-        if (new_tick > tick + 1) {
-          stats.n_tick_miss++; // when processing takes more than 1us.
-        }
-        tick = new_tick;
-        break;
-      }
+      return;
     }
   }
-
-  pulser_unsafe_set_gate(false); // turn off
-  pulser_set_energize(false);
-  print_time();
-  printf("drill: done\n");
-  drill_print_stats(tick, &md, &ed, &stats);
-  printf("drill: #tmiss=%d\n", stats.n_tick_miss);
 }
 
-void exec_command_edparam(uint32_t pulse_dur_us, uint8_t duty_pct,
-                          uint16_t curr_ma, ctrl_config_t* config) {
-  config->pulse_dur_us = pulse_dur_us;
-  config->duty_pct = duty_pct;
-  config->current_ma = curr_ma;
+void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
+  if (!control_is_ready(&app->control)) {
+    printf("feed: not ready\n");
+    return;
+  }
 
-  print_time();
-  printf("New pulse config: dur_us=%u, duty=%u%%, curr_ma=%u\n",
-         config->pulse_dur_us, config->duty_pct, config->current_ma);
+  pulser_set_pulse_dur(app->pulse_dur_us);
+  pulser_set_max_duty(app->duty_pct);
+  pulser_set_current(app->current_ma);
+  pulser_set_energize(true);
+  pulser_unsafe_set_gate(true);
+
+  control_start_feed(&app->control,
+                     app->control.motor_motion.curr_pos_mm + dist_mm);
+
+  while (true) {
+    if (abort_requested()) {
+      control_abort(&app->control);
+      pulser_unsafe_set_gate(false);
+      pulser_set_energize(false);
+      print_time();
+      printf("feed: ABORTED\n");
+      return;
+    }
+    bool reason_is_limit;
+    if (control_check_status(&app->control, &reason_is_limit)) {
+      control_abort(&app->control);
+      pulser_unsafe_set_gate(false);
+      pulser_set_energize(false);
+      print_time();
+      printf("feed: DONE\n");
+      return;
+    }
+  }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Command parser
 
 // Try to get line.
 // Does not include newline character in the buffer.
@@ -510,6 +545,14 @@ bool stdio_getline(char* buf, size_t buf_size) {
   }
 }
 
+bool abort_requested() {
+  int res = stdio_getchar_timeout_us(1);
+  if (res == PICO_ERROR_TIMEOUT) {
+    return false;
+  }
+  return (res == 3 || res == 11);
+}
+
 typedef struct {
   bool success;
   int ix;
@@ -523,7 +566,7 @@ char* parser_init(parser_t* parser, char* str) {
 }
 
 // min & max values are inclusive.
-int32_t parse_int(parser_t* parser, int32_t min, int32_t max) {
+int parse_int(parser_t* parser, int min, int max) {
   if (!parser->success) {
     return 0;
   }
@@ -554,7 +597,7 @@ int32_t parse_int(parser_t* parser, int32_t min, int32_t max) {
 }
 
 /** Parse hex int value. Max is inclusive. */
-uint32_t parse_hex(parser_t* parser, uint32_t max) {
+int parse_hex(parser_t* parser, int max) {
   if (!parser->success) {
     return 0;
   }
@@ -665,136 +708,59 @@ char parse_board_id(parser_t* parser) {
  * Tries to execute a single command. Errors will be printed to stdout.
  * @param buf command string, without newlines. will be modified during parsing.
  */
-void try_exec_command(char* buf, ctrl_config_t* config) {
+void try_exec_command(char* buf, app_t* app) {
   parser_t parser;
   char* command = parser_init(&parser, buf);
 
   if (strcmp(command, "status") == 0) {
-    exec_command_status(config);
+    exec_command_status(app);
+  } else if (strcmp(command, "edparam") == 0) {
+    int pulse_dur_us = parse_int(&parser, 5, 10000);
+    int duty_pct = parse_int(&parser, 1, 50);
+    int curr_ma = parse_int(&parser, 100, 8000);
+    if (!parser.success) {
+      return;
+    }
+    exec_command_edparam(pulse_dur_us, duty_pct, curr_ma, app);
   } else if (strcmp(command, "move") == 0) {
-    uint8_t stpdrv_ix = parse_int(&parser, 0, STPDRV_NUM_BOARDS - 1);
+    int stpdrv_ix = parse_int(&parser, 0, STPDRV_NUM_BOARDS - 1);
     float distance = parse_float(&parser);
     if (!parser.success) {
       return;
     }
-    exec_command_step(stpdrv_ix, distance * STEPS_PER_MM, MOVE_WAIT_US);
-  } else if (strcmp(command, "edparam") == 0) {
-    uint16_t pulse_dur_us = parse_int(&parser, 5, 10000);
-    uint8_t duty_pct = parse_int(&parser, 1, 50);
-    uint16_t curr_ma = parse_int(&parser, 100, 8000);
+    exec_command_move(stpdrv_ix, distance, app);
+  } else if (strcmp(command, "find") == 0) {
+    int stpdrv_ix = parse_int(&parser, 0, STPDRV_NUM_BOARDS - 1);
+    float distance = parse_float(&parser);
     if (!parser.success) {
       return;
     }
-    exec_command_edparam(pulse_dur_us, duty_pct, curr_ma, config);
+    exec_command_find(stpdrv_ix, distance, app);
+  } else if (strcmp(command, "feed") == 0) {
+    int stpdrv_ix = parse_int(&parser, 0, STPDRV_NUM_BOARDS - 1);
+    float distance = parse_float(&parser);
+    if (!parser.success) {
+      return;
+    }
+    exec_command_feed(stpdrv_ix, distance, app);
   } else if (strcmp(command, "regread") == 0) {
     char board_id = parse_board_id(&parser);
-    uint8_t addr = parse_hex(&parser, 0x7f);
+    int addr = parse_hex(&parser, 0x7f);
     if (!parser.success) {
       return;
     }
     exec_command_regread(board_id, addr);
   } else if (strcmp(command, "regwrite") == 0) {
     char board_id = parse_board_id(&parser);
-    uint8_t addr = parse_hex(&parser, 0x7f);
-    uint32_t data = parse_hex(&parser, 0xffffffff);
+    int addr = parse_hex(&parser, 0x7f);
+    int data = parse_hex(&parser, 0xffffffff);
     if (!parser.success) {
       return;
     }
     exec_command_regwrite(board_id, addr, data);
-  } else if (strcmp(command, "find") == 0) {
-    uint8_t stpdrv_ix = parse_int(&parser, 0, STPDRV_NUM_BOARDS - 1);
-    float distance = parse_float(&parser);
-    if (!parser.success) {
-      return;
-    }
-    exec_command_find(stpdrv_ix, distance);
-  } else if (strcmp(command, "drill") == 0) {
-    uint8_t stpdrv_ix = parse_int(&parser, 0, STPDRV_NUM_BOARDS - 1);
-    float distance = parse_float(&parser);
-    if (!parser.success) {
-      return;
-    }
-    exec_command_drill(stpdrv_ix, distance, config);
   } else {
     printf("unknown command\n");
   }
-}
-
-typedef struct {
-  // top-level control
-  int32_t mot_targ_pos_um;
-  uint8_t stpdrv_ix;
-
-  // for motor control loop internal
-  int32_t mot_curr_pos_um;
-  int8_t remaining_steps;
-  uint16_t us_between_steps;
-} control_t;
-
-// Distribute steps evenly in loop interval.
-int64_t control_loop_step_motor(alarm_id_t aid, void* data) {
-  control_t* control = data;
-  if (control->remaining_steps > 0) {
-    stpdrv_step(control->stpdrv_ix, true);
-    control->remaining_steps--;
-  } else {
-    stpdrv_step(control->stpdrv_ix, false);
-    control->remaining_steps++;
-  }
-
-  if (control->remaining_steps == 0) {
-    return 0; // stepping in this loop is done. cancel alarm.
-  } else {
-    return -control->us_between_steps; // keep periodic stepping
-  }
-}
-
-void control_loop_motor(control_t* control) {
-  if (control->remaining_steps != 0) {
-    // uC is probably overloaded.
-    // TODO: display some kind of error
-    return; // keep executing previous alarm
-  }
-
-  int32_t delta = control->mot_targ_pos_um - control->mot_curr_pos_um;
-  if (delta == 0) {
-    return;
-  }
-
-  if (delta > MAX_STEP_IN_LOOP) {
-    delta = MAX_STEP_IN_LOOP;
-  } else if (delta < -MAX_STEP_IN_LOOP) {
-    delta = -MAX_STEP_IN_LOOP;
-  }
-  control->remaining_steps = delta;
-  control->us_between_steps = CONTROL_LOOP_INTERVAL_US / abs(delta);
-  add_alarm_in_us(0, &control_loop_step_motor, control, true);
-}
-
-void control_loop_pulse(control_t* control) {
-  // emit as much pulse as possible.
-}
-
-// Main control loop at CONTROL_LOOP_HZ.
-bool control_loop(repeating_timer_t* rt) {
-  control_t* control = (control_t*)rt->user_data;
-
-  // mode-specific control code.
-  if (false) {
-    // drilling
-
-    // slow loop. maximize avg. pulse duration by optimizing targ_ig.
-
-    // fast loop. movement control to match pulse
-    // fast loop. detect short and generate retract
-
-    // trapezoidal position control
-  }
-
-  control_loop_motor(control);
-  control_loop_pulse(control);
-
-  return true;
 }
 
 int main() {
@@ -811,22 +777,19 @@ int main() {
   pico_led_set(true); // I/O init complete
   print_time();
 
-  // init system config
-  ctrl_config_t config;
-  config.pulse_dur_us = 500;
-  config.duty_pct = 50;
-  config.current_ma = 1000;
+  // init system app
+  app_t app;
+  app.pulse_dur_us = 500;
+  app.duty_pct = 50;
+  app.current_ma = 1000;
 
   // start control loop
-  control_t control;
   repeating_timer_t rt;
-  alarm_pool_add_repeating_timer_us(alarm_pool_get_default(),
-                                    CONTROL_LOOP_INTERVAL_US, &control_loop,
-                                    &control, &rt);
+  control_loop_init(&app.control, &rt);
 
   // report init done
   printf("init OK\n");
-  exec_command_status(&config);
+  exec_command_status(&app);
 
   // main command loop
   char buf[32];
@@ -841,6 +804,6 @@ int main() {
     }
     printf("processing command\n");
     pico_led_flash();
-    try_exec_command(buf, &config);
+    try_exec_command(buf, &app);
   }
 }

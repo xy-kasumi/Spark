@@ -2,8 +2,8 @@
 #pragma once
 
 #include <stdbool.h>
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /** Initializes discharge component. All other functions must be called after
  * this. */
@@ -23,7 +23,7 @@ void pulser_dump_state(char* ptr, size_t size);
  * Returns tmperature (degree Celsius) of the board.
  * Returns 255 if temperature reading was not possible.
  */
-uint8_t pulser_temp();
+int pulser_temp();
 
 /**
  * Set polarity to ON or OFF.
@@ -35,11 +35,18 @@ void pulser_set_energize(bool on);
  * Set specified pulse current.
  * Wait until current change is complete.
  */
-void pulser_set_current(uint16_t current_ma);
+void pulser_set_current(int current_ma);
+
+/** Set duty factor. Allowed value is 1~95. */
+void pulser_set_max_duty(int duty_pct);
+
+/** Set specified pulse duration. 50us~1000us is allowed.*/
+void pulser_set_pulse_dur(int pulse_dur_us);
 
 void pulser_unsafe_set_gate(bool on);
 
-bool pulser_unsafe_get_detect();
+void pulser_checkpoint_read(int* n_pulse, int* avg_igt_us, int* sd_igt_us,
+                            int* r_pulse, int* r_short, int* r_open);
 
 /**
  * Read single byte from the specified register.
@@ -51,4 +58,3 @@ uint8_t pulser_read_register(uint8_t reg_addr);
  * Write single byte to the specified register.
  */
 void pulser_write_register(uint8_t reg_addr, uint8_t data);
-

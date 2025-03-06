@@ -79,7 +79,7 @@ Recommended configuration:
 Interface behavior:
 - Commands are single-line only (no multi-line support)
 - Input control:
-  - `Ctrl-C` or `Ctrl-K`: Cancel current command
+  - `Ctrl-C` or `Ctrl-K`: Cancel current command input, or abort current command (if it's running)
   - Other control keys are not supported (backspace, arrows, delete)
 
 ### High-Level Commands
@@ -88,7 +88,7 @@ Interface behavior:
 * **Description:** Prints the status of the system.
 
 #### `edparam <duration_us> <duty> <current_ma>`
-* **Description:** Configures pulse duration, duty factor, current. Will affect `drill` command.
+* **Description:** Configures pulse duration, duty factor, current. Will affect `feed` command.
 * **Parameters:**
   * `duration_us`: integer, pulse duration in microseconds (range: 5 to 10000)
   * `duty`: integer, max duty ratio in percent (range: 1 to 50)
@@ -107,8 +107,8 @@ Interface behavior:
   * `board_ix`: 0, 1, or 2
   * `distance`: float (in mm)
 
-#### `drill <board_ix> <distance>`
-* **Description:** Drills by a specified distance. Actual drill depth may be less due to tool wear.
+#### `feed <board_ix> <distance>`
+* **Description:** Feed by a specified distance. Actual cut depth may be less due to tool wear.
 * **Parameters:**
   * `board_ix`: 0, 1, or 2
   * `distance`: float (in mm)
