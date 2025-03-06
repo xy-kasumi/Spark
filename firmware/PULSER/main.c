@@ -324,7 +324,7 @@ uint8_t read_reg(uint8_t reg) {
       if (igt_var < 0) {
         igt_var = 0;
       }
-      uint16_t igt_sd = sqrt(igt_var);
+      uint16_t igt_sd = sqrtf(igt_var);
       visible_igt_5us = igt_avg / 5;
       visible_igt_sd_5us = igt_sd / 5;
     }
@@ -472,8 +472,10 @@ void core1_main() {
       csec_stat_dur++;
       csec_stat_dur_open++;
       critical_section_exit(&csec_stat);
-      if (igt_us < IG_THRESH_OPEN_US) {
-        igt_us++;
+
+      igt_us++;
+      if (igt_us > IG_THRESH_OPEN_US) {
+        igt_us = IG_THRESH_OPEN_US;
       }
     }
 
