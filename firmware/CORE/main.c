@@ -273,13 +273,16 @@ bool tick_control_loop(repeating_timer_t* rt) {
   }
   tick_motor_motion(&control->motor_motion);
   if (control->op != OP_NONE) {
-    if (control->motor_motion.curr_pos_mm < control->pos_limit_min) {
+    // Stop immediately if we hit the limit.
+    if (control->motor_motion.curr_pos_mm <= control->pos_limit_min) {
       control->motor_motion.curr_pos_mm = control->pos_limit_min;
       control->motor_motion.curr_vel_mm_per_s = 0;
+      set_target_vel(&control->motor_motion, 0);
       control->op = OP_NONE;
-    } else if (control->motor_motion.curr_pos_mm > control->pos_limit_max) {
+    } else if (control->motor_motion.curr_pos_mm >= control->pos_limit_max) {
       control->motor_motion.curr_pos_mm = control->pos_limit_max;
       control->motor_motion.curr_vel_mm_per_s = 0;
+      set_target_vel(&control->motor_motion, 0);
       control->op = OP_NONE;
     }
   }
@@ -316,12 +319,12 @@ void control_start_find(control_t* control, float lim_pos_mm) {
     control->pos_limit_min =
         control->motor_motion.curr_pos_mm - 1; // whatever offset
     control->pos_limit_max = lim_pos_mm;
-    set_target_vel(&control->motor_motion, MAX_SPEED_MM_PER_S);
+    set_target_vel(&control->motor_motion, FIND_SPEED_MM_PER_S);
   } else {
     control->pos_limit_min = lim_pos_mm;
     control->pos_limit_max =
         control->motor_motion.curr_pos_mm + 1; // whatever offset
-    set_target_vel(&control->motor_motion, -MAX_SPEED_MM_PER_S);
+    set_target_vel(&control->motor_motion, -FIND_SPEED_MM_PER_S);
   }
 }
 
@@ -342,7 +345,7 @@ bool control_check_status(control_t* control, bool* reason_is_limit) {
   }
 
   *reason_is_limit =
-      (control->motor_motion.curr_pos_mm <= control->pos_limit_min &&
+      (control->motor_motion.curr_pos_mm <= control->pos_limit_min ||
        control->motor_motion.curr_pos_mm >= control->pos_limit_max);
   return true;
 }
