@@ -486,6 +486,10 @@ void exec_command_find(int stpdrv_ix, float distance, app_t* app) {
 }
 
 void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
+  if (dist_mm <= 1e-3) {
+    printf("feed: too small feed distance\n");
+    return;
+  }
   if (!control_is_ready(&app->control)) {
     printf("feed: not ready\n");
     return;
@@ -497,9 +501,11 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
   pulser_set_energize(true);
   pulser_unsafe_set_gate(true);
 
-  control_start_feed(&app->control,
-                     app->control.motor_motion.curr_pos_mm + dist_mm);
+  float orig_pos = app->control.motor_motion.curr_pos_mm;
+  control_start_feed(&app->control, orig_pos + dist_mm);
 
+  absolute_time_t start_time = get_absolute_time();
+  absolute_time_t last_report = start_time;
   while (true) {
     if (abort_requested()) {
       control_abort(&app->control);
@@ -512,6 +518,22 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
       print_time();
       printf("feed: DONE");
       break;
+    }
+
+    absolute_time_t now = get_absolute_time();
+    if (absolute_time_diff_us(last_report, get_absolute_time()) > 1000000) {
+      print_time();
+      float time_past_s = absolute_time_diff_us(start_time, now) * 1e-6;
+      float dp_mm = fabsf(app->control.motor_motion.curr_pos_mm - orig_pos);
+      float eff_speed_mm_per_s = time_past_s < 1 ? 0 : dp_mm / time_past_s;
+      float progress = dp_mm / dist_mm;
+      float progress_speed = time_past_s < 1 ? 0 : progress / time_past_s;
+      float eta_s = progress_speed < 1e-6 ? 1e6 : (1 - progress) / progress;
+      printf("feed: %.1f%% ETA=%fs speed=%.3fmm/s (dx=%.2f, x=%.2f)\n",
+             progress * 100, eta_s, eff_speed_mm_per_s, dp_mm,
+             app->control.motor_motion.curr_pos_mm);
+
+      last_report = get_absolute_time();
     }
   }
 
