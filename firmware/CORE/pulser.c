@@ -192,24 +192,23 @@ bool pulser_unsafe_get_detect() {
   return false; // gpio_get(PIN_PULSER_DETECT);
 }
 
-void pulser_checkpoint_read(int* n_pulse, int* avg_igt_us, int* sd_igt_us,
-                            int* r_pulse, int* r_short, int* r_open) {
+void pulser_checkpoint_read(pulser_stat_t* stat) {
   uint8_t buffer[6];
-  if (read_regs(REG_CKP_N_PULSE, buffer, sizeof(buffer))) {
-    *n_pulse = 0;
-    *avg_igt_us = 0;
-    *sd_igt_us = 0;
-    *r_pulse = 0;
-    *r_short = 0;
-    *r_open = 255;
+  if (!read_regs(REG_CKP_N_PULSE, buffer, sizeof(buffer))) {
+    stat->n_pulse = 0;
+    stat->avg_igt_us = 0;
+    stat->sd_igt_us = 0;
+    stat->r_pulse = 0;
+    stat->r_short = 0;
+    stat->r_open = 1.0;
     return;
   }
-  *n_pulse = buffer[0];
-  *avg_igt_us = buffer[1] * 5;
-  *sd_igt_us = buffer[2] * 5;
-  *r_pulse = buffer[3];
-  *r_short = buffer[4];
-  *r_open = buffer[5];
+  stat->n_pulse = buffer[0];
+  stat->avg_igt_us = buffer[1] * 5;
+  stat->sd_igt_us = buffer[2] * 5;
+  stat->r_pulse = buffer[3] * (1.0 / 255);
+  stat->r_short = buffer[4] * (1.0 / 255);
+  stat->r_open = buffer[5] * (1.0 / 255);
 }
 
 uint8_t pulser_read_register(uint8_t reg_addr) {

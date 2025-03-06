@@ -5,6 +5,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef struct {
+    int n_pulse;
+    float avg_igt_us;
+    float sd_igt_us;
+    float r_pulse;
+    float r_short;
+    float r_open;
+} pulser_stat_t;
+
 /** Initializes discharge component. All other functions must be called after
  * this. */
 void pulser_init();
@@ -45,8 +54,7 @@ void pulser_set_pulse_dur(int pulse_dur_us);
 
 void pulser_unsafe_set_gate(bool on);
 
-void pulser_checkpoint_read(int* n_pulse, int* avg_igt_us, int* sd_igt_us,
-                            int* r_pulse, int* r_short, int* r_open);
+void pulser_checkpoint_read(pulser_stat_t* stat);
 
 /**
  * Read single byte from the specified register.

@@ -207,7 +207,7 @@ void tick_motor_step(ctrl_motor_step_t* step, float curr_pos_mm) {
   }
 }
 
-void tick_feed_control(control_t* control) {
+void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
   // TODO: slow loop to control targ_ig. (1 Hz??) maximize avg. pulse duration
   // by optimizing targ_ig.
 
@@ -220,17 +220,9 @@ void tick_feed_control(control_t* control) {
   // [mm/s^2].
   const float GAIN = MAX_ACC_MM_PER_S2 / 250;
 
-  int n_pulse;
-  int avg_igt_us;
-  int sd_igt_us;
-  int r_pulse;
-  int r_short;
-  int r_open;
-  pulser_checkpoint_read(&n_pulse, &avg_igt_us, &sd_igt_us, &r_pulse, &r_short,
-                         &r_open);
-  if (n_pulse > 0) {
-    control->avg_igt_us = avg_igt_us;
-    control->sd_igt_us = sd_igt_us;
+  if (stat->n_pulse > 0) {
+    control->avg_igt_us = stat->avg_igt_us;
+    control->sd_igt_us = stat->sd_igt_us;
   }
 
   float allowed_deviation = DEADBAND_PARAM * control->sd_igt_us;
@@ -245,17 +237,9 @@ void tick_feed_control(control_t* control) {
   }
 }
 
-void tick_find_control(control_t* control) {
-  int n_pulse;
-  int avg_igt_us;
-  int sd_igt_us;
-  int r_pulse;
-  int r_short;
-  int r_open;
-  pulser_checkpoint_read(&n_pulse, &avg_igt_us, &sd_igt_us, &r_pulse, &r_short,
-                         &r_open);
-  if (n_pulse > 0 || r_short > 0) {
-    // found
+void tick_find_control(control_t* control, const pulser_stat_t* stat) {
+  // consider any kind of current flow as "found".
+  if (stat->n_pulse > 0 || stat->r_pulse > 0 || stat->r_short > 0) {
     set_target_vel(&control->motor_motion, 0);
     control->op = OP_NONE;
   }
@@ -266,10 +250,13 @@ bool tick_control_loop(repeating_timer_t* rt) {
   absolute_time_t begin_time = get_absolute_time();
   control_t* control = (control_t*)rt->user_data;
 
+  pulser_stat_t stat;
+  pulser_checkpoint_read(&stat);
+
   if (control->op == OP_FEED) {
-    tick_feed_control(control);
+    tick_feed_control(control, &stat);
   } else if (control->op == OP_FIND) {
-    tick_find_control(control);
+    tick_find_control(control, &stat);
   }
   tick_motor_motion(&control->motor_motion);
   if (control->op != OP_NONE) {
@@ -415,7 +402,7 @@ void exec_command_status(app_t* app) {
   printf("pulse: dur=%uus duty=%u%% curr=%umA\n", app->pulse_dur_us,
          app->duty_pct, app->current_ma);
 
-  printf("control: pos=%.2f (step=%d) vel=%.2f (tick=%llu, max_load=%dus)\n",
+  printf("control: pos=%.3f (step=%d) vel=%.2f (tick=%llu, max_load=%dus)\n",
          app->control.motor_motion.curr_pos_mm,
          app->control.motor_step.mot_curr_step,
          app->control.motor_motion.curr_vel_mm_per_s, app->control.tick,
@@ -477,7 +464,7 @@ void exec_command_move(int stpdrv_ix, float distance, app_t* app) {
       break;
     }
   }
-  printf(" (x=%.2f)\n", app->control.motor_motion.curr_pos_mm);
+  printf(" (x=%.3f)\n", app->control.motor_motion.curr_pos_mm);
 }
 
 void exec_command_find(int stpdrv_ix, float distance, app_t* app) {
@@ -489,7 +476,10 @@ void exec_command_find(int stpdrv_ix, float distance, app_t* app) {
   bool is_plus = distance > 0;
   float pos_limit = app->control.motor_motion.curr_pos_mm + distance;
 
+  // Make pulse small to minimize damage.
   pulser_set_current(100);
+  pulser_set_pulse_dur(100);
+  pulser_set_max_duty(25);
   pulser_set_energize(true);
   pulser_unsafe_set_gate(true);
   control_start_find(&app->control, pos_limit);
@@ -512,7 +502,7 @@ void exec_command_find(int stpdrv_ix, float distance, app_t* app) {
       break;
     }
   }
-  printf(" (x=%.2f)\n", app->control.motor_motion.curr_pos_mm);
+  printf(" (x=%.3f)\n", app->control.motor_motion.curr_pos_mm);
   pulser_unsafe_set_gate(false);
   pulser_set_energize(false);
 }
@@ -561,7 +551,7 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
       float progress = dp_mm / dist_mm;
       float progress_speed = time_past_s < 1 ? 0 : progress / time_past_s;
       float eta_s = progress_speed < 1e-6 ? 1e6 : (1 - progress) / progress;
-      printf("feed: %.1f%% ETA=%fs speed=%.3fmm/s (dx=%.2f, x=%.2f)\n",
+      printf("feed: %.1f%% ETA=%fs speed=%.3fmm/s (dx=%.3f, x=%.3f)\n",
              progress * 100, eta_s, eff_speed_mm_per_s, dp_mm,
              app->control.motor_motion.curr_pos_mm);
 

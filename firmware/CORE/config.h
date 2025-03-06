@@ -40,7 +40,7 @@
 // I2C Device Address
 static const uint8_t PULSER_I2C_ADDR = 0x3b;
 // I2C target baud (Hz)
-static const int PULSER_I2C_BAUD = 100000;
+static const int PULSER_I2C_BAUD = 400000;
 // Max time for I2C transaction
 static const int PULSER_I2C_MAX_TX_US = 1000;
 
