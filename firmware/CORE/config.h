@@ -19,12 +19,7 @@
 // 200 step/rot (1.8 deg/step) / (16 teeth * 2mm pitch)
 #define STEPS_PER_MM ((float)(MICROSTEP * 6.25))
 
-// 24mm/min
-#define FEED_MAX_SPEED_MM_PER_S 0.4
-
-// 0.24mm/min
-#define FEED_MIN_SPEED_MM_PER_S 0.004
-#define MOVE_SPEED_MM_PER_S 25
+#define FEED_MAX_SPEED_MM_PER_S 0.5
 #define FIND_SPEED_MM_PER_S 5
 
 // mainly constarained by mass & friction (vs. motor driving capability)
@@ -58,17 +53,11 @@ static const int PULSER_I2C_MAX_TX_US = 1000;
 #define CTRL_DT_US (1000000.0f / CONTROL_LOOP_HZ)
 #define CTRL_DT_S (1.0f / CONTROL_LOOP_HZ)
 // must be small enough to avoid crippling uC by interrupts
+// must be big enough compared to MAX_SPEED_MM_PER_S. Otherwise motion generator
+// will malfunction.
 #define MAX_STEP_IN_LOOP 25
 #define MM_PER_STEP ((float)(1.0 / STEPS_PER_MM))
 
-// MAX SPEED = MIN WAIT, MIN SPEED = MAX WAIT
-static const int FEED_MIN_WAIT_US =
-    1000000 / (FEED_MAX_SPEED_MM_PER_S * STEPS_PER_MM);
-static const int FEED_MAX_WAIT_US =
-    1000000 / (FEED_MIN_SPEED_MM_PER_S * STEPS_PER_MM);
-static const int FEED_DELTA_WAIT_US = FEED_MIN_WAIT_US;
-static const int MOVE_WAIT_US = 1000000 / (MOVE_SPEED_MM_PER_S * STEPS_PER_MM);
-static const int FIND_WAIT_US = 1000000 / (FIND_SPEED_MM_PER_S * STEPS_PER_MM);
 
 /**
  * GPIO pin definitions & internal parts-specific parameters.

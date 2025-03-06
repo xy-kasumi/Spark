@@ -218,7 +218,7 @@ void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
 
   // Converts: Tig error [us] -> change in velocity [mm/s], per unit time
   // [mm/s^2].
-  const float GAIN = MAX_ACC_MM_PER_S2 / 250;
+  const float GAIN = MAX_ACC_MM_PER_S2 / 500.0;
 
   if (stat->n_pulse > 0) {
     control->avg_igt_us = stat->avg_igt_us;
@@ -233,6 +233,11 @@ void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
     // Accelerate if Tig is bigger than target, decelerate if Tig is smaller.
     float targ_vel_mm_per_s = control->motor_motion.curr_vel_mm_per_s +
                               error * GAIN * (CTRL_DT_US * 1e-6);
+    if (targ_vel_mm_per_s < -FEED_MAX_SPEED_MM_PER_S) {
+      targ_vel_mm_per_s = -FEED_MAX_SPEED_MM_PER_S;
+    } else if (targ_vel_mm_per_s > FEED_MAX_SPEED_MM_PER_S) {
+      targ_vel_mm_per_s = FEED_MAX_SPEED_MM_PER_S;
+    }
     set_target_vel(&control->motor_motion, targ_vel_mm_per_s);
   }
 }
@@ -296,8 +301,8 @@ void control_start_feed(control_t* control, float targ_pos_mm) {
         control->motor_motion.curr_pos_mm + 1; // whatever offset
   }
   control->targ_igt_us = 200;
-  control->avg_igt_us = 500; // assume big number
-  control->sd_igt_us = 500;  // assume big number
+  control->avg_igt_us = 1000; // assume big number
+  control->sd_igt_us = 100;  // this should be medium. too big number make deadband too large
 }
 
 void control_start_find(control_t* control, float lim_pos_mm) {
