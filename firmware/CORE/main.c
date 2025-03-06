@@ -75,6 +75,7 @@ typedef enum {
 typedef struct {
   uint64_t tick;
   int stpdrv_ix;
+  int max_load_us; // us past in single loop processing
 
   ctrl_op_t op;
   int targ_igt_us; // op == OP_FEED
@@ -262,6 +263,7 @@ void tick_find_control(control_t* control) {
 
 // Main control loop at CONTROL_LOOP_HZ.
 bool tick_control_loop(repeating_timer_t* rt) {
+  absolute_time_t begin_time = get_absolute_time();
   control_t* control = (control_t*)rt->user_data;
 
   if (control->op == OP_FEED) {
@@ -284,6 +286,11 @@ bool tick_control_loop(repeating_timer_t* rt) {
   tick_motor_step(&control->motor_step, control->motor_motion.curr_pos_mm);
 
   control->tick++;
+  absolute_time_t end_time = get_absolute_time();
+  uint64_t load_us = absolute_time_diff_us(begin_time, end_time);
+  if (load_us > control->max_load_us) {
+    control->max_load_us = load_us;
+  }
   return true;
 }
 
@@ -341,8 +348,26 @@ bool control_check_status(control_t* control, bool* reason_is_limit) {
 }
 
 void control_loop_init(control_t* control, repeating_timer_t* rt) {
+  control->tick = 0;
+  control->stpdrv_ix = 0;
+  control->max_load_us = 0;
+  control->op = OP_NONE;
+  control->targ_igt_us = -1;
+  control->avg_igt_us = -1;
+  control->sd_igt_us = -1;
   control->pos_limit_min = -200;
   control->pos_limit_max = 200;
+
+  control->motor_motion.curr_vel_mm_per_s = 0;
+  control->motor_motion.curr_pos_mm = 0;
+  control->motor_motion.mode = CTRL_POS;
+  control->motor_motion.targ_value = 0;
+
+  control->motor_step.stpdrv_ix = 0;
+  control->motor_step.mot_curr_step = 0;
+  control->motor_step.remaining_steps = 0;
+  control->motor_step.us_between_steps = 0;
+
   alarm_pool_add_repeating_timer_us(alarm_pool_get_default(), CTRL_DT_US,
                                     &tick_control_loop, control, rt);
 }
@@ -360,10 +385,11 @@ typedef struct {
 } app_t;
 
 void exec_command_status(app_t* app) {
+  printf("# HARDWARE\n");
   for (int i = 0; i < STPDRV_NUM_BOARDS; i++) {
     stpdrv_board_status_t status = stpdrv_get_status(i);
 
-    printf("MD %d: ", i);
+    printf("STPDRV%d: ", i);
     switch (status) {
     case STPDRV_OK:
       printf("OK");
@@ -380,15 +406,18 @@ void exec_command_status(app_t* app) {
 
   char pulser_state[64];
   pulser_dump_state(pulser_state, sizeof(pulser_state));
-  printf("ED: %s\n", pulser_state);
+  printf("PULSER: %s\n", pulser_state);
 
-  printf("PULSE: dur_us=%u, duty=%u, curr_ma=%u\n", app->pulse_dur_us,
+  printf("# CONTROL\n");
+  printf("pulse: dur=%uus duty=%u%% curr=%umA\n", app->pulse_dur_us,
          app->duty_pct, app->current_ma);
 
-  printf("CTRL: pos=%.2f (step=%d) vel=%.2f\n",
+  printf("control: pos=%.2f (step=%d) vel=%.2f (tick=%llu, max_load=%dus)\n",
          app->control.motor_motion.curr_pos_mm,
          app->control.motor_step.mot_curr_step,
-         app->control.motor_motion.curr_vel_mm_per_s);
+         app->control.motor_motion.curr_vel_mm_per_s,
+         app->control.tick,
+         app->control.max_load_us);
 }
 
 void exec_command_edparam(int pulse_dur_us, int duty_pct, int curr_ma,
