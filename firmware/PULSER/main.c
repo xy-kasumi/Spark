@@ -60,6 +60,8 @@ static uint32_t csec_stat_dur_open = 0;
 // Core1: Gate & current threshold PWM driving and computation.
 
 static const uint8_t PCURR_ON_RESET = 10; // 1A
+static const uint16_t PDUR_ON_RESET = 500; // 500us
+static const uint8_t MAX_DUTY_ON_RESET = 25; // 25%
 
 static const uint8_t PWM_GATE_NUM_CYCLE = 89;
 static const uint8_t PWM_THRESH_NUM_CYCLE = 150;
@@ -547,6 +549,8 @@ int main() {
   uint8_t th_cyc_on_reset = compute_th_on_cyc(PCURR_ON_RESET);
   csec_pulse_pol = POL_OFF;
   csec_pulse_pcurr = PCURR_ON_RESET;
+  csec_pulse_pdur = PDUR_ON_RESET;
+  csec_pulse_max_duty = MAX_DUTY_ON_RESET;
   csec_pulse_th_on_cyc = th_cyc_on_reset;
   critical_section_init(&csec_pulse);
   critical_section_init(&csec_stat);
