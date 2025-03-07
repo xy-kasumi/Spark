@@ -41,7 +41,7 @@ void print_time() {
 ////////////////////////////////////////////////////////////////////////////////
 // Log
 
-#define LOG_COLS 8
+#define LOG_COLS 9
 #define LOG_SIZE (10 * 1000)
 #define LOG_SIZE_BYTES (LOG_SIZE * LOG_COLS)
 
@@ -68,7 +68,8 @@ void log_init(log_t* log) {
 
 // Add log entry to the log.
 void log_add(log_t* log, int num_p, float ig_avg, float ig_sd, float r_pulse,
-             float r_short, float r_open, float est_avg, float est_sd) {
+             float r_short, float r_open, float est_avg, float est_sd,
+             float vel) {
   log_set_int(log, 0, num_p);
   log_set_int(log, 1, roundf(ig_avg * 0.2));
   log_set_int(log, 2, roundf(ig_sd * 0.2));
@@ -77,6 +78,7 @@ void log_add(log_t* log, int num_p, float ig_avg, float ig_sd, float r_pulse,
   log_set_int(log, 5, roundf(r_open * 255));
   log_set_int(log, 6, roundf(est_avg * 0.2));
   log_set_int(log, 7, roundf(est_sd * 0.2));
+  log_set_int(log, 8, roundf((vel + 1) * 120)); // -1 ~ 1
 
   log->write_ix = (log->write_ix + 1) % LOG_SIZE;
   if (log->num_valid < LOG_SIZE) {
@@ -86,14 +88,15 @@ void log_add(log_t* log, int num_p, float ig_avg, float ig_sd, float r_pulse,
 
 static void log_row(const log_t* log, int entry_ix, char* buf, size_t size) {
   int offset = entry_ix * LOG_COLS;
-  snprintf(buf, size, "%d,%.0f,%.0f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
+  snprintf(buf, size, "%d,%.0f,%.0f,%.2f,%.2f,%.2f,%.2f,%.2f,%.3f\n",
            (int)log->buffer[offset + 0], (float)log->buffer[offset + 1] * 5,
            (float)log->buffer[offset + 2] * 5,
            (float)log->buffer[offset + 3] / 255.0,
            (float)log->buffer[offset + 4] / 255.0,
            (float)log->buffer[offset + 5] / 255.0,
            (float)log->buffer[offset + 6] * 5,
-           (float)log->buffer[offset + 7] * 5);
+           (float)log->buffer[offset + 7] * 5,
+           (float)log->buffer[offset + 8] / 120.0 - 1.0);
 }
 
 // Send log data to host via XMODEM/SUM.
@@ -106,7 +109,7 @@ void log_send(log_t* log) {
   // generate header
   snprintf(
       buffer, sizeof(buffer),
-      "num_pulse, ig_avg, ig_sd, r_pulse, r_short, r_open, est_avg, est_sd\n");
+      "num_pulse,ig_avg,ig_sd,r_pulse,r_short,r_open,est_avg,est_sd,vel\n");
   xmodem_send_text(&xmodem, buffer);
 
   // generate rows
@@ -199,6 +202,16 @@ void set_target_pos(ctrl_motor_motion_t* ctrl_motion, float targ_pos_mm) {
 }
 
 static inline float square(float x) { return x * x; }
+
+static inline float clamp(float x, float min, float max) {
+  if (x < min) {
+    return min;
+  } else if (x > max) {
+    return max;
+  } else {
+    return x;
+  }
+}
 
 // Distribute steps evenly in loop interval.
 int64_t control_loop_step_motor(alarm_id_t aid, void* data) {
@@ -317,8 +330,9 @@ static void combine_stats(float n1, float avg1, float sd1, float n2, float avg2,
 
 void add_new_samples(control_t* control, float num, float avg, float sd) {
   // Limit weight of previous samples to adapt to new situations quickly.
-  if (control->eff_sample > 10) {
-    control->eff_sample = 10;
+  const float OLD_SAMPLE_EFF = 100;
+  if (control->eff_sample > OLD_SAMPLE_EFF) {
+    control->eff_sample = OLD_SAMPLE_EFF;
   }
 
   float new_n;
@@ -342,7 +356,7 @@ void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
 
   // Converts: Tig error [us] -> change in velocity [mm/s], per unit time
   // [mm/s^2].
-  const float GAIN = MAX_ACC_MM_PER_S2 / 500.0;
+  const float GAIN = 0.02f;
 
   if (stat->n_pulse > 0) {
     add_new_samples(control, stat->n_pulse, stat->avg_igt_us, stat->sd_igt_us);
@@ -363,19 +377,16 @@ void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
 
   log_add(control->log, stat->n_pulse, stat->avg_igt_us, stat->sd_igt_us,
           stat->r_pulse, stat->r_short, stat->r_open, control->avg_igt_us,
-          control->sd_igt_us);
+          control->sd_igt_us, control->motor_motion.curr_vel_mm_per_s);
 
   if (abs(error) > allowed_deviation) {
     // only change velocity when it's outside of allowed range.
     // Accelerate if Tig is bigger than target, decelerate if Tig is smaller.
-    float targ_vel_mm_per_s = control->motor_motion.curr_vel_mm_per_s +
-                              error * GAIN * (CTRL_DT_US * 1e-6);
-    if (targ_vel_mm_per_s < -FEED_MAX_SPEED_MM_PER_S) {
-      targ_vel_mm_per_s = -FEED_MAX_SPEED_MM_PER_S;
-    } else if (targ_vel_mm_per_s > FEED_MAX_SPEED_MM_PER_S) {
-      targ_vel_mm_per_s = FEED_MAX_SPEED_MM_PER_S;
-    }
-    set_target_vel(&control->motor_motion, targ_vel_mm_per_s);
+    float targ_vel = control->motor_motion.curr_vel_mm_per_s +
+                     error * GAIN * (CTRL_DT_US * 1e-6);
+    targ_vel =
+        clamp(targ_vel, -FEED_MAX_SPEED_MM_PER_S, FEED_MAX_SPEED_MM_PER_S);
+    set_target_vel(&control->motor_motion, targ_vel);
   }
 }
 
