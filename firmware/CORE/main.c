@@ -11,6 +11,7 @@
 #include "config.h"
 #include "pulser.h"
 #include "stpdrv.h"
+#include "xmodem.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // Basic I/O
@@ -35,6 +36,44 @@ void print_time() {
   int t_sec = t / 1000;
   int t_ms = t % 1000;
   printf("%d.%03d ", t_sec, t_ms);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Log
+
+#define LOG_SIZE 100 * 1000
+
+typedef struct {
+  uint8_t buffer[LOG_SIZE];
+} log_t;
+
+// Add log entry to the log.
+void log_add() {}
+
+
+// Send log data to host via XMODEM/SUM.
+void log_send() {
+  xmodem_t xmodem;
+  xmodem_init(&xmodem);
+
+  char buffer[200];
+  // generate header
+  snprintf(buffer, sizeof(buffer), "num_p,ig_a,ig_s,rs,ro,rp\n");
+  xmodem_send_text(&xmodem, buffer);
+  // generate rows
+  for (int i = 0; i < 10000; i++) {
+    //format_log_row(i, buffer);
+    snprintf(buffer, sizeof(buffer), "%d,100,200,300,400,500\n", i);
+    xmodem_send_text(&xmodem, buffer);
+  }
+  bool result = xmodem_finish(&xmodem, ' ');
+  if (result) {
+    print_time();
+    printf("log sent successfully\n");
+  } else {
+    print_time();
+    printf("log send failed (error: %d)\n", xmodem.error);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -302,7 +341,8 @@ void control_start_feed(control_t* control, float targ_pos_mm) {
   }
   control->targ_igt_us = 200;
   control->avg_igt_us = 1000; // assume big number
-  control->sd_igt_us = 100;  // this should be medium. too big number make deadband too large
+  control->sd_igt_us =
+      100; // this should be medium. too big number make deadband too large
 }
 
 void control_start_find(control_t* control, float lim_pos_mm) {
@@ -572,23 +612,39 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
 ////////////////////////////////////////////////////////////////////////////////
 // Command parser
 
+typedef enum {
+  CMD_NORMAL, // host completed command input
+  CMD_CANCEL, // host cancelled command input
+  CMD_XMODEM, // host is requesting to receive file via XMODEM/SUM
+} command_type_t;
+
 // Try to get line.
 // Does not include newline character in the buffer.
-// returns true if line is read successfully.
-//
-// If Ctrl-C or Ctrl-K is pressed, line read is canceled; returns false.
-bool stdio_getline(char* buf, size_t buf_size) {
-  int ix = 0;
-  while (ix < buf_size - 1) {
+// returns
+// * CMD_NORMAL: if line was entered successfully.
+//   Characters that didn't fit in buf_size will be discarded.
+// * CMD_CANCEL: if Ctrl-C or Ctrl-K is pressed, line read is canceled.
+// * CMD_XMODEM: if XMODEM/SUM request (NACK) is detected. (doesn't fill buffer)
+command_type_t stdio_getline(char* buf, size_t buf_size) {
+  const char CTRL_C = 0x03;     // ASCII ETX (End of Text)
+  const char CTRL_K = 0x0b;     // ASCII VT (Vertical Tab)
+  const char XMODEM_REQ = 0x15; // ASCII NAK (XMODEM/SUM receive request)
+
+  size_t ix = 0;
+  while (true) {
     char ch = stdio_getchar();
-    if (ch == 3 || ch == 11) {
-      return false; // cancel waiting
+    if (ch == CTRL_C || ch == CTRL_K) {
+      return CMD_CANCEL;
+    } else if (ch == XMODEM_REQ) {
+      return CMD_XMODEM;
     } else if (ch == '\n' || ch == '\r') {
-      buf[ix] = 0;
-      return true;
+      buf[ix] = 0; // Null terminate the string
+      return CMD_NORMAL;
     } else {
-      buf[ix] = ch;
-      ix++;
+      if (ix < buf_size - 1) {
+        buf[ix] = ch;
+        ix++;
+      }
     }
   }
 }
@@ -843,16 +899,21 @@ int main() {
   // main command loop
   char buf[32];
   while (true) {
-    bool success = stdio_getline(buf, sizeof(buf));
-    printf("\n");
-    print_time();
-
-    if (!success) {
+    command_type_t cmd_type = stdio_getline(buf, sizeof(buf));
+    if (cmd_type == CMD_CANCEL) {
       printf("command canceled\n");
       continue;
+    } else if (cmd_type == CMD_XMODEM) {
+      log_send();
+      continue;
+    } else if (cmd_type == CMD_NORMAL) {
+      printf("\n");
+
+      print_time();
+      printf("processing command\n");
+      pico_led_flash();
+
+      try_exec_command(buf, &app);
     }
-    printf("processing command\n");
-    pico_led_flash();
-    try_exec_command(buf, &app);
   }
 }

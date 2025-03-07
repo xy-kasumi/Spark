@@ -45,7 +45,9 @@
 			"cstdlib": "c",
 			"cmath": "c",
 			"xlocnum": "c",
-			"atomic": "c"
+			"atomic": "c",
+			"iterator": "c",
+			"limits": "c"
 		}
 	}
 }

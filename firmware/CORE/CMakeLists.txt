@@ -81,6 +81,7 @@ add_executable(CORE_fw
     main.c
     pulser.c
     stpdrv.c
+    xmodem.c
     )
 
 # pull in common dependencies
