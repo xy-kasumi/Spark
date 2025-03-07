@@ -49,6 +49,7 @@ static uint8_t csec_pulse_th_on_cyc;
 // core0, core1 shared, only accessed in csec_stat section.
 static critical_section_t csec_stat;
 static uint32_t csec_stat_n_pulse = 0;
+static uint32_t csec_stat_n_sample = 0;
 static uint64_t csec_stat_accum_igt_us = 0;
 static uint64_t csec_stat_accum_igt_sq_us = 0;
 static uint32_t csec_stat_dur = 0;
@@ -296,6 +297,7 @@ uint8_t read_reg(uint8_t reg) {
     // core1.
     critical_section_enter_blocking(&csec_stat);
     uint32_t stat_n_pulse = csec_stat_n_pulse;
+    uint32_t stat_n_sample = csec_stat_n_sample;
     uint64_t stat_accum_igt_us = csec_stat_accum_igt_us;
     uint64_t stat_accum_igt_sq_us = csec_stat_accum_igt_sq_us;
     uint32_t stat_dur = csec_stat_dur;
@@ -304,6 +306,7 @@ uint8_t read_reg(uint8_t reg) {
     uint32_t stat_dur_open = csec_stat_dur_open;
     // reset
     csec_stat_n_pulse = 0;
+    csec_stat_n_sample = 0;
     csec_stat_accum_igt_us = 0;
     csec_stat_accum_igt_sq_us = 0;
     csec_stat_dur = 0;
@@ -314,13 +317,13 @@ uint8_t read_reg(uint8_t reg) {
 
     // convert
     visible_n_pulse = stat_n_pulse > 255 ? 255 : stat_n_pulse;
-    if (stat_n_pulse == 0) {
-      visible_igt_5us = 0;
-      visible_igt_sd_5us = 0;
+    if (stat_n_sample == 0) {
+      visible_igt_5us = 255; // invalid
+      visible_igt_sd_5us = 255; // invalid
     } else {
-      uint16_t igt_avg = stat_accum_igt_us / stat_n_pulse;
+      uint16_t igt_avg = stat_accum_igt_us / stat_n_sample;
       // Quantization error might cause negative value, so use signed and clamp.
-      int32_t igt_var = (int32_t) (stat_accum_igt_sq_us / stat_n_pulse) - (int32_t) (igt_avg * igt_avg);
+      int32_t igt_var = (int32_t) (stat_accum_igt_sq_us / stat_n_sample) - (int32_t) (igt_avg * igt_avg);
       if (igt_var < 0) {
         igt_var = 0;
       }
@@ -491,8 +494,11 @@ void core1_main() {
       // normal pulse; update stats & wait for pulse duration.
       critical_section_enter_blocking(&csec_stat);
       csec_stat_n_pulse++;
-      csec_stat_accum_igt_us += igt_us;
-      csec_stat_accum_igt_sq_us += igt_us * igt_us;
+      if (igt_us < IG_THRESH_OPEN_US) {
+        csec_stat_n_sample++;
+        csec_stat_accum_igt_us += igt_us;
+        csec_stat_accum_igt_sq_us += igt_us * igt_us;
+      }
       critical_section_exit(&csec_stat);
       for (uint16_t i = 0; i < pdur; i++) {
         if (!gpio_get(PIN_GATE)) {
