@@ -42,7 +42,7 @@ void print_time() {
 // Log
 
 #define LOG_SIZE 100 * 1000
-#define LOG_COLS 6
+#define LOG_COLS 8
 
 typedef struct {
   int num_entries;
@@ -64,7 +64,7 @@ void log_init(log_t* log) {
 
 // Add log entry to the log.
 void log_add(log_t* log, int num_p, float ig_avg, float ig_sd, float r_pulse,
-             float r_short, float r_open) {
+             float r_short, float r_open, float est_avg, float est_sd) {
   if ((log->num_entries + 1) * LOG_COLS > LOG_SIZE) {
     // avoid overflow
     return;
@@ -76,17 +76,21 @@ void log_add(log_t* log, int num_p, float ig_avg, float ig_sd, float r_pulse,
   log_set_int(log, 3, roundf(r_pulse * 255));
   log_set_int(log, 4, roundf(r_short * 255));
   log_set_int(log, 5, roundf(r_open * 255));
+  log_set_int(log, 6, roundf(est_avg * 0.2));
+  log_set_int(log, 7, roundf(est_sd * 0.2));
   log->num_entries++;
 }
 
 static void log_row(const log_t* log, int entry_ix, char* buf, size_t size) {
   int offset = entry_ix * LOG_COLS;
-  snprintf(buf, size, "%d,%f,%f,%.2f,%.2f,%.2f\n", (int)log->buffer[offset + 0],
+  snprintf(buf, size, "%d,%.0f,%.0f,%.2f,%.2f,%.2f,%.2f,%.2f\n", (int)log->buffer[offset + 0],
            (float)log->buffer[offset + 1] * 5,
            (float)log->buffer[offset + 2] * 5,
            (float)log->buffer[offset + 3] / 255.0,
            (float)log->buffer[offset + 4] / 255.0,
-           (float)log->buffer[offset + 5] / 255.0);
+           (float)log->buffer[offset + 5] / 255.0,
+           (float)log->buffer[offset + 6] * 5,
+           (float)log->buffer[offset + 7] * 5);
 }
 
 // Send log data to host via XMODEM/SUM.
@@ -98,7 +102,7 @@ void log_send(log_t* log) {
 
   // generate header
   snprintf(buffer, sizeof(buffer),
-           "num_pulse, ig_avg, ig_sd, r_pulse, r_short, r_open\n");
+           "num_pulse, ig_avg, ig_sd, r_pulse, r_short, r_open, est_avg, est_sd\n");
   xmodem_send_text(&xmodem, buffer);
 
   // generate rows
@@ -161,8 +165,9 @@ typedef struct {
 
   ctrl_op_t op;
   int targ_igt_us; // op == OP_FEED
-  int avg_igt_us;  // op == OP_FEED
-  int sd_igt_us;   // op == OP_FEED
+  float eff_sample; // op == OP_FEED
+  float avg_igt_us;  // op == OP_FEED
+  float sd_igt_us;   // op == OP_FEED
   float pos_limit_min;
   float pos_limit_max;
 
@@ -289,6 +294,35 @@ void tick_motor_step(ctrl_motor_step_t* step, float curr_pos_mm) {
   }
 }
 
+static void combine_stats(float n1, float avg1, float sd1, float n2, float avg2, float sd2, float* n_out, float* avg_out, float* sd_out) {
+  float n_comb = n1 + n2;
+  float avg_comb = (n1 * avg1 + n2 * avg2) / n_comb;
+
+  float sum_sq1 = n1 * (square(avg1) + square(sd1));
+  float sum_sq2 = n2 * (square(avg2) + square(sd2));
+  float sd_comb = sqrtf((sum_sq1 + sum_sq2) / n_comb - square(avg_comb));
+
+  *n_out = n_comb;
+  *avg_out = avg_comb;
+  *sd_out = sd_comb;
+}
+
+void add_new_samples(control_t* control, float num, float avg, float sd) {
+  // Limit weight of previous samples to adapt to new situations quickly.
+  if (control->eff_sample > 10) {
+    control->eff_sample = 10;
+  }
+
+  float new_n;
+  float new_avg;
+  float new_sd;
+  combine_stats(control->eff_sample, control->avg_igt_us, control->sd_igt_us, num, avg, sd, &new_n, &new_avg, &new_sd);
+  control->eff_sample = new_n;
+  control->avg_igt_us = new_avg;
+  control->sd_igt_us = new_sd;
+}
+
+
 void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
   // TODO: slow loop to control targ_ig. (1 Hz??) maximize avg. pulse duration
   // by optimizing targ_ig.
@@ -303,15 +337,24 @@ void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
   const float GAIN = MAX_ACC_MM_PER_S2 / 500.0;
 
   if (stat->n_pulse > 0) {
-    control->avg_igt_us = stat->avg_igt_us;
-    control->sd_igt_us = stat->sd_igt_us;
+    add_new_samples(control, stat->n_pulse, stat->avg_igt_us, stat->sd_igt_us);
+  }
+  if (stat->r_short > 0) {
+    // Treat 100us of short as 1 sample of ig=0.
+    float eff_short_sample = stat->r_short * (CTRL_DT_S / 100e-6);
+    add_new_samples(control, eff_short_sample, 0, 0);
+  }
+  if (stat->r_open > 0) {
+    // Treat 1ms of open as 1 sample of ig=1000
+    float eff_open_sample = stat->r_open * (CTRL_DT_S / 1e-3);
+    add_new_samples(control, eff_open_sample, 1000, 0);
   }
 
   float allowed_deviation = DEADBAND_PARAM * control->sd_igt_us;
   float error = control->avg_igt_us - control->targ_igt_us;
 
-  log_add(control->log, stat->n_pulse, control->avg_igt_us, control->sd_igt_us,
-          stat->r_pulse, stat->r_short, stat->r_open);
+  log_add(control->log, stat->n_pulse, stat->avg_igt_us, stat->sd_igt_us,
+          stat->r_pulse, stat->r_short, stat->r_open, control->avg_igt_us, control->sd_igt_us);
 
   if (abs(error) > allowed_deviation) {
     // only change velocity when it's outside of allowed range.
@@ -386,6 +429,7 @@ void control_start_feed(control_t* control, float targ_pos_mm) {
         control->motor_motion.curr_pos_mm + 1; // whatever offset
   }
   control->targ_igt_us = 200;
+  control->eff_sample = 1;
   control->avg_igt_us = 1000; // assume big number
   control->sd_igt_us =
       100; // this should be medium. too big number make deadband too large
@@ -609,6 +653,7 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
     printf("feed: not ready\n");
     return;
   }
+  bool is_plus = dist_mm > 0;
 
   pulser_set_pulse_dur(app->pulse_dur_us);
   pulser_set_max_duty(app->duty_pct);
@@ -623,6 +668,7 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
 
   absolute_time_t start_time = get_absolute_time();
   absolute_time_t last_report = start_time;
+  float dp_max = 0;
   while (true) {
     if (abort_requested()) {
       control_abort(&app->control);
@@ -637,18 +683,19 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
       break;
     }
 
+    float dp = app->control.motor_motion.curr_pos_mm - orig_pos;
+    dp_max = fmaxf(dp_max, is_plus ? dp : -dp);
+
     absolute_time_t now = get_absolute_time();
     if (absolute_time_diff_us(last_report, get_absolute_time()) > 1000000) {
       print_time();
       float time_past_s = absolute_time_diff_us(start_time, now) * 1e-6;
-      float dp_mm = fabsf(app->control.motor_motion.curr_pos_mm - orig_pos);
-      float eff_speed_mm_per_s = time_past_s < 1 ? 0 : dp_mm / time_past_s;
-      float progress = dp_mm / dist_mm;
+      float eff_speed_mm_per_s = time_past_s < 1 ? 0 : dp_max / time_past_s;
+      float progress = dp_max / dist_mm;
       float progress_speed = time_past_s < 1 ? 0 : progress / time_past_s;
       float eta_s = progress_speed < 1e-6 ? 1e6 : (1 - progress) / progress;
-      printf("feed: %.1f%% ETA=%fs speed=%.3fmm/s (dx=%.3f, x=%.3f)\n",
-             progress * 100, eta_s, eff_speed_mm_per_s, dp_mm,
-             app->control.motor_motion.curr_pos_mm);
+      printf("feed: %.1f%% (dp=%.3f) ETA=%.1fs speed=%.3fmm/s\n",
+             progress * 100, dp_max, eta_s, eff_speed_mm_per_s);
 
       last_report = get_absolute_time();
     }
