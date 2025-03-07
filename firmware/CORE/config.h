@@ -20,6 +20,7 @@
 #define STEPS_PER_MM ((float)(MICROSTEP * 6.25))
 
 #define FEED_MAX_SPEED_MM_PER_S 0.5
+#define FEED_MAX_ACC_MM_PER_S2 10
 #define FIND_SPEED_MM_PER_S 5
 
 // mainly constarained by mass & friction (vs. motor driving capability)

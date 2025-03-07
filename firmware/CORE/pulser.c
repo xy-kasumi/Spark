@@ -196,16 +196,20 @@ void pulser_checkpoint_read(pulser_stat_t* stat) {
   uint8_t buffer[6];
   if (!read_regs(REG_CKP_N_PULSE, buffer, sizeof(buffer))) {
     stat->n_pulse = 0;
-    stat->avg_igt_us = 0;
-    stat->sd_igt_us = 0;
+    stat->stat_avail = false;
     stat->r_pulse = 0;
     stat->r_short = 0;
     stat->r_open = 1.0;
     return;
   }
   stat->n_pulse = buffer[0];
-  stat->avg_igt_us = buffer[1] * 5;
-  stat->sd_igt_us = buffer[2] * 5;
+  if (buffer[1] == 255 || buffer[2] == 255) {
+    stat->stat_avail = false;
+  } else {
+    stat->stat_avail = true;
+    stat->avg_igt_us = buffer[1] * 5;
+    stat->sd_igt_us = buffer[2] * 5;
+  }
   stat->r_pulse = buffer[3] * (1.0 / 255);
   stat->r_short = buffer[4] * (1.0 / 255);
   stat->r_open = buffer[5] * (1.0 / 255);

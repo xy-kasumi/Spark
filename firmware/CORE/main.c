@@ -173,10 +173,12 @@ typedef struct {
   log_t* log;
 
   ctrl_op_t op;
+  bool is_plus;     // op == OP_FEED
   int targ_igt_us;  // op == OP_FEED
   float eff_sample; // op == OP_FEED
   float avg_igt_us; // op == OP_FEED
   float sd_igt_us;  // op == OP_FEED
+  float r_open;     // op == OP_FEED
   float pos_limit_min;
   float pos_limit_max;
 
@@ -349,44 +351,68 @@ void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
   // TODO: slow loop to control targ_ig. (1 Hz??) maximize avg. pulse duration
   // by optimizing targ_ig.
 
+  const float MAX_DVEL = FEED_MAX_ACC_MM_PER_S2 * CTRL_DT_S;
+
   // Coefficient that converts: Tig stddev [us] -> Tig allowed range of
   // deviation [us]. Smaller value: possibly faster response, but might lead
   // to oscillation. Larger value: stable, but might be slow.
-  const float DEADBAND_PARAM = 2.0;
+  const float DEADBAND_PARAM = 0.5;
 
   // Converts: Tig error [us] -> change in velocity [mm/s], per unit time
   // [mm/s^2].
-  const float GAIN = 0.02f;
+  const float GAIN = 5.0f;
 
-  if (stat->n_pulse > 0) {
-    add_new_samples(control, stat->n_pulse, stat->avg_igt_us, stat->sd_igt_us);
+  // 90% contribution comes from recent 45 samples.
+  const float EMA_ALPHA = 0.05f;
+
+  float curr_pos = control->motor_motion.curr_pos_mm;
+
+  // Update
+  control->r_open =
+      EMA_ALPHA * control->r_open + (1 - EMA_ALPHA) * stat->r_open;
+
+  if (stat->stat_avail) {
+    // Only take clean data.
+    if (stat->sd_igt_us < 200) {
+      add_new_samples(control, stat->n_pulse, stat->avg_igt_us,
+                      stat->sd_igt_us);
+    }
   }
+
   if (stat->r_short > 0) {
-    // Treat 100us of short as 1 sample of ig=0.
-    float eff_short_sample = stat->r_short * (CTRL_DT_S / 100e-6);
+    // Treat 1ms of short as 1 sample of ig=0.
+    float eff_short_sample = stat->r_short * (CTRL_DT_S / 1000e-6);
     add_new_samples(control, eff_short_sample, 0, 0);
-  }
-  if (stat->r_open > 0) {
-    // Treat 1ms of open as 1 sample of ig=1000
-    float eff_open_sample = stat->r_open * (CTRL_DT_S / 1e-3);
-    add_new_samples(control, eff_open_sample, 1000, 0);
   }
 
   float allowed_deviation = DEADBAND_PARAM * control->sd_igt_us;
-  float error = control->avg_igt_us - control->targ_igt_us;
+  float d_igt = control->targ_igt_us - control->avg_igt_us;
 
-  log_add(control->log, stat->n_pulse, stat->avg_igt_us, stat->sd_igt_us,
-          stat->r_pulse, stat->r_short, stat->r_open, control->avg_igt_us,
-          control->sd_igt_us, control->motor_motion.curr_vel_mm_per_s);
+  log_add(control->log, stat->n_pulse, stat->stat_avail ? stat->avg_igt_us : 0,
+          stat->stat_avail ? stat->sd_igt_us : 0, stat->r_pulse, stat->r_short,
+          stat->r_open, control->avg_igt_us, control->sd_igt_us,
+          control->motor_motion.curr_vel_mm_per_s);
 
-  if (abs(error) > allowed_deviation) {
-    // only change velocity when it's outside of allowed range.
-    // Accelerate if Tig is bigger than target, decelerate if Tig is smaller.
-    float targ_vel = control->motor_motion.curr_vel_mm_per_s +
-                     error * GAIN * (CTRL_DT_US * 1e-6);
-    targ_vel =
-        clamp(targ_vel, -FEED_MAX_SPEED_MM_PER_S, FEED_MAX_SPEED_MM_PER_S);
-    set_target_vel(&control->motor_motion, targ_vel);
+  if (control->r_open > 0.999) {
+    // means far away from the gap.
+    // basically we need to "find" the gap.
+    set_target_vel(&control->motor_motion, control->is_plus
+                                               ? FIND_SPEED_MM_PER_S
+                                               : -FIND_SPEED_MM_PER_S);
+  } else {
+    // we're basically pulsing or shorting, and should have Tig estimate.
+    // Control Tig.
+    if (abs(d_igt) > allowed_deviation) {
+      // only change velocity when it's outside of allowed range.
+      // Accelerate if Tig is bigger than target, decelerate if Tig is smaller.
+      float dvel = d_igt * GAIN * (CTRL_DT_US * 1e-6);
+      dvel = fminf(dvel, MAX_DVEL);
+      float targ_vel = control->motor_motion.curr_vel_mm_per_s +
+                       (control->is_plus ? -dvel : dvel);
+      targ_vel =
+          clamp(targ_vel, -FEED_MAX_SPEED_MM_PER_S, FEED_MAX_SPEED_MM_PER_S);
+      set_target_vel(&control->motor_motion, targ_vel);
+    }
   }
 }
 
@@ -438,21 +464,24 @@ bool tick_control_loop(repeating_timer_t* rt) {
 }
 
 void control_start_feed(control_t* control, float targ_pos_mm) {
+  float curr_pos = control->motor_motion.curr_pos_mm;
+
   control->op = OP_FEED;
-  if (targ_pos_mm > control->motor_motion.curr_pos_mm) {
-    control->pos_limit_min =
-        control->motor_motion.curr_pos_mm - 1; // whatever offset
+  control->is_plus = targ_pos_mm > curr_pos;
+
+  if (control->is_plus) {
+    control->pos_limit_min = curr_pos - 1; // whatever offset
     control->pos_limit_max = targ_pos_mm;
   } else {
     control->pos_limit_min = targ_pos_mm;
-    control->pos_limit_max =
-        control->motor_motion.curr_pos_mm + 1; // whatever offset
+    control->pos_limit_max = curr_pos + 1; // whatever offset
   }
-  control->targ_igt_us = 200;
+  control->targ_igt_us = 150;
   control->eff_sample = 1;
   control->avg_igt_us = 1000; // assume big number
   control->sd_igt_us =
       100; // this should be medium. too big number make deadband too large
+  control->r_open = 1;
 }
 
 void control_start_find(control_t* control, float lim_pos_mm) {

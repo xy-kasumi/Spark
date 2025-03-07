@@ -208,8 +208,8 @@ To actually turn them off completely, you need to set POLARITY to OFF.
 | 0x04    | PULSE_DUR     | RW          | 50        | pulse duration in 10 us unit. 5 (50us) ~ 100 (1000us) is allowed. Default is 500us. |
 | 0x05    | MAX_DUTY      | RW          | 25        | Maximum duty factor allowed in percent. 1~95 is allowed. Default is 25%. |
 | 0x10    | CKP_N_PULSE   | R (special) | N/A       | Number of pulse started in the interval. Reading this register creates checkpoint. |
-| 0x11    | T_IGNITION    | R           | N/A       | average ignition time in the interval. Unit of 5us. 0:0us, 255:1275us. |
-| 0x12    | T_IGNITION_SD | R           | N/A       | standard deviation of ignition time in the interval. Unit of 5us. 0:0us, 255:1275us. |
+| 0x11    | T_IGNITION    | R           | N/A       | average ignition time in the interval. Unit of 5us. 1:5us, 254:1270us, 255:invalid |
+| 0x12    | T_IGNITION_SD | R           | N/A       | standard deviation of ignition time in the interval. Unit of 5us. 0:0us, 254:1270us, 255:invalid |
 | 0x13    | R_PULSE       | R           | N/A       | Ratio of duration spent discharging in the interval. Values from [0.0, 1.0], calculated as R_PULSE/255 |
 | 0x14    | R_SHORT       | R           | N/A       | Ratio of duration spent shorted and not discharging in the interval. Values from [0.0, 1.0], calculated as R_SHORT/255 |
 | 0x15    | R_OPEN        | R           | N/A       | Ratio of duration spent waiting for discharge to happen in the interval. Values from [0.0, 1.0], calculated as R_OPEN/255 |
@@ -242,6 +242,16 @@ R_PULSE, R_SHORT, R_OPEN will be accurate even if the polling duration is long.
 However, after 4300 seconds, measurements won't be accurate.
 
 Reading CKP_N_PULSE register resets the internal counter and recovers the accuracy.
+
+### Ignition time statistics (T_IGNITION, T_IGNITION_SD)
+
+They're calculated from the pulse samples in the interval.
+So, their samples are CKP_N_PULSE usually.
+
+However, the first pulse long open-duration is NOT included in the sample,
+as Tig cannot be extracted from that case.
+
+Thus, T_IGNITION & T_IGNITION_SD will can be invalid even when CKP_N_PULSE > 0.
 
 
 ### Time measurement
