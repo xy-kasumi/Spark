@@ -81,6 +81,8 @@ static const uint8_t PIN_STPDRV_CSN2 = 22;   // GPIO OUT
 #define STPDRV_SPI spi0
 #define PULSER_I2C i2c1
 
+#define UART_BAUD 921600
+
 inline static void wait_25ns() {
   // 4 nops, assuming 150MHz
   __nop();

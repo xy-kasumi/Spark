@@ -50,7 +50,6 @@ typedef struct {
 // Add log entry to the log.
 void log_add() {}
 
-
 // Send log data to host via XMODEM/SUM.
 void log_send() {
   xmodem_t xmodem;
@@ -62,7 +61,7 @@ void log_send() {
   xmodem_send_text(&xmodem, buffer);
   // generate rows
   for (int i = 0; i < 10000; i++) {
-    //format_log_row(i, buffer);
+    // format_log_row(i, buffer);
     snprintf(buffer, sizeof(buffer), "%d,100,200,300,400,500\n", i);
     xmodem_send_text(&xmodem, buffer);
   }
@@ -870,7 +869,10 @@ void try_exec_command(char* buf, app_t* app) {
 
 int main() {
   // init compute
-  stdio_init_all();
+  uart_init(uart_default, UART_BAUD);
+  gpio_set_function(PICO_DEFAULT_UART_TX_PIN, GPIO_FUNC_UART);
+  gpio_set_function(PICO_DEFAULT_UART_RX_PIN, GPIO_FUNC_UART);
+  stdio_uart_init_full(uart_default, UART_BAUD, PICO_DEFAULT_UART_TX_PIN, PICO_DEFAULT_UART_RX_PIN);
   alarm_pool_init_default();
 
   // init I/O

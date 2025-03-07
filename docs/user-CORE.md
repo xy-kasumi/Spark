@@ -70,7 +70,7 @@ Connect the RasPi probe's serial port to the 3-pin QI connector.
 Use any terminal emulator software on the host computer.
 
 Required configuration:
-- Baud rate: 115200
+- Baud rate: 921600
 
 Recommended configuration:
 - Line ending: CR (for both TX/RX)
