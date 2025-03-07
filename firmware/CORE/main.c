@@ -42,29 +42,72 @@ void print_time() {
 // Log
 
 #define LOG_SIZE 100 * 1000
+#define LOG_COLS 6
 
 typedef struct {
+  int num_entries;
   uint8_t buffer[LOG_SIZE];
 } log_t;
 
+static void log_set_int(log_t* log, int col, int v) {
+  if (v > 255) {
+    v = 255;
+  } else if (v < 0) {
+    v = 0;
+  }
+  log->buffer[log->num_entries * LOG_COLS + col] = v;
+}
+
+void log_init(log_t* log) {
+  log->num_entries = 0;
+}
+
 // Add log entry to the log.
-void log_add() {}
+void log_add(log_t* log, int num_p, float ig_avg, float ig_sd, float r_pulse,
+             float r_short, float r_open) {
+  if ((log->num_entries + 1) * LOG_COLS > LOG_SIZE) {
+    // avoid overflow
+    return;
+  }
+
+  log_set_int(log, 0, num_p);
+  log_set_int(log, 1, roundf(ig_avg * 0.2));
+  log_set_int(log, 2, roundf(ig_sd * 0.2));
+  log_set_int(log, 3, roundf(r_pulse * 255));
+  log_set_int(log, 4, roundf(r_short * 255));
+  log_set_int(log, 5, roundf(r_open * 255));
+  log->num_entries++;
+}
+
+static void log_row(const log_t* log, int entry_ix, char* buf, size_t size) {
+  int offset = entry_ix * LOG_COLS;
+  snprintf(buf, size, "%d,%f,%f,%.2f,%.2f,%.2f\n", (int)log->buffer[offset + 0],
+           (float)log->buffer[offset + 1] * 5,
+           (float)log->buffer[offset + 2] * 5,
+           (float)log->buffer[offset + 3] / 255.0,
+           (float)log->buffer[offset + 4] / 255.0,
+           (float)log->buffer[offset + 5] / 255.0);
+}
 
 // Send log data to host via XMODEM/SUM.
-void log_send() {
+void log_send(log_t* log) {
   xmodem_t xmodem;
   xmodem_init(&xmodem);
 
   char buffer[200];
+
   // generate header
-  snprintf(buffer, sizeof(buffer), "num_p,ig_a,ig_s,rs,ro,rp\n");
+  snprintf(buffer, sizeof(buffer),
+           "num_pulse, ig_avg, ig_sd, r_pulse, r_short, r_open\n");
   xmodem_send_text(&xmodem, buffer);
+
   // generate rows
-  for (int i = 0; i < 10000; i++) {
-    // format_log_row(i, buffer);
-    snprintf(buffer, sizeof(buffer), "%d,100,200,300,400,500\n", i);
+  for (int i = 0; i < log->num_entries; i++) {
+    log_row(log, i, buffer, sizeof(buffer));
     xmodem_send_text(&xmodem, buffer);
   }
+
+  // finish
   bool result = xmodem_finish(&xmodem, ' ');
   if (result) {
     print_time();
@@ -114,6 +157,7 @@ typedef struct {
   uint64_t tick;
   int stpdrv_ix;
   int max_load_us; // us past in single loop processing
+  log_t* log;
 
   ctrl_op_t op;
   int targ_igt_us; // op == OP_FEED
@@ -266,6 +310,9 @@ void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
   float allowed_deviation = DEADBAND_PARAM * control->sd_igt_us;
   float error = control->avg_igt_us - control->targ_igt_us;
 
+  log_add(control->log, stat->n_pulse, control->avg_igt_us, control->sd_igt_us,
+          stat->r_pulse, stat->r_short, stat->r_open);
+
   if (abs(error) > allowed_deviation) {
     // only change velocity when it's outside of allowed range.
     // Accelerate if Tig is bigger than target, decelerate if Tig is smaller.
@@ -381,8 +428,9 @@ bool control_check_status(control_t* control, bool* reason_is_limit) {
   return true;
 }
 
-void control_loop_init(control_t* control, repeating_timer_t* rt) {
+void control_loop_init(control_t* control, repeating_timer_t* rt, log_t* log) {
   control->tick = 0;
+  control->log = log;
   control->stpdrv_ix = 0;
   control->max_load_us = 0;
   control->op = OP_NONE;
@@ -413,6 +461,7 @@ bool abort_requested();
 
 typedef struct {
   control_t control;
+  log_t log;
   int pulse_dur_us;
   int duty_pct;
   int current_ma;
@@ -567,6 +616,8 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
   pulser_set_energize(true);
   pulser_unsafe_set_gate(true);
 
+  log_init(&app->log);
+
   float orig_pos = app->control.motor_motion.curr_pos_mm;
   control_start_feed(&app->control, orig_pos + dist_mm);
 
@@ -606,6 +657,9 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
   printf(" (x=%.2f)\n", app->control.motor_motion.curr_pos_mm);
   pulser_unsafe_set_gate(false);
   pulser_set_energize(false);
+
+  print_time();
+  printf("feed: log available (%d entries)\n", app->log.num_entries);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -872,7 +926,8 @@ int main() {
   uart_init(uart_default, UART_BAUD);
   gpio_set_function(PICO_DEFAULT_UART_TX_PIN, GPIO_FUNC_UART);
   gpio_set_function(PICO_DEFAULT_UART_RX_PIN, GPIO_FUNC_UART);
-  stdio_uart_init_full(uart_default, UART_BAUD, PICO_DEFAULT_UART_TX_PIN, PICO_DEFAULT_UART_RX_PIN);
+  stdio_uart_init_full(uart_default, UART_BAUD, PICO_DEFAULT_UART_TX_PIN,
+                       PICO_DEFAULT_UART_RX_PIN);
   alarm_pool_init_default();
 
   // init I/O
@@ -890,9 +945,12 @@ int main() {
   app.duty_pct = 50;
   app.current_ma = 1000;
 
+  // init log
+  log_init(&app.log);
+
   // start control loop
   repeating_timer_t rt;
-  control_loop_init(&app.control, &rt);
+  control_loop_init(&app.control, &rt, &app.log);
 
   // report init done
   printf("init OK\n");
@@ -906,7 +964,7 @@ int main() {
       printf("command canceled\n");
       continue;
     } else if (cmd_type == CMD_XMODEM) {
-      log_send();
+      log_send(&app.log);
       continue;
     } else if (cmd_type == CMD_NORMAL) {
       printf("\n");
