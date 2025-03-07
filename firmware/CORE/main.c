@@ -41,12 +41,15 @@ void print_time() {
 ////////////////////////////////////////////////////////////////////////////////
 // Log
 
-#define LOG_SIZE 100 * 1000
 #define LOG_COLS 8
+#define LOG_SIZE (10 * 1000)
+#define LOG_SIZE_BYTES (LOG_SIZE * LOG_COLS)
 
+// ring buffer to keep latest logs.
 typedef struct {
-  int num_entries;
-  uint8_t buffer[LOG_SIZE];
+  int write_ix;
+  int num_valid;
+  uint8_t buffer[LOG_SIZE_BYTES];
 } log_t;
 
 static void log_set_int(log_t* log, int col, int v) {
@@ -55,21 +58,17 @@ static void log_set_int(log_t* log, int col, int v) {
   } else if (v < 0) {
     v = 0;
   }
-  log->buffer[log->num_entries * LOG_COLS + col] = v;
+  log->buffer[log->write_ix * LOG_COLS + col] = v;
 }
 
 void log_init(log_t* log) {
-  log->num_entries = 0;
+  log->write_ix = 0;
+  log->num_valid = 0;
 }
 
 // Add log entry to the log.
 void log_add(log_t* log, int num_p, float ig_avg, float ig_sd, float r_pulse,
              float r_short, float r_open, float est_avg, float est_sd) {
-  if ((log->num_entries + 1) * LOG_COLS > LOG_SIZE) {
-    // avoid overflow
-    return;
-  }
-
   log_set_int(log, 0, num_p);
   log_set_int(log, 1, roundf(ig_avg * 0.2));
   log_set_int(log, 2, roundf(ig_sd * 0.2));
@@ -78,13 +77,17 @@ void log_add(log_t* log, int num_p, float ig_avg, float ig_sd, float r_pulse,
   log_set_int(log, 5, roundf(r_open * 255));
   log_set_int(log, 6, roundf(est_avg * 0.2));
   log_set_int(log, 7, roundf(est_sd * 0.2));
-  log->num_entries++;
+
+  log->write_ix = (log->write_ix + 1) % LOG_SIZE;
+  if (log->num_valid < LOG_SIZE) {
+    log->num_valid++;
+  }
 }
 
 static void log_row(const log_t* log, int entry_ix, char* buf, size_t size) {
   int offset = entry_ix * LOG_COLS;
-  snprintf(buf, size, "%d,%.0f,%.0f,%.2f,%.2f,%.2f,%.2f,%.2f\n", (int)log->buffer[offset + 0],
-           (float)log->buffer[offset + 1] * 5,
+  snprintf(buf, size, "%d,%.0f,%.0f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
+           (int)log->buffer[offset + 0], (float)log->buffer[offset + 1] * 5,
            (float)log->buffer[offset + 2] * 5,
            (float)log->buffer[offset + 3] / 255.0,
            (float)log->buffer[offset + 4] / 255.0,
@@ -101,14 +104,17 @@ void log_send(log_t* log) {
   char buffer[200];
 
   // generate header
-  snprintf(buffer, sizeof(buffer),
-           "num_pulse, ig_avg, ig_sd, r_pulse, r_short, r_open, est_avg, est_sd\n");
+  snprintf(
+      buffer, sizeof(buffer),
+      "num_pulse, ig_avg, ig_sd, r_pulse, r_short, r_open, est_avg, est_sd\n");
   xmodem_send_text(&xmodem, buffer);
 
   // generate rows
-  for (int i = 0; i < log->num_entries; i++) {
-    log_row(log, i, buffer, sizeof(buffer));
+  int read_ix = (log->write_ix + LOG_SIZE - log->num_valid) % LOG_SIZE;
+  for (int i = 0; i < log->num_valid; i++) {
+    log_row(log, read_ix, buffer, sizeof(buffer));
     xmodem_send_text(&xmodem, buffer);
+    read_ix = (read_ix + 1) % LOG_SIZE;
   }
 
   // finish
@@ -164,10 +170,10 @@ typedef struct {
   log_t* log;
 
   ctrl_op_t op;
-  int targ_igt_us; // op == OP_FEED
+  int targ_igt_us;  // op == OP_FEED
   float eff_sample; // op == OP_FEED
-  float avg_igt_us;  // op == OP_FEED
-  float sd_igt_us;   // op == OP_FEED
+  float avg_igt_us; // op == OP_FEED
+  float sd_igt_us;  // op == OP_FEED
   float pos_limit_min;
   float pos_limit_max;
 
@@ -294,7 +300,9 @@ void tick_motor_step(ctrl_motor_step_t* step, float curr_pos_mm) {
   }
 }
 
-static void combine_stats(float n1, float avg1, float sd1, float n2, float avg2, float sd2, float* n_out, float* avg_out, float* sd_out) {
+static void combine_stats(float n1, float avg1, float sd1, float n2, float avg2,
+                          float sd2, float* n_out, float* avg_out,
+                          float* sd_out) {
   float n_comb = n1 + n2;
   float avg_comb = (n1 * avg1 + n2 * avg2) / n_comb;
 
@@ -316,12 +324,12 @@ void add_new_samples(control_t* control, float num, float avg, float sd) {
   float new_n;
   float new_avg;
   float new_sd;
-  combine_stats(control->eff_sample, control->avg_igt_us, control->sd_igt_us, num, avg, sd, &new_n, &new_avg, &new_sd);
+  combine_stats(control->eff_sample, control->avg_igt_us, control->sd_igt_us,
+                num, avg, sd, &new_n, &new_avg, &new_sd);
   control->eff_sample = new_n;
   control->avg_igt_us = new_avg;
   control->sd_igt_us = new_sd;
 }
-
 
 void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
   // TODO: slow loop to control targ_ig. (1 Hz??) maximize avg. pulse duration
@@ -354,7 +362,8 @@ void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
   float error = control->avg_igt_us - control->targ_igt_us;
 
   log_add(control->log, stat->n_pulse, stat->avg_igt_us, stat->sd_igt_us,
-          stat->r_pulse, stat->r_short, stat->r_open, control->avg_igt_us, control->sd_igt_us);
+          stat->r_pulse, stat->r_short, stat->r_open, control->avg_igt_us,
+          control->sd_igt_us);
 
   if (abs(error) > allowed_deviation) {
     // only change velocity when it's outside of allowed range.
@@ -690,13 +699,23 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
     if (absolute_time_diff_us(last_report, get_absolute_time()) > 1000000) {
       print_time();
       float time_past_s = absolute_time_diff_us(start_time, now) * 1e-6;
-      float eff_speed_mm_per_s = time_past_s < 1 ? 0 : dp_max / time_past_s;
       float progress = dp_max / dist_mm;
-      float progress_speed = time_past_s < 1 ? 0 : progress / time_past_s;
-      float eta_s = progress_speed < 1e-6 ? 1e6 : (1 - progress) / progress;
-      printf("feed: %.1f%% (dp=%.3f) ETA=%.1fs speed=%.3fmm/s\n",
-             progress * 100, dp_max, eta_s, eff_speed_mm_per_s);
+      printf("feed: %.1f%% (dp=%.3f) ", progress * 100, dp_max);
 
+      if (time_past_s < 1) {
+        printf("ETA=?s speed=?mm/s\n");
+      } else {
+        float progress_speed = progress / time_past_s;
+        if (progress_speed < 1e-6) {
+          printf("ETA=?s ");
+        } else {
+          float eta_s = (1 - progress) / progress_speed;
+          printf("ETA=%.1fs ", eta_s);
+        }
+
+        float eff_speed_mm_per_s = dp_max / time_past_s;
+        printf("speed=%.3fmm/s\n", eff_speed_mm_per_s);
+      }
       last_report = get_absolute_time();
     }
   }
@@ -706,7 +725,7 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
   pulser_set_energize(false);
 
   print_time();
-  printf("feed: log available (%d entries)\n", app->log.num_entries);
+  printf("feed: log available (%d entries)\n", app->log.num_valid);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
