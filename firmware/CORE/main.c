@@ -170,6 +170,7 @@ typedef struct {
   uint64_t tick;
   int stpdrv_ix;
   int max_load_us; // us past in single loop processing
+  uint64_t total_pulse;
   log_t* log;
 
   ctrl_op_t op;
@@ -432,6 +433,7 @@ bool tick_control_loop(repeating_timer_t* rt) {
 
   pulser_stat_t stat;
   pulser_checkpoint_read(&stat);
+  control->total_pulse += stat.n_pulse;
 
   if (control->op == OP_FEED) {
     tick_feed_control(control, &stat);
@@ -525,6 +527,8 @@ bool control_check_status(control_t* control, bool* reason_is_limit) {
 void control_loop_init(control_t* control, repeating_timer_t* rt, log_t* log) {
   control->tick = 0;
   control->log = log;
+  control->total_pulse = 0;
+
   control->stpdrv_ix = 0;
   control->max_load_us = 0;
   control->op = OP_NONE;
@@ -718,6 +722,7 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
 
   absolute_time_t start_time = get_absolute_time();
   absolute_time_t last_report = start_time;
+  uint64_t start_pulse = app->control.total_pulse;
   float dp_max = 0;
   while (true) {
     if (abort_requested()) {
@@ -737,14 +742,14 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
     dp_max = fmaxf(dp_max, is_plus ? dp : -dp);
 
     absolute_time_t now = get_absolute_time();
-    if (absolute_time_diff_us(last_report, get_absolute_time()) > 1000000) {
+    if (absolute_time_diff_us(last_report, now) > 5000000) {
       print_time();
       float time_past_s = absolute_time_diff_us(start_time, now) * 1e-6;
       float progress = dp_max / dist_mm;
       printf("feed: %.1f%% (dp=%.3f) ", progress * 100, dp_max);
 
       if (time_past_s < 1) {
-        printf("ETA=?s speed=?mm/s\n");
+        printf("ETA=?s speed=?mm/s pulse=?Hz\n");
       } else {
         float progress_speed = progress / time_past_s;
         if (progress_speed < 1e-6) {
@@ -755,13 +760,20 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
         }
 
         float eff_speed_mm_per_s = dp_max / time_past_s;
-        printf("speed=%.3fmm/s\n", eff_speed_mm_per_s);
+        printf("speed=%.3fmm/s ", eff_speed_mm_per_s);
+
+        float pulse = app->control.total_pulse - start_pulse;
+        float pulse_rate = pulse / time_past_s;
+        printf("pulse=%.1fHz\n", pulse_rate);
       }
       last_report = get_absolute_time();
     }
   }
 
-  printf(" (x=%.2f)\n", app->control.motor_motion.curr_pos_mm);
+  absolute_time_t end_time = get_absolute_time();
+  float curr_pos = app->control.motor_motion.curr_pos_mm;
+  float time_past_s = absolute_time_diff_us(start_time, end_time) * 1e-6;
+  printf(" (x=%.2f, dt=%.1fs)\n", curr_pos, time_past_s);
   pulser_unsafe_set_gate(false);
   pulser_set_energize(false);
 
