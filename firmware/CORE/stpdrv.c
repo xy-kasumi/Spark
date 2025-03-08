@@ -8,7 +8,8 @@
 #include "config.h"
 
 // Analog Devices TMC2130 registers
-// Add as needed. https://www.analog.com/media/en/technical-documentation/data-sheets/tmc2130_datasheet_rev1.15.pdf
+// Add as needed.
+// https://www.analog.com/media/en/technical-documentation/data-sheets/tmc2130_datasheet_rev1.15.pdf
 static const uint8_t REG_GCONF = 0x00;
 static const uint8_t REG_GSTAT = 0x01;
 static const uint8_t REG_IOIN = 0x04;
@@ -50,7 +51,8 @@ void stpdrv_bus_init() {
   const uint STPDRV_SPI_BAUDRATE = 3 * 1000 * 1000;
 
   // SPI pins. Keep CSN pins high (select no chip).
-  uint32_t spi_mask = (1 << PIN_STPDRV_SCK) | (1 << PIN_STPDRV_SDI) | (1 << PIN_STPDRV_SDO);
+  uint32_t spi_mask =
+      (1 << PIN_STPDRV_SCK) | (1 << PIN_STPDRV_SDI) | (1 << PIN_STPDRV_SDO);
   gpio_init_mask(spi_mask);
   gpio_set_function_masked(spi_mask, GPIO_FUNC_SPI);
 
@@ -83,8 +85,9 @@ void stpdrv_bus_init() {
  * stpdrv_index: selects board. must be 0, 1, or 2.
  * data, result: both are big-endian (MSB is sent/received first).
  */
-void stpdrv_send_datagram_blocking(uint8_t stpdrv_index, uint8_t addr, bool write,
-                               uint32_t data, uint32_t* result) {
+static void stpdrv_send_datagram_blocking(uint8_t stpdrv_index, uint8_t addr,
+                                          bool write, uint32_t data,
+                                          uint32_t* result) {
   // validate
   if (addr >= 0x80) {
     return; // invalid address
@@ -132,7 +135,7 @@ void stpdrv_send_datagram_blocking(uint8_t stpdrv_index, uint8_t addr, bool writ
   *result |= ((uint32_t)rx_data[4]);
 }
 
-uint32_t read_register(uint8_t stpdrv_index, uint8_t addr) {
+static uint32_t read_register(uint8_t stpdrv_index, uint8_t addr) {
   // Prepare read.
   uint32_t dummy;
   stpdrv_send_datagram_blocking(stpdrv_index, addr, false, 0, &dummy);
@@ -146,7 +149,7 @@ uint32_t read_register(uint8_t stpdrv_index, uint8_t addr) {
   return result;
 }
 
-void write_register(uint8_t stpdrv_index, uint8_t addr, uint32_t data) {
+static void write_register(uint8_t stpdrv_index, uint8_t addr, uint32_t data) {
   uint32_t dummy;
   stpdrv_send_datagram_blocking(stpdrv_index, addr, true, data, &dummy);
 }
@@ -197,8 +200,8 @@ void stpdrv_init() {
 
     // configure stallguard threshold.
     int32_t thresh = 35; // must be between -64 ~ 63. Need to be configured
-                         // such that stpdrv_check_stall() returns true when motor
-                         // is stalled. Use 7 or 8 for 12V driving stage.
+                         // such that stpdrv_check_stall() returns true when
+                         // motor is stalled. Use 7 or 8 for 12V driving stage.
     write_register(i, REG_COOLCONF,
                    (thresh << COOLCONF_SGT_LSB) & COOLCONF_SGT_MASK);
   }

@@ -51,7 +51,7 @@ static int cnt_i2c_write_error = 0;
 
 // Read single byte from the specified register, with reasonable timeout.
 // Returns true if successful, false if timeout or error.
-bool read_reg(uint8_t reg_addr, uint8_t* val) {
+static bool read_reg(uint8_t reg_addr, uint8_t* val) {
   if (i2c_write_timeout_us(PULSER_I2C, PULSER_I2C_ADDR, &reg_addr, 1, true,
                            PULSER_I2C_MAX_TX_US) != 1) {
     cnt_i2c_read_error++;
@@ -67,7 +67,7 @@ bool read_reg(uint8_t reg_addr, uint8_t* val) {
 
 // Read multiple consequtive bytes from the specified register, with reasonable
 // timeout. Returns true if successful, false if timeout or error.
-bool read_regs(uint8_t reg_addr, uint8_t* ptr, size_t size) {
+static bool read_regs(uint8_t reg_addr, uint8_t* ptr, size_t size) {
   if (i2c_write_timeout_us(PULSER_I2C, PULSER_I2C_ADDR, &reg_addr, 1, true,
                            PULSER_I2C_MAX_TX_US) != 1) {
     cnt_i2c_read_error++;
@@ -83,7 +83,7 @@ bool read_regs(uint8_t reg_addr, uint8_t* ptr, size_t size) {
 
 // Write single byte to the specified register, with reasonable timeout.
 // Returns true if successful, false if timeout or error.
-bool write_reg(uint8_t reg_addr, uint8_t val) {
+static bool write_reg(uint8_t reg_addr, uint8_t val) {
   uint8_t buffer[2] = {reg_addr, val};
   if (i2c_write_timeout_us(PULSER_I2C, PULSER_I2C_ADDR, buffer, 2, false,
                            PULSER_I2C_MAX_TX_US) != 2) {

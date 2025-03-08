@@ -7,8 +7,8 @@
 #pragma once
 
 #include <stdbool.h>
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #define XMODEM_BLOCK_SIZE 128
 #define XMODEM_TIMEOUT_US 100000

@@ -235,7 +235,7 @@ int64_t control_loop_step_motor(alarm_id_t aid, void* data) {
   }
 }
 
-void tick_motor_motion(ctrl_motor_motion_t* motion) {
+static void tick_motor_motion(ctrl_motor_motion_t* motion) {
   const float MAX_DVEL = MAX_ACC_MM_PER_S2 * CTRL_DT_S;
   const float EPS_VEL = MAX_ACC_MM_PER_S2 * CTRL_DT_S * 2;
 
@@ -330,7 +330,8 @@ static void combine_stats(float n1, float avg1, float sd1, float n2, float avg2,
   *sd_out = sd_comb;
 }
 
-void add_new_samples(control_t* control, float num, float avg, float sd) {
+static void add_new_samples(control_t* control, float num, float avg,
+                            float sd) {
   // Limit weight of previous samples to adapt to new situations quickly.
   const float OLD_SAMPLE_EFF = 100;
   if (control->eff_sample > OLD_SAMPLE_EFF) {
@@ -347,7 +348,7 @@ void add_new_samples(control_t* control, float num, float avg, float sd) {
   control->sd_igt_us = new_sd;
 }
 
-void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
+static void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
   // TODO: slow loop to control targ_ig. (1 Hz??) maximize avg. pulse duration
   // by optimizing targ_ig.
 
@@ -416,7 +417,7 @@ void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
   }
 }
 
-void tick_find_control(control_t* control, const pulser_stat_t* stat) {
+static void tick_find_control(control_t* control, const pulser_stat_t* stat) {
   // consider any kind of current flow as "found".
   if (stat->n_pulse > 0 || stat->r_pulse > 0 || stat->r_short > 0) {
     set_target_vel(&control->motor_motion, 0);
