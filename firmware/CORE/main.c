@@ -166,7 +166,7 @@ typedef enum {
   OP_FIND,
 } ctrl_op_t;
 
-typedef struct {
+typedef volatile struct {
   uint64_t tick;
   int stpdrv_ix;
   int max_load_us; // us past in single loop processing
@@ -187,7 +187,7 @@ typedef struct {
   ctrl_motor_step_t motor_step;
 } control_t;
 
-void set_target_vel(ctrl_motor_motion_t* ctrl_motion, float targ_vel_mm_per_s) {
+void set_target_vel(volatile ctrl_motor_motion_t* ctrl_motion, float targ_vel_mm_per_s) {
   // Limit for safety.
   if (targ_vel_mm_per_s > MAX_SPEED_MM_PER_S) {
     targ_vel_mm_per_s = MAX_SPEED_MM_PER_S;
@@ -199,7 +199,7 @@ void set_target_vel(ctrl_motor_motion_t* ctrl_motion, float targ_vel_mm_per_s) {
   ctrl_motion->targ_value = targ_vel_mm_per_s;
 }
 
-void set_target_pos(ctrl_motor_motion_t* ctrl_motion, float targ_pos_mm) {
+void set_target_pos(volatile ctrl_motor_motion_t* ctrl_motion, float targ_pos_mm) {
   ctrl_motion->mode = CTRL_POS;
   ctrl_motion->targ_value = targ_pos_mm;
 }
@@ -218,7 +218,7 @@ static inline float clamp(float x, float min, float max) {
 
 // Distribute steps evenly in loop interval.
 int64_t control_loop_step_motor(alarm_id_t aid, void* data) {
-  ctrl_motor_step_t* ctrl_step = data;
+  volatile ctrl_motor_step_t* ctrl_step = data;
   if (ctrl_step->remaining_steps > 0) {
     stpdrv_step(ctrl_step->stpdrv_ix, true);
     ctrl_step->mot_curr_step++;
@@ -236,7 +236,7 @@ int64_t control_loop_step_motor(alarm_id_t aid, void* data) {
   }
 }
 
-static void tick_motor_motion(ctrl_motor_motion_t* motion) {
+static void tick_motor_motion(volatile ctrl_motor_motion_t* motion) {
   const float MAX_DVEL = MAX_ACC_MM_PER_S2 * CTRL_DT_S;
   const float EPS_VEL = MAX_ACC_MM_PER_S2 * CTRL_DT_S * 2;
 
@@ -294,7 +294,7 @@ static void tick_motor_motion(ctrl_motor_motion_t* motion) {
   }
 }
 
-void tick_motor_step(ctrl_motor_step_t* step, float curr_pos_mm) {
+void tick_motor_step(volatile ctrl_motor_step_t* step, float curr_pos_mm) {
   if (step->remaining_steps != 0) {
     // shouldn't happen.
     // uC is probably overloaded.
@@ -312,7 +312,7 @@ void tick_motor_step(ctrl_motor_step_t* step, float curr_pos_mm) {
     }
     step->remaining_steps = delta_step;
     step->us_between_steps = CTRL_DT_US / abs(delta_step);
-    add_alarm_in_us(0, &control_loop_step_motor, step, true);
+    add_alarm_in_us(0, &control_loop_step_motor, (void*)step, true);
   }
 }
 
@@ -331,7 +331,7 @@ static void combine_stats(float n1, float avg1, float sd1, float n2, float avg2,
   *sd_out = sd_comb;
 }
 
-static void add_new_samples(control_t* control, float num, float avg,
+static void add_new_samples(volatile control_t* control, float num, float avg,
                             float sd) {
   // Limit weight of previous samples to adapt to new situations quickly.
   const float OLD_SAMPLE_EFF = 100;
@@ -349,7 +349,7 @@ static void add_new_samples(control_t* control, float num, float avg,
   control->sd_igt_us = new_sd;
 }
 
-static void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
+static void tick_feed_control(volatile control_t* control, const pulser_stat_t* stat) {
   // TODO: slow loop to control targ_ig. (1 Hz??) maximize avg. pulse duration
   // by optimizing targ_ig.
 
@@ -418,7 +418,7 @@ static void tick_feed_control(control_t* control, const pulser_stat_t* stat) {
   }
 }
 
-static void tick_find_control(control_t* control, const pulser_stat_t* stat) {
+static void tick_find_control(volatile control_t* control, const pulser_stat_t* stat) {
   // consider any kind of current flow as "found".
   if (stat->n_pulse > 0 || stat->r_pulse > 0 || stat->r_short > 0) {
     set_target_vel(&control->motor_motion, 0);
@@ -429,7 +429,7 @@ static void tick_find_control(control_t* control, const pulser_stat_t* stat) {
 // Main control loop at CONTROL_LOOP_HZ.
 bool tick_control_loop(repeating_timer_t* rt) {
   absolute_time_t begin_time = get_absolute_time();
-  control_t* control = (control_t*)rt->user_data;
+  volatile control_t* control = (volatile control_t*)rt->user_data;
 
   pulser_stat_t stat;
   pulser_checkpoint_read(&stat);
@@ -466,7 +466,7 @@ bool tick_control_loop(repeating_timer_t* rt) {
   return true;
 }
 
-void control_start_feed(control_t* control, float targ_pos_mm) {
+void control_start_feed(volatile control_t* control, float targ_pos_mm) {
   float curr_pos = control->motor_motion.curr_pos_mm;
 
   control->op = OP_FEED;
@@ -487,7 +487,7 @@ void control_start_feed(control_t* control, float targ_pos_mm) {
   control->r_open = 1;
 }
 
-void control_start_find(control_t* control, float lim_pos_mm) {
+void control_start_find(volatile control_t* control, float lim_pos_mm) {
   control->op = OP_FIND;
   if (lim_pos_mm > control->motor_motion.curr_pos_mm) {
     control->pos_limit_min =
@@ -502,18 +502,18 @@ void control_start_find(control_t* control, float lim_pos_mm) {
   }
 }
 
-void control_abort(control_t* control) {
+void control_abort(volatile control_t* control) {
   control->op = OP_NONE;
   set_target_vel(&control->motor_motion, 0);
 }
 
-bool control_is_ready(control_t* control) {
+bool control_is_ready(volatile control_t* control) {
   return control->op == OP_NONE && control->motor_motion.curr_vel_mm_per_s == 0;
 }
 
 // reason_is_limit is set to true if op is ended because of position limit.
 // returns: true if op is ended or hasn't started.
-bool control_check_status(control_t* control, bool* reason_is_limit) {
+bool control_check_status(volatile control_t* control, bool* reason_is_limit) {
   if (control->op != OP_NONE) {
     return false;
   }
@@ -524,7 +524,7 @@ bool control_check_status(control_t* control, bool* reason_is_limit) {
   return true;
 }
 
-void control_loop_init(control_t* control, repeating_timer_t* rt, log_t* log) {
+void control_loop_init(volatile control_t* control, repeating_timer_t* rt, log_t* log) {
   control->tick = 0;
   control->log = log;
   control->total_pulse = 0;
@@ -549,7 +549,7 @@ void control_loop_init(control_t* control, repeating_timer_t* rt, log_t* log) {
   control->motor_step.us_between_steps = 0;
 
   alarm_pool_add_repeating_timer_us(alarm_pool_get_default(), CTRL_DT_US,
-                                    &tick_control_loop, control, rt);
+                                    &tick_control_loop, (void*)control, rt);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
