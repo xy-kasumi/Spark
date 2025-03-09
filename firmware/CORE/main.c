@@ -361,28 +361,17 @@ static void add_new_samples(volatile control_t* control, float num, float avg,
 
 static void tick_feed_control(volatile control_t* control,
                               const pulser_stat_t* stat) {
-  // TODO: slow loop to control targ_ig. (1 Hz??) maximize avg. pulse duration
-  // by optimizing targ_ig.
-
-  const float MAX_DVEL = FEED_MAX_ACC_MM_PER_S2 * CTRL_DT_S;
-
-  // Coefficient that converts: Tig stddev [us] -> Tig allowed range of
-  // deviation [us]. Smaller value: possibly faster response, but might lead
-  // to oscillation. Larger value: stable, but might be slow.
-  const float DEADBAND_PARAM = 0.5;
-
-  // Converts: Tig error [us] -> change in velocity [mm/s], per unit time
-  // [mm/s^2].
-  const float GAIN = 5.0f;
-
   // 90% contribution comes from recent 45 samples.
   const float EMA_ALPHA = 0.05f;
 
   // These distance should be fraction of "OK" gap distance.
   // Typically good gap distance is a few um~20um according to literature.
-  // Too big value = slam into the work or always get too far after short and oscillate.
-  const float PULL_D_DIST_MM = 5e-3; // 5um
-  const float PUSH_D_DIST_MM = 1e-3; // 1um
+  // Too big value = slam into the work or always get too far after short and
+  // oscillate.
+  const float DELAY_S = 10e-3;
+  const float DELAY_TICK = DELAY_S * CONTROL_LOOP_HZ;
+  const float PULL_D_DIST_MM = 5e-3 / DELAY_TICK; // 5um
+  const float PUSH_D_DIST_MM = 1e-3 / DELAY_TICK; // 1um
 
   float curr_pos = control->motor_motion.curr_pos_mm;
 
@@ -403,9 +392,6 @@ static void tick_feed_control(volatile control_t* control,
     float eff_short_sample = stat->r_short * (CTRL_DT_S / 1000e-6);
     add_new_samples(control, eff_short_sample, 0, 0);
   }
-
-  float allowed_deviation = DEADBAND_PARAM * control->sd_igt_us;
-  float d_igt = control->targ_igt_us - control->avg_igt_us;
 
   log_add(control->log, stat->n_pulse, stat->stat_avail ? stat->avg_igt_us : 0,
           stat->stat_avail ? stat->sd_igt_us : 0, stat->r_pulse, stat->r_short,
@@ -428,22 +414,6 @@ static void tick_feed_control(volatile control_t* control,
       float targ_pos = sub_dir(curr_pos, PULL_D_DIST_MM, control->is_plus);
       set_target_pos(&control->motor_motion, targ_pos);
     }
-
-    // we're basically pulsing or shorting, and should have Tig estimate.
-    // Control Tig.
-    /*
-    if (abs(d_igt) > allowed_deviation) {
-      // only change velocity when it's outside of allowed range.
-      // Accelerate if Tig is bigger than target, decelerate if Tig is smaller.
-      float dvel = d_igt * GAIN * (CTRL_DT_US * 1e-6);
-      dvel = fminf(dvel, MAX_DVEL);
-      float targ_vel = control->motor_motion.curr_vel_mm_per_s +
-                       (control->is_plus ? -dvel : dvel);
-      targ_vel =
-          clamp(targ_vel, -FEED_MAX_SPEED_MM_PER_S, FEED_MAX_SPEED_MM_PER_S);
-      set_target_vel(&control->motor_motion, targ_vel);
-    }
-    */
   }
 }
 
