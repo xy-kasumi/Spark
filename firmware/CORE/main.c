@@ -187,7 +187,8 @@ typedef volatile struct {
   ctrl_motor_step_t motor_step;
 } control_t;
 
-void set_target_vel(volatile ctrl_motor_motion_t* ctrl_motion, float targ_vel_mm_per_s) {
+void set_target_vel(volatile ctrl_motor_motion_t* ctrl_motion,
+                    float targ_vel_mm_per_s) {
   // Limit for safety.
   if (targ_vel_mm_per_s > MAX_SPEED_MM_PER_S) {
     targ_vel_mm_per_s = MAX_SPEED_MM_PER_S;
@@ -199,7 +200,8 @@ void set_target_vel(volatile ctrl_motor_motion_t* ctrl_motion, float targ_vel_mm
   ctrl_motion->targ_value = targ_vel_mm_per_s;
 }
 
-void set_target_pos(volatile ctrl_motor_motion_t* ctrl_motion, float targ_pos_mm) {
+void set_target_pos(volatile ctrl_motor_motion_t* ctrl_motion,
+                    float targ_pos_mm) {
   ctrl_motion->mode = CTRL_POS;
   ctrl_motion->targ_value = targ_pos_mm;
 }
@@ -357,7 +359,8 @@ static void add_new_samples(volatile control_t* control, float num, float avg,
   control->sd_igt_us = new_sd;
 }
 
-static void tick_feed_control(volatile control_t* control, const pulser_stat_t* stat) {
+static void tick_feed_control(volatile control_t* control,
+                              const pulser_stat_t* stat) {
   // TODO: slow loop to control targ_ig. (1 Hz??) maximize avg. pulse duration
   // by optimizing targ_ig.
 
@@ -444,7 +447,13 @@ static void tick_feed_control(volatile control_t* control, const pulser_stat_t* 
   }
 }
 
-static void tick_find_control(volatile control_t* control, const pulser_stat_t* stat) {
+static void tick_find_control(volatile control_t* control,
+                              const pulser_stat_t* stat) {
+  log_add(control->log, stat->n_pulse, stat->stat_avail ? stat->avg_igt_us : 0,
+          stat->stat_avail ? stat->sd_igt_us : 0, stat->r_pulse, stat->r_short,
+          stat->r_open, control->avg_igt_us, control->sd_igt_us,
+          control->motor_motion.curr_vel_mm_per_s);
+
   // consider any kind of current flow as "found".
   if (stat->n_pulse > 0 || stat->r_pulse > 0 || stat->r_short > 0) {
     set_target_vel(&control->motor_motion, 0);
@@ -550,7 +559,8 @@ bool control_check_status(volatile control_t* control, bool* reason_is_limit) {
   return true;
 }
 
-void control_loop_init(volatile control_t* control, repeating_timer_t* rt, log_t* log) {
+void control_loop_init(volatile control_t* control, repeating_timer_t* rt,
+                       log_t* log) {
   control->tick = 0;
   control->log = log;
   control->total_pulse = 0;
@@ -694,11 +704,17 @@ void exec_command_find(int stpdrv_ix, float distance, app_t* app) {
   float pos_limit = app->control.motor_motion.curr_pos_mm + distance;
 
   // Make pulse small to minimize damage.
-  pulser_set_current(100);
+  pulser_set_current(500); // PULSER cannot detect smaller current like 100mA reliably.
   pulser_set_pulse_dur(100);
   pulser_set_max_duty(25);
   pulser_set_energize(true);
+
+  // ensure settings are applied, since they can't change when GATE is ON.
+  sleep_ms(5);
   pulser_unsafe_set_gate(true);
+
+  log_init(&app->log);
+
   control_start_find(&app->control, pos_limit);
 
   while (true) {
@@ -722,6 +738,9 @@ void exec_command_find(int stpdrv_ix, float distance, app_t* app) {
   printf(" (x=%.3f)\n", app->control.motor_motion.curr_pos_mm);
   pulser_unsafe_set_gate(false);
   pulser_set_energize(false);
+
+  print_time();
+  printf("find: log available (%d entries)\n", app->log.num_valid);
 }
 
 void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
@@ -739,6 +758,9 @@ void exec_command_feed(int stpdrv_ix, float dist_mm, app_t* app) {
   pulser_set_max_duty(app->duty_pct);
   pulser_set_current(app->current_ma);
   pulser_set_energize(true);
+
+  // ensure settings are applied, since they can't change when GATE is ON.
+  sleep_ms(5);
   pulser_unsafe_set_gate(true);
 
   log_init(&app->log);

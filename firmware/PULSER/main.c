@@ -22,6 +22,7 @@
  * Core0 write to a critical section csec_pulse, and Core1 read it.
  * No Core1->Core0 data flow (other than global error).
  */
+#include "config.h"
 #include "hardware/adc.h"
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
@@ -30,9 +31,8 @@
 #include "pico/multicore.h"
 #include "pico/sync.h"
 #include <inttypes.h>
-#include <stdatomic.h>
 #include <math.h>
-#include "config.h"
+#include <stdatomic.h>
 
 // core0, core1 shared
 static _Atomic bool error_mode =
@@ -60,8 +60,8 @@ static uint32_t csec_stat_dur_open = 0;
 ////////////////////////////////////////////////////////////////////////////////
 // Core1: Gate & current threshold PWM driving and computation.
 
-static const uint8_t PCURR_ON_RESET = 10; // 1A
-static const uint16_t PDUR_ON_RESET = 500; // 500us
+static const uint8_t PCURR_ON_RESET = 10;    // 1A
+static const uint16_t PDUR_ON_RESET = 500;   // 500us
 static const uint8_t MAX_DUTY_ON_RESET = 25; // 25%
 
 static const uint8_t PWM_GATE_NUM_CYCLE = 89;
@@ -318,12 +318,13 @@ uint8_t read_reg(uint8_t reg) {
     // convert
     visible_n_pulse = stat_n_pulse > 255 ? 255 : stat_n_pulse;
     if (stat_n_sample == 0) {
-      visible_igt_5us = 255; // invalid
+      visible_igt_5us = 255;    // invalid
       visible_igt_sd_5us = 255; // invalid
     } else {
       uint16_t igt_avg = stat_accum_igt_us / stat_n_sample;
       // Quantization error might cause negative value, so use signed and clamp.
-      int32_t igt_var = (int32_t) (stat_accum_igt_sq_us / stat_n_sample) - (int32_t) (igt_avg * igt_avg);
+      int32_t igt_var = (int32_t)(stat_accum_igt_sq_us / stat_n_sample) -
+                        (int32_t)(igt_avg * igt_avg);
       if (igt_var < 0) {
         igt_var = 0;
       }
@@ -393,6 +394,20 @@ static const uint16_t COOLDOWN_SHORT_US = 100;
 
 static const uint16_t COOLDOWN_PULSE_MIN_US = 5;
 
+// Get pin value with about ~500ns noise filtering.
+// Returns the denoised value, or default_val if the signal is unstable.
+static inline bool get_pin_denoise(uint gpio_pin, bool default_val) {
+  bool val = gpio_get(gpio_pin);
+  for (uint8_t i = 0; i < 8; i++) {
+    // each cycle is about 10 cycle
+    bool val_verify = gpio_get(gpio_pin);
+    if (val_verify != val) {
+      return default_val;
+    }
+  }
+  return val;
+}
+
 void core1_main() {
   uint8_t curr_pol = POL_OFF;
   uint8_t curr_pcurr = 1;
@@ -441,16 +456,7 @@ void core1_main() {
     }
     curr_pcurr = new_pcurr;
 
-    // Get noise-filtered gate value.
-    bool gate = gpio_get(PIN_GATE);
-    for (uint8_t i = 0; i < 15; i++) {
-      // each cycle is about 10 cycle
-      bool gate_verify = gpio_get(PIN_GATE);
-      if (gate_verify != gate) {
-        continue; // signal unstable; ignore
-      }
-    }
-
+    bool gate = get_pin_denoise(PIN_GATE, false);
     if (!gate) {
       continue;
     }
@@ -462,11 +468,11 @@ void core1_main() {
     set_out_level(curr_pcurr);
     uint16_t igt_us = 0;
     while (true) {
-      if (!gpio_get(PIN_GATE)) {
+      if (!get_pin_denoise(PIN_GATE, true)) {
         set_out_level(0);
         goto pulse_ended;
       }
-      if (gpio_get(PIN_CURR_TRIGGER)) {
+      if (get_pin_denoise(PIN_CURR_TRIGGER, false)) {
         // discharge started.
         break;
       }
@@ -501,7 +507,7 @@ void core1_main() {
       }
       critical_section_exit(&csec_stat);
       for (uint16_t i = 0; i < pdur; i++) {
-        if (!gpio_get(PIN_GATE)) {
+        if (!get_pin_denoise(PIN_GATE, true)) {
           set_out_level(0);
           goto pulse_ended;
         }
