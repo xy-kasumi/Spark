@@ -704,7 +704,7 @@ void exec_command_find(int stpdrv_ix, float distance, app_t* app) {
   float pos_limit = app->control.motor_motion.curr_pos_mm + distance;
 
   // Make pulse small to minimize damage.
-  pulser_set_current(500); // PULSER cannot detect smaller current like 100mA reliably.
+  pulser_set_current(100);
   pulser_set_pulse_dur(100);
   pulser_set_max_duty(25);
   pulser_set_energize(true);
