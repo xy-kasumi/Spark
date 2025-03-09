@@ -216,6 +216,14 @@ static inline float clamp(float x, float min, float max) {
   }
 }
 
+static inline float add_dir(float x, float dx, bool is_plus) {
+  return is_plus ? x + dx : x - dx;
+}
+
+static inline float sub_dir(float x, float dx, bool is_plus) {
+  return is_plus ? x - dx : x + dx;
+}
+
 // Distribute steps evenly in loop interval.
 int64_t control_loop_step_motor(alarm_id_t aid, void* data) {
   volatile ctrl_motor_step_t* ctrl_step = data;
@@ -367,6 +375,12 @@ static void tick_feed_control(volatile control_t* control, const pulser_stat_t* 
   // 90% contribution comes from recent 45 samples.
   const float EMA_ALPHA = 0.05f;
 
+  // These distance should be fraction of "OK" gap distance.
+  // Typically good gap distance is a few um~20um according to literature.
+  // Too big value = slam into the work or always get too far after short and oscillate.
+  const float PULL_D_DIST_MM = 5e-3; // 5um
+  const float PUSH_D_DIST_MM = 1e-3; // 1um
+
   float curr_pos = control->motor_motion.curr_pos_mm;
 
   // Update
@@ -402,8 +416,19 @@ static void tick_feed_control(volatile control_t* control, const pulser_stat_t* 
                                                ? FIND_SPEED_MM_PER_S
                                                : -FIND_SPEED_MM_PER_S);
   } else {
+    if (stat->r_open > 0.5) {
+      // too far
+      float targ_pos = add_dir(curr_pos, PUSH_D_DIST_MM, control->is_plus);
+      set_target_pos(&control->motor_motion, targ_pos);
+    } else if (stat->r_short > 0.5) {
+      // too close
+      float targ_pos = sub_dir(curr_pos, PULL_D_DIST_MM, control->is_plus);
+      set_target_pos(&control->motor_motion, targ_pos);
+    }
+
     // we're basically pulsing or shorting, and should have Tig estimate.
     // Control Tig.
+    /*
     if (abs(d_igt) > allowed_deviation) {
       // only change velocity when it's outside of allowed range.
       // Accelerate if Tig is bigger than target, decelerate if Tig is smaller.
@@ -415,6 +440,7 @@ static void tick_feed_control(volatile control_t* control, const pulser_stat_t* 
           clamp(targ_vel, -FEED_MAX_SPEED_MM_PER_S, FEED_MAX_SPEED_MM_PER_S);
       set_target_vel(&control->motor_motion, targ_vel);
     }
+    */
   }
 }
 
