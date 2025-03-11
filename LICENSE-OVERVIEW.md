@@ -35,5 +35,6 @@ AGPL, CERN-OHL, and Apache-2.0 also include *patent retaliation* clauses, promot
 | Source Sans 3       | SIL OFL 1.1      | <https://fonts.google.com/specimen/Source+Sans+3>       |
 | lil-gui             | MIT              | <https://github.com/georgealways/lil-gui>               |
 | qunit               | MIT              | <https://github.com/qunitjs/qunit>                      |
+| cq-electronics      | MIT              | <https://github.com/sethfischer/cq-electronics>         |
 
 Also see [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt) for full details.
