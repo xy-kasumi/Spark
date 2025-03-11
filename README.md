@@ -16,7 +16,7 @@ Directories are roughly divided into two groups.
 * dicer: main software that generates G-code from STL for the machine
 * firmware: C firmware code for the boards
 * pcb: KiCad files for PCBA
-* mech (TBD): CAD files for the machine
+* mech: CAD files for the machine
 
 These are necessary for building, testing, and using the machine.
 
