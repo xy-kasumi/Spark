@@ -3,7 +3,8 @@ import cadquery as cq
 channel_sz = 20
 
 size = 20
-hole_dia = 5
+m3_hole_dia = 3.3
+m3_cap_dia = 7
 cbore_fin_thickness = 3
 
 def make_joint():
@@ -19,9 +20,7 @@ def make_joint():
     for plane in ["<X", "<Y"]:
         corner_joint = (
             corner_joint.faces(plane).workplane(centerOption="CenterOfMass", offset=size, invert=True)
-            #.circle(hole_dia).cutThruAll()
-            #.circle(hole_dia * 2).cut()
-            .cboreHole(3.2, 5, size - cbore_fin_thickness)
+            .cboreHole(m3_hole_dia, m3_cap_dia, size - cbore_fin_thickness)
             )
         
     corner_joint = (
