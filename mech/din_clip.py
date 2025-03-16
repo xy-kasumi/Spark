@@ -75,7 +75,6 @@ def make_din_clip(l_end_offset=20, r_end_offset=20, top_th=5):
         cq.Workplane("XZ")
         # left (X-) side
         .moveTo(-rail_width / 2, 0)
-        .vLine(-rail_t * 0.2)
         # spring loop
         .hLine(-spring_len)
         .vLine(-spring_height)
@@ -109,13 +108,39 @@ def make_din_clip(l_end_offset=20, r_end_offset=20, top_th=5):
     
     clip = (
         cq.Workplane("XZ")
-        .center(-rail_width/2 - 2, -rail_t * 0.2 - spring_height / 2)
-        .rect(6, spring_height - 0.3)
+        .center(-rail_width/2 - 2.5, 0.5 - spring_height / 2)
+        .rect(5, spring_height + 1 - 0.4)
         .extrude(5, both=True)
-        .edges("<Z and >X")
-        .chamfer(1, 2)
-        .edges(">Z and >X")
-        .chamfer(.5, 1)
+    )
+    
+    clip_top_notch = (
+        cq.Workplane("XZ")
+        .center(-rail_width/2 - 3, 0.5 - spring_height / 2)
+        .center(3.5, 1.8)
+        .rect(1, 1)
+        .extrude(5, both=True)
+        .edges(">X and <Z")
+        .chamfer(0.5)
+    )
+    
+    clip_bot_notch = (
+        cq.Workplane("XZ")
+        .center(-rail_width/2 - 3, 0.5 - spring_height / 2)
+        .center(3.5, 1.8)
+        .center(0, -2.6)
+        .rect(1, 3)
+        .extrude(5, both=True)
+        .edges(">X and >Z")
+        .chamfer(0.5)
+        .edges(">X and <Z")
+        .chamfer(2.2, 0.9)
+    )
+    
+    clip_clearance = (
+        cq.Workplane("XZ")
+        .center(-rail_width/2 - 2, 0)
+        .rect(9, 2)
+        .extrude(5, both=True)
     )
     
     lever = (
@@ -135,7 +160,8 @@ def make_din_clip(l_end_offset=20, r_end_offset=20, top_th=5):
         .cutThruAll()
     )
     
-    return body.union(spring).union(clip).union(lever)
+    clip = clip.union(clip_top_notch).union(clip_bot_notch)
+    return body.cut(clip_clearance).union(clip).union(spring).union(lever)
 
 
 def make_din_clip_holes(hole_offsets, dia_hole, l_end=20, r_end=20):
@@ -158,3 +184,5 @@ def make_din_clip_inserts():
     Generate din clip with two holes for screwing from the front side.
     """
     pass
+
+# show_object(make_din_clip_holes([-10, 45], 3.3, 37, 50))
