@@ -22,22 +22,28 @@ static const uint8_t PIN_I2C_SDA = 0;  // I2C0
 static const uint8_t PIN_I2C_SCL = 1;  // I2C0
 static const uint8_t PIN_GATE = 2;
 static const uint8_t PIN_LED_STATUS = 4;
-static const uint8_t PIN_LED_POWER = 5;
-static const uint8_t PIN_MUX_POL = 8;   // Relay POL control
-static const uint8_t PIN_MUX_WG = 9;    // Relay SEL control
-static const uint8_t PIN_MUX_EN = 10;   // Relay EN control
-static const uint8_t PIN_CURR_TRIGGER = 16;
-static const uint8_t PIN_CURR_GATE_PWM = 18;
-static const uint8_t PWM_CURR_GATE_PWM = 1;
-static const uint8_t PWM_CHAN_CURR_GATE_PWM = PWM_CHAN_A;
-static const uint8_t PIN_CURR_THRESH_PWM = 20;
-static const uint8_t PWM_CURR_THRESH_PWM = 2;
-static const uint8_t PWM_CHAN_CURR_THRESH_PWM = PWM_CHAN_A;
-static const uint8_t PIN_TEMP_HS = 26; // ADC0
-static const uint8_t ADC_TEMP_HS = 0; // ADC0
+static const uint8_t PIN_MUX_V0H = 6;  // Controls bridge driver V0 (high-side)
+static const uint8_t PIN_MUX_V0L = 7;  // Controls bridge driver V0 (low-side)
+static const uint8_t PIN_MUX_VCH = 8;  // Controls bridge driver Vcom (high-side)
+static const uint8_t PIN_MUX_VCL = 9;  // Controls bridge driver Vcom (low-side)
+static const uint8_t PIN_MUX_V1H = 10; // Controls bridge driver V1 (high-side)
+static const uint8_t PIN_MUX_V1L = 11; // Controls bridge driver V1 (low-side)
+static const uint8_t PIN_TS_I2C_SDA = 14; // Temp sensor chip I2C
+static const uint8_t PIN_TS_I2C_SCL = 15; // Temp sensor chip I2C
+static const uint8_t PIN_GATE_IG = 17; // Controls bridge driver for ignition voltage
+static const uint8_t PIN_GATE_MAIN_PWM = 18; // Controls buck converter gate
+static const uint8_t PWM_GATE_MAIN_PWM = 1;
+static const uint8_t PWM_CHAN_GATE_MAIN_PWM = PWM_CHAN_A;
+static const uint8_t PIN_CURR_DETECT = 26; // ADC0
+static const uint8_t ADC_CURR_DETECT = 0; // ADC0
+static const uint8_t PIN_POWER_PS = 23;
 
 #define HOST_I2C i2c0
+#define TS_I2C i2c1
 
-#define RELAY_MAX_SETTLE_TIME_MS 20 // 15ms + safety buffer
+#define TS_I2C_DEV_ADDR 0x49
+#define TS_I2C_TIMEOUT_US 500
+
+#define MUX_MAX_SETTLE_TIME_US 1
 #define DISCHARGE_MAX_SETTLE_TIME_US 5 // PWM delay + MOSFET delay
 #define THRESH_MAX_SETTLE_TIME_MS 1 // PWM delay

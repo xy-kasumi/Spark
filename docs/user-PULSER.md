@@ -1,4 +1,4 @@
-# PULSER (r1) User Manual
+# PULSER (r2) User Manual
 
 This doc is for users of the PULSER board.
 It basically serves as both a datasheet and an operating manual.
@@ -9,6 +9,7 @@ Improper use of PULSER may cause death, fire, or damage to nearby devices.
 ## Overview
 
 ![photo](./PULSER-r1-photo.jpeg)
+old
 
 PULSER is an EDM discharge board, controllable via I2C and digital IOs.
 

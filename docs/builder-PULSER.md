@@ -1,9 +1,6 @@
-# PULSER (r1) Builder Manual
+# PULSER (r2) Builder Manual
 
-This doc is for people who want to build, modify, test PULSER (aka CTRL-MINI-ED) board.
-Current it's written for r1 (r0 didn't have any such doc).
-
-R1 is a transition period from CTRL-MINI-ED to PULSER naming and design.
+This doc is for people who want to build, modify, test PULSER r2 board.
 
 ## Assembly
 
@@ -11,20 +8,12 @@ You'll need the following
 * PCBA-ed board
 * heatsink
 * 12V fan (2pin, XH connector)
-* thermal sheet with electric isolation
+* Copper thermal shims
 * plastic M3 screw x2
-* 220mΩ resistor & wire
-* NTC 100kΩ free-hanging thermistor
 
-Using these parts, you need to attach everything in one thermal block.
-
-The termistor should be secured especially firmly,
-because over-temperature protection depends on the thermistor reading.
-
-The diode and the transistor's back plate may or may not be High-V.
-Better to treat them as High-V, and apply isolation.
-That way touching heatsink won't electrocute you.
-
+Never use thick (a few mm) silione thermal pad instead of proper metal shims.
+Thermal resistance of thick thermal pad is orders of magnitude higher than metal shim.
+Such setup will burn the MOSFETs instantly.
 
 ## Test procedures
 

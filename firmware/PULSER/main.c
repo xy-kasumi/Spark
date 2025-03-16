@@ -8,15 +8,15 @@
  *
  * Core0: slow, complex (IRQ, float-compute allowed)
  * - PIN_I2C_SDA, PIN_I2C_SCL
+ * - PIN_TS_I2C_SDA, PIN_TS_I2C_SCL
  * - PIN_LED_STATUS
- * - PIN_TEMP_HS
  *
  * Core1: fast, simple (no IRQ)
- * - PIN_GATE, PIN_CURR_TRIGGER
- * - PIN_CURR_GATE_PWM
- * - PIN_LED_POWER
- * - PIN_CURR_THRESH_PWM
- * - PIN_MUX_EN, PIN_MUX_POL, PIN_MUX_WG
+ * - PIN_GATE
+ * - PIN_GATE_IG, PIN_GATE_MAIN_PWM
+ * - PIN_CURR_DETECT
+ * - PIN_MUX_V0H, PIN_MUX_V0L, PIN_MUX_VCH, PIN_MUX_VCL, PIN_MUX_V1H,
+ * PIN_MUX_V1L
  *
  * Core0 and Core1 share global error_mode flag. Both core can raise error.
  * Core0 write to a critical section csec_pulse, and Core1 read it.
@@ -42,9 +42,8 @@ static _Atomic bool error_mode =
 static critical_section_t csec_pulse;
 static uint8_t csec_pulse_pol;
 static uint8_t csec_pulse_pcurr;
-static uint16_t csec_pulse_pdur;
+static int csec_pulse_pdur;
 static uint8_t csec_pulse_max_duty;
-static uint8_t csec_pulse_th_on_cyc;
 
 // core0, core1 shared, only accessed in csec_stat section.
 static critical_section_t csec_stat;
@@ -61,116 +60,119 @@ static uint32_t csec_stat_dur_open = 0;
 // Core1: Gate & current threshold PWM driving and computation.
 
 static const uint8_t PCURR_ON_RESET = 10;    // 1A
-static const uint16_t PDUR_ON_RESET = 500;   // 500us
+static const int PDUR_ON_RESET = 500;        // 500us
 static const uint8_t MAX_DUTY_ON_RESET = 25; // 25%
 
-static const uint8_t PWM_GATE_NUM_CYCLE = 89;
-static const uint8_t PWM_THRESH_NUM_CYCLE = 150;
+static const uint16_t PWM_GATE_NUM_CYCLE = 300; // create 500kHz (=150MHz/300)
+
+// Maximum duty ratio (to support 25V gap)
+static const float PWM_MAX_DUTY = 0.7;
+
+// Maximum allowed current ripple assuming (low-ish) 15V gap voltage & largest
+// duty. If (current measurement) > (target current) + MAX_CURR_OVERSHOOT_MA, it
+// means the gap is probably in short-mode or some unexpected thing is
+// happening. Even in normal situation, output current will fluctuate between
+// (target current) -/+ MAX_CURR_OVERSHOOT_MA. (36V - 15V) / 10uH * 2us * 70%
+// (PWM_MAX_DUTY) = 2.94A
+// 2.94A x 1.2 (to prevent premature shutdown)
+static const float MAX_CURR_OVERSHOOT_A = 3.58;
 
 void init_out_pwm() {
-  gpio_set_function(PIN_CURR_GATE_PWM, GPIO_FUNC_PWM);
-  pwm_set_wrap(PWM_CURR_GATE_PWM, PWM_GATE_NUM_CYCLE - 1);
-  pwm_set_chan_level(PWM_CURR_GATE_PWM, PWM_CHAN_CURR_GATE_PWM, 0);
-  pwm_set_enabled(PWM_CURR_GATE_PWM, true);
+  gpio_set_function(PIN_GATE_MAIN_PWM, GPIO_FUNC_PWM);
+  pwm_set_wrap(PWM_GATE_MAIN_PWM, PWM_GATE_NUM_CYCLE - 1);
+  pwm_set_chan_level(PWM_GATE_MAIN_PWM, PWM_CHAN_GATE_MAIN_PWM, 0);
+  pwm_set_enabled(PWM_GATE_MAIN_PWM, true);
 }
 
-// Sets current output level.
-// level: 0~80 (0A~8A, 100mA/level)
-void set_out_level(uint8_t level) {
-  pwm_set_chan_level(PWM_CURR_GATE_PWM, PWM_CHAN_CURR_GATE_PWM, level);
-}
-
-// core0
-// cyc: whatever value determined by compute_th_on_cyc(), 0, or
-// PWM_THRESH_NUM_CYCLE.
-void init_thresh_pwm(uint8_t cyc) {
-  gpio_set_function(PIN_CURR_THRESH_PWM, GPIO_FUNC_PWM);
-  pwm_set_wrap(PWM_CURR_THRESH_PWM, PWM_THRESH_NUM_CYCLE - 1);
-  pwm_set_chan_level(PWM_CURR_THRESH_PWM, PWM_CHAN_CURR_THRESH_PWM, cyc);
-  pwm_set_enabled(PWM_CURR_THRESH_PWM, true);
-}
-
-// Sets current threshold level.
-// cyc: whatever value determined by compute_th_on_cyc(), 0, or
-// PWM_THRESH_NUM_CYCLE.
-void set_thresh_level(uint8_t cyc) {
-  pwm_set_chan_level(PWM_CURR_THRESH_PWM, PWM_CHAN_CURR_THRESH_PWM, cyc);
-}
-
-// core0
-// Compute final thresh PWM on cycles, that works well for pcurr (1~80;
-// 100mA~8A).
-uint8_t compute_th_on_cyc(uint8_t pcurr) {
-  const float PCURR_TO_FB_VOLT =
-      0.1 * 0.22; // *0.1: pcurr value to Ip(A). *0.22: FB resistor 220mOhm.
-  const float PCURR_TO_THRESH_VOLT =
-      PCURR_TO_FB_VOLT * 0.25; // target 25% threshold.
-  const float PCURR_TO_THRESH_ON_CYC =
-      PCURR_TO_THRESH_VOLT *
-      ((1 / 3.3) * PWM_THRESH_NUM_CYCLE); // /3.3: volt to duty factor.
-
-  float on_cyc = pcurr * PCURR_TO_THRESH_ON_CYC;
-  if (on_cyc >= PWM_THRESH_NUM_CYCLE) {
-    return PWM_THRESH_NUM_CYCLE;
-  } else {
-    return (uint8_t)on_cyc;
+// Sets current output duty factor.
+void set_out_level(float duty) {
+  int level = roundf(duty * PWM_GATE_NUM_CYCLE);
+  if (level < 0) {
+    level = 0;
+  } else if (level > PWM_GATE_NUM_CYCLE) {
+    level = PWM_GATE_NUM_CYCLE;
   }
+  pwm_set_chan_level(PWM_GATE_MAIN_PWM, PWM_CHAN_GATE_MAIN_PWM, level);
+}
+
+void turnoff_out() {
+  set_out_level(0);
+  gpio_put(PIN_GATE_IG, false);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Core1: Current detection ADC.
+
+volatile float latest_curr_a = 0;
+
+void init_curr_detect() {
+  adc_init();
+  adc_gpio_init(PIN_CURR_DETECT);
+  adc_select_input(ADC_CURR_DETECT);
+
+  // Change to PWM mode to reduce power ripple.
+  gpio_init(PIN_POWER_PS);
+  gpio_set_dir(PIN_POWER_PS, true);
+  gpio_put(PIN_POWER_PS, true);
+
+  // wait for power to stabilize
+  sleep_ms(10);
+
+  // start sampling
+  hw_set_bits(&adc_hw->cs, ADC_CS_START_ONCE_BITS);
+}
+
+// This can only measure up to max 22.5A, and with 5.5mA resolution.
+// Also, actual updates will happen at about 500kHz.
+float get_latest_current_a() {
+  if (adc_hw->cs & ADC_CS_READY_BITS) {
+    // 12bit, 3.0V max, 133mV/A.
+    // 1 LSB = 0.732mV = 5.50mA
+    // max measurement: 22.5A
+
+    uint16_t val = (uint16_t)adc_hw->result;
+    latest_curr_a = (float)val * 5.5f;
+
+    // start next sampling
+    hw_set_bits(&adc_hw->cs, ADC_CS_START_ONCE_BITS);
+  }
+  return latest_curr_a;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Core0: Temperature sensor
 
-static const int16_t TEMP_INVALID = -1000;
-static int16_t current_temp = TEMP_INVALID;
-
-// Convert raw ADC value to temperature in Celsius.
-// Returns TEMP_INVALID if it's suspected the device is broken or in extreme
-// condition.
-int16_t convert_hs_temp(uint16_t raw_adc_value) {
-  // Convert raw 12-bit ADC value (0-4095) to voltage (0-3.3V)
-  float voltage = raw_adc_value * 3.3f / 4096.0f;
-
-  // Based on voltage-temp table from spec:
-  // 0.29V -> -5°C
-  // 0.89V -> 20°C
-  // 1.97V -> 50°C
-  // 2.65V -> 75°C
-  // 3.01V -> 100°C
-  // 3.16V -> 125°C
-  if (voltage < 0.29f || voltage > 3.16f) {
-    return TEMP_INVALID;
-  }
-
-  // Linear interpolation between closest points
-  if (voltage <= 0.89f) {
-    // Between -5°C and 20°C
-    return (int16_t)(-5 + (voltage - 0.29f) * (25.0f / 0.6f));
-  } else if (voltage <= 1.97f) {
-    // Between 20°C and 50°C
-    return (int16_t)(20 + (voltage - 0.89f) * (30.0f / 1.08f));
-  } else if (voltage <= 2.65f) {
-    // Between 50°C and 75°C
-    return (int16_t)(50 + (voltage - 1.97f) * (25.0f / 0.68f));
-  } else if (voltage <= 3.01f) {
-    // Between 75°C and 100°C
-    return (int16_t)(75 + (voltage - 2.65f) * (25.0f / 0.36f));
-  } else {
-    // Between 100°C and 125°C
-    return (int16_t)(100 + (voltage - 3.01f) * (25.0f / 0.15f));
-  }
-}
+static const int TEMP_INVALID = -1000;
+static int current_temp_c = TEMP_INVALID;
 
 // Update current_temp by doing ADC read.
-void update_temp_blocking() { current_temp = convert_hs_temp(adc_read()); }
+// Returns true if ok, false otherwise.
+bool update_temp_blocking() {
+  uint8_t data = 0;
+  if (i2c_write_timeout_us(TS_I2C, TS_I2C_DEV_ADDR, &data, 1, true,
+                           TS_I2C_TIMEOUT_US) != 1) {
+    return false;
+  }
+  if (i2c_read_timeout_us(TS_I2C, TS_I2C_DEV_ADDR, &data, 1, false,
+                          TS_I2C_TIMEOUT_US) != 1) {
+    return false;
+  }
+
+  current_temp_c = (int8_t)data;
+  return true;
+}
 
 // returns: true if ok, false if bad.
 bool init_temp_sensor_and_check_sanity() {
-  adc_init();
-  adc_gpio_init(PIN_TEMP_HS);
-  adc_select_input(ADC_TEMP_HS);
+  i2c_init(TS_I2C, I2C_BAUD);
 
-  update_temp_blocking();
-  return current_temp != TEMP_INVALID && current_temp <= MAX_ALLOWED_TEMP;
+  if (!update_temp_blocking()) {
+    return false;
+  }
+  if (current_temp_c == TEMP_INVALID || current_temp_c > MAX_ALLOWED_TEMP) {
+    return false;
+  }
+  return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -220,13 +222,11 @@ void write_reg(uint8_t reg, uint8_t val) {
     // Truncate to valid range.
     if (val < 1) {
       val = 1;
-    } else if (val > 80) {
-      val = 80;
+    } else if (val > 200) {
+      val = 200;
     }
-    uint8_t cyc = compute_th_on_cyc(val);
     critical_section_enter_blocking(&csec_pulse);
     csec_pulse_pcurr = val;
-    csec_pulse_th_on_cyc = cyc;
     critical_section_exit(&csec_pulse);
     break;
   case REG_PULSE_DUR:
@@ -270,14 +270,14 @@ uint8_t read_reg(uint8_t reg) {
     return val;
   }
   case REG_TEMPERATURE:
-    if (current_temp == TEMP_INVALID) {
+    if (current_temp_c == TEMP_INVALID) {
       return 255;
-    } else if (current_temp < 0) {
+    } else if (current_temp_c < 0) {
       return 0;
-    } else if (current_temp >= 254) {
+    } else if (current_temp_c >= 254) {
       return 254;
     } else {
-      return current_temp;
+      return current_temp_c;
     }
   case REG_PULSE_DUR: {
     critical_section_enter_blocking(&csec_pulse);
@@ -394,7 +394,11 @@ static const uint16_t COOLDOWN_SHORT_US = 100;
 
 static const uint16_t COOLDOWN_PULSE_MIN_US = 5;
 
-// Get pin value with about ~500ns noise filtering.
+static const uint32_t MASK_ALL_MUX_PINS =
+    (1 << PIN_MUX_V0H) | (1 << PIN_MUX_V0L) | (1 << PIN_MUX_VCH) |
+    (1 << PIN_MUX_VCL) | (1 << PIN_MUX_V1H) | (1 << PIN_MUX_V1L);
+
+// Get pin value with about ~250ns noise filtering.
 // Returns the denoised value, or default_val if the signal is unstable.
 static inline bool get_pin_denoise(uint gpio_pin, bool default_val) {
   bool val = gpio_get(gpio_pin);
@@ -408,9 +412,19 @@ static inline bool get_pin_denoise(uint gpio_pin, bool default_val) {
   return val;
 }
 
+static inline float clampf(float val, float min, float max) {
+  if (val < min) {
+    return min;
+  } else if (val > max) {
+    return max;
+  } else {
+    return val;
+  }
+}
+
 void core1_main() {
   uint8_t curr_pol = POL_OFF;
-  uint8_t curr_pcurr = 1;
+  float curr_pcurr = 1;
 
   // Each loop is expected to finish well within 1us.
   // But when applying changes to pol/pcurr, it can take as long as it needs.
@@ -424,7 +438,6 @@ void core1_main() {
     critical_section_enter_blocking(&csec_pulse);
     uint8_t new_pol = csec_pulse_pol;
     uint8_t new_pcurr = csec_pulse_pcurr;
-    uint8_t new_th_on_cyc = csec_pulse_th_on_cyc;
     uint16_t pdur = csec_pulse_pdur;
     uint8_t max_duty = csec_pulse_max_duty;
     critical_section_exit(&csec_pulse);
@@ -434,26 +447,27 @@ void core1_main() {
     if (curr_pol != new_pol) {
       // LONG PROCESS
       sleep_us(DISCHARGE_MAX_SETTLE_TIME_US);
+
+      gpio_put_masked(MASK_ALL_MUX_PINS, 0);
+      sleep_us(MUX_MAX_SETTLE_TIME_US);
+
       if (new_pol == POL_OFF) {
-        gpio_put(PIN_MUX_EN, 0);
-        sleep_ms(RELAY_MAX_SETTLE_TIME_MS);
-        gpio_put(PIN_LED_POWER, 0);
+        gpio_put_masked(MASK_ALL_MUX_PINS,
+                        1 << PIN_MUX_V0L | 1 << PIN_MUX_VCL | 1 << PIN_MUX_V1L);
+      } else if (new_pol == POL_TPWN || new_pol == POL_TPGN) {
+        // T+, others-
+        gpio_put_masked(MASK_ALL_MUX_PINS,
+                        1 << PIN_MUX_V0L | 1 << PIN_MUX_V1L | 1 << PIN_MUX_VCH);
       } else {
-        gpio_put(PIN_LED_POWER, true);
-        gpio_put(PIN_MUX_EN, true);
-        gpio_put(PIN_MUX_WG, new_pol == POL_TPGN || new_pol == POL_TNGP);
-        gpio_put(PIN_MUX_POL, new_pol == POL_TPWN || new_pol == POL_TPGN);
-        sleep_ms(RELAY_MAX_SETTLE_TIME_MS);
+        // T-, others+
+        gpio_put_masked(MASK_ALL_MUX_PINS,
+                        1 << PIN_MUX_V0H | 1 << PIN_MUX_V1H | 1 << PIN_MUX_VCL);
       }
+      sleep_us(MUX_MAX_SETTLE_TIME_US);
+      curr_pol = new_pol;
     }
-    curr_pol = new_pol;
 
     // Apply current change.
-    if (curr_pcurr != new_pcurr) {
-      // LONG PROCESS
-      set_thresh_level(new_th_on_cyc);
-      sleep_ms(THRESH_MAX_SETTLE_TIME_MS);
-    }
     curr_pcurr = new_pcurr;
 
     bool gate = get_pin_denoise(PIN_GATE, false);
@@ -465,14 +479,14 @@ void core1_main() {
     //  Emit single pulse if gate is HIGH.
 
     // turn on and wait for discharge to happen.
-    set_out_level(curr_pcurr);
+    gpio_put(PIN_GATE_IG, true);
     uint16_t igt_us = 0;
     while (true) {
       if (!get_pin_denoise(PIN_GATE, true)) {
-        set_out_level(0);
+        turnoff_out();
         goto pulse_ended;
       }
-      if (get_pin_denoise(PIN_CURR_TRIGGER, false)) {
+      if (get_latest_current_a() >= 0.5) {
         // discharge started.
         break;
       }
@@ -490,7 +504,7 @@ void core1_main() {
 
     if (igt_us < IG_THRESH_SHORT_US) {
       // short; turn-off and short-cooldown.
-      set_out_level(0);
+      turnoff_out();
       sleep_us(COOLDOWN_SHORT_US);
       critical_section_enter_blocking(&csec_stat);
       csec_stat_dur += COOLDOWN_SHORT_US;
@@ -506,20 +520,53 @@ void core1_main() {
         csec_stat_accum_igt_sq_us += igt_us * igt_us;
       }
       critical_section_exit(&csec_stat);
+
+      // control current for pdur.
+      absolute_time_t t_ig_start = get_absolute_time();
+      int gate_off_consecutive = 0;
+      float duty = 0;
+      const float gain = 0.02;
       for (uint16_t i = 0; i < pdur; i++) {
-        if (!get_pin_denoise(PIN_GATE, true)) {
-          set_out_level(0);
+        // Monitor gate with denoising.
+        if (!gpio_get(PIN_GATE)) {
+          gate_off_consecutive++;
+        }
+        if (gate_off_consecutive > 10) {
+          turnoff_out();
           goto pulse_ended;
         }
-        sleep_us(1);
+
+        // Turn off ignition voltage and hand over to PWM current.
+        // Empirically, 3us is enough for discharge to stabilize to 20V.
+        if (i >= 3) {
+          gpio_put(PIN_GATE_IG, false);
+        }
+
+        // Control constant-current PWM.
+        float curr_a = get_latest_current_a();
+        if (curr_a > curr_pcurr + MAX_CURR_OVERSHOOT_A) {
+          // current is too high for a normal gap.
+          // gap might get shorted during the pulse,
+          // or control is oscillating.
+          // NOTE: maybe this should be counted and should be exposed via register?
+          break;
+        }
+        duty += (curr_pcurr - curr_a) * gain;
+        duty = clampf(duty, 0, PWM_MAX_DUTY);
+        set_out_level(duty);
+
+        // Record 1us past as pulse time.
         critical_section_enter_blocking(&csec_stat);
         csec_stat_dur++;
         csec_stat_dur_pulse++;
         critical_section_exit(&csec_stat);
+
+        // Absorb processing time variation.
+        sleep_until(delayed_by_us(t_ig_start, i + 1));
       }
 
       // turn-off and cooldown.
-      set_out_level(0);
+      turnoff_out();
       int32_t cooldown_time = pinterval - (int32_t)(igt_us + pdur);
       if (cooldown_time < COOLDOWN_PULSE_MIN_US) {
         cooldown_time = COOLDOWN_PULSE_MIN_US;
@@ -538,45 +585,30 @@ fatal_error:
   // De-energize safely.
   set_out_level(0);
   sleep_us(DISCHARGE_MAX_SETTLE_TIME_US);
-  gpio_put(PIN_MUX_EN,
-           0); // this is critical. Others are for saving relay themselves.
-  gpio_put(PIN_MUX_POL, 0);
-  gpio_put(PIN_MUX_WG, 0);
-  sleep_ms(RELAY_MAX_SETTLE_TIME_MS);
-  gpio_put(PIN_LED_POWER, 0); // now electrodes are disconnected for sure.
-
-  // Stop spurious signals.
-  set_thresh_level(0); // no effect, but just settle on known state.
+  gpio_put_masked(MASK_ALL_MUX_PINS, 0);
+  sleep_ms(MUX_MAX_SETTLE_TIME_US);
 
   while (true) {
-    // "error blink" forever
-    gpio_put(PIN_LED_POWER, 1);
-    sleep_ms(LED_ERR_BLINK_ON_MS);
-    gpio_put(PIN_LED_POWER, 0);
-    sleep_ms(LED_ERR_BLINK_OFF_MS);
   }
 }
 
 // core0
 int main() {
   // Init compute.
-  uint8_t th_cyc_on_reset = compute_th_on_cyc(PCURR_ON_RESET);
   csec_pulse_pol = POL_OFF;
   csec_pulse_pcurr = PCURR_ON_RESET;
   csec_pulse_pdur = PDUR_ON_RESET;
   csec_pulse_max_duty = MAX_DUTY_ON_RESET;
-  csec_pulse_th_on_cyc = th_cyc_on_reset;
   critical_section_init(&csec_pulse);
   critical_section_init(&csec_stat);
 
   // Init I/O to safe state.
-  const uint32_t output_mask =
-      (1 << PIN_LED_STATUS) | (1 << PIN_LED_POWER) | (1 << PIN_I2C_SDA) |
-      (1 << PIN_I2C_SCL) | (1 << PIN_MUX_POL) | (1 << PIN_MUX_WG) |
-      (1 << PIN_MUX_EN) | (1 << PIN_CURR_GATE_PWM) | (1 << PIN_CURR_THRESH_PWM);
+  const uint32_t output_mask = (1 << PIN_LED_STATUS) | (1 << PIN_I2C_SDA) |
+                               (1 << PIN_I2C_SCL) | (1 << PIN_TS_I2C_SDA) |
+                               (1 << PIN_TS_I2C_SCL) | (1 << PIN_GATE_IG) |
+                               (1 << PIN_GATE_MAIN_PWM) | MASK_ALL_MUX_PINS;
 
-  const uint32_t input_mask =
-      (1 << PIN_GATE) | (1 << PIN_CURR_TRIGGER) | (1 << PIN_TEMP_HS);
+  const uint32_t input_mask = (1 << PIN_GATE);
 
   gpio_init_mask(output_mask | input_mask);
   gpio_set_dir_masked(output_mask | input_mask, output_mask);
@@ -593,8 +625,8 @@ int main() {
   if (!init_temp_sensor_and_check_sanity()) {
     goto fatal_error;
   }
+  init_curr_detect();
   init_out_pwm();
-  init_thresh_pwm(th_cyc_on_reset);
   init_reg_rw_i2c();
   multicore_launch_core1(core1_main);
 
@@ -609,7 +641,7 @@ int main() {
     }
 
     update_temp_blocking();
-    if (current_temp == TEMP_INVALID || current_temp > MAX_ALLOWED_TEMP) {
+    if (current_temp_c == TEMP_INVALID || current_temp_c > MAX_ALLOWED_TEMP) {
       goto fatal_error;
     }
   }

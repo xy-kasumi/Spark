@@ -1,4 +1,4 @@
-# PULSER PCB Spec / Cheatsheet for Firmware Developer
+# PULSER r2 PCB Spec / Cheatsheet for Firmware Developer
 
 This document specifies the PCB hardware interface needed for firmware development,
 to meet the requirements defined in [user-PULSER.md](user-PULSER.md).
@@ -20,40 +20,40 @@ uC is Raspberry Pi Pico 2 board.
 * [RP2350 chip datasheet](https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf)
 
 uC operating environment
-* 5V 1A powered, regulated down from 36V main power
+* 5V 1A powered, regulated down from 12V power
 * System clock: 150 MHz
 * Firmware write via 3-pin QI connector SWD interface
 
 ## uC Connections
 
-|Pin | Pin Feature | Connected to | Note |
-|----|-------------|--------------|------|
-|GP0 | I2C0 SDA    | I2C_SDA | to host; pulled up to 3.3V by 10kΩ on PCB |
-|GP1 | I2C0 SCL    | I2C_SCL | to host; pulled up to 3.3V by 10kΩ on PCB |
-|GP2 | GPIO (IN)   | GATE    | to host; direct |
-|GP3 | GPIO (OUT)  | DETECT  | to host; direct (no longer used) |
-|GP4 | GPIO (OUT)  | LED_STATUS | white LED, digital H = ON |
-|GP5 | GPIO (OUT)  | LED_POWER  | red, digital H = ON |
-|GP6 | -           | N/C | |
-|GP7 | -           | N/C | |
-|GP8 | GPIO (OUT)  | MUX_POL = POL | Relay gate drive. OFF: COM(TOOL)=-,VO_AUX=+, ON: COM(TOOL)=+, VO_AUX=- |
-|GP9 | GPIO (OUT)  | MUX_WG = SEL | Relay gate drive. OFF: V0(WORK)=ON, ON: V1(GRINDER)=ON |
-|GP10| GPIO (OUT)  | MUX_EN = EN | Relay gate drive. OFF: cut off driver, ON: connect driver |
-|GP11| -           | N/C | |
-|GP12| -           | N/C | |
-|GP13| -           | N/C | |
-|GP14| -           | N/C | |
-|GP15| -           | N/C | |
-|GP16| GPIO (IN)   | CURR_TRIGGER | 3.3V output from Comparator U5 |
-|GP17| -           | N/C | |
-|GP18| PWM1A (OUT) | CURR_GATE_PWM | analog filter; see below |
-|GP19| -           | N/C | |
-|GP20| PWM2A (OUT) | CURR_THRESH_PWM | analog filter; see below |
-|GP21| -           | N/C | |
-|GP22| -           | N/C | |
-|GP26| ADC0        | TEMP_HS | Thermistor - resistor voltage divider |
-|GP27| -           | N/C | |
-|GP28| -           | N/C | |
+| Pin  | Pin Feature  | Connected to   | Note                                             |
+|------|--------------|----------------|--------------------------------------------------|
+| GP0  | I2C0 SDA     | I2C_SDA        | to host; pulled up to 3.3V by 10kΩ on PCB        |
+| GP1  | I2C0 SCL     | I2C_SCL        | to host; pulled up to 3.3V by 10kΩ on PCB        |
+| GP2  | GPIO (IN)    | GATE           | to host; direct                                  |
+| GP3  | -            | -              | -                                                |
+| GP4  | GPIO (OUT)   | LED_STATUS     | white LED, digital H = ON                        |
+| GP5  | -            | -              | -                                                |
+| GP6  | GPIO (OUT)   | MUX_V0H        | Controls bridge driver V0 (high-side)            |
+| GP7  | GPIO (OUT)   | MUX_V0L        | Controls bridge driver V0 (low-side)             |
+| GP8  | GPIO (OUT)   | MUX_VCH        | Controls bridge driver Vcom (high-side)          |
+| GP9  | GPIO (OUT)   | MUX_VCL        | Controls bridge driver Vcom (low-side)           |
+| GP10 | GPIO (OUT)   | MUX_V1H        | Controls bridge driver V1 (high-side)            |
+| GP11 | GPIO (OUT)   | MUX_V1L        | Controls bridge driver V1 (low-side)             |
+| GP12 | -            | N/C            | -                                                |
+| GP13 | -            | N/C            | -                                                |
+| GP14 | I2C1 SDA     | TS_I2C_SDA     | Temp sensor chip I2C                             |
+| GP15 | I2C1 SCL     | TS_I2C_SCL     | Temp sensor chip I2C                             |
+| GP16 | -            | N/C            | -                                                |
+| GP17 | GPIO (OUT)   | GATE_IG        | Controls bridge driver for ignition voltage.     |
+| GP18 | PWM1A (OUT)  | GATE_MAIN_PWM  | Controls buck converter gate                     |
+| GP19 | -            | N/C            | -                                                |
+| GP20 | -            | N/C            | -                                                |
+| GP21 | -            | N/C            | -                                                |
+| GP22 | -            | N/C            | -                                                |
+| GP26 | ADC0         | CURR_DETECT    | Current sense chip                               |
+| GP27 | -            | N/C            | -                                                |
+| GP28 | -            | N/C            | -                                                |
 
 * N/C: No Connection
 
@@ -62,103 +62,110 @@ Since correctness of GATE is critical and it's used in noisy environment,
 it should employ noise-filtering. (i.e. only detect change if the value persists for more than 1us).
 
 
-### Pulse generator (CURR_GATE_PWM, CURR_THRESH_PWM, DETECT)
-Main MOSFET current flow
-```
-100V|36V --(E+)-- discharge gap --(E-)-- drain:MOSFET:source --(FB)-- 220mΩ(±5%) --- GND
-```
+### Pulse generation (GATE_IG, GATE_MAIN_PWM, CURR_DETECT)
 
-Voltage at FB is used for current feedback control of MOSFET driving, and also for current detection.
+Normal operation sequence:
+* 0. setup mux
+* 1. enable GATE_IG, wait for ignition by monitoring CURR_DETECT
+* 2. in parallel:
+ * 2.a shutdown GATE_IG after some fixed time (e.g. 10us)
+ * 2.b start buck converter, control PWM frequency by monitoring CURR_DETECT
 
-| ΔIp or Ip | FB | GATE | Approx |
-|-----------|----|------|--------|
-| ΔIp = 100mA | ΔFB = 22mV (min: 21mV, max: 23mV) | ΔGATE = 37mV | 1/89 x 3.3V |
-| Ip = 1A | FB = 0.22V (min: 0.21V, max: 0.23V) | GATE = 0.37V | 10/89 x 3.3V |
-| Ip = 8A | FB = 1.76V (min: 1.67V, max: 1.85V) | GATE = 2.98V | 80/89 x 3.3V |
+If the ignition time is too short, consider it as short-circuit and don't start buck converter.
+Slow GATE_IG shutdown doesn't break anything; rather it just increases time to recover 100V voltage.
+Fast GATE_IG means less 100V capacity wasted, but risks premature shutdown of discharge.
 
-#### Current / voltage control
-```
-CURR_GATE_PWM --> gate-filter --(CURR_GATE)--> feedback-controlled MOSFET
-CURR_THRESH_PWM --> thresh-filter --> -:voltage comparator
-CURR_DETECT <-- voltage comparator:+ <-- FB filter --- FB
-```
+Buck converter
+* PWM frequency: 500kHz (2us)
+* Maximum rate of current change: 36V / 10uH (L4) = 3.6A/us
+  * 1% duty: +0.18A/cycle
 
-#### Gate filter
-```
-CURR_GATE_PWM (3.3V digital) --> 59% volt divider (Z=278Ω) --> 10uH --(pull down via 10nF) --> +:controller opAmp
-```
+As there is current sensing delay, PWM duty should start small and change speed should be limited.
 
-This forms 2nd-order LPF with Fc=500kHz.
-Simulation shows that
-* 1us rise time for step input
-* 2MHz PWM yields ripple of up to 5% of full scale (0.17V; corresponds to 750mA in Ip)
-  * 2MHz PWM means 75 cycles (sys clock = 150MHz)
-* allows room for current-shaping in the future
+#### Current detection
 
-To achieve more accurate current control, pre-computed delta-sigma pattern table and PIO should be used.
+CURR_DETECT is analog output of hole current sensor chip.
+ADC Vref is connected to 3.0V reference voltage.
+CURR_DETECT is capped by diode to not exceed 3.0V.
 
-#### Thresh filter
-```
-CURR_THRESH_PWM (3.3V digital) --> 10kΩ --(pull down via 10nF) --> -:voltage comparator
-```
-1st order LPF with Fc=1.6kHz.
-1MHz PWM should yield accurate enough analog signal.
+* ACS724LLCTR-30AU
+* [datasheet](https://www.allegromicro.com/-/media/files/datasheets/acs724-datasheet.ashx)
+* "30AU": 0~30A, 133mV/A
+* Filter fc=180kHz
 
-#### FB filter
-FB signal goes through 2nd order LPF with Fc=1MHz to suppress noise.
-This might introduce latency of 1us, but there's nothing uC can do.
+Should sample at highest possible ADC resolution to improve current control.
+
+ADC should set PS(GPIO23)=1 to reduce Pico 2 on-board voltage supply ripple.
 
 
-### Relays (MUX_EN, MUX_POL, MUX_WG)
-```
-uC pin --- 1kΩ --(pull down via 47kΩ)-- gate:MOSFET
-+12V --- relay coil (+ flywheel diode) -- drain:MOSFET:source --- GND
-```
+### Output mux (MUX_*)
+Output stage consists of 3 half-bridges.
+This enables polarity change & choosing output (work vs grind).
 
-MOSFET gate has ringing-limiting in-line resistor (1k), and pull-down (47k).
+MOSFET driver
+* UCC27288
+* [datasheet](https://www.ti.com/lit/ds/symlink/ucc27288.pdf)
 
-Thus, when uC is not iniailized (high-Z GPIO), relay is OFF. uC also doesn't need to pull-down.
+MOSFETs (both are N-ch)
+* BSC110N15NS5
+* [datasheet](https://www.infineon.com/dgdl/Infineon-BSC110N15NS5-DataSheet-v02_06-EN.pdf?fileId=5546d46253f650570154a04caaad551a)
 
-MOSFET: Vishay Si2304DDS
-* [datasheet](https://www.lcsc.com/datasheet/lcsc_datasheet_2410121816_Vishay-Intertech-SI2304DDS-T1-GE3_C56372.pdf)
-* Full-turn on around Vgs~3V
+* V0 = WORK
+* V1 = GRIND
+* VC = TOOL
 
-Relay: Omron G2RL-24 DC12
-* [datasheet](https://omronfs.omron.com/en_US/ecb/products/pdf/en-g2rl.pdf)
-* 2-pole (DPDT; 2c), sealed, 12V coil
-* coil current 33mA, 12V
-* turn on time: 15ms max
-* turn off time: 5ms max
-* rated switching load: 8A @ 30VDC (durability: 30K operations)
-* rated carry current: 8A @ 70℃
-* contact resistance: 100mΩ max
+Allowed configuration:
+
+Keep driver active config
+| POLARITY   | V0, V1 | VC  |
+|------------|--------|-----|
+| OFF        | L      | L   |
+| TPWN, TPGN | L      | H   |
+| TNWP, TNGP | H      | L   |
+| Trans      | Z      | Z   |
+
+Turn-off unused config
+| POLARITY | V0  | VC  | V1  |
+|----------|-----|-----|-----|
+| OFF      | L   | L   | L   |
+| TPWN     | L   | H   | Z   |
+| TNWP     | H   | L   | Z   |
+| TPGN     | Z   | H   | L   |
+| TNGP     | Z   | L   | H   |
+| Trans    | Z   | Z   | Z   |
+
+* L: only enable L
+* H: only enable H
+* Z: disable both
+
+Any any moment, configurations other than this is disallowed.
+
+OFF is L instead of Z, to properly boot-strap gate driver capacitors.
+
+As mux doesn't need fast switching, transition period should be long (more than 500ns)
+to avoid any possibility of shoot-through.
+
+Keep driver active config
+* pros: easier to ensure gate driver bootstrap
+* cons: might cause uncessary electrolysis
+
+Turn-off unused config
+* pros: minimize electrolysis, slightly reduce safety risk
+* cons: probably need periodic activation to keep driver boostrapped
 
 
-### Temperature sensor (TEMP_HS)
-connection: 3.3V --- thermistor --(TEMP_HS)-- 47k --- GND
+### Temperature sensor
 
-thermistor: 100kΩ NTC thermistor
-* EPCOSB57861S0104F040
-* R(T=25℃): 100kΩ±1%
-* B-value: 4540K±1%
-* [datasheet](https://docs.rs-online.com/838f/0900766b815ec91a.pdf)
+TMP102 chip
+* [datasheet](https://www.ti.com/lit/ds/symlink/tmp102.pdf)
+* I2C connection
+* ADD0: V+ (see eratta)
+* device address: 1001001 (0x49)
 
-This graph/table shows relationship within 5℃ accuracy.
+The chip is mounted close to hottest MOSFETs.
+We need to determine upper bound of operating condition, and reject to run discharges if exceeded.
 
-![thermistor-temp](./thermistor-volt-temp.png)
+Registers are 16bit.
+Reg 0x00: temperature (12bit, left-padded, big endian.)
 
-TEMP_HS(V) | Temp(°C)
------|-----
-0.29 | -5
-0.89 | 20
-1.97 | 50
-2.65 | 75
-3.01 | 100
-3.16 | 125
-
-Outside this range, firmware should refuse to run (show error) until reset.
-
-Thermistor is inserted to heatsink with silicon heat paste.
-
-Heasink has MOSFET (Q4), resistor (R17), OR-diode (D6).
-They're pretty heat resistant. However, it's better to think 60℃ or close as max allowed temp for heatsink.
+Top 8 bit is signed 8 bit int, temperature in °C.
