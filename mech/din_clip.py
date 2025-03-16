@@ -138,12 +138,12 @@ def make_din_clip(l_end_offset=20, r_end_offset=20, top_th=5):
     return body.union(spring).union(clip).union(lever)
 
 
-def make_din_clip_holes(hole_offsets, dia_hole, dia_cbore):
+def make_din_clip_holes(hole_offsets, dia_hole, l_end=20, r_end=20):
     """
     Generate din clip with holes for inserting capbolts from the back side.
     """
     thickness = 5
-    clip = make_din_clip(45, 50, thickness)
+    clip = make_din_clip(l_end, r_end, thickness)
     points = [(ofs, 0) for ofs in hole_offsets]
     clip = (
         clip.faces(">Z").workplane(origin=(0,0,0), offset=thickness, invert=True)
@@ -158,6 +158,3 @@ def make_din_clip_inserts():
     Generate din clip with two holes for screwing from the front side.
     """
     pass
-
-
-show_object(make_din_clip_holes([-5, 45], 4.4, 8))
