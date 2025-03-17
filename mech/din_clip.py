@@ -179,10 +179,21 @@ def make_din_clip_holes(hole_offsets, dia_hole, l_end=20, r_end=20):
     
     return clip
 
-def make_din_clip_inserts():
+def make_din_clip_inserts(hole_offsets, dia_insert, l_end=20, r_end=20):
     """
     Generate din clip with two holes for screwing from the front side.
     """
-    pass
+    thickness = 5
+    clip = make_din_clip(l_end, r_end, thickness)
+    points = [(ofs, 0) for ofs in hole_offsets]
+    clip = (
+        clip.faces(">Z").workplane(origin=(0,0,0), offset=0, invert=True)
+        .pushPoints(points)
+        .rect(10, 10)
+        .extrude(-5)
+        .pushPoints(points)
+        .hole(dia_insert)
+    )
+    return clip
 
-# show_object(make_din_clip_holes([-10, 45], 3.3, 37, 50))
+#show_object(make_din_clip_inserts([-35, 70], 5.1, 40, 75))
