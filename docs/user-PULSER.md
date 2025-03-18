@@ -13,7 +13,7 @@ old
 
 PULSER is an EDM discharge board, controllable via I2C and digital IOs.
 
-* Max pulse current: 8A (at duty factor=50%)
+* Max pulse current: 20A
 * Open voltage: 100V
 * 5 dynamic polarity configurations
   * (Tool+, Work-), (Tool-, Work+)
@@ -25,15 +25,13 @@ PULSER is an EDM discharge board, controllable via I2C and digital IOs.
 
 ### Power Supply
 Screw terminal on the left side
-* DC 36V, 4.2A minimum
-
-If the power supply is below 4.2 A, the microcontroller might reset accidentally at high-power setting.
-Above 4.2 A should be fine, but too much output (e.g. 10 A) will increase the damage in case of firmware bug.
+* DC 36V, 16A minimum (for discharge power)
+* DC 12V, 2A minimum (for uC, fans, gate drivers)
 
 ### Indicators
 
 * Status (white) LED: ON if OK. Blinks if error. OFF means hardware or firmware failure.
-* Power (red) LED: Indicates that electrodes are potentially energized. Blinks if error.
+* Power (red) LED: Indicates that electrodes are potentially energized.
 
 Even after sudden power failure, electrodes should be in high-impedance state if the Power (red) LED is OFF.
 When the board enters an error state, the only way to recover is through a power reset.
@@ -52,17 +50,17 @@ Electrodes:
 * "height", "width" etc. is based on "Spark" logo on the board
 
 **General**
-* Outer dimensions: 135mm (width) x 105mm (height) x 50mm (depth)
-* Mass: 240g
+* Outer dimensions: 150mm (width) x 100mm (height) x ? mm (depth)
+* Mass: ? g
 
 **Mounting**
-Board dimensions: 100mm (width) x 100mm (height)
-* 4 mounting holes at (5mm, 5mm), (5mm, 95mm), (95mm, 5mm), (95mm, 95mm)
+Board dimensions: 150mm (width) x 100mm (height)
+* 4 mounting holes at (5mm, 5mm), (5mm, 95mm), (145mm, 5mm), (145mm, 95mm)
 * Hole dia: 3.3mm, dia available for screw head, spacer etc: 6.5mm
   * available area is either isolated or GND
 
 **Thermal**
-* Max heat generation: 75W
+* Max heat generation: 30W
   * Ensure adequate airflow at the bottom of the PCB for proper fan operation.
 
 
@@ -204,7 +202,7 @@ To actually turn them off completely, you need to set POLARITY to OFF.
 | Address | Register      | Access      | Resets to | Description |
 |---------|---------------|-------------|-----------|-------------|
 | 0x01    | POLARITY      | RW          | 0         | 0: OFF, 1~4: energize with certain polarity. |
-| 0x02    | PULSE_CURRENT | RW          | 10        | pulse current in 100mA step. 1 (100mA) ~ 80 (8A) is allowed. |
+| 0x02    | PULSE_CURRENT | RW          | 10        | pulse current in 100mA step. 1 (100mA) ~ 200 (20A) is allowed. |
 | 0x03    | TEMPERATURE   | R           | N/A       | current heatsink temperature in ℃. 80 means 80℃. 255 means temp reading is unavailable due to severe issue. |
 | 0x04    | PULSE_DUR     | RW          | 50        | pulse duration in 10 us unit. 5 (50us) ~ 100 (1000us) is allowed. Default is 500us. |
 | 0x05    | MAX_DUTY      | RW          | 25        | Maximum duty factor allowed in percent. 1~95 is allowed. Default is 25%. |

@@ -127,11 +127,12 @@ void init_curr_detect() {
 float get_latest_current_a() {
   if (adc_hw->cs & ADC_CS_READY_BITS) {
     // 12bit, 3.0V max, 133mV/A.
-    // 1 LSB = 0.732mV = 5.50mA
-    // max measurement: 22.5A
+    // 1 LSB = 0.732mV
+    // max measurement: 18.79A
 
     uint16_t val = (uint16_t)adc_hw->result;
-    latest_curr_a = (float)val * 5.5f;
+    float voltage_mv = (float) val * 0.732;
+    latest_curr_a = (voltage_mv - 500) * (1.0 / 133);
 
     // start next sampling
     hw_set_bits(&adc_hw->cs, ADC_CS_START_ONCE_BITS);
@@ -164,6 +165,8 @@ bool update_temp_blocking() {
 
 // returns: true if ok, false if bad.
 bool init_temp_sensor_and_check_sanity() {
+  gpio_set_function(PIN_TS_I2C_SCL, GPIO_FUNC_I2C);
+  gpio_set_function(PIN_TS_I2C_SDA, GPIO_FUNC_I2C);
   i2c_init(TS_I2C, I2C_BAUD);
 
   if (!update_temp_blocking()) {
@@ -548,7 +551,8 @@ void core1_main() {
           // current is too high for a normal gap.
           // gap might get shorted during the pulse,
           // or control is oscillating.
-          // NOTE: maybe this should be counted and should be exposed via register?
+          // NOTE: maybe this should be counted and should be exposed via
+          // register?
           break;
         }
         duty += (curr_pcurr - curr_a) * gain;
@@ -625,6 +629,7 @@ int main() {
   if (!init_temp_sensor_and_check_sanity()) {
     goto fatal_error;
   }
+
   init_curr_detect();
   init_out_pwm();
   init_reg_rw_i2c();

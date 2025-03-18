@@ -91,6 +91,7 @@ CURR_DETECT is capped by diode to not exceed 3.0V.
 * ACS724LLCTR-30AU
 * [datasheet](https://www.allegromicro.com/-/media/files/datasheets/acs724-datasheet.ashx)
 * "30AU": 0~30A, 133mV/A
+* Vout(I=0) = Vcc x 0.1 = 0.5V
 * Filter fc=180kHz
 
 Should sample at highest possible ADC resolution to improve current control.
