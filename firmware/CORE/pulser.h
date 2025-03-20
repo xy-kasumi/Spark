@@ -57,6 +57,8 @@ void pulser_unsafe_set_gate(bool on);
 
 void pulser_checkpoint_read(pulser_stat_t* stat);
 
+void pulser_set_test(bool disable_short);
+
 /**
  * Read single byte from the specified register.
  * Returns 0 if read failed.

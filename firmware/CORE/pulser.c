@@ -19,12 +19,15 @@ static const uint8_t REG_T_IGNITION = 0x11;
 static const uint8_t REG_R_PULSE = 0x12;
 static const uint8_t REG_R_SHORT = 0x13;
 static const uint8_t REG_R_OPEN = 0x14;
+static const uint8_t REG_TEST = 0x80;
 
 static const uint8_t POLARITY_OFF = 0;
 static const uint8_t POLARITY_TPWN = 1; // Tool+, Work-
 static const uint8_t POLARITY_TNWP = 2; // Tool-, Work+
 static const uint8_t POLARITY_TPGN = 3; // Tool+, Grinder-
 static const uint8_t POLARITY_TNGP = 4; // Tool-, Grinder+
+
+static const uint8_t TEST_DISABLE_SHORT = 1 << 0;
 
 static const uint8_t TEMP_INVALID_VALUE = 255;
 
@@ -120,6 +123,9 @@ void pulser_init() {
 
     sleep_ms(100);
   }
+
+  // Ensure PULSER is in normal mode. (e.g. when CORE is restarted when doing test)
+  pulser_set_test(false);
 }
 
 bool pulser_available() { return mode == PULSER_OK; }
@@ -183,6 +189,15 @@ void pulser_set_energize(bool on) {
 
   write_reg(REG_POLARITY, on ? POLARITY_TNWP : POLARITY_OFF);
   sleep_us(WAIT_POLARITY_US);
+}
+
+void pulser_set_test(bool disable_short) {
+  uint8_t val = 0;
+  if (disable_short) {
+    val |= TEST_DISABLE_SHORT;
+  }
+  write_reg(REG_TEST, val);
+  sleep_us(1);
 }
 
 bool pulser_unsafe_get_detect() {

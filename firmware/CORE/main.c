@@ -637,6 +637,37 @@ void exec_command_regwrite(char board_id, int addr, int data) {
   }
 }
 
+void exec_command_testpulser(int duration_ms, app_t* app) {
+  pulser_set_pulse_dur(app->pulse_dur_us);
+  pulser_set_max_duty(app->duty_pct);
+  pulser_set_current(app->current_ma);
+  pulser_set_test(true);
+  pulser_set_energize(true);
+
+  // ensure settings are applied, since they can't change when GATE is ON.
+  sleep_ms(5);
+  pulser_unsafe_set_gate(true);
+
+  absolute_time_t end_time = make_timeout_time_ms(duration_ms);
+
+  while (absolute_time_diff_us(end_time, get_absolute_time()) < 0) {
+    if (abort_requested()) {
+      print_time();
+      printf("test_pulser: ABORTED\n");
+      break;
+    }
+    sleep_us(100);
+  }
+
+  // end
+  pulser_unsafe_set_gate(false);
+  pulser_set_energize(false);
+  pulser_set_test(false);
+
+  print_time();
+  printf("test_pulser: DONE\n");
+}
+
 void exec_command_move(int stpdrv_ix, float distance, app_t* app) {
   if (!control_is_ready(&app->control)) {
     printf("move: not ready\n");
@@ -1053,6 +1084,12 @@ void try_exec_command(char* buf, app_t* app) {
       return;
     }
     exec_command_regwrite(board_id, addr, data);
+  } else if (strcmp(command, "testpulser") == 0) {
+    int duration_ms = parse_int(&parser, 1, 100000);
+    if (!parser.success) {
+      return;
+    }
+    exec_command_testpulser(duration_ms, app);
   } else {
     printf("unknown command\n");
   }
