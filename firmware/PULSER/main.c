@@ -40,10 +40,11 @@ static _Atomic bool error_mode =
 
 // core0, core1 shared, only accessed in csec_pulse section or initialization.
 static critical_section_t csec_pulse;
-static uint8_t csec_pulse_pol;
-static uint8_t csec_pulse_pcurr;
-static int csec_pulse_pdur;
-static uint8_t csec_pulse_max_duty;
+static volatile uint8_t csec_pulse_pol;
+static volatile uint8_t csec_pulse_pcurr;
+static volatile int csec_pulse_pdur;
+static volatile uint8_t csec_pulse_max_duty;
+static volatile bool csec_pulse_test_disable_short;
 
 // core0, core1 shared, only accessed in csec_stat section.
 static critical_section_t csec_stat;
@@ -131,7 +132,7 @@ float get_latest_current_a() {
     // max measurement: 18.79A
 
     uint16_t val = (uint16_t)adc_hw->result;
-    float voltage_mv = (float) val * 0.732;
+    float voltage_mv = (float)val * 0.732;
     latest_curr_a = (voltage_mv - 500) * (1.0 / 133);
 
     // start next sampling
@@ -192,12 +193,15 @@ static const uint8_t REG_T_IGNITION_SD = 0x12;
 static const uint8_t REG_R_PULSE = 0x13;
 static const uint8_t REG_R_SHORT = 0x14;
 static const uint8_t REG_R_OPEN = 0x15;
+static const uint8_t REG_TEST = 0x80;
 
 static const uint8_t POL_OFF = 0;
 static const uint8_t POL_TPWN = 1; // Tool+, Work-
 static const uint8_t POL_TNWP = 2; // Tool-, Work+
 static const uint8_t POL_TPGN = 3; // Tool+, Grinder-
 static const uint8_t POL_TNGP = 4; // Tool-, Grinder+
+
+static const uint8_t TEST_DISABLE_SHORT = 1 << 0;
 
 static bool i2c_ptr_written = false;
 static uint8_t i2c_reg_ptr = 0;
@@ -252,6 +256,11 @@ void write_reg(uint8_t reg, uint8_t val) {
     }
     critical_section_enter_blocking(&csec_pulse);
     csec_pulse_max_duty = val;
+    critical_section_exit(&csec_pulse);
+    break;
+  case REG_TEST:
+    critical_section_enter_blocking(&csec_pulse);
+    csec_pulse_test_disable_short = val & TEST_DISABLE_SHORT;
     critical_section_exit(&csec_pulse);
     break;
   }
@@ -350,6 +359,12 @@ uint8_t read_reg(uint8_t reg) {
     return visible_r_short;
   case REG_R_OPEN:
     return visible_r_open;
+  case REG_TEST: {
+    critical_section_enter_blocking(&csec_pulse);
+    uint8_t val = csec_pulse_test_disable_short ? 1 : 0;
+    critical_section_exit(&csec_pulse);
+    return val;
+  }
   }
   return 0;
 }
@@ -443,6 +458,7 @@ void core1_main() {
     uint8_t new_pcurr = csec_pulse_pcurr;
     uint16_t pdur = csec_pulse_pdur;
     uint8_t max_duty = csec_pulse_max_duty;
+    bool test_disable_short = csec_pulse_test_disable_short;
     critical_section_exit(&csec_pulse);
     uint16_t pinterval = (uint32_t)pdur * 100 / (uint32_t)max_duty;
 
@@ -505,7 +521,7 @@ void core1_main() {
       }
     }
 
-    if (igt_us < IG_THRESH_SHORT_US) {
+    if (igt_us < IG_THRESH_SHORT_US && !test_disable_short) {
       // short; turn-off and short-cooldown.
       turnoff_out();
       sleep_us(COOLDOWN_SHORT_US);
@@ -603,6 +619,7 @@ int main() {
   csec_pulse_pcurr = PCURR_ON_RESET;
   csec_pulse_pdur = PDUR_ON_RESET;
   csec_pulse_max_duty = MAX_DUTY_ON_RESET;
+  csec_pulse_test_disable_short = false;
   critical_section_init(&csec_pulse);
   critical_section_init(&csec_stat);
 
