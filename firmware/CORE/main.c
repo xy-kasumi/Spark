@@ -637,11 +637,11 @@ void exec_command_regwrite(char board_id, int addr, int data) {
   }
 }
 
-void exec_command_testpulser(int duration_ms, app_t* app) {
+void exec_command_testpulser(int duration_ms, bool disable_ig_wait, app_t* app) {
   pulser_set_pulse_dur(app->pulse_dur_us);
   pulser_set_max_duty(app->duty_pct);
   pulser_set_current(app->current_ma);
-  pulser_set_test(true);
+  pulser_set_test(true, disable_ig_wait);
   pulser_set_energize(true);
 
   // ensure settings are applied, since they can't change when GATE is ON.
@@ -662,7 +662,7 @@ void exec_command_testpulser(int duration_ms, app_t* app) {
   // end
   pulser_unsafe_set_gate(false);
   pulser_set_energize(false);
-  pulser_set_test(false);
+  pulser_set_test(false, false);
 
   print_time();
   printf("test_pulser: DONE\n");
@@ -1084,12 +1084,18 @@ void try_exec_command(char* buf, app_t* app) {
       return;
     }
     exec_command_regwrite(board_id, addr, data);
-  } else if (strcmp(command, "testpulser") == 0) {
+  } else if (strcmp(command, "tpls") == 0) {
     int duration_ms = parse_int(&parser, 1, 100000);
     if (!parser.success) {
       return;
     }
-    exec_command_testpulser(duration_ms, app);
+    exec_command_testpulser(duration_ms, false, app);
+  } else if (strcmp(command, "tplc") == 0) {
+    int duration_ms = parse_int(&parser, 1, 100000);
+    if (!parser.success) {
+      return;
+    }
+    exec_command_testpulser(duration_ms, true, app);
   } else {
     printf("unknown command\n");
   }

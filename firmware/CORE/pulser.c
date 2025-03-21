@@ -28,6 +28,7 @@ static const uint8_t POLARITY_TPGN = 3; // Tool+, Grinder-
 static const uint8_t POLARITY_TNGP = 4; // Tool-, Grinder+
 
 static const uint8_t TEST_DISABLE_SHORT = 1 << 0;
+static const uint8_t TEST_DISABLE_IG_WAIT = 1 << 1;
 
 static const uint8_t TEMP_INVALID_VALUE = 255;
 
@@ -125,7 +126,7 @@ void pulser_init() {
   }
 
   // Ensure PULSER is in normal mode. (e.g. when CORE is restarted when doing test)
-  pulser_set_test(false);
+  pulser_set_test(false, false);
 }
 
 bool pulser_available() { return mode == PULSER_OK; }
@@ -191,10 +192,13 @@ void pulser_set_energize(bool on) {
   sleep_us(WAIT_POLARITY_US);
 }
 
-void pulser_set_test(bool disable_short) {
+void pulser_set_test(bool disable_short, bool disable_ig_wait) {
   uint8_t val = 0;
   if (disable_short) {
     val |= TEST_DISABLE_SHORT;
+  }
+  if (disable_ig_wait) {
+    val |= TEST_DISABLE_IG_WAIT;
   }
   write_reg(REG_TEST, val);
   sleep_us(1);

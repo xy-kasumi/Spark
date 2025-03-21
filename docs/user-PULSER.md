@@ -212,7 +212,7 @@ To actually turn them off completely, you need to set POLARITY to OFF.
 | 0x13    | R_PULSE       | R           | N/A       | Ratio of duration spent discharging in the interval. Values from [0.0, 1.0], calculated as R_PULSE/255 |
 | 0x14    | R_SHORT       | R           | N/A       | Ratio of duration spent shorted and not discharging in the interval. Values from [0.0, 1.0], calculated as R_SHORT/255 |
 | 0x15    | R_OPEN        | R           | N/A       | Ratio of duration spent waiting for discharge to happen in the interval. Values from [0.0, 1.0], calculated as R_OPEN/255 |
-| 0x80    | TEST          | RW          | 0         | 0: Normal operation. LSB is set: Disable short detection. |
+| 0x80    | TEST          | RW          | 0         | 0: Normal operation. bit 0 (LSB) is set: Disable short detection. bit 1: Disable ignition wait. |
 
 Register access:
 * RW: read-write

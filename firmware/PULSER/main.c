@@ -45,6 +45,7 @@ static volatile uint8_t csec_pulse_pcurr;
 static volatile int csec_pulse_pdur;
 static volatile uint8_t csec_pulse_max_duty;
 static volatile bool csec_pulse_test_disable_short;
+static volatile bool csec_pulse_test_disable_ig_wait;
 
 // core0, core1 shared, only accessed in csec_stat section.
 static critical_section_t csec_stat;
@@ -202,6 +203,7 @@ static const uint8_t POL_TPGN = 3; // Tool+, Grinder-
 static const uint8_t POL_TNGP = 4; // Tool-, Grinder+
 
 static const uint8_t TEST_DISABLE_SHORT = 1 << 0;
+static const uint8_t TEST_DISABLE_IG_WAIT = 1 << 1;
 
 static bool i2c_ptr_written = false;
 static uint8_t i2c_reg_ptr = 0;
@@ -261,6 +263,7 @@ void write_reg(uint8_t reg, uint8_t val) {
   case REG_TEST:
     critical_section_enter_blocking(&csec_pulse);
     csec_pulse_test_disable_short = val & TEST_DISABLE_SHORT;
+    csec_pulse_test_disable_ig_wait = val & TEST_DISABLE_IG_WAIT;
     critical_section_exit(&csec_pulse);
     break;
   }
@@ -361,7 +364,13 @@ uint8_t read_reg(uint8_t reg) {
     return visible_r_open;
   case REG_TEST: {
     critical_section_enter_blocking(&csec_pulse);
-    uint8_t val = csec_pulse_test_disable_short ? 1 : 0;
+    uint8_t val = 0;
+    if (csec_pulse_test_disable_short) {
+      val |= TEST_DISABLE_SHORT;
+    }
+    if (csec_pulse_test_disable_ig_wait) {
+      val |= TEST_DISABLE_IG_WAIT;
+    }
     critical_section_exit(&csec_pulse);
     return val;
   }
@@ -459,6 +468,7 @@ void core1_main() {
     uint16_t pdur = csec_pulse_pdur;
     uint8_t max_duty = csec_pulse_max_duty;
     bool test_disable_short = csec_pulse_test_disable_short;
+    bool test_disable_ig_wait = csec_pulse_test_disable_ig_wait;
     critical_section_exit(&csec_pulse);
     uint16_t pinterval = (uint32_t)pdur * 100 / (uint32_t)max_duty;
 
@@ -500,7 +510,7 @@ void core1_main() {
     // turn on and wait for discharge to happen.
     gpio_put(PIN_GATE_IG, true);
     uint16_t igt_us = 0;
-    while (true) {
+    while (true && !test_disable_ig_wait) {
       if (!get_pin_denoise(PIN_GATE, true)) {
         turnoff_out();
         goto pulse_ended;

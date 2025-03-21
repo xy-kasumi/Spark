@@ -134,10 +134,18 @@ Interface behavior:
 
 ### Hardware Test Commands
 
-#### `testpulser <duration_ms>`
-* **Description:** Emit pulses for specified duration, with short detection disabled.
-    Useful for debugging power converter with dummy diode load. Uses edparam parameters for pulse duration, duty, and current.
+#### `tpls <duration_ms>`
+* **Description:** "Test pluser", Emit pulses for specified duration, with short detection disabled.
+    Useful for debugging CV + CC power converter with dummy diode load. Uses edparam parameters for pulse duration, duty, and current.
 * **Parameters:**
   * `duration_ms`: integer, duration in milliseconds (range: 1 to 100,000)
 * **Examples:**
-  * `testpulser 1000`
+  * `tpls 1000`
+
+#### `tplc <duration_ms>`
+* **Description:** "Test pluser", Emit pulses for specified duration, with short detection & ignition wait disabled.
+    Useful for debugging CC power converter with dummy diode load. Uses edparam parameters for pulse duration, duty, and current.
+* **Parameters:**
+  * `duration_ms`: integer, duration in milliseconds (range: 1 to 100,000)
+* **Examples:**
+  * `tplc 1000`
