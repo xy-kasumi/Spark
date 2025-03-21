@@ -67,8 +67,8 @@ static const uint8_t MAX_DUTY_ON_RESET = 25; // 25%
 
 static const uint16_t PWM_GATE_NUM_CYCLE = 300; // create 500kHz (=150MHz/300)
 
-// Maximum duty ratio (to support 25V gap)
-static const float PWM_MAX_DUTY = 0.7;
+// Maximum duty ratio: empirtically determined to drive dummy load.
+static const float PWM_MAX_DUTY = 0.8;
 
 // Maximum allowed current ripple assuming (low-ish) 15V gap voltage & largest
 // duty. If (current measurement) > (target current) + MAX_CURR_OVERSHOOT_MA, it
@@ -451,7 +451,7 @@ static inline float clampf(float val, float min, float max) {
 
 void core1_main() {
   uint8_t curr_pol = POL_OFF;
-  float curr_pcurr = 1;
+  float curr_pcurr_a = 1;
 
   // Each loop is expected to finish well within 1us.
   // But when applying changes to pol/pcurr, it can take as long as it needs.
@@ -471,6 +471,7 @@ void core1_main() {
     bool test_disable_ig_wait = csec_pulse_test_disable_ig_wait;
     critical_section_exit(&csec_pulse);
     uint16_t pinterval = (uint32_t)pdur * 100 / (uint32_t)max_duty;
+    float new_pcurr_a = (float)new_pcurr * 0.1f;
 
     // Apply POL change.
     if (curr_pol != new_pol) {
@@ -497,7 +498,7 @@ void core1_main() {
     }
 
     // Apply current change.
-    curr_pcurr = new_pcurr;
+    curr_pcurr_a = new_pcurr_a;
 
     bool gate = get_pin_denoise(PIN_GATE, false);
     if (!gate) {
@@ -580,7 +581,7 @@ void core1_main() {
 
         // Control constant-current PWM.
         float curr_a = get_latest_current_a();
-        if (curr_a > curr_pcurr + MAX_CURR_OVERSHOOT_A) {
+        if (curr_a > curr_pcurr_a + MAX_CURR_OVERSHOOT_A) {
           // current is too high for a normal gap.
           // gap might get shorted during the pulse,
           // or control is oscillating.
@@ -588,13 +589,15 @@ void core1_main() {
           // register?
           break;
         }
-        duty += (curr_pcurr - curr_a) * gain;
+        duty += (curr_pcurr_a - curr_a) * gain;
         duty = clampf(duty, 0, PWM_MAX_DUTY);
         set_out_level(duty);
 
         // Absorb processing time variation to keep cycle at least 1us.
         sleep_until(delayed_by_us(t_ig_start, i + 1));
       }
+      // Turn-off
+      turnoff_out();
       // Record spent time as pulse time.
       int actual_pulse_time_us =
           absolute_time_diff_us(t_ig_start, get_absolute_time());
@@ -603,8 +606,7 @@ void core1_main() {
       csec_stat_dur_pulse += actual_pulse_time_us;
       critical_section_exit(&csec_stat);
 
-      // turn-off and cooldown.
-      turnoff_out();
+      // Cooldown
       int32_t cooldown_time = pinterval - (int32_t)(igt_us + pdur);
       if (cooldown_time < COOLDOWN_PULSE_MIN_US) {
         cooldown_time = COOLDOWN_PULSE_MIN_US;
