@@ -1043,7 +1043,7 @@ void try_exec_command(char* buf, app_t* app) {
   } else if (strcmp(command, "edparam") == 0) {
     int pulse_dur_us = parse_int(&parser, 5, 10000);
     int duty_pct = parse_int(&parser, 1, 50);
-    int curr_ma = parse_int(&parser, 100, 8000);
+    int curr_ma = parse_int(&parser, 100, 20000);
     if (!parser.success) {
       return;
     }

@@ -92,7 +92,7 @@ Interface behavior:
 * **Parameters:**
   * `duration_us`: integer, pulse duration in microseconds (range: 5 to 10000)
   * `duty`: integer, max duty ratio in percent (range: 1 to 50)
-  * `current_ma`: integer, current in mA (range: 100 to 8000). Will be rounded down to possible value.
+  * `current_ma`: integer, current in mA (range: 100 to 20,000). Will be rounded down to possible value.
 
 #### `move <board_ix> <distance>`
 * **Description:** Moves the specified board by a given distance (in millimeters).
