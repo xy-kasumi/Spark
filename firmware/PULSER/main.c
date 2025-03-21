@@ -87,7 +87,7 @@ void init_out_pwm() {
 }
 
 // Sets current output duty factor.
-void set_out_level(float duty) {
+static void set_out_level(float duty) {
   int level = roundf(duty * PWM_GATE_NUM_CYCLE);
   if (level < 0) {
     level = 0;
@@ -97,7 +97,7 @@ void set_out_level(float duty) {
   pwm_set_chan_level(PWM_GATE_MAIN_PWM, PWM_CHAN_GATE_MAIN_PWM, level);
 }
 
-void turnoff_out() {
+static void turnoff_out() {
   set_out_level(0);
   gpio_put(PIN_GATE_IG, false);
 }
@@ -105,7 +105,7 @@ void turnoff_out() {
 ////////////////////////////////////////////////////////////////////////////////
 // Core1: Current detection ADC.
 
-volatile float latest_curr_a = 0;
+static volatile float latest_curr_a = 0;
 
 void init_curr_detect() {
   adc_init();
@@ -126,7 +126,7 @@ void init_curr_detect() {
 
 // This can only measure up to max 22.5A, and with 5.5mA resolution.
 // Also, actual updates will happen at about 500kHz.
-float get_latest_current_a() {
+static float get_latest_current_a() {
   if (adc_hw->cs & ADC_CS_READY_BITS) {
     // 12bit, 3.0V max, 133mV/A.
     // 1 LSB = 0.732mV
@@ -552,10 +552,18 @@ void core1_main() {
 
       // control current for pdur.
       absolute_time_t t_ig_start = get_absolute_time();
+      // Empirically, 3us is enough for discharge to stabilize to 20V.
+      absolute_time_t t_end_ig = delayed_by_us(t_ig_start, 3);
+      absolute_time_t t_ig_end = delayed_by_us(t_ig_start, pdur);
       int gate_off_consecutive = 0;
       float duty = 0;
       const float gain = 0.02;
-      for (uint16_t i = 0; i < pdur; i++) {
+      for (int i = 0; i < pdur; i++) {
+        if (time_reached(t_ig_end)) {
+          // if some cycle is longer than 1us, this can happen.
+          break;
+        }
+
         // Monitor gate with denoising.
         if (!gpio_get(PIN_GATE)) {
           gate_off_consecutive++;
@@ -566,8 +574,7 @@ void core1_main() {
         }
 
         // Turn off ignition voltage and hand over to PWM current.
-        // Empirically, 3us is enough for discharge to stabilize to 20V.
-        if (i >= 3) {
+        if (time_reached(t_end_ig)) {
           gpio_put(PIN_GATE_IG, false);
         }
 
@@ -585,15 +592,16 @@ void core1_main() {
         duty = clampf(duty, 0, PWM_MAX_DUTY);
         set_out_level(duty);
 
-        // Record 1us past as pulse time.
-        critical_section_enter_blocking(&csec_stat);
-        csec_stat_dur++;
-        csec_stat_dur_pulse++;
-        critical_section_exit(&csec_stat);
-
-        // Absorb processing time variation.
+        // Absorb processing time variation to keep cycle at least 1us.
         sleep_until(delayed_by_us(t_ig_start, i + 1));
       }
+      // Record spent time as pulse time.
+      int actual_pulse_time_us =
+          absolute_time_diff_us(t_ig_start, get_absolute_time());
+      critical_section_enter_blocking(&csec_stat);
+      csec_stat_dur += actual_pulse_time_us;
+      csec_stat_dur_pulse += actual_pulse_time_us;
+      critical_section_exit(&csec_stat);
 
       // turn-off and cooldown.
       turnoff_out();
