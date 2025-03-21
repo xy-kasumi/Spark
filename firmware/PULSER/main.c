@@ -68,7 +68,7 @@ static const uint8_t MAX_DUTY_ON_RESET = 25; // 25%
 static const uint16_t PWM_GATE_NUM_CYCLE = 300; // create 500kHz (=150MHz/300)
 
 // Maximum duty ratio: empirtically determined to drive dummy load.
-static const float PWM_MAX_DUTY = 0.8;
+static const float PWM_MAX_DUTY = 0.9;
 
 // Maximum allowed current ripple assuming (low-ish) 15V gap voltage & largest
 // duty. If (current measurement) > (target current) + MAX_CURR_OVERSHOOT_MA, it
@@ -557,8 +557,8 @@ void core1_main() {
       absolute_time_t t_end_ig = delayed_by_us(t_ig_start, 3);
       absolute_time_t t_ig_end = delayed_by_us(t_ig_start, pdur);
       int gate_off_consecutive = 0;
-      float duty = 0;
-      const float gain = 0.02;
+      float duty = 0.5; // "neutral" duty for 20V gap is 0.55, but start conservative.
+      const float gain = 0.005;
       for (int i = 0; i < pdur; i++) {
         if (time_reached(t_ig_end)) {
           // if some cycle is longer than 1us, this can happen.
