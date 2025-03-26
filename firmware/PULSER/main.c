@@ -558,7 +558,7 @@ void core1_main() {
       absolute_time_t t_ig_end = delayed_by_us(t_ig_start, pdur);
       int gate_off_consecutive = 0;
       const float duty_neutral = 0.5; // "neutral" duty for 20V gap is 0.55. Set conservative and rely on I-control to adjust.
-      const float gain = 0.05;
+      const float gain = 0.02;
       const float t_integ = 20e-6;
       float err_accum = 0;
       for (int i = 0; i < pdur; i++) {
