@@ -649,7 +649,7 @@ void exec_command_testpulser(int duration_ms, bool disable_ig_wait, app_t* app) 
   pulser_unsafe_set_gate(true);
 
   absolute_time_t end_time = make_timeout_time_ms(duration_ms);
-
+  absolute_time_t last_temp = get_absolute_time();
   while (absolute_time_diff_us(end_time, get_absolute_time()) < 0) {
     if (abort_requested()) {
       print_time();
@@ -657,6 +657,12 @@ void exec_command_testpulser(int duration_ms, bool disable_ig_wait, app_t* app) 
       break;
     }
     sleep_us(100);
+
+    if (absolute_time_diff_us(last_temp, get_absolute_time()) > 1000000) {
+      print_time();
+      printf("test_pulser: temp=%dC\n", pulser_temp());
+      last_temp = get_absolute_time();
+    }
   }
 
   // end
