@@ -6,8 +6,8 @@
 	(paper "A4")
 	(title_block
 		(title "PULSER")
-		(date "2025-02-14")
-		(rev "2")
+		(date "2025-03-27")
+		(rev "3")
 		(company "Spark Project")
 		(comment 1 "Author: 夕月霞 (xyx)")
 		(comment 2 "EDM Pulse Generator Board")
@@ -89,12 +89,6 @@
 		(uuid "f79c75ad-d67f-459e-b476-c96541ae86fa")
 	)
 	(junction
-		(at 107.95 63.5)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "4fc446ec-2899-4bd2-86df-b2c1b7ed1909")
-	)
-	(junction
 		(at 64.77 63.5)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -106,22 +100,6 @@
 		(color 0 0 0 0)
 		(uuid "acab6571-30fd-4019-8c08-75e143e35477")
 	)
-	(junction
-		(at 107.95 109.22)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "d561aeed-e1d7-48b5-b026-03e05f493e0b")
-	)
-	(wire
-		(pts
-			(xy 43.18 82.55) (xy 46.99 82.55)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "031e9632-841a-491f-bce7-313fd5ddf2c4")
-	)
 	(wire
 		(pts
 			(xy 107.95 90.17) (xy 107.95 109.22)
@@ -131,26 +109,6 @@
 			(type default)
 		)
 		(uuid "0f19311e-0362-441f-84a5-71494fe050f6")
-	)
-	(wire
-		(pts
-			(xy 147.32 86.36) (xy 153.67 86.36)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "1b0c3088-e9ec-4b86-9ded-51e665cd26ce")
-	)
-	(wire
-		(pts
-			(xy 147.32 90.17) (xy 152.4 90.17)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "21077b2e-ea1f-467d-828a-cbc6f703db31")
 	)
 	(wire
 		(pts
@@ -191,16 +149,6 @@
 			(type default)
 		)
 		(uuid "534bcb9b-16d5-4107-b26c-333457d923b7")
-	)
-	(wire
-		(pts
-			(xy 86.36 82.55) (xy 90.17 82.55)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "60782951-d303-4541-8d9f-ba728fa37384")
 	)
 	(polyline
 		(pts
@@ -265,26 +213,6 @@
 	)
 	(wire
 		(pts
-			(xy 152.4 90.17) (xy 152.4 109.22)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "aa434693-70a3-41b7-9479-f0779a0dabd5")
-	)
-	(wire
-		(pts
-			(xy 152.4 109.22) (xy 107.95 109.22)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "b5cb00f0-0ddf-46c6-951a-f0b85382666a")
-	)
-	(wire
-		(pts
 			(xy 64.77 109.22) (xy 107.95 109.22)
 		)
 		(stroke
@@ -315,26 +243,6 @@
 	)
 	(wire
 		(pts
-			(xy 152.4 82.55) (xy 147.32 82.55)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d5f5c79f-6d5a-4ae2-a5b0-645059164095")
-	)
-	(wire
-		(pts
-			(xy 130.81 90.17) (xy 134.62 90.17)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d9c9121b-f959-47ac-a425-34dc7a0e0c66")
-	)
-	(wire
-		(pts
 			(xy 38.1 109.22) (xy 64.77 109.22)
 		)
 		(stroke
@@ -342,16 +250,6 @@
 			(type default)
 		)
 		(uuid "da9c86c5-9807-4515-81a9-18204737d8b9")
-	)
-	(wire
-		(pts
-			(xy 107.95 63.5) (xy 152.4 63.5)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "e546f6f0-5248-4b22-9ae3-07067364364f")
 	)
 	(wire
 		(pts
@@ -372,26 +270,6 @@
 			(type default)
 		)
 		(uuid "e787198e-304b-43b4-8713-9e6a16394c0d")
-	)
-	(wire
-		(pts
-			(xy 152.4 63.5) (xy 152.4 82.55)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "f5721f0d-0ac6-4e05-b5af-c0984da9fe9b")
-	)
-	(wire
-		(pts
-			(xy 130.81 82.55) (xy 134.62 82.55)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "ffc8f9c8-dc26-4323-a7f5-ae41cd4aeb44")
 	)
 	(image
 		(at 276.86 173.99)
@@ -654,30 +532,26 @@
 			"AACQJR96zAIAAKADH3rMAgAAagQAADCzBgPweB56zAIAABAZAAAIawgDwHUeeswCAABoBAAALmQJ"
 			"A/B4HnrMAgAAEBkAALAMCQOgAx96zAIAAFUEAADQlwcD8HgeeswCAAAQGQAA+N8FA8ADH3rMAgAA"
 			"VAQAANLmBAPweB56zAIAABAZAAAAAAAA4AMfeswCAABTBAAA2kB4CPB4HnrMAgAAEBkAAHPneQgA"
-			"BB96zAIAAEsEAADv2XsI8HgeeswCAAAQGQAATfR8CCAEH3rMAgAATgQAACaRfAjweB56zA=="
+			"BB96zAIAAEsEAADv2XsI8HgeeswCAAAQGQAATfR8CCAEH3rMAgAATgQAACaRfAjweB56zOQAgAAA"
+			"AAAAAAAACQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAv4+r"
+			"EADlAIAAAAAAAAAAAAkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAIOPrxAA5gCAAAAAAAAAAAAJAAAAxXvmb+/3397960H/fmr/yvv9/wj/9f/g2d17n78uAHDq"
+			"eV0AAAAAAAAAAACHj5MQAOcAgAAAAAAAAAAACQAAAIdp4m/v91bC9esBex5o/8rq7P4Id5U/oBhN"
+			"eY+5JgBwahldAAAAAAAAAAAAi4+XEADoAIAAAAAAAAAAAAkAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAI+PmxAA6QCAAAAAAAAAAAAJAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACTj58QAOoAgAAAAAAAAAAACQAAAIVhYmfu"
+			"91bK9UsBcR5q/8pj/P4AP5A/oBhNeY6/LgBw6lldAAAAAAAAAAAAl4+DEADrAIAAAAAAAAAAAAkA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJuPhxAA7ACAAAAA"
+			"AAAAAAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACfj4sQ"
+			"AO0AgAAAAAAAAAAACQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAA44+PEADuAIAAAAAAAAAAAAkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAOeP8xAA7wCAAAAAAAAAAAAJAAAAxXvmb+/3397960H/fmr/yvv9/wj/9f/g2d17"
+			"n78uAHDqeV0AAAAAAAAAAADrj/cQAPAAgAAAAAAAAAAACQAAAMV75m/v99/e/etB/35q/8r7/f8I"
+			"//X/4Nnde5+/LgBw6nldAAAAAAAAAAAA74/7EADxAIAAAAAAAAAAAAkAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPOP/xAA8gCAAAAAAAAAAAAJAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD3j+MQAPMAgAAAAAAAAAAACQAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+4/nEAD0AA=="
 		)
-	)
-	(hierarchical_label "VOUT_1"
-		(shape passive)
-		(at 153.67 86.36 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "0ecc0215-0fc1-4ee4-9cc6-b7821ed8607a")
-	)
-	(hierarchical_label "VC_H"
-		(shape input)
-		(at 86.36 82.55 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "1be85cce-7747-4bca-9958-1b1e0b5c281e")
 	)
 	(hierarchical_label "VOUT_0"
 		(shape passive)
@@ -701,17 +575,6 @@
 		)
 		(uuid "5a222ac0-7a25-46c2-bd82-496595ebe70a")
 	)
-	(hierarchical_label "V0_H"
-		(shape input)
-		(at 43.18 82.55 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "7ce3b3f8-8c4e-473b-9f7f-b25c64124696")
-	)
 	(hierarchical_label "V+"
 		(shape passive)
 		(at 38.1 63.5 180)
@@ -722,28 +585,6 @@
 			(justify right)
 		)
 		(uuid "881f444f-9f3e-4dc9-b02d-b22ed6f9721c")
-	)
-	(hierarchical_label "V1_L"
-		(shape input)
-		(at 130.81 90.17 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "d684d271-b2df-44d2-a55d-b4adc4b3cf7a")
-	)
-	(hierarchical_label "V1_H"
-		(shape input)
-		(at 130.81 82.55 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "d89f37c8-b5e7-4cbb-9387-c67eda98326f")
 	)
 	(hierarchical_label "V0_L"
 		(shape input)
@@ -779,98 +620,6 @@
 		(uuid "f9b5c398-07cb-426c-b132-4cde6aac64e8")
 	)
 	(sheet
-		(at 134.62 77.47)
-		(size 12.7 16.51)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(stroke
-			(width 0.1524)
-			(type solid)
-		)
-		(fill
-			(color 0 0 0 0.0000)
-		)
-		(uuid "2504e845-0e0b-406b-865c-f5970f2cb65d")
-		(property "Sheetname" "Half Bridge V1"
-			(at 134.62 76.708 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left bottom)
-			)
-		)
-		(property "Sheetfile" "mux_half_bridge.kicad_sch"
-			(at 134.62 94.5646 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(pin "HIN" input
-			(at 134.62 82.55 180)
-			(uuid "6c10ddf6-9991-4572-a248-6724d1b0ccd9")
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(pin "LIN" input
-			(at 134.62 90.17 180)
-			(uuid "cd513ef5-fbcf-414c-bb27-cba61f39e524")
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(pin "V+" passive
-			(at 147.32 82.55 0)
-			(uuid "f4f1f862-5d0b-4ecd-8920-17f2db868254")
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-			)
-		)
-		(pin "V-" passive
-			(at 147.32 90.17 0)
-			(uuid "4df223db-ffb4-4803-b60e-b6fbfe18f81b")
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-			)
-		)
-		(pin "VOUT" passive
-			(at 147.32 86.36 0)
-			(uuid "ca5bfd15-e151-416a-86f2-0ccff4d35e8f")
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-			)
-		)
-		(instances
-			(project "PULSER"
-				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5/61d269a5-db7e-4708-be89-e9446bc418aa"
-					(page "8")
-				)
-			)
-		)
-	)
-	(sheet
 		(at 90.17 77.47)
 		(size 12.7 16.51)
 		(exclude_from_sim no)
@@ -903,16 +652,6 @@
 				)
 				(justify left top)
 				(hide yes)
-			)
-		)
-		(pin "HIN" input
-			(at 90.17 82.55 180)
-			(uuid "cee87fc5-e806-4c30-9dfb-eb07285c75a7")
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
 			)
 		)
 		(pin "LIN" input
@@ -996,16 +735,6 @@
 				)
 				(justify left top)
 				(hide yes)
-			)
-		)
-		(pin "HIN" input
-			(at 46.99 82.55 180)
-			(uuid "2072d2b3-d8ed-4b77-b017-357ac26dc0da")
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
 			)
 		)
 		(pin "LIN" input

@@ -6,8 +6,8 @@
 	(paper "A4")
 	(title_block
 		(title "PULSER")
-		(date "2025-02-14")
-		(rev "2")
+		(date "2025-03-27")
+		(rev "3")
 		(company "Spark Project")
 		(comment 1 "Author: 夕月霞 (xyx)")
 		(comment 2 "EDM Pulse Generator Board")
@@ -2006,16 +2006,6 @@
 	)
 	(wire
 		(pts
-			(xy 114.3 105.41) (xy 121.92 105.41)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "0c2b0abf-0283-4ee5-badc-eb068d933c79")
-	)
-	(wire
-		(pts
 			(xy 153.67 85.09) (xy 153.67 86.36)
 		)
 		(stroke
@@ -2043,16 +2033,6 @@
 			(type default)
 		)
 		(uuid "18e65776-df40-4208-b5cc-245d3ebbd844")
-	)
-	(wire
-		(pts
-			(xy 114.3 107.95) (xy 121.92 107.95)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "1a4e16dc-c69b-4b77-89d5-78239dd64cf2")
 	)
 	(wire
 		(pts
@@ -2123,16 +2103,6 @@
 			(type default)
 		)
 		(uuid "3192b2f0-f38f-4fd3-b8a4-e86a78d65b1f")
-	)
-	(wire
-		(pts
-			(xy 114.3 97.79) (xy 121.92 97.79)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "31eaafba-fffb-4b9c-8d01-c72049fcc624")
 	)
 	(wire
 		(pts
@@ -2283,16 +2253,6 @@
 			(type default)
 		)
 		(uuid "7cb1eed8-1838-4d38-a224-d557b1221826")
-	)
-	(wire
-		(pts
-			(xy 114.3 82.55) (xy 121.92 82.55)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "7ed0497c-28ff-4a3f-88c9-2b00af57ccb5")
 	)
 	(wire
 		(pts
@@ -2553,16 +2513,6 @@
 			(type default)
 		)
 		(uuid "f78c7129-5662-4f15-a8a3-bda45e12ebfc")
-	)
-	(wire
-		(pts
-			(xy 114.3 92.71) (xy 121.92 92.71)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "f8f78f55-1fb2-4e3c-813b-04dd694e2af6")
 	)
 	(wire
 		(pts
@@ -3803,6 +3753,24 @@
 			"ywIAAAAAAAAAAAAAAAAAAAAAAAAPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADcnMHL"
 			"AgAAAAAAAAAAAAAAAAAAAAAAAA8AAAAAAAAAAGlnaHQgU21hbGwAAAAAAAAAAAAAAAAADwAAAAAA"
 			"AAAA2JzBywIAAAAAAAAAAAAAAAAAAAAAAAAPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 			"AA=="
 		)
 	)
@@ -4067,7 +4035,25 @@
 			"AABUBAAAzAIAAOCOHnrMAgAAvRgAAMwCAABQjx56zAIAAFMEAAAAAAAA4I4eeswCAAC9GAAAywIA"
 			"AHCPHnrMAgAASwQAAAgAAADgjh56zAIAAL0YAAAwwjwEkI8eeswCAABOBAAACHo+BOCOHnrMAgAA"
 			"vRgAAAAAAACwjx56zAIAAAQAAADMAgAA4I4eeswCAAAwZmulywIAAAEAAAAwwjwEcMwuCPjuOwQ9"
-			"AwAACAAAAD0DAAANAAAAOgMAAAgAAAA7AwAANQAAAPEDAADMNwOA8I8eeswCAAC9GAAAkQ=="
+			"AwAACAAAAD0DAAANAAAAOgMAAAgAAAA7AwAANQAAAPEDAADMNwOA8I8eeswCAAC9GAAAkWwzWmhS"
+			"WEJPOW1iQXdmMHJkbEcydnQ0Zkw3blFzUk5ES3lkTzIvWWhnV1VzeXdqU3NvcVBFOXhJdlFLcWkw"
+			"WWlPV1hkb2h0UHQrVGtKbkNmb1A1WjVydUpZU0oxMkpuWVMzMWxLMmlmaGU4L1JzN1dLYlRjTXRE"
+			"bkkzTGY3S3Y3Mmd1bG53T2hhdkh0aDB0NU5nYlVYVDJ2WkFGbjJvczJKeGxHUVdYeERLU2YxSjJk"
+			"SmdGTis3aklGY1daUEtmSzc1bndhZkw3a2RJWm85ZEVyNTNJOHVZYXJQWFhGZjZQZ3o0M0ZPV1Zv"
+			"ZjFMUEQ4Y1RjWmxWbXc2K2hGaFQrbXF0UnZERDZaT3gvdnovb0NOMjdkaGJXMUZRWU5MSDU0eEZU"
+			"WktoM0U4dDlPN1BQaHV6N1Zob3AxUHJ4V25DRjFKeUJObllLZDk5WkpQZXdQM2JVeE85bGE0OXN1"
+			"ZjRvc3FJWlRmVXhvOUJFK2J2T0xHSktyYVBndzI3R0hsM0EvTVFMbkkyN2dSdXlERW9mZWlzTG5j"
+			"dHh0bktRdHdNSFNsZ1g0b24vSG1td3Q3aVdHSXo1VG43bGJLSlRJMUJSKzk2NWhtUlBIQStPemhG"
+			"ZVlmZGJZRmJ0WWhtTUlCbzVTV1Z0NHVrWXNDMHJUWk9OZXFocXBiUGx2N0hpVUpyS29RVlh0Y0h0"
+			"Z1ZURnYxSjVsS2dYaTBHTVpDaVY0OFlJQmY0eVIxUjJ3T1RRTmlTeGQyOGNDYVFUN2ZrYXpQbUth"
+			"U2gxOGVNWVRIUk1uMWozY1hFVW05RjlqS0tuT1p0bUtRUXZ2emhnZk5ET25qUWw4VjlxVGkxZkd2"
+			"ZEZvbG1odk5abURCVjAzb0VQbHZ0Z2Zzb205ODc0cEhaVmZseW9EMExGeVA2eTgrajE3TjVaYnhj"
+			"T3pJWHNMUjN4MTZsMHg3L1Rlb1pFaTQ2cmhIQ0MrcGlLcDdWSVpMU3JWRnhrUHgwOXRmUGl0Ui9X"
+			"VzhMSXQzZkFueHdORjNpQ2hrTW1oemZNNy9qZDQwYzJ6Z3YreEwyN3RJWWEvM2prVG8rOWtGTktJ"
+			"aGJhTXYxZitHM24xZUJRNjdRekY1WVFzVEtqdGlJTTlmWEgvaGFwaWZxYTBNVWlqMDc5T1hneGgw"
+			"TTNiQnQ3V0N2d2hWZHp4T0xucVhqS2VyMnliRTF5SmFaRjVlL3FnWUN2SzdKbFRNT09kTitEaTdJ"
+			"ajdJYUZZdHVvdmFVL3BKQ2NrRjNvZVF6TVdsVTQvL0tDUTVjNHBXQ3R0NFdMbElWb2p6elpvVzZt"
+			"SHRDZVhwY0lHTnViMm9sbklMWEV1OGdnK1BUWkJCSTJpTlBKb0xZSVlMMG80SExwZDZ0WA=="
 		)
 	)
 	(image
@@ -5752,7 +5738,25 @@
 			"iP5/AAAos/GI/n8AAACMNKXLAgAA0Is0pcsCAABYGeOI/n8AACiz8Yj+fwAAWBnjiP5/AAAos/GI"
 			"/n8AAFC/8Yj+fwAAoIs0pcsCAACQSuCI/n8AACiz8Yj+fwAAkErgiP5/AACQSuCI/n8AAHCLNKXL"
 			"AgAAQIs0pcsCAACwhIClywIAANC68Yj+fwAAEIs0pcsCAABwboGlywIAAJC78Yj+fwAAsEAUrMsC"
-			"AACwxxSlywIAAA=="
+			"AACwxxSlywIAAACu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v"
+			"/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//"
+			"AK7v0QCu714Av/8E////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD/"
+			"//8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP//"
+			"/wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////"
+			"AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A"
+			"////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD/"
+			"//8A////AP///wD///8AAKr/BgCu7/0Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/QC2"
+			"/wf///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////"
+			"AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A"
+			"////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD/"
+			"//8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP//"
+			"/wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////"
+			"AP///wAAgP8CALDuTQCu78oAru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//"
+			"AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8A"
+			"ru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu"
+			"7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v"
+			"/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//"
+			"AK7v/wCu7/8Arg=="
 		)
 	)
 	(label "3VREF"
@@ -5857,17 +5861,6 @@
 		)
 		(uuid "08ed7b3f-c034-4210-950a-4bf2c2078b9a")
 	)
-	(hierarchical_label "M_DETECT"
-		(shape output)
-		(at 114.3 82.55 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "107067fe-4c3e-42a8-95a8-98680f2faa85")
-	)
 	(hierarchical_label "MUX_VCL"
 		(shape output)
 		(at 114.3 100.33 180)
@@ -5923,17 +5916,6 @@
 		)
 		(uuid "7cbf5070-d9b7-42ff-a932-272d1d509838")
 	)
-	(hierarchical_label "MUX_V0H"
-		(shape output)
-		(at 114.3 92.71 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "95c5abdb-51da-4f5d-aa4b-6aa1ba976597")
-	)
 	(hierarchical_label "3V3OUT"
 		(shape passive)
 		(at 151.13 82.55 0)
@@ -5945,28 +5927,6 @@
 		)
 		(uuid "9ae97399-1079-424b-923b-f7e4c8efdc9b")
 	)
-	(hierarchical_label "MUX_VCH"
-		(shape output)
-		(at 114.3 97.79 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "9c4c2180-a5d2-4f5e-9693-7a792a883dc8")
-	)
-	(hierarchical_label "MUX_V1H"
-		(shape output)
-		(at 114.3 105.41 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "a7c272e0-9dc0-40e6-94ff-de6687939781")
-	)
 	(hierarchical_label "I2C_SCL"
 		(shape bidirectional)
 		(at 114.3 74.93 180)
@@ -5977,17 +5937,6 @@
 			(justify right)
 		)
 		(uuid "b41773f7-1b50-49cd-bf92-6e4ccb73ee5e")
-	)
-	(hierarchical_label "MUX_V1L"
-		(shape output)
-		(at 114.3 107.95 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "de10e9c9-f718-4b6c-b611-21a2a46c1a12")
 	)
 	(hierarchical_label "TS_I2C_SCL"
 		(shape bidirectional)

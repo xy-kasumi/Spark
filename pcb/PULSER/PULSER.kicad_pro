@@ -608,7 +608,13 @@
       "Net-(Q14-D)": [
         "HV"
       ],
+      "Net-(Q14-PadG)": [
+        "HV"
+      ],
       "Net-(Q16-D)": [
+        "HV"
+      ],
+      "Net-(Q16-PadG)": [
         "HV"
       ],
       "Net-(Q18-D)": [
@@ -626,6 +632,9 @@
       "Net-(Q7-G)": [
         "HVHC"
       ],
+      "Net-(Q7-PadG)": [
+        "HV"
+      ],
       "Net-(Q7-S)": [
         "HV"
       ],
@@ -633,6 +642,9 @@
         "HV"
       ],
       "Net-(U10-HS)": [
+        "HV"
+      ],
+      "Net-(U10-VS)": [
         "HV"
       ],
       "Net-(U11-HO)": [
@@ -645,6 +657,15 @@
         "HV"
       ],
       "Net-(U5-HS)": [
+        "HV"
+      ],
+      "Net-(U5-VS)": [
+        "HV"
+      ],
+      "Net-(U8-HO)": [
+        "HV"
+      ],
+      "Net-(U8-VS)": [
         "HV"
       ],
       "Net-(U9-HO)": [
@@ -939,7 +960,7 @@
       "group_symbols": true,
       "include_excluded_from_bom": false,
       "name": "",
-      "sort_asc": true,
+      "sort_asc": false,
       "sort_field": "Reference"
     },
     "connection_grid_size": 50.0,
@@ -1022,10 +1043,6 @@
     [
       "cd75c6d0-7a52-4d70-a59a-bd19c8605fe7",
       "Half Bridge V0"
-    ],
-    [
-      "2504e845-0e0b-406b-865c-f5970f2cb65d",
-      "Half Bridge V1"
     ]
   ],
   "text_variables": {}

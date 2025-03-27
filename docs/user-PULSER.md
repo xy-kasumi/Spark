@@ -72,12 +72,12 @@ PULSER is designed to be safe (de-energized) to be turned on with "Control Conne
 "Control Connector" pinout (at **host-side**. See note.):
 1. Don't Connect
 2. GND
-3. Don't Connect
+3. GND
 4. I2C SDA
-5. Don't Connect
+5. GND
 6. I2C SCL
 7. GATE
-8. Don't Connect
+8. GND
 
 Note: Type-A (terminals on same-side) means cross-cable. Thus, pinout at host and PULSER board is flipped.
 
