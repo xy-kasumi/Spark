@@ -3089,12 +3089,6 @@
 		(uuid "323c9d3c-3c1f-4c6b-8258-7dabfa70d87a")
 	)
 	(junction
-		(at 111.76 60.96)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "335ec9ea-7656-450b-9c10-c326f2cfd372")
-	)
-	(junction
 		(at 104.14 124.46)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -3117,6 +3111,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "4db33c4f-2d7e-4b32-acee-537acd61fbd2")
+	)
+	(junction
+		(at 111.76 60.96)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "571674f1-39ef-4bb4-a07d-ab6091fa7917")
 	)
 	(junction
 		(at 111.76 50.8)
@@ -3434,7 +3434,7 @@
 	)
 	(wire
 		(pts
-			(xy 116.84 60.96) (xy 130.81 60.96)
+			(xy 116.84 60.96) (xy 147.32 60.96)
 		)
 		(stroke
 			(width 0)
@@ -3521,16 +3521,6 @@
 			(type default)
 		)
 		(uuid "44280397-602e-47c5-adff-b976baced1fd")
-	)
-	(wire
-		(pts
-			(xy 135.89 60.96) (xy 147.32 60.96)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "446dfd4e-e5f1-4245-897a-58451e3a3ab5")
 	)
 	(wire
 		(pts
@@ -3852,16 +3842,6 @@
 			(type default)
 		)
 		(uuid "8d902929-0f16-40ea-97af-7ded53df4700")
-	)
-	(wire
-		(pts
-			(xy 111.76 60.96) (xy 116.84 60.96)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "8f260105-a603-4467-868f-a735f89b7b1a")
 	)
 	(wire
 		(pts
@@ -4773,6 +4753,24 @@
 			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
 		)
 	)
@@ -4854,6 +4852,36 @@
 		)
 		(property "Component Class" ""
 			(at -85.09 43.18 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+					(italic yes)
+				)
+			)
+		)
+	)
+	(netclass_flag ""
+		(length 2.54)
+		(shape round)
+		(at 104.14 60.96 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "1622b7e3-d5e0-4c02-96bc-d9edd43ce6d3")
+		(property "Netclass" "HV"
+			(at 104.14 57.912 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Component Class" ""
+			(at 86.36 287.02 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5066,36 +5094,6 @@
 		)
 		(property "Component Class" ""
 			(at -106.68 87.63 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-					(italic yes)
-				)
-			)
-		)
-	)
-	(netclass_flag ""
-		(length 2.54)
-		(shape round)
-		(at 125.73 60.96 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "d91cf135-5c68-4b6c-af76-af54c1408a86")
-		(property "Netclass" "HV"
-			(at 125.73 57.912 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Component Class" ""
-			(at 107.95 287.02 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9169,7 +9167,7 @@
 	)
 	(symbol
 		(lib_id "Device:NetTie_2")
-		(at 133.35 60.96 180)
+		(at 114.3 60.96 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom no)
@@ -9177,7 +9175,7 @@
 		(dnp no)
 		(uuid "b50192ea-82c1-43e1-9196-23edfbad8a5b")
 		(property "Reference" "NT5"
-			(at 133.35 61.976 0)
+			(at 114.3 61.976 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9185,7 +9183,7 @@
 			)
 		)
 		(property "Value" "NetTie_2"
-			(at 133.35 63.5 0)
+			(at 114.3 63.5 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9194,7 +9192,7 @@
 			)
 		)
 		(property "Footprint" "NetTie:NetTie-2_SMD_Pad0.5mm"
-			(at 133.35 60.96 0)
+			(at 114.3 60.96 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9203,7 +9201,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 133.35 60.96 0)
+			(at 114.3 60.96 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9212,7 +9210,7 @@
 			)
 		)
 		(property "Description" "Net tie, 2 pins"
-			(at 133.35 60.96 0)
+			(at 114.3 60.96 0)
 			(effects
 				(font
 					(size 1.27 1.27)

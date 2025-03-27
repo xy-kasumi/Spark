@@ -1456,6 +1456,156 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "Jumper:Jumper_2_Bridged"
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim yes)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "JP"
+				(at 0 1.905 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "Jumper_2_Bridged"
+				(at 0 -2.54 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "~"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "Jumper, 2-pole, closed/bridged"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "Jumper SPST"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "Jumper* TestPoint*2Pads* TestPoint*Bridge*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "Jumper_2_Bridged_0_0"
+				(circle
+					(center -2.032 0)
+					(radius 0.508)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(circle
+					(center 2.032 0)
+					(radius 0.508)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "Jumper_2_Bridged_0_1"
+				(arc
+					(start -1.524 0.254)
+					(mid 0 0.762)
+					(end 1.524 0.254)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "Jumper_2_Bridged_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "B"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "Sensor_Temperature:TMP102xxDRL"
 			(exclude_from_sim no)
 			(in_bom yes)
@@ -2135,7 +2285,7 @@
 	)
 	(text "Max 100V, 20A\n"
 		(exclude_from_sim no)
-		(at 255.016 72.136 0)
+		(at 263.906 72.136 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -2278,7 +2428,7 @@
 	)
 	(text "TOOL"
 		(exclude_from_sim no)
-		(at 258.572 69.088 0)
+		(at 267.462 69.088 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -2334,7 +2484,7 @@
 	)
 	(text "WORK/GRIND"
 		(exclude_from_sim no)
-		(at 258.572 66.294 0)
+		(at 267.462 66.294 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -2677,6 +2827,16 @@
 	)
 	(wire
 		(pts
+			(xy 257.81 68.58) (xy 260.35 68.58)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5d834dab-85f0-4fa2-a713-f8a1d95ad3d8")
+	)
+	(wire
+		(pts
 			(xy 67.31 25.4) (xy 67.31 30.48)
 		)
 		(stroke
@@ -2684,6 +2844,16 @@
 			(type default)
 		)
 		(uuid "6bd7e781-6bb0-478e-aad1-7720fc93bd36")
+	)
+	(wire
+		(pts
+			(xy 245.11 66.04) (xy 247.65 66.04)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6fecb606-dba3-4094-a88b-fb72c9ac1576")
 	)
 	(wire
 		(pts
@@ -2774,6 +2944,16 @@
 			(type default)
 		)
 		(uuid "8bf8a730-64cf-4659-a687-5f9fc4e2df9f")
+	)
+	(wire
+		(pts
+			(xy 245.11 68.58) (xy 247.65 68.58)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8c3d4cf9-7c31-4fbc-a4d6-8a7351bfbe1e")
 	)
 	(wire
 		(pts
@@ -2875,16 +3055,6 @@
 			(type default)
 		)
 		(uuid "ad86af2d-031e-47aa-8806-c6c34ebe5daa")
-	)
-	(wire
-		(pts
-			(xy 245.11 66.04) (xy 251.46 66.04)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "b1ebb97b-294e-44ea-a93e-78d6e524159b")
 	)
 	(wire
 		(pts
@@ -2998,13 +3168,13 @@
 	)
 	(wire
 		(pts
-			(xy 245.11 68.58) (xy 251.46 68.58)
+			(xy 257.81 66.04) (xy 260.35 66.04)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "d94ec44d-f04a-41a2-b39c-8f92736ea595")
+		(uuid "da3c31d9-47ad-4865-ba61-90b571878038")
 	)
 	(wire
 		(pts
@@ -3375,7 +3545,25 @@
 			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEJDckhv"
+			"QzhIbkl2cC9DTXN3NXpCdGNOOURSZzUrMDRkd2dmIg0KCQkJIkkxUXAvNkFid0c0emFTeVJjMjkv"
+			"UG9CVTlVNlNaa3B3NlIyQXl5c1A4M2FVeHEwb0xFWHc0K1BWcDk5aHY2Q09jNlVCc0puaGpic0ci"
+			"DQoJCQkiMnl1UE1ORjV0NWNqbmppZTJXQUdBVlcraThwRFoyYjVmTmpiRWF6L3I2Ty9veW51Q2JE"
+			"QyttdkZTQ3lSN29oM00ydkZ3ZFFBOC8zciINCgkJCSIzNmZSYnVibzVXREswNlViZzdMVUJqcWI4"
+			"UUdycXJKQkZ0VjBiMHRjeWxNZ1Z5SDFOOTlINWNQRnpCQ0xtY1dtS2tBMDdjK1RUQXdQIg0KCQkJ"
+			"InA1ZmlEQk9zOWtUQ2xVenVNZ3Nlckc2Tm1Kb2JvWE5mVDVRV0s1QXV6eDZnSEdkek9UeUZqN0ZS"
+			"TFRRUWxGeFp6U1VlcE1YbklTTXAiDQoJCQkiSDEwSGVNT0V2VmV0Z1dZeElKRWtFVlFTME0yRkhj"
+			"ZUlKejIwQnJMbUtLWGEwc1lVUWIzcWhaRFNxeDFjckhEKzJEV1VGRWkvVVJKTSINCgkJCSJFdWtt"
+			"eGFlZ29BajVLbk81a2V0dC82RmpkWVhjYlRTZm01TGtsRFMxL1JmbEFhcnRpZVdYdmtWWXlqN2Mx"
+			"KzA1ZkQxcUhWN3MveWxQIg0KCQkJIkpQaDUzSGE0Vy9waTJjVnY1Wlp0eDJCbWVkbVpPdDZXZzBv"
+			"MVNkeDdEaGYvMkl1Z2VVTXdhKys3R1BIdFE3ampoMGU1TldRVDZJcFQiDQoJCQkiSDIxQVZabjZ1"
+			"SkhyZ2JMU0tBbkF0VjhncG14NEZZTSt2QnZUTnIvT3MrekNQNU5palkxeGFjayt4RzhQUis4WHBt"
+			"TEtwdGN3L0pzRiINCgkJCSJtTFQrWlF6LzhrR2VXaDI1Vk1vMHJDZ294WkdYbHZLMDdSbTczc2Jv"
+			"My84UHc5bnJtYnpoRldZZGpVTDh0dE1OeGhtMWQyaTZuSjhIIg0KCQkJIk9rUEIzcjhGSGF4eFlw"
+			"SlhnNkljcDBtRFVCY3pBWHExdXoyaVovbmhuNUh1T0RuWkcyR3NUVFN6ako0N0libXRpUlZNUkk0"
+			"eXkyVDUiDQoJCQkiTURkc0grMkJUWGU0WThjWUQxeGc0a0hIYVl6WHc3T3hQYmtZZncxMVJTdzdC"
+			"LzNkN3JFZWlKcmh5OTF0SkpCS3A5Mm14R0s4RTVHTiINCgkJCSJCNW1WRThmYWJtYlhFenJCQ3hl"
+			"bithS1FXVVlQSDYwUDBpdjVrYjNXeU9rK0RRcTVEWFZCZVVrbHduWmRnWXVYTFhlaERaLw=="
 		)
 	)
 	(label "DCHG_GATE"
@@ -3788,7 +3976,7 @@
 	)
 	(symbol
 		(lib_id "Connector:Screw_Terminal_01x02")
-		(at 256.54 66.04 0)
+		(at 265.43 66.04 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3796,7 +3984,7 @@
 		(dnp no)
 		(uuid "0b85014c-8373-4451-9372-7febcb359b49")
 		(property "Reference" "J5"
-			(at 256.54 63.5 0)
+			(at 265.43 63.5 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3804,7 +3992,7 @@
 			)
 		)
 		(property "Value" "Screw_Terminal 2pin"
-			(at 262.128 61.214 0)
+			(at 271.018 61.214 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3812,7 +4000,7 @@
 			)
 		)
 		(property "Footprint" "SparkAll:Wurth_TerminalBlock_2pin_P5mm_691137710002"
-			(at 256.54 66.04 0)
+			(at 265.43 66.04 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3821,7 +4009,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 256.54 66.04 0)
+			(at 265.43 66.04 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3830,7 +4018,7 @@
 			)
 		)
 		(property "Description" "Generic screw terminal, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)"
-			(at 256.54 66.04 0)
+			(at 265.43 66.04 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3839,7 +4027,7 @@
 			)
 		)
 		(property "LCSC" "C8269"
-			(at 256.54 66.04 0)
+			(at 265.43 66.04 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3848,7 +4036,7 @@
 			)
 		)
 		(property "Sim.Library" ""
-			(at 256.54 66.04 0)
+			(at 265.43 66.04 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3857,7 +4045,7 @@
 			)
 		)
 		(property "Sim.Name" ""
-			(at 256.54 66.04 0)
+			(at 265.43 66.04 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3866,7 +4054,7 @@
 			)
 		)
 		(property "Sim.Type" ""
-			(at 256.54 66.04 0)
+			(at 265.43 66.04 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3875,7 +4063,7 @@
 			)
 		)
 		(property "Sim.Device" ""
-			(at 256.54 66.04 0)
+			(at 265.43 66.04 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3883,7 +4071,7 @@
 			)
 		)
 		(property "Sim.Pins" ""
-			(at 256.54 66.04 0)
+			(at 265.43 66.04 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5368,6 +5556,160 @@
 			(project "CTRL-MINI-ED"
 				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
 					(reference "TP8")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Jumper:Jumper_2_Bridged")
+		(at 252.73 66.04 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "9fe83d36-24ce-4e06-a082-b2a11535e7a7")
+		(property "Reference" "JP1"
+			(at 252.984 64.008 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Jumper_2_Bridged"
+			(at 252.73 63.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "SparkAll:HoTCu-10.2D-0R"
+			(at 252.73 66.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 252.73 66.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Jumper, 2-pole, closed/bridged"
+			(at 252.73 66.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C5127898"
+			(at 252.73 66.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "0d6e7a06-832f-4658-a13e-c4c14e907c92")
+		)
+		(pin "2"
+			(uuid "ca1ad897-4acd-411b-9fd0-5dbd5aa01283")
+		)
+		(instances
+			(project ""
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
+					(reference "JP1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Jumper:Jumper_2_Bridged")
+		(at 252.73 68.58 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "a00f843c-b0dc-436c-a16c-2214d370adda")
+		(property "Reference" "JP2"
+			(at 252.73 70.358 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Jumper_2_Bridged"
+			(at 252.73 66.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "SparkAll:HoTCu-10.2D-0R"
+			(at 252.73 68.58 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 252.73 68.58 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Jumper, 2-pole, closed/bridged"
+			(at 252.73 68.58 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C5127898"
+			(at 252.73 68.58 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "58d57ac2-14fb-4e94-8ad3-0b6de105b9e6")
+		)
+		(pin "2"
+			(uuid "fa02c9b5-1455-436a-b494-ca11f526d49e")
+		)
+		(instances
+			(project "PULSER"
+				(path "/3fa1ca74-4d0d-40dd-8b5c-0d4be11bd5b5"
+					(reference "JP2")
 					(unit 1)
 				)
 			)

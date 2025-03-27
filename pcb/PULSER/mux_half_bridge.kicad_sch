@@ -1434,6 +1434,12 @@
 		(uuid "2cf4eaea-843b-40c2-a048-68a546014f91")
 	)
 	(junction
+		(at 73.66 74.93)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "46842830-6ef4-42ec-b5d6-b50224deaae2")
+	)
+	(junction
 		(at 96.52 88.9)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -1482,6 +1488,16 @@
 			(type default)
 		)
 		(uuid "0f5540b9-7474-41ca-af9c-19a9dd1b4ed0")
+	)
+	(wire
+		(pts
+			(xy 66.04 92.71) (xy 63.5 92.71)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1046cf54-f404-438a-a02a-cc4d1627226b")
 	)
 	(wire
 		(pts
@@ -1615,6 +1631,16 @@
 	)
 	(wire
 		(pts
+			(xy 63.5 74.93) (xy 73.66 74.93)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8167a88d-97a6-4c53-9979-5433a0db422b")
+	)
+	(wire
+		(pts
 			(xy 118.11 78.74) (xy 125.73 78.74)
 		)
 		(stroke
@@ -1725,6 +1751,26 @@
 	)
 	(wire
 		(pts
+			(xy 73.66 74.93) (xy 73.66 77.47)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "bd83c0c5-fa56-4e14-85a4-0f807d0a3d59")
+	)
+	(wire
+		(pts
+			(xy 63.5 92.71) (xy 63.5 74.93)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c1289b8a-8206-4116-8019-bc621b44b85f")
+	)
+	(wire
+		(pts
 			(xy 73.66 102.87) (xy 73.66 104.14)
 		)
 		(stroke
@@ -1815,7 +1861,7 @@
 	)
 	(wire
 		(pts
-			(xy 73.66 69.85) (xy 73.66 77.47)
+			(xy 73.66 69.85) (xy 73.66 74.93)
 		)
 		(stroke
 			(width 0)
@@ -2130,7 +2176,25 @@
 			"tb1IAgAAbEsxQ2psTjgAAAAAAAAAAAcAAAAAAAAAezeRlYsBAAAACQAhRW9NUAAAw71IAgAAeisx"
 			"czJyWTcAAAAAAAAAAAcAAAAAAAAACQAAACEAAAAAALW9SAIAACIKImFwaDI4AAAAAAAAAAAHAAAA"
 			"AAAAAAva1JqLAQAAAAkAIWtmVDgAAMO9SAIAADlObkwrRE11AAAAAAAAAAAHAAAAAAAAAAkAAAAh"
-			"AAAAAAC1vUgCAABCeDNWS3MvZQAAAAAAAAAABwAAAAAAAADATeSfiwEAAAAJACE3SkthAA=="
+			"AAAAAAC1vUgCAABCeDNWS3MvZQAAAAAAAAAABwAAAAAAAADATeSfiwEAAAAJACE3SkthAP//AP//"
+			"/wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////"
+			"AP///wD///8A////AP///wD///8A////AACu8GUAru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//"
+			"AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK7v/wCu7/8Aru//AK3wZP///wD/"
+			"//8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP//"
+			"/wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////"
+			"AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A"
+			"////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD/"
+			"//8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP//"
+			"/wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////"
+			"AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A"
+			"////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD/"
+			"//8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP//"
+			"/wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////"
+			"AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A"
+			"////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD/"
+			"//8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP//"
+			"/wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////"
+			"AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///w=="
 		)
 	)
 	(hierarchical_label "VOUT"
