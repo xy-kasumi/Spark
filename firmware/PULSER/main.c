@@ -544,10 +544,14 @@ void core1_main() {
       critical_section_exit(&csec_stat);
 
       // control current for pdur.
-      absolute_time_t t_ig_start = get_absolute_time();
+      absolute_time_t t_pulse_begin = get_absolute_time();
+      absolute_time_t t_pulse_end = delayed_by_us(t_pulse_begin, pdur);
+
       // Empirically, 3us is enough for discharge to stabilize to 20V.
-      absolute_time_t t_end_ig = delayed_by_us(t_ig_start, 3);
-      absolute_time_t t_ig_end = delayed_by_us(t_ig_start, pdur);
+      absolute_time_t t_end_ig = delayed_by_us(t_pulse_begin, 1);
+      // effect of IG impulse on current reading lasts about 10us.
+      absolute_time_t t_ig_effect_end = delayed_by_us(t_pulse_begin, 15);
+      
       int gate_off_consecutive = 0;
       const float duty_neutral =
           0.5; // "neutral" duty for 20V gap is 0.55. Set conservative and rely
@@ -556,7 +560,7 @@ void core1_main() {
       const float t_integ = 20e-6;
       float err_accum = 0;
       for (int i = 0; i < pdur; i++) {
-        if (time_reached(t_ig_end)) {
+        if (time_reached(t_pulse_end)) {
           // if some cycle is longer than 1us, this can happen.
           break;
         }
@@ -575,31 +579,35 @@ void core1_main() {
           gpio_put(PIN_GATE_IG, false);
         }
 
-        // Control constant-current PWM.
-        float curr_a = get_latest_current_a();
-        if (curr_a > curr_pcurr_a + MAX_CURR_OVERSHOOT_A) {
-          // current is too high for a normal gap.
-          // gap might get shorted during the pulse,
-          // or control is oscillating.
-          // NOTE: maybe this should be counted and should be exposed via
-          // register?
-          break;
-        }
-        float err = (curr_pcurr_a - curr_a);
-        err_accum += err * 1e-6;
+        if (time_reached(t_ig_effect_end)) {
+          // Control constant-current PWM.
+          float curr_a = get_latest_current_a();
+          if (curr_a > curr_pcurr_a + MAX_CURR_OVERSHOOT_A) {
+            // current is too high for a normal gap.
+            // gap might get shorted during the pulse,
+            // or control is oscillating.
+            // NOTE: maybe this should be counted and should be exposed via
+            // register?
+            break;
+          }
+          float err = (curr_pcurr_a - curr_a);
+          err_accum += err * 1e-6;
 
-        float duty = duty_neutral + err * gain + err_accum * (gain / t_integ);
-        duty = clampf(duty, 0, PWM_MAX_DUTY);
-        set_out_level(duty);
+          float duty = duty_neutral + err * gain + err_accum * (gain / t_integ);
+          duty = clampf(duty, 0, PWM_MAX_DUTY);
+          set_out_level(duty);
+        } else {
+          set_out_level(duty_neutral);
+        }
 
         // Absorb processing time variation to keep cycle at least 1us.
-        sleep_until(delayed_by_us(t_ig_start, i + 1));
+        sleep_until(delayed_by_us(t_pulse_begin, i + 1));
       }
       // Turn-off
       turnoff_out();
       // Record spent time as pulse time.
       int actual_pulse_time_us =
-          absolute_time_diff_us(t_ig_start, get_absolute_time());
+          absolute_time_diff_us(t_pulse_begin, get_absolute_time());
       critical_section_enter_blocking(&csec_stat);
       csec_stat_dur += actual_pulse_time_us;
       csec_stat_dur_pulse += actual_pulse_time_us;
