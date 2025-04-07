@@ -15,8 +15,7 @@
  * - PIN_GATE
  * - PIN_GATE_IG, PIN_GATE_MAIN_PWM
  * - PIN_CURR_DETECT
- * - PIN_MUX_V0H, PIN_MUX_V0L, PIN_MUX_VCH, PIN_MUX_VCL, PIN_MUX_V1H,
- * PIN_MUX_V1L
+ * - PIN_MUX_V0, PIN_MUX_VC
  *
  * Core0 and Core1 share global error_mode flag. Both core can raise error.
  * Core0 write to a critical section csec_pulse, and Core1 read it.
@@ -421,9 +420,7 @@ static const uint16_t COOLDOWN_SHORT_US = 100;
 
 static const uint16_t COOLDOWN_PULSE_MIN_US = 5;
 
-static const uint32_t MASK_ALL_MUX_PINS =
-    (1 << PIN_MUX_V0H) | (1 << PIN_MUX_V0L) | (1 << PIN_MUX_VCH) |
-    (1 << PIN_MUX_VCL) | (1 << PIN_MUX_V1H) | (1 << PIN_MUX_V1L);
+static const uint32_t MASK_ALL_MUX_PINS = (1 << PIN_MUX_V0) | (1 << PIN_MUX_VC);
 
 // Get pin value with about ~250ns noise filtering.
 // Returns the denoised value, or default_val if the signal is unstable.
@@ -481,17 +478,12 @@ void core1_main() {
       gpio_put_masked(MASK_ALL_MUX_PINS, 0);
       sleep_us(MUX_MAX_SETTLE_TIME_US);
 
-      if (new_pol == POL_OFF) {
-        gpio_put_masked(MASK_ALL_MUX_PINS,
-                        1 << PIN_MUX_V0L | 1 << PIN_MUX_VCL | 1 << PIN_MUX_V1L);
-      } else if (new_pol == POL_TPWN || new_pol == POL_TPGN) {
+      if (new_pol == POL_TPWN || new_pol == POL_TPGN) {
         // T+, others-
-        gpio_put_masked(MASK_ALL_MUX_PINS,
-                        1 << PIN_MUX_V0L | 1 << PIN_MUX_V1L | 1 << PIN_MUX_VCH);
+        gpio_put_masked(MASK_ALL_MUX_PINS, 1 << PIN_MUX_VC);
       } else {
-        // T-, others+
-        gpio_put_masked(MASK_ALL_MUX_PINS,
-                        1 << PIN_MUX_V0H | 1 << PIN_MUX_V1H | 1 << PIN_MUX_VCL);
+        // T-, others+ (including OFF)
+        gpio_put_masked(MASK_ALL_MUX_PINS, 1 << PIN_MUX_V0);
       }
       sleep_us(MUX_MAX_SETTLE_TIME_US);
       curr_pol = new_pol;
@@ -557,7 +549,9 @@ void core1_main() {
       absolute_time_t t_end_ig = delayed_by_us(t_ig_start, 3);
       absolute_time_t t_ig_end = delayed_by_us(t_ig_start, pdur);
       int gate_off_consecutive = 0;
-      const float duty_neutral = 0.5; // "neutral" duty for 20V gap is 0.55. Set conservative and rely on I-control to adjust.
+      const float duty_neutral =
+          0.5; // "neutral" duty for 20V gap is 0.55. Set conservative and rely
+               // on I-control to adjust.
       const float gain = 0.02;
       const float t_integ = 20e-6;
       float err_accum = 0;

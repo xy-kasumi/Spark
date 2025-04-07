@@ -34,12 +34,12 @@ uC operating environment
 | GP3  | -            | -              | -                                                |
 | GP4  | GPIO (OUT)   | LED_STATUS     | white LED, digital H = ON                        |
 | GP5  | -            | -              | -                                                |
-| GP6  | GPIO (OUT)   | MUX_V0H        | Controls bridge driver V0 (high-side)            |
-| GP7  | GPIO (OUT)   | MUX_V0L        | Controls bridge driver V0 (low-side)             |
-| GP8  | GPIO (OUT)   | MUX_VCH        | Controls bridge driver Vcom (high-side)          |
-| GP9  | GPIO (OUT)   | MUX_VCL        | Controls bridge driver Vcom (low-side)           |
-| GP10 | GPIO (OUT)   | MUX_V1H        | Controls bridge driver V1 (high-side)            |
-| GP11 | GPIO (OUT)   | MUX_V1L        | Controls bridge driver V1 (low-side)             |
+| GP6  | -            | -              | -                                                |
+| GP7  | GPIO (OUT)   | MUX_V0         | Controls bridge driver V0 (IN)                   |
+| GP8  | -            | -              | -                                                |
+| GP9  | GPIO (OUT)   | MUX_VC         | Controls bridge driver Vcom (IN)                 |
+| GP10 | -            | -              | -                                                |
+| GP11 | -            | -              | -                                                |
 | GP12 | -            | N/C            | -                                                |
 | GP13 | -            | N/C            | -                                                |
 | GP14 | I2C1 SDA     | TS_I2C_SDA     | Temp sensor chip I2C                             |
@@ -118,22 +118,11 @@ MOSFETs (both are N-ch)
 Allowed configuration:
 
 Keep driver active config
-| POLARITY   | V0, V1 | VC  |
-|------------|--------|-----|
-| OFF        | L      | L   |
-| TPWN, TPGN | L      | H   |
-| TNWP, TNGP | H      | L   |
-| Trans      | Z      | Z   |
-
-Turn-off unused config
-| POLARITY | V0  | VC  | V1  |
-|----------|-----|-----|-----|
-| OFF      | L   | L   | L   |
-| TPWN     | L   | H   | Z   |
-| TNWP     | H   | L   | Z   |
-| TPGN     | Z   | H   | L   |
-| TNGP     | Z   | L   | H   |
-| Trans    | Z   | Z   | Z   |
+| POLARITY         | V0 | VC |
+|------------------|----|----|
+| TPWN, TPGN       | L  | H  |
+| OFF, TNWP, TNGP  | H  | L  |
+| Trans            | Z  | Z  |
 
 * L: only enable L
 * H: only enable H
