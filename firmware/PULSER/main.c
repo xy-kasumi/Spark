@@ -568,6 +568,8 @@ void core1_main() {
         // Monitor gate with denoising.
         if (!gpio_get(PIN_GATE)) {
           gate_off_consecutive++;
+        } else {
+          gate_off_consecutive = 0;
         }
         if (gate_off_consecutive > 10) {
           turnoff_out();
