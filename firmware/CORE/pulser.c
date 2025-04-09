@@ -9,6 +9,10 @@
 
 #include "config.h"
 
+static const uint32_t MASK_PULSER_GNDS = (1 << PIN_PULSER_GND_A) |
+                                         (1 << PIN_PULSER_GND_B) |
+                                         (1 << PIN_PULSER_GND_C);
+
 static const uint8_t REG_POLARITY = 0x01;
 static const uint8_t REG_PULSE_CURRENT = 0x02;
 static const uint8_t REG_TEMPERATURE = 0x03;
@@ -99,8 +103,9 @@ static bool write_reg(uint8_t reg_addr, uint8_t val) {
 
 void pulser_init() {
   gpio_init_mask((1 << PIN_PULSER_GATE) | (1 << PIN_PULSER_I2C_SCL) |
-                 (1 << PIN_PULSER_I2C_SDA));
-  gpio_set_dir(PIN_PULSER_GATE, GPIO_OUT);
+                 (1 << PIN_PULSER_I2C_SDA) | MASK_PULSER_GNDS);
+  gpio_set_dir_out_masked((1 << PIN_PULSER_GATE) | MASK_PULSER_GNDS);
+  gpio_put_masked(MASK_PULSER_GNDS, 0);
 
   // Init I2C.
   i2c_init(PULSER_I2C, PULSER_I2C_BAUD);
@@ -125,7 +130,8 @@ void pulser_init() {
     sleep_ms(100);
   }
 
-  // Ensure PULSER is in normal mode. (e.g. when CORE is restarted when doing test)
+  // Ensure PULSER is in normal mode. (e.g. when CORE is restarted when doing
+  // test)
   pulser_set_test(false, false);
 }
 

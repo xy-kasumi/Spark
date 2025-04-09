@@ -68,9 +68,11 @@ static const uint8_t PIN_UART_RX = 1;        // UART0, MUI-TX
 static const uint8_t PIN_STPDRV_SCK = 2;     // SPI0
 static const uint8_t PIN_STPDRV_SDI = 3;     // SPI0
 static const uint8_t PIN_STPDRV_SDO = 4;     // SPI0
+static const uint8_t PIN_PULSER_GND_A = 5;
 static const uint8_t PIN_PULSER_I2C_SDA = 6; // I2C1
 static const uint8_t PIN_PULSER_I2C_SCL = 7; // I2C1
 static const uint8_t PIN_PULSER_GATE = 8;    // GPIO OUT
+static const uint8_t PIN_PULSER_GND_B = 9;
 static const uint8_t PIN_STPDRV_DIR = 16;    // GPIO OUT
 static const uint8_t PIN_STPDRV_STEP0 = 17;  // GPIO OUT
 static const uint8_t PIN_STPDRV_STEP1 = 18;  // GPIO OUT
@@ -78,6 +80,7 @@ static const uint8_t PIN_STPDRV_STEP2 = 19;  // GPIO OUT
 static const uint8_t PIN_STPDRV_CSN0 = 20;   // GPIO OUT
 static const uint8_t PIN_STPDRV_CSN1 = 21;   // GPIO OUT
 static const uint8_t PIN_STPDRV_CSN2 = 22;   // GPIO OUT
+static const uint8_t PIN_PULSER_GND_C = 26;
 
 #define STPDRV_SPI spi0
 #define PULSER_I2C i2c1
