@@ -368,7 +368,7 @@ static void tick_feed_control(volatile control_t* control,
   // Typically good gap distance is a few um~20um according to literature.
   // Too big value = slam into the work or always get too far after short and
   // oscillate.
-  const float DELAY_S = 10e-3;
+  const float DELAY_S = 22e-3;
   const float DELAY_TICK = DELAY_S * CONTROL_LOOP_HZ;
   const float PULL_D_DIST_MM = 5e-3 / DELAY_TICK; // 5um
   const float PUSH_D_DIST_MM = 1e-3 / DELAY_TICK; // 1um
