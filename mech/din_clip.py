@@ -170,6 +170,9 @@ def make_din_clip_holes(hole_offsets, dia_hole, l_end=20, r_end=20):
     """
     thickness = 5
     clip = make_din_clip(l_end, r_end, thickness)
+    if len(hole_offsets) == 0:
+        return clip
+    
     points = [(ofs, 0) for ofs in hole_offsets]
     clip = (
         clip.faces(">Z").workplane(origin=(0,0,0), offset=thickness, invert=True)
@@ -185,6 +188,9 @@ def make_din_clip_inserts(hole_offsets, dia_insert, l_end=20, r_end=20):
     """
     thickness = 5
     clip = make_din_clip(l_end, r_end, thickness)
+    if len(hole_offsets) == 0:
+        return clip
+    
     points = [(ofs, 0) for ofs in hole_offsets]
     clip = (
         clip.faces(">Z").workplane(origin=(0,0,0), offset=0, invert=True)
