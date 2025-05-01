@@ -69,6 +69,16 @@ Setup
 5. Power on the board. After about 5 seconds, you should see a few lines starting with `GrblHAL 1.1f ['$' or '$HELP' for help]` in the serial console.
 
 
+See errors.c for error codes.
+
+Quick test
+```
+$5=7 (disable "X", "Y", "Z" limit switches by flipping them)
+$14=7 (disable "Start", "Hold", "Reset" by flipping them)
+$J=G91 X50 F100 (move X motor for 30 seconds)
+```
+
+
 ### TBD
 
 HE0~3 (24V = MB_POWER)
