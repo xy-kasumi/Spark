@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Shell Dashboard</title>
+</head>
+<body>
+  <div id="app">
+    <h1>Spooler Dashboard</h1>
+    <textarea v-model="data" rows="10" cols="50" placeholder="Enter G-code or commands"></textarea><br/>
+    <button @click="send">Send to Spooler</button>
+    <p v-if="status">{{ status }}</p>
+  </div>
+
+  <!-- Vue 3 global build via CDN -->
+  <script src="https://unpkg.com/vue@3"></script>
+  <script>
+    const { createApp } = Vue;
+    createApp({
+      data() {
+        return {
+          data: '',
+          status: ''
+        }
+      },
+      methods: {
+        async send() {
+          this.status = 'Sending...';
+          try {
+            const res = await fetch('http://localhost:8080/write', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ data: this.data })
+            });
+            const text = await res.text();
+            if (!res.ok) throw new Error(text);
+            this.status = 'Success: ' + text;
+          } catch (err) {
+            this.status = 'Error: ' + err.message;
+          }
+        }
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

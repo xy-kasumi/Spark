@@ -13,7 +13,9 @@ Directories are roughly divided into two groups.
 
 ### Build & Use
 * docs: contains assembly manuals and specs
-* dicer: main software that generates G-code from STL for the machine
+* dicer: web page that generates G-code from STL for the machine
+* shell-dashboard: web page to control the machine
+* shell-spooler: Go program that acts as interface between shell-dashboard & physical board
 * firmware: C firmware code for the boards
 * pcb: KiCad files for PCBA
 * mech: CAD files for the machine
