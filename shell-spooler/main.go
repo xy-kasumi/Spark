@@ -20,25 +20,40 @@ func main() {
 	// Flags for serial port settings
 	portName := flag.String("port", "COM3", "Serial port name")
 	baud := flag.Int("baud", 115200, "Serial port baud rate")
-	addr := flag.String("addr", ":8080", "HTTP listen address")
+	addr := flag.String("addr", ":9000", "HTTP listen address")
 	flag.Parse()
 
 	// Open serial port using go.bug.st/serial.v1
 	mode := &serial.Mode{BaudRate: *baud}
 	ser, err := serial.Open(*portName, mode)
 	if err != nil {
-		log.Fatalf("failed to open serial port: %v", err)
+		log.Fatalf("failed to open serial port (%v, baud=%v): %v", *portName, *baud, err)
 	}
 	defer ser.Close()
 
 	// HTTP handler to write data
+	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, `{"status": "ok"}`)
+	})
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
 		// allow CORS for browser-based dashboard
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		if r.Method != http.MethodPost {

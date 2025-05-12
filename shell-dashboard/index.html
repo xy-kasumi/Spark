@@ -10,12 +10,23 @@
 
 <body>
     <div class="pure-g" id="app">
-        <div class="pure-u">
-            <h1>Spooler Dashboard</h1>
+        <div class="pure-u-2-5">
+            <h1>Status</h1>
+            <p>Shell Spooler: {{spooler_status}}</p>
+            <p>Core Status: Unknown</p>
+            <p>Machine Status: Unknown</p>
+            <p v-if="status">{{ status }}</p>
+            <button class="pure-button" @click="refresh">Refresh</button>
+
+            <h1>Manual Command</h1>
             <textarea class="pure-input-1-2" v-model="data" rows="10" cols="50"
                 placeholder="Enter G-code or commands"></textarea><br />
             <button class="pure-button" @click="send">Send to Spooler</button>
-            <p v-if="status">{{ status }}</p>
+        </div>
+        <div class="pure-u-3-5">
+            <h1>Serial Log</h1>
+            <pre>Line 1
+Line 2</pre>
         </div>
     </div>
 
@@ -26,14 +37,27 @@
             data() {
                 return {
                     data: '',
-                    status: ''
+                    status: '',
+                    spooler_status: 'Unknown',
                 }
             },
             methods: {
+                async refresh() {
+                    try {
+                        const res = await fetch('http://localhost:9000/status', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({})
+                        });
+                        this.spooler_status = 'Connected';
+                    } catch (err) {
+                        this.spooler_status = 'Failed to connect';
+                    }
+                },
                 async send() {
                     this.status = 'Sending...';
                     try {
-                        const res = await fetch('http://localhost:8080/write', {
+                        const res = await fetch('http://localhost:9000/write', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ data: this.data })
