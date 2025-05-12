@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,15 @@ import (
 // writeRequest defines the expected JSON payload
 type writeRequest struct {
 	Data string `json:"data"`
+}
+
+type statusResponse struct {
+	Status        string  `json:"status"`
+	CoreStatusRaw string  `json:"core_status_raw"`
+	CoreState     string  `json:"core_state"`
+	XPos          float64 `json:"x_pos"`
+	YPos          float64 `json:"y_pos"`
+	ZPos          float64 `json:"z_pos"`
 }
 
 // Data that arrived within certain time gap.
@@ -63,14 +73,59 @@ func packLog(up bool, data string, time time.Time) string {
 	return builder.String()
 }
 
+func parseGrblStatus(line string, status *statusResponse) bool {
+	line = strings.TrimSpace(line)
+	log.Printf("parseGrbl: %s\n", line)
+	if !strings.HasPrefix(line, "<") || !strings.HasSuffix(line, ">") {
+		return false
+	}
+	log.Printf("parseGrblHas<>\n")
+
+	line = strings.Trim(line, "<>")
+	parts := strings.Split(line, "|")
+	if len(parts) < 2 {
+		return false
+	}
+	log.Printf("parseGrblHasParts\n")
+
+	status.CoreState = parts[0]
+
+	for _, part := range parts[1:] {
+		if strings.HasPrefix(part, "MPos:") {
+			log.Printf("parseGrblHasMPos\n")
+			// e.g. part=="MPos:0.000,0.000,0.000"
+			coords := strings.Split(strings.TrimPrefix(part, "MPos:"), ",")
+			if len(coords) >= 3 {
+				v, err := strconv.ParseFloat(strings.TrimSpace(coords[0]), 64)
+				if err != nil {
+					return false
+				}
+				status.XPos = v
+
+				v, err = strconv.ParseFloat(strings.TrimSpace(coords[1]), 64)
+				if err != nil {
+					return false
+				}
+				status.YPos = v
+
+				v, err = strconv.ParseFloat(strings.TrimSpace(coords[2]), 64)
+				if err != nil {
+					return false
+				}
+				status.ZPos = v
+			}
+		}
+	}
+
+	return true
+}
+
 func main() {
-	// Flags for serial port settings
 	portName := flag.String("port", "COM3", "Serial port name")
 	baud := flag.Int("baud", 115200, "Serial port baud rate")
 	addr := flag.String("addr", ":9000", "HTTP listen address")
 	flag.Parse()
 
-	// Open serial port using go.bug.st/serial.v1
 	mode := &serial.Mode{BaudRate: *baud}
 	ser, err := serial.Open(*portName, mode)
 	if err != nil {
@@ -126,8 +181,32 @@ func main() {
 		if !handleCommom(w, r) {
 			return
 		}
+
+		// TODO: This can conflict with other ongoing commands. Spooler needs to order them.
+		writeSerial("?\n")
+		time.Sleep(150 * time.Millisecond)
+		coreResponse := ""
+		coreLogMu.Lock()
+		if len(logs) > 0 {
+			coreResponse = logs[len(logs)-1].data
+		}
+		coreLogMu.Unlock()
+
+		log.Printf("status: %q", coreResponse)
+
+		statusResponse := statusResponse{Status: "ok", CoreStatusRaw: coreResponse}
+
+		coreResponse = strings.ReplaceAll(coreResponse, "\r\n", "\n")
+		lines := strings.Split(coreResponse, "\n")
+		log.Printf("status lines: %v", len(lines))
+		if len(lines) >= 1 {
+			log.Printf("status line[0]: %q", lines[0])
+			parseGrblStatus(lines[0], &statusResponse)
+		}
+
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, `{"status": "ok"}`)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(&statusResponse)
 	})
 
 	http.HandleFunc("/home", func(w http.ResponseWriter, r *http.Request) {
