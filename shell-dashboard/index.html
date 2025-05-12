@@ -25,53 +25,12 @@
         </div>
         <div class="pure-u-3-5">
             <h1>Serial Log</h1>
-            <pre>Line 1
-Line 2</pre>
+            <pre>{{ log_output }}</pre>
         </div>
     </div>
 
     <script src="vue.global.js"></script>
-    <script>
-        const { createApp } = Vue;
-        createApp({
-            data() {
-                return {
-                    data: '',
-                    status: '',
-                    spooler_status: 'Unknown',
-                }
-            },
-            methods: {
-                async refresh() {
-                    try {
-                        const res = await fetch('http://localhost:9000/status', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({})
-                        });
-                        this.spooler_status = 'Connected';
-                    } catch (err) {
-                        this.spooler_status = 'Failed to connect';
-                    }
-                },
-                async send() {
-                    this.status = 'Sending...';
-                    try {
-                        const res = await fetch('http://localhost:9000/write', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ data: this.data })
-                        });
-                        const text = await res.text();
-                        if (!res.ok) throw new Error(text);
-                        this.status = 'Success: ' + text;
-                    } catch (err) {
-                        this.status = 'Error: ' + err.message;
-                    }
-                }
-            }
-        }).mount('#app');
-    </script>
+    <script src="main.js"></script>
 </body>
 
 </html>
