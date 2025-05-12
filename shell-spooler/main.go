@@ -24,6 +24,22 @@ var (
 	coreLog   strings.Builder
 )
 
+// handleCommon returns true if caller should continue RPC processing.
+func handleCommom(w http.ResponseWriter, r *http.Request) bool {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return false
+	}
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return false
+	}
+	return true
+}
+
 func main() {
 	// Flags for serial port settings
 	portName := flag.String("port", "COM3", "Serial port name")
@@ -59,31 +75,15 @@ func main() {
 
 	// HTTP handler to write data
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
+		if !handleCommom(w, r) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, `{"status": "ok"}`)
 	})
+
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
-		// allow CORS for browser-based dashboard
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
+		if !handleCommom(w, r) {
 			return
 		}
 		var req writeRequest
@@ -92,26 +92,20 @@ func main() {
 			fmt.Fprintf(w, "invalid JSON: %v", err)
 			return
 		}
+
 		// Write to serial
 		if _, err := ser.Write([]byte(req.Data)); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, "failed to write to serial: %v", err)
 			return
 		}
+
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
 	})
 
 	http.HandleFunc("/get-core-log", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
+		if !handleCommom(w, r) {
 			return
 		}
 		coreLogMu.Lock()

@@ -11,6 +11,7 @@ Spooler's purpose:
 
 Spooler needs to maintain semi-realtime (freeze of more than 1sec is not allowed) connection to the Core.
 
+Spooler knows about grblHAL (or other Core protocol) and translates it to more friendly and universal form.
 Spooler does NOT know about G-code semantics. It only knows about its semantics and grblHAL protocol.
 But spooler does know about board & machine configuration (number of axes etc).
 
