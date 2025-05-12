@@ -38,5 +38,6 @@ AGPL, CERN-OHL, and Apache-2.0 also include *patent retaliation* clauses, promot
 | pure-css            | BSD-3-Clause     | <https://github.com/pure-css/pure/>                     |
 | qunit               | MIT              | <https://github.com/qunitjs/qunit>                      |
 | cq-electronics      | MIT              | <https://github.com/sethfischer/cq-electronics>         |
+| go-serial           | BSD-3-Clause     | <https://github.com/bugst/go-serial>                    |
 
 Also see [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt) for full details.
