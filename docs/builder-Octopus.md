@@ -75,6 +75,7 @@ Quick test
 ```
 $5=7 (disable "X", "Y", "Z" limit switches by flipping them)
 $14=7 (disable "Start", "Hold", "Reset" by flipping them)
+$X (unlock alarms)
 $J=G91 X50 F100 (move X motor for 30 seconds)
 ```
 

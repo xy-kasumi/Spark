@@ -20,7 +20,7 @@ Vue.createApp({
                 const res = await fetch(host + '/write', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ data: this.data })
+                    body: JSON.stringify({ data: "$J=G91 X5 F100\n" })
                 });
                 const text = await res.text();
                 if (!res.ok) throw new Error(text);
@@ -28,7 +28,20 @@ Vue.createApp({
             } catch (err) {
                 this.status = 'Error: ' + err.message;
             }
-
+        },
+        async home() {
+            try {
+                const res = await fetch(host + '/home', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const text = await res.text();
+                if (!res.ok) throw new Error(text);
+                this.status = 'Success: ' + text;
+            } catch (err) {
+                this.status = 'Error: ' + err.message;
+            }
         },
         async refresh() {
             try {

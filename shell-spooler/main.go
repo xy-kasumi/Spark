@@ -84,7 +84,6 @@ func main() {
 		for {
 			n, err := ser.Read(buf)
 			if n > 0 {
-				fmt.Printf("Read %d bytes\n", n)
 				// Add new log
 				coreLogMu.Lock()
 				recvBuffer.Write(buf[:n])
@@ -111,6 +110,17 @@ func main() {
 		}
 	}()
 
+	writeSerial := func(data string) bool {
+		if _, err := ser.Write([]byte(data)); err != nil {
+			log.Printf("failed to write to serial: %v", err)
+			return false
+		}
+		coreLogMu.Lock()
+		logs = append(logs, logEntry{up: false, data: data, time: time.Now()})
+		coreLogMu.Unlock()
+		return true
+	}
+
 	// HTTP handler to write data
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		if !handleCommom(w, r) {
@@ -118,6 +128,23 @@ func main() {
 		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, `{"status": "ok"}`)
+	})
+
+	http.HandleFunc("/home", func(w http.ResponseWriter, r *http.Request) {
+		if !handleCommom(w, r) {
+			return
+		}
+		var req writeRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "invalid JSON: %v", err)
+			return
+		}
+
+		writeSerial("$5=7\n$14=7\n$X\n")
+
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "doing")
 	})
 
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
@@ -131,15 +158,7 @@ func main() {
 			return
 		}
 
-		// Write to serial
-		if _, err := ser.Write([]byte(req.Data)); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, "failed to write to serial: %v", err)
-			return
-		}
-		coreLogMu.Lock()
-		logs = append(logs, logEntry{up: false, data: req.Data, time: time.Now()})
-		coreLogMu.Unlock()
+		writeSerial(req.Data)
 
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
