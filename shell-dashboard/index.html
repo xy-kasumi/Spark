@@ -18,6 +18,10 @@
             <p v-if="status">{{ status }}</p>
             <button class="pure-button" @click="refresh">Refresh</button>
 
+            <h1>Axes</h1>
+            <button class="pure-button" @click="move_xm">X-</button>
+            <button class="pure-button" @click="move_xp">X+</button>
+
             <h1>Manual Command</h1>
             <textarea class="pure-input-1-2" v-model="data" rows="10" cols="50"
                 placeholder="Enter G-code or commands"></textarea><br />
@@ -25,7 +29,7 @@
         </div>
         <div class="pure-u-3-5">
             <h1>Serial Log</h1>
-            <pre>{{ log_output }}</pre>
+            <pre style="height:500px; overflow: scroll">{{ log_output }}</pre>
         </div>
     </div>
 

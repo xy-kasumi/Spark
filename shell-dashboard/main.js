@@ -12,6 +12,24 @@ Vue.createApp({
         }
     },
     methods: {
+        async move_xm() {
+
+        },
+        async move_xp() {
+            try {
+                const res = await fetch(host + '/write', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ data: this.data })
+                });
+                const text = await res.text();
+                if (!res.ok) throw new Error(text);
+                this.status = 'Success: ' + text;
+            } catch (err) {
+                this.status = 'Error: ' + err.message;
+            }
+
+        },
         async refresh() {
             try {
                 const res = await fetch(host + '/status', {
@@ -61,6 +79,7 @@ Vue.createApp({
             } catch (err) {
                 this.status = 'Error: ' + err.message;
             }
+            await this.refresh();
         }
     }
 }).mount('#app');

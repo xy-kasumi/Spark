@@ -19,9 +19,20 @@ type writeRequest struct {
 	Data string `json:"data"`
 }
 
+// Data that arrived within certain time gap.
+type logEntry struct {
+	up   bool // up: client->host, down: host->client
+	data string
+	time time.Time
+}
+
 var (
 	coreLogMu sync.Mutex
-	coreLog   strings.Builder
+
+	recvTime   time.Time
+	recvBuffer strings.Builder
+	logs       []logEntry
+	//coreLog   strings.Builder
 )
 
 // handleCommon returns true if caller should continue RPC processing.
@@ -38,6 +49,18 @@ func handleCommom(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	return true
+}
+
+func packLog(up bool, data string, time time.Time) string {
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("%s", time.Local().Format("2006-01-02 15:04:05.000")))
+	if up {
+		builder.WriteString(">")
+	} else {
+		builder.WriteString("<")
+	}
+	builder.WriteString(data)
+	return builder.String()
 }
 
 func main() {
@@ -60,16 +83,31 @@ func main() {
 		buf := make([]byte, 1024)
 		for {
 			n, err := ser.Read(buf)
-			fmt.Printf("Read %d bytes\n", n)
 			if n > 0 {
+				fmt.Printf("Read %d bytes\n", n)
+				// Add new log
 				coreLogMu.Lock()
-				coreLog.Write(buf[:n])
+				recvBuffer.Write(buf[:n])
+				recvTime = time.Now()
+
 				coreLogMu.Unlock()
 			}
 			if err != nil {
 				log.Printf("serial read error: %v", err)
 				time.Sleep(time.Second)
 			}
+		}
+	}()
+
+	go func() {
+		for {
+			coreLogMu.Lock()
+			if time.Now().Sub(recvTime).Seconds() > 0.1 && recvBuffer.Len() > 0 {
+				logs = append(logs, logEntry{up: true, data: recvBuffer.String(), time: recvTime})
+				recvBuffer.Reset()
+			}
+			coreLogMu.Unlock()
+			time.Sleep(time.Millisecond * 100)
 		}
 	}()
 
@@ -99,6 +137,9 @@ func main() {
 			fmt.Fprintf(w, "failed to write to serial: %v", err)
 			return
 		}
+		coreLogMu.Lock()
+		logs = append(logs, logEntry{up: false, data: req.Data, time: time.Now()})
+		coreLogMu.Unlock()
 
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
@@ -108,8 +149,13 @@ func main() {
 		if !handleCommom(w, r) {
 			return
 		}
+		builder := strings.Builder{}
 		coreLogMu.Lock()
-		output := coreLog.String()
+		for _, log := range logs {
+			builder.WriteString(packLog(log.up, log.data, log.time))
+			builder.WriteString("\n")
+		}
+		output := builder.String()
 		coreLogMu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"output": output})
