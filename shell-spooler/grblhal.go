@@ -19,6 +19,7 @@ type atomicCommand struct {
 
 // Singleton corresponding to single physical machine & port.
 type grblhalMachine struct {
+	ser    serial.Port
 	commCh chan atomicCommand
 	status *machineStatus // pointer to make atomic
 }
@@ -69,8 +70,6 @@ func parseGrblStatus(line string) (machineStatus, bool) {
 }
 
 func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine {
-	log.Printf("Initializing GRBL with port: %s and baud: %d", portName, baud)
-
 	m := &grblhalMachine{
 		commCh: make(chan atomicCommand, 10),
 	}
@@ -80,7 +79,8 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 	if err != nil {
 		log.Fatalf("failed to open serial port (%v, baud=%v): %v", portName, baud, err)
 	}
-	defer ser.Close()
+	log.Printf("Serial port %s (baud=%d) opened successfully", portName, baud)
+	m.ser = ser
 
 	commandExecAllowedCh := make(chan int)
 
@@ -94,12 +94,18 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 
 		r := bufio.NewReader(ser)
 		for {
-			raw, err := r.ReadString('\n')
-			if err != nil {
-				log.Printf("serial port read error: %v", err)
-				continue
+			var raw string
+			// Don't give up until success. Reduce log spam by exponential backoff.
+			waitTime := time.Millisecond * 500
+			for {
+				raw, err = r.ReadString('\n')
+				if err == nil {
+					break
+				}
+				log.Printf("serial port read error: %v; retrying", err)
+				time.Sleep(waitTime)
+				waitTime *= 2
 			}
-
 			raw = strings.TrimSpace(raw)
 
 			logCh <- logEntry{
@@ -183,6 +189,10 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 	}()
 
 	return m
+}
+
+func (m *grblhalMachine) Close() {
+	m.ser.Close()
 }
 
 // goroutine-safe

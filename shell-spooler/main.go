@@ -88,6 +88,7 @@ func main() {
 	}()
 
 	machine := initGrblhal(*portName, *baud, logCh)
+	defer machine.Close()
 
 	// HTTP handler to write data
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +169,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"output": output})
 	})
 
-	log.Printf("listening on %s, writing to %s at %d", *addr, *portName, *baud)
+	log.Printf("server started listening on %s", *addr)
 	if err := http.ListenAndServe(*addr, nil); err != nil {
 		log.Fatalf("HTTP server error: %v", err)
 	}
