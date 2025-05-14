@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -57,7 +57,7 @@ func handleCommom(w http.ResponseWriter, r *http.Request) bool {
 
 func packLog(up bool, data string, time time.Time) string {
 	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("%s", time.Local().Format("2006-01-02 15:04:05.000")))
+	builder.WriteString(time.Local().Format("2006-01-02 15:04:05.000"))
 	if up {
 		builder.WriteString(">")
 	} else {
@@ -71,7 +71,12 @@ func main() {
 	portName := flag.String("port", "COM3", "Serial port name")
 	baud := flag.Int("baud", 115200, "Serial port baud rate")
 	addr := flag.String("addr", ":9000", "HTTP listen address")
+	verbose := flag.Bool("verbose", false, "Verbose logging")
 	flag.Parse()
+
+	if verbose != nil && *verbose {
+		slog.SetLogLoggerLevel(slog.LevelDebug)
+	}
 
 	// log
 	logCh := make(chan logEntry)
@@ -88,10 +93,14 @@ func main() {
 	}()
 
 	machine := initGrblhal(*portName, *baud, logCh)
+	if machine == nil {
+		return
+	}
 	defer machine.Close()
 
 	// HTTP handler to write data
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		slog.Debug("/status")
 		if !handleCommom(w, r) {
 			return
 		}
@@ -114,6 +123,7 @@ func main() {
 	// TODO: This should become a G-code
 	// Spooler can have printer profile file.
 	http.HandleFunc("/home", func(w http.ResponseWriter, r *http.Request) {
+		slog.Debug("/home")
 		if !handleCommom(w, r) {
 			return
 		}
@@ -136,6 +146,7 @@ func main() {
 	})
 
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
+		slog.Debug("/write")
 		if !handleCommom(w, r) {
 			return
 		}
@@ -147,13 +158,22 @@ func main() {
 		}
 
 		// TODO: multi-command handling
-		machine.enqueue(req.Data)
+		var cmds []string
+		lines := strings.Split(req.Data, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				cmds = append(cmds, line)
+			}
+		}
+		machine.enqueueSeq(cmds)
 
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
 	})
 
 	http.HandleFunc("/get-core-log", func(w http.ResponseWriter, r *http.Request) {
+		slog.Debug("/get-core-log")
 		if !handleCommom(w, r) {
 			return
 		}
@@ -169,8 +189,8 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"output": output})
 	})
 
-	log.Printf("server started listening on %s", *addr)
+	slog.Info("HTTP server started listening", "port", *addr)
 	if err := http.ListenAndServe(*addr, nil); err != nil {
-		log.Fatalf("HTTP server error: %v", err)
+		slog.Error("HTTP server error", "error", err)
 	}
 }

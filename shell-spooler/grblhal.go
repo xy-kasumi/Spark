@@ -3,7 +3,7 @@ package main
 
 import (
 	"bufio"
-	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,23 +26,19 @@ type grblhalMachine struct {
 
 func parseGrblStatus(line string) (machineStatus, bool) {
 	line = strings.TrimSpace(line)
-	log.Printf("parseGrbl: %s\n", line)
 	if !strings.HasPrefix(line, "<") || !strings.HasSuffix(line, ">") {
 		return machineStatus{}, false
 	}
-	log.Printf("parseGrblHas<>\n")
 
 	line = strings.Trim(line, "<>")
 	parts := strings.Split(line, "|")
 	if len(parts) < 2 {
 		return machineStatus{}, false
 	}
-	log.Printf("parseGrblHasParts\n")
 
 	mstat := machineStatus{}
 	for _, part := range parts[1:] {
 		if strings.HasPrefix(part, "MPos:") {
-			log.Printf("parseGrblHasMPos\n")
 			// e.g. part=="MPos:0.000,0.000,0.000"
 			coords := strings.Split(strings.TrimPrefix(part, "MPos:"), ",")
 			if len(coords) >= 3 {
@@ -77,12 +73,13 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 	mode := &serial.Mode{BaudRate: baud}
 	ser, err := serial.Open(portName, mode)
 	if err != nil {
-		log.Fatalf("failed to open serial port (%v, baud=%v): %v", portName, baud, err)
+		slog.Error("failed to open serial port", "port", portName, "baud", baud, "error", err)
+		return nil
 	}
-	log.Printf("Serial port %s (baud=%d) opened successfully", portName, baud)
+	slog.Info("opened serial port", "port", portName, "baud", baud)
 	m.ser = ser
 
-	commandExecAllowedCh := make(chan int)
+	commandExecAllowedCh := make(chan int, 1)
 
 	var resultMapMtx sync.Mutex
 	resultMap := make(map[int]chan string)
@@ -102,12 +99,13 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 				if err == nil {
 					break
 				}
-				log.Printf("serial port read error: %v; retrying", err)
+				slog.Error("serial port read error; retrying", "error", err)
 				time.Sleep(waitTime)
 				waitTime *= 2
 			}
 			raw = strings.TrimSpace(raw)
 
+			slog.Debug("received", "grbl", raw, "commandIx", commandIx)
 			logCh <- logEntry{
 				up:   true,
 				data: raw,
@@ -121,7 +119,7 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 				if ok {
 					m.status = &mStat
 				} else {
-					log.Printf("warning, impl error: ignored unparsable grblHAL status: %q", raw)
+					slog.Warn("missing impl: ignored unparsable grblHAL status", "grbl", raw)
 				}
 			} else if strings.HasPrefix(raw, "ok") || strings.HasPrefix(raw, "error") {
 				// command response
@@ -133,7 +131,8 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 				resultMapMtx.Lock()
 				resultChan, ok := resultMap[commandIx]
 				if !ok {
-					log.Panicf("response to unknown command %d", commandIx)
+					slog.Error("response to unknown command", "commandIx", commandIx)
+					panic("assertion failed")
 				}
 				resultChan <- result
 				delete(resultMap, commandIx)
@@ -144,10 +143,10 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 				commandExecAllowedCh <- commandIx
 			} else if strings.HasPrefix(raw, "[") {
 				// custom text or log
-				log.Printf("(unimpl) custom status message: %q", raw)
+				slog.Info("(unimpl) custom status message", "grbl", raw)
 			} else {
 				// others (like boot banner or alarms)
-				log.Printf("(unimpl) unknown status message: %q", raw)
+				slog.Info("(unimpl) unknown status message", "grbl", raw)
 			}
 		}
 	}()
@@ -159,7 +158,8 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 
 			for _, cmdString := range cmd.commands {
 				if strings.Contains(cmdString, "\n") {
-					log.Panicf("command contains \\n: %q", cmdString)
+					slog.Error("command contains \\n", "cmd", cmdString)
+					panic("assertion failed")
 				}
 
 				commandIx := <-commandExecAllowedCh
@@ -170,15 +170,16 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 				// Don't give up until success. Reduce log spam by exponential backoff.
 				waitTime := time.Millisecond * 500
 				for {
-					_, err := ser.Write([]byte(cmdString))
+					_, err := ser.Write([]byte(cmdString + "\n"))
 					if err == nil {
 						break
 					}
-					log.Printf("serial port write error: %v; retrying", err)
+					slog.Error("serial port write error; retrying", "error", err)
 					time.Sleep(waitTime)
 					waitTime *= 2
 				}
 
+				slog.Debug("sent", "grbl", cmdString, "commandIx", commandIx)
 				logCh <- logEntry{
 					up:   false,
 					data: cmdString,
