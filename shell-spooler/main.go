@@ -157,7 +157,6 @@ func main() {
 			return
 		}
 
-		// TODO: multi-command handling
 		var cmds []string
 		lines := strings.Split(req.Data, "\n")
 		for _, line := range lines {

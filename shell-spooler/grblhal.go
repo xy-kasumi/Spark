@@ -12,9 +12,18 @@ import (
 	"go.bug.st/serial.v1"
 )
 
+// When t0 = (),
+// Not receiving "ok" or "error" within maxCommandTimeout since t0 means board comm failure.
+const maxCommandTimeout = 5 * time.Second
+
 type atomicCommand struct {
-	commands   []string
-	resultChan chan string // empty string means "ok". Otherwise error message.
+	commands []string
+	resCh    chan string // empty string means "ok". Otherwise error message.
+}
+
+type commandContext struct {
+	sent  time.Time
+	resCh chan string // empty string means "ok". Otherwise error message.
 }
 
 // Singleton corresponding to single physical machine & port.
@@ -79,15 +88,15 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 	slog.Info("opened serial port", "port", portName, "baud", baud)
 	m.ser = ser
 
-	commandExecAllowedCh := make(chan int, 1)
+	cmdExecOkCh := make(chan int, 1)
 
-	var resultMapMtx sync.Mutex
-	resultMap := make(map[int]chan string)
+	var cmdCtxMtx sync.Mutex
+	cmdCtxMap := make(map[int]commandContext)
 
 	// start serial read goroutine
 	go func() {
-		commandIx := 1
-		commandExecAllowedCh <- commandIx
+		cmdIx := 1
+		cmdExecOkCh <- cmdIx
 
 		r := bufio.NewReader(ser)
 		for {
@@ -105,12 +114,24 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 			}
 			raw = strings.TrimSpace(raw)
 
-			slog.Debug("received", "grbl", raw, "commandIx", commandIx)
+			slog.Debug("received", "grbl", raw, "commandIx", cmdIx)
 			logCh <- logEntry{
 				up:   true,
 				data: raw,
 				time: time.Now(),
 			}
+
+			// Check any command has expired.
+			// TODO: this should be timer-based rather to unstuck client in all cases.
+			cmdCtxMtx.Lock()
+			for k, ctx := range cmdCtxMap {
+				if time.Since(ctx.sent) > maxCommandTimeout {
+					slog.Error("command timeout; probably board or comm failure", "commandIx", k, "time_sent", ctx.sent)
+					ctx.resCh <- "error: command timeout"
+					delete(cmdCtxMap, k)
+				}
+			}
+			cmdCtxMtx.Unlock()
 
 			// TODO: Do some processing
 			if strings.HasPrefix(raw, "<") {
@@ -128,19 +149,19 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 					result = raw
 				}
 
-				resultMapMtx.Lock()
-				resultChan, ok := resultMap[commandIx]
+				cmdCtxMtx.Lock()
+				ctx, ok := cmdCtxMap[cmdIx]
 				if !ok {
-					slog.Error("response to unknown command", "commandIx", commandIx)
+					slog.Error("response to unknown command", "commandIx", cmdIx)
 					panic("assertion failed")
 				}
-				resultChan <- result
-				delete(resultMap, commandIx)
-				resultMapMtx.Unlock()
+				ctx.resCh <- result
+				delete(cmdCtxMap, cmdIx)
+				cmdCtxMtx.Unlock()
 
 				// Allow next command writing by issuing a new commandIx.
-				commandIx++
-				commandExecAllowedCh <- commandIx
+				cmdIx++
+				cmdExecOkCh <- cmdIx
 			} else if strings.HasPrefix(raw, "[") {
 				// custom text or log
 				slog.Info("(unimpl) custom status message", "grbl", raw)
@@ -162,10 +183,13 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 					panic("assertion failed")
 				}
 
-				commandIx := <-commandExecAllowedCh
-				resultMapMtx.Lock()
-				resultMap[commandIx] = cmd.resultChan
-				resultMapMtx.Unlock()
+				commandIx := <-cmdExecOkCh
+				cmdCtxMtx.Lock()
+				cmdCtxMap[commandIx] = commandContext{
+					sent:  time.Now(),
+					resCh: cmd.resCh,
+				}
+				cmdCtxMtx.Unlock()
 
 				// Don't give up until success. Reduce log spam by exponential backoff.
 				waitTime := time.Millisecond * 500
@@ -203,8 +227,8 @@ func (m *grblhalMachine) Close() {
 func (m *grblhalMachine) enqueue(command string) chan string {
 	resultChan := make(chan string)
 	m.commCh <- atomicCommand{
-		commands:   []string{command},
-		resultChan: resultChan,
+		commands: []string{command},
+		resCh:    resultChan,
 	}
 	return resultChan
 }
@@ -217,8 +241,8 @@ func (m *grblhalMachine) enqueue(command string) chan string {
 func (m *grblhalMachine) enqueueSeq(commands []string) chan []string {
 	tempChan := make(chan string)
 	m.commCh <- atomicCommand{
-		commands:   commands,
-		resultChan: tempChan,
+		commands: commands,
+		resCh:    tempChan,
 	}
 
 	resultChan := make(chan []string)
