@@ -273,7 +273,7 @@ func (m *grblhalMachine) Close() {
 // result chan: returns single value upon command reception (not execution completion).
 // empty string means "ok". Otherwise error message.
 func (m *grblhalMachine) enqueue(command string) chan string {
-	resultChan := make(chan string)
+	resultChan := make(chan string, 1)
 	m.commCh <- atomicCommand{
 		commands: []string{command},
 		resCh:    resultChan,
