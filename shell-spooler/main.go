@@ -109,11 +109,11 @@ func main() {
 
 	// HTTP handler to write data
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		slog.Debug("/status")
 		if !handleCommom(w, r) {
 			return
 		}
 
+		slog.Debug("/status")
 		resultCh := machine.enqueue("?")
 		select {
 		case <-time.After(500 * time.Millisecond):
@@ -138,10 +138,11 @@ func main() {
 	// TODO: This should become a G-code
 	// Spooler can have printer profile file.
 	http.HandleFunc("/home", func(w http.ResponseWriter, r *http.Request) {
-		slog.Debug("/home")
 		if !handleCommom(w, r) {
 			return
 		}
+
+		slog.Debug("/home")
 		var req writeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -161,10 +162,11 @@ func main() {
 	})
 
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
-		slog.Debug("/write")
 		if !handleCommom(w, r) {
 			return
 		}
+
+		slog.Debug("/write")
 		var req writeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -187,10 +189,11 @@ func main() {
 	})
 
 	http.HandleFunc("/get-core-log", func(w http.ResponseWriter, r *http.Request) {
-		slog.Debug("/get-core-log")
 		if !handleCommom(w, r) {
 			return
 		}
+
+		slog.Debug("/get-core-log")
 		builder := strings.Builder{}
 		logs := logPtr.Load()
 		for _, log := range *logs {
