@@ -147,6 +147,17 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 				result := ""
 				if raw != "ok" {
 					result = raw
+
+					if strings.HasPrefix(raw, "error:") {
+						errorNumStr := strings.TrimSpace(strings.TrimPrefix(raw, "error:"))
+						errorCode, err := strconv.Atoi(errorNumStr)
+						if err == nil {
+							errorText, ok := grblErrorMessages[errorCode]
+							if ok && errorText != "" {
+								slog.Info("grblHAL error", "code", errorCode, "message", errorText)
+							}
+						}
+					}
 				}
 
 				cmdCtxMtx.Lock()
