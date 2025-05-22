@@ -24,6 +24,7 @@ type atomicCommand struct {
 type commandContext struct {
 	sent  time.Time
 	resCh chan string // empty string means "ok". Otherwise error message.
+	long  bool        // true if command is long-running (e.g. homing like "$H" or "$HY")
 }
 
 // Singleton corresponding to single physical machine & port.
@@ -125,7 +126,7 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 			// TODO: this should be timer-based rather to unstuck client in all cases.
 			cmdCtxMtx.Lock()
 			for k, ctx := range cmdCtxMap {
-				if time.Since(ctx.sent) > maxCommandTimeout {
+				if !ctx.long && time.Since(ctx.sent) > maxCommandTimeout {
 					slog.Error("command timeout; probably board or comm failure", "commandIx", k, "time_sent", ctx.sent)
 					ctx.resCh <- "error: command timeout"
 					delete(cmdCtxMap, k)
@@ -194,11 +195,14 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 					panic("assertion failed")
 				}
 
+				longCommand := strings.HasPrefix(cmdString, "$H")
+
 				commandIx := <-cmdExecOkCh
 				cmdCtxMtx.Lock()
 				cmdCtxMap[commandIx] = commandContext{
 					sent:  time.Now(),
 					resCh: cmd.resCh,
+					long:  longCommand,
 				}
 				cmdCtxMtx.Unlock()
 
