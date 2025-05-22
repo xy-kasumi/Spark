@@ -12,10 +12,8 @@
     <div class="pure-g" id="app">
         <div class="pure-u-2-5">
             <h1>Status</h1>
-            <p>Shell Spooler: {{spooler_status}}</p>
-            <p>Core Status: Unknown</p>
-            <p>Machine Status: Unknown</p>
-            <p v-if="status">{{ status }}</p>
+            <p>Spooler: {{ spooler_status }}</p>
+            <p>Core: {{ core_status }}</p>
             <button class="pure-button" @click="refresh">Refresh</button>
 
             <h1>Axes</h1>

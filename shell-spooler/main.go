@@ -18,18 +18,27 @@ type writeRequest struct {
 	Data string `json:"data"`
 }
 
+type machineState int
+
+const (
+	MACHINE_OFFLINE machineState = iota
+	MACHINE_OK
+	MACHINE_CRIT
+)
+
 type machineStatus struct {
-	XPos float64
-	YPos float64
-	ZPos float64
+	XPos    float64
+	YPos    float64
+	ZPos    float64
+	State   machineState
+	CritMsg string
 }
 
 type statusResponse struct {
-	Status    string  `json:"status"`
-	CoreState string  `json:"core_state"`
-	XPos      float64 `json:"x_pos"`
-	YPos      float64 `json:"y_pos"`
-	ZPos      float64 `json:"z_pos"`
+	Status string  `json:"status"`
+	XPos   float64 `json:"x_pos"`
+	YPos   float64 `json:"y_pos"`
+	ZPos   float64 `json:"z_pos"`
 }
 
 // Data that arrived within certain time gap.
@@ -106,14 +115,20 @@ func main() {
 		}
 
 		resultCh := machine.enqueue("?")
-		<-resultCh
+		select {
+		case <-time.After(500 * time.Millisecond):
+		case <-resultCh:
+		}
 
 		mStat := machine.getStatus()
 
-		statusResponse := statusResponse{Status: "ok", CoreState: "idle"}
+		statusResponse := statusResponse{Status: "OK"}
 		statusResponse.XPos = mStat.XPos
 		statusResponse.YPos = mStat.YPos
 		statusResponse.ZPos = mStat.ZPos
+		if mStat.State == MACHINE_CRIT {
+			statusResponse.Status = "critical: " + mStat.CritMsg
+		}
 
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")

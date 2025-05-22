@@ -134,7 +134,11 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 			}
 			cmdCtxMtx.Unlock()
 
-			// TODO: Do some processing
+			if m.status != nil && m.status.State == MACHINE_CRIT {
+				slog.Warn("Ignoring received data after entering critical state", "grbl", raw)
+				continue
+			}
+
 			if strings.HasPrefix(raw, "<") {
 				// status
 				mStat, ok := parseGrblStatus(raw)
@@ -150,11 +154,13 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 					result = raw
 
 					if strings.HasPrefix(raw, "error:") {
-						errorNumStr := strings.TrimSpace(strings.TrimPrefix(raw, "error:"))
+						errorNumStr := strings.TrimPrefix(raw, "error:")
 						errorCode, err := strconv.Atoi(errorNumStr)
-						if err == nil {
+						if err != nil {
+							slog.Error("Invalid error message", "grbl", raw)
+						} else {
 							errorText, ok := grblErrorMessages[errorCode]
-							if ok && errorText != "" {
+							if ok {
 								slog.Info("grblHAL error", "code", errorCode, "message", errorText)
 							}
 						}
@@ -177,6 +183,27 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 			} else if strings.HasPrefix(raw, "[") {
 				// custom text or log
 				slog.Info("(unimpl) custom status message", "grbl", raw)
+			} else if strings.HasPrefix(raw, "ALARM:") {
+				// machine failed critically (will reset automatically)
+				critMsg := raw
+
+				numStr := strings.TrimPrefix(raw, "ALARM:")
+				num, err := strconv.Atoi(numStr)
+				if err != nil {
+					slog.Error("Invalid alarm message", "grbl", raw)
+				} else {
+					errorText, ok := grblAlarmMessages[num]
+					if ok {
+						critMsg = errorText
+					}
+				}
+				status := machineStatus{
+					State:   MACHINE_CRIT,
+					CritMsg: critMsg,
+				}
+				m.status = &status
+
+				slog.Error("Entered critical state after ALARM", "grbl", raw, "message", critMsg)
 			} else {
 				// others (like boot banner or alarms)
 				slog.Info("(unimpl) unknown status message", "grbl", raw)
@@ -193,6 +220,12 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 				if strings.Contains(cmdString, "\n") {
 					slog.Error("command contains \\n", "cmd", cmdString)
 					panic("assertion failed")
+				}
+
+				if m.status != nil && m.status.State == MACHINE_CRIT {
+					slog.Error("command not sent; machine in critical state", "cmd", cmdString)
+					cmd.resCh <- "error: machine in critical state"
+					continue
 				}
 
 				longCommand := strings.HasPrefix(cmdString, "$H")
@@ -260,7 +293,7 @@ func (m *grblhalMachine) enqueueSeq(commands []string) chan []string {
 		resCh:    tempChan,
 	}
 
-	resultChan := make(chan []string)
+	resultChan := make(chan []string, 1)
 	go func() {
 		var combinedResult []string
 		for i := 0; i < len(commands); i++ {

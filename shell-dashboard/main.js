@@ -6,8 +6,8 @@ Vue.createApp({
     data() {
         return {
             data: '',
-            status: '',
             spooler_status: 'Unknown',
+            core_status: 'Unknown',
             log_output: '',
             xp: 0,
             yp: 0,
@@ -70,11 +70,8 @@ Vue.createApp({
                     return;
                 }
                 const respJson = JSON.parse(text);
-                if (respJson.status !== "ok") {
-                    this.spooler_status = 'Connected (Error)';
-                    return;
-                }
-                this.spooler_status = 'Connected (OK)';
+                this.spooler_status = 'Connected';
+                this.core_status = respJson.status;
                 this.xp = respJson.x_pos;
                 this.yp = respJson.y_pos;
                 this.zp = respJson.z_pos;
