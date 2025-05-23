@@ -97,8 +97,9 @@ Vue.createApp({
                     this.exec_status = "Command Failed: " + errorLocs.join(', ');;
                     return;
                 }
-                this.status = "Success";
+                this.exec_status = "Success";
             } catch (err) {
+                this.exec_status = '';
                 this.spooler_status = 'Error: ' + err.message;
             }
             await this.refresh();
