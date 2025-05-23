@@ -21,20 +21,6 @@ Vue.createApp({
         },
     },
     methods: {
-        async init() {
-            try {
-                const res = await fetch(host + '/init', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({})
-                });
-                const text = await res.text();
-                if (!res.ok) throw new Error(text);
-                this.status = 'Success: ' + text;
-            } catch (err) {
-                this.status = 'Error: ' + err.message;
-            }
-        },
         async refresh() {
             try {
                 const res = await fetch(host + '/status', {
@@ -69,6 +55,24 @@ Vue.createApp({
             }
             const respJson = JSON.parse(text);
             this.log_output = respJson.output;
+            this.$nextTick(() => {
+                this.$refs.logOutput.scrollTop = this.$refs.logOutput.scrollHeight;
+            });
+        },
+        async init() {
+            try {
+                const res = await fetch(host + '/init', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const text = await res.text();
+                if (!res.ok) throw new Error(text);
+                this.status = 'Success: ' + text;
+            } catch (err) {
+                this.status = 'Error: ' + err.message;
+            }
+            await this.refresh();
         },
         async send() {
             this.exec_status = 'executing...';
