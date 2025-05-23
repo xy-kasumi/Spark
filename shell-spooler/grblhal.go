@@ -306,5 +306,10 @@ func (m *grblhalMachine) enqueueSeq(commands []string) chan []string {
 }
 
 func (m *grblhalMachine) getStatus() machineStatus {
+	if m.status == nil {
+		return machineStatus{
+			State: MACHINE_OFFLINE,
+		}
+	}
 	return *m.status
 }
