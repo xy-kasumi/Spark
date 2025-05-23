@@ -5,47 +5,25 @@ const host = "http://localhost:9000";
 Vue.createApp({
     data() {
         return {
-            data: '',
+            command_text: '',
             spooler_status: 'Unknown',
             core_status: 'Unknown',
             log_output: '',
+            exec_status: '',
             xp: 0,
             yp: 0,
             zp: 0,
         }
     },
+    computed: {
+        commands() {
+            return this.command_text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+        },
+    },
     methods: {
-        async move_xm() {
+        async init() {
             try {
-                const res = await fetch(host + '/write', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ data: "$J=G91 X-5 F100\n" })
-                });
-                const text = await res.text();
-                if (!res.ok) throw new Error(text);
-                this.status = 'Success: ' + text;
-            } catch (err) {
-                this.status = 'Error: ' + err.message;
-            }
-        },
-        async move_xp() {
-            try {
-                const res = await fetch(host + '/write', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ data: "$J=G91 X5 F100\n" })
-                });
-                const text = await res.text();
-                if (!res.ok) throw new Error(text);
-                this.status = 'Success: ' + text;
-            } catch (err) {
-                this.status = 'Error: ' + err.message;
-            }
-        },
-        async home() {
-            try {
-                const res = await fetch(host + '/home', {
+                const res = await fetch(host + '/init', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({})
@@ -93,18 +71,35 @@ Vue.createApp({
             this.log_output = respJson.output;
         },
         async send() {
-            this.status = 'Sending...';
+            this.exec_status = 'executing...';
             try {
                 const res = await fetch(host + '/write', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ data: this.data })
+                    body: JSON.stringify({ commands: this.commands })
                 });
                 const text = await res.text();
-                if (!res.ok) throw new Error(text);
-                this.status = 'Success: ' + text;
+                if (!res.ok) {
+                    throw new Error(text);
+                }
+                const respJson = JSON.parse(text);
+                if (respJson.error) {
+                    this.exec_status = "Command Error: " + respJson.error;
+                    return;
+                }
+                if (!respJson.command_success) {
+                    const errorLocs = [];
+                    for (let i = 0; i < respJson.command_errors.length; i++) {
+                        const err = respJson.command_errors[i];
+                        if (err === null) continue;
+                        errorLocs.push(`${commands[i]}: ${err}`);
+                    }
+                    this.exec_status = "Command Failed: " + errorLocs.join(', ');;
+                    return;
+                }
+                this.status = "Success";
             } catch (err) {
-                this.status = 'Error: ' + err.message;
+                this.spooler_status = 'Error: ' + err.message;
             }
             await this.refresh();
         }

@@ -285,7 +285,7 @@ func (m *grblhalMachine) enqueue(command string) chan string {
 // guaranteed that commands are executed back-to-back, in-order, uninterrupted by other enqueue() or enqueueSeq() calls.
 // commands must not contain \n
 // result chan: returns same number of strings as commands, when all commands are accepted.
-// empty value means command was "ok". Otherwise error.
+// empty value means command was successful. Otherwise error.
 func (m *grblhalMachine) enqueueSeq(commands []string) chan []string {
 	tempChan := make(chan string)
 	m.commCh <- atomicCommand{

@@ -13,9 +13,21 @@ import (
 	"time"
 )
 
-// writeRequest defines the expected JSON payload
 type writeRequest struct {
-	Data string `json:"data"`
+	Commands []string `json:"commands"` // list of commands. cannot contain newline
+}
+
+type writeResponse struct {
+	Error          *string   `json:"error"`           // error of request processing itself. null means no error (commands are executed).
+	CommandSuccess bool      `json:"command_success"` // true if all commands succesfully executed.
+	CommandErrors  []*string `json:"command_errors"`  // errors for each command. null if success.
+}
+
+type statusResponse struct {
+	Status string  `json:"status"`
+	XPos   float64 `json:"x_pos"`
+	YPos   float64 `json:"y_pos"`
+	ZPos   float64 `json:"z_pos"`
 }
 
 type machineState int
@@ -32,13 +44,6 @@ type machineStatus struct {
 	ZPos    float64
 	State   machineState
 	CritMsg string
-}
-
-type statusResponse struct {
-	Status string  `json:"status"`
-	XPos   float64 `json:"x_pos"`
-	YPos   float64 `json:"y_pos"`
-	ZPos   float64 `json:"z_pos"`
 }
 
 // Data that arrived within certain time gap.
@@ -62,6 +67,12 @@ func handleCommom(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	return true
+}
+
+func respondJson(w http.ResponseWriter, resp any) {
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func packLog(up bool, data string, time time.Time) string {
@@ -123,27 +134,24 @@ func main() {
 
 		mStat := machine.getStatus()
 
-		statusResponse := statusResponse{Status: "OK"}
-		statusResponse.XPos = mStat.XPos
-		statusResponse.YPos = mStat.YPos
-		statusResponse.ZPos = mStat.ZPos
+		resp := statusResponse{Status: "OK"}
+		resp.XPos = mStat.XPos
+		resp.YPos = mStat.YPos
+		resp.ZPos = mStat.ZPos
 		if mStat.State == MACHINE_CRIT {
-			statusResponse.Status = "critical: " + mStat.CritMsg
+			resp.Status = "critical: " + mStat.CritMsg
 		}
 
-		w.WriteHeader(http.StatusOK)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(&statusResponse)
+		respondJson(w, &resp)
 	})
 
-	// TODO: This should become a G-code
-	// Spooler can have printer profile file.
-	http.HandleFunc("/home", func(w http.ResponseWriter, r *http.Request) {
+	// TODO: This should become a G-code or macro-ish thing in /write, maybe.
+	http.HandleFunc("/init", func(w http.ResponseWriter, r *http.Request) {
 		if !handleCommom(w, r) {
 			return
 		}
 
-		slog.Debug("/home")
+		slog.Debug("/init")
 		var req writeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -151,11 +159,7 @@ func main() {
 			return
 		}
 
-		resultCh := machine.enqueueSeq([]string{
-			"$5=7",
-			"$14=7",
-			"$X",
-		})
+		resultCh := machine.enqueueSeq(homeCommandSeq)
 		<-resultCh
 
 		w.WriteHeader(http.StatusOK)
@@ -175,18 +179,36 @@ func main() {
 			return
 		}
 
-		var cmds []string
-		lines := strings.Split(req.Data, "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				cmds = append(cmds, line)
+		// Validate request content
+		if len(req.Commands) == 0 {
+			errMsg := `1 or more "commands" required`
+			resp := writeResponse{Error: &errMsg}
+			respondJson(w, &resp)
+			return
+		}
+		for _, cmd := range req.Commands {
+			if strings.Contains(cmd, "\n") {
+				errMsg := fmt.Sprintf(`command cannot contain newline: %q`, cmd)
+				resp := writeResponse{Error: &errMsg}
+				respondJson(w, &resp)
+				return
 			}
 		}
-		machine.enqueueSeq(cmds)
 
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ok")
+		// Execute
+		resultCh := machine.enqueueSeq(req.Commands)
+		errors := <-resultCh
+
+		resp := writeResponse{CommandSuccess: true}
+		for _, err := range errors {
+			if err != "" {
+				resp.CommandSuccess = false
+				resp.CommandErrors = append(resp.CommandErrors, &err)
+			} else {
+				resp.CommandErrors = append(resp.CommandErrors, nil)
+			}
+		}
+		respondJson(w, &resp)
 	})
 
 	http.HandleFunc("/get-core-log", func(w http.ResponseWriter, r *http.Request) {
@@ -203,8 +225,8 @@ func main() {
 		}
 		output := builder.String()
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"output": output})
+		resp := map[string]string{"output": output}
+		respondJson(w, resp)
 	})
 
 	slog.Info("HTTP server started listening", "port", *addr)

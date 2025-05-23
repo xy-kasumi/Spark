@@ -18,14 +18,13 @@
 
             <h1>Axes</h1>
             <div>X: {{xp}} Y: {{yp}} Z: {{zp}}</div>
-            <button class="pure-button" @click="move_xm">X-</button>
-            <button class="pure-button" @click="move_xp">X+</button>
-            <button class="pure-button" @click="home">Home</button>
+            <button class="pure-button" @click="init">Init</button>
 
             <h1>Manual Command</h1>
-            <textarea class="pure-input-1-2" v-model="data" rows="10" cols="50"
+            <textarea class="pure-input-1-2" v-model="command_text" rows="10" cols="50"
                 placeholder="Enter G-code or commands"></textarea><br />
-            <button class="pure-button" @click="send">Send to Spooler</button>
+            <button class="pure-button" @click="send" :disabled="commands.length === 0">Execute</button>
+            <p>Exec Status: {{ exec_status }}</p>
         </div>
         <div class="pure-u-3-5">
             <h1>Serial Log</h1>
