@@ -107,6 +107,40 @@ Vue.createApp({
                 this.spooler_status = 'Error: ' + err.message;
             }
             await this.refresh();
+        },
+        async cancel() {
+            try {
+                this.exec_status = 'Sending Ctrl-Y...';
+                const res = await fetch(host + '/write', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ commands: ['\x19'] })
+                });
+                const text = await res.text();
+                if (!res.ok) {
+                    throw new Error(text);
+                }
+                const respJson = JSON.parse(text);
+                if (respJson.error) {
+                    this.exec_status = "Command Error: " + respJson.error;
+                    return;
+                }
+                if (!respJson.command_success) {
+                    const errorLocs = [];
+                    for (let i = 0; i < respJson.command_errors.length; i++) {
+                        const err = respJson.command_errors[i];
+                        if (err === null) continue;
+                        errorLocs.push(`${commands[i]}: ${err}`);
+                    }
+                    this.exec_status = "Command Failed: " + errorLocs.join(', ');;
+                    return;
+                }
+                this.exec_status = "Success";
+            } catch (err) {
+                this.exec_status = '';
+                this.spooler_status = 'Error: ' + err.message;
+            }
+            await this.refresh();
         }
     }
 }).mount('#app');

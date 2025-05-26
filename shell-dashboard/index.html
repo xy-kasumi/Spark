@@ -24,6 +24,7 @@
             <textarea class="pure-input-1-2" v-model="command_text" rows="10" cols="50"
                 placeholder="Enter G-code or commands"></textarea><br />
             <button class="pure-button" @click="send" :disabled="commands.length === 0">Execute</button>
+            <button class="pure-button" @click="cancel">Cancel</button>
             <p>Exec Status: {{ exec_status }}</p>
         </div>
         <div class="pure-u-3-5">
