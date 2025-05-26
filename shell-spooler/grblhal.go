@@ -228,7 +228,8 @@ func initGrblhal(portName string, baud int, logCh chan logEntry) *grblhalMachine
 					continue
 				}
 
-				longCommand := strings.HasPrefix(cmdString, "$H")
+				//longCommand := strings.HasPrefix(cmdString, "$H") || strings.HasPrefix(cmdString, "G1")
+				longCommand := true // anything can be long-command when it's after long command and sync=true
 
 				commandIx := <-cmdExecOkCh
 				cmdCtxMtx.Lock()
