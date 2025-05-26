@@ -141,6 +141,78 @@ Vue.createApp({
                 this.spooler_status = 'Error: ' + err.message;
             }
             await this.refresh();
+        },
+        analyze_log() {
+            let outputLines = this.log_output.split('\n').map(line => {
+                const ix = line.indexOf('>');
+                if (ix < 0) {
+                    return null;
+                }
+                return line.slice(ix + 1)
+            }).filter(line => line !== null);
+
+            // remove last non-EDML lines
+            const lastLogIx = outputLines.findLastIndex(line => line.startsWith("[EDML|"));
+            if (lastLogIx < 0) {
+                // no EDML found
+                return;
+            }
+            outputLines = outputLines.slice(0, lastLogIx + 1);
+
+            // remove all lines before the continuous EDML segment
+            const lastNonLogIx = outputLines.findLastIndex(line => !line.startsWith("[EDML|"));
+            outputLines = outputLines.slice(lastNonLogIx + 1);
+
+            // process log
+            const edmlData = outputLines.map(line => {
+                const elems = line.replace("[EDML|", "").replace("]", "").split(",");
+                const numPulses = parseInt(elems.at(-1));
+                const state = elems.at(-2);
+                const vals = elems.slice(0, -2).map(val => ({ pulse: parseInt(val[0]) * 0.1, short: parseInt(val[1]) * 0.1 }));
+                return {
+                    state: state,
+                    numPulses: numPulses,
+                    vals: vals
+                }
+            });
+            console.log(edmlData);
+
+            // draw
+            const ctx = this.$refs.edml.getContext('2d');
+            //ctx.save();
+            const width = 500;
+            const height = 1000;
+            const barWidth = 2;
+            const barHeight = 20;
+            ctx.clearRect(0, 0, width, height);
+
+            let posx = 0;
+            let posy = 0;
+            for (let row of edmlData) {
+                for (let val of row.vals) {
+                    let d = 0;
+                    ctx.fillStyle = '#00aeef';
+                    ctx.fillRect(posx, posy + barHeight, barWidth, -val.pulse * barHeight);
+                    d += val.pulse * barHeight;
+
+                    ctx.fillStyle = '#F03266';
+                    ctx.fillRect(posx, posy + barHeight - d, barWidth, -val.short * barHeight);
+                    d += val.short * barHeight;
+
+                    ctx.fillStyle = 'lightgray';
+                    ctx.fillRect(posx, posy + barHeight - d, barWidth, d - barHeight);
+                    
+                    posx += barWidth;
+                    if (posx >= width) {
+                        posx = 0;
+                        posy += 25; // must be bigger than barHeight
+                    }
+                }
+            }
+
+
+    
+
         }
     }
 }).mount('#app');
