@@ -112,7 +112,7 @@ func main() {
 		}
 	}()
 
-	machine := initGrblhal(*portName, *baud, logCh)
+	machine := initProtocol(*portName, *baud, logCh)
 	if machine == nil {
 		return
 	}
@@ -125,10 +125,10 @@ func main() {
 		}
 
 		slog.Debug("/status")
-		resultCh := machine.enqueue("?")
+		resultCh := machine.enqueue("help")
 		select {
-		case <-time.After(500 * time.Millisecond):
-			slog.Debug("timeout waiting for ? response in /status")
+		case <-time.After(1500 * time.Millisecond):
+			slog.Debug("timeout waiting for help response in /status")
 		case <-resultCh:
 		}
 
