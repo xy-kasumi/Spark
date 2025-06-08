@@ -8,15 +8,13 @@ Each top-level directory contains a `LICENSE` file with the full text. Below is 
 | Directory     | License               | Description                                          |
 |---------------|-----------------------|------------------------------------------------------|
 | `dicer`       | AGPL-3.0-or-later     | G-code generator for the Spark machine               |
-| `firmware`    | AGPL-3.0-or-later     | 3D printer firmware                                  |
-| `pcb`         | CERN-OHL-S-2.0        | PCB files in KiCad                                   |
 | `mech` (TBD)  | CERN-OHL-S-2.0        | Mechanical CAD files                                 |
 | `docs`        | CC BY-SA 4.0          | Hardware/software specs & manuals                    |
 | `brand`       | CC BY-NC-ND 4.0       | Project logos and other identity assets              |
 | `sim-*` dirs  | Apache-2.0            | Various simulators                                   |
 
 ## Core Parts
-`dicer`, `firmware`, `pcb`, and `docs` are essential parts of Spark machine and its build/use,
+`dicer` and `mech` are essential parts of Spark machine and its build/use,
 thus considered core to the Spark project.
 They use strong copyleft licenses (AGPL or CERN-OHL) to ensure improvements remain open.
 We believe this approach has worked well in the 3D printer ecosystem.

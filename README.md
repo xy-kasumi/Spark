@@ -7,6 +7,14 @@ It'll bring the ease of 3D printing to fine metal parts.
 
 Maybe. Someday.
 
+This repo is mostly about software & machine CAD.
+
+To construct a Spark machine, you need these too:
+* https://github.com/xy-kasumi/Spark-corefw
+  * Zephyr-based firmware for main board (currently only supports BTT Octopus Pro)
+* https://github.com/xy-kasumi/Spark-pulser
+  * EDM board (PCB design & firmware)
+
 ## Directories
 
 Directories are roughly divided into two groups.
@@ -16,8 +24,6 @@ Directories are roughly divided into two groups.
 * dicer: web page that generates G-code from STL for the machine
 * shell-dashboard: web page to control the machine
 * shell-spooler: Go program that acts as interface between shell-dashboard & physical board
-* firmware: C firmware code for the boards
-* pcb: KiCad files for PCBA
 * mech: CAD files for the machine
 
 These are necessary for building, testing, and using the machine.
