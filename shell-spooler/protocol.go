@@ -9,12 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"go.bug.st/serial.v1"
+	"go.bug.st/serial"
 )
-
-// When t0 = (),
-// Not receiving "ok" or "error" within maxCommandTimeout since t0 means board comm failure.
-const maxCommandTimeout = 5 * time.Second
 
 type atomicCommand struct {
 	commands []string
@@ -24,7 +20,6 @@ type atomicCommand struct {
 type commandContext struct {
 	sent  time.Time
 	resCh chan string // empty string means "ok". Otherwise error message.
-	long  bool        // true if command is long-running (e.g. homing like "$H" or "$HY")
 }
 
 // Singleton corresponding to single physical machine & port.
@@ -77,7 +72,7 @@ func initProtocol(portName string, baud int, logCh chan logEntry) *coreBoard {
 		commCh: make(chan atomicCommand, 10),
 	}
 
-	mode := &serial.Mode{BaudRate: baud, DataBits: 8, Parity: serial.NoParity, StopBits: serial.OneStopBit}
+	mode := &serial.Mode{BaudRate: baud}
 	ser, err := serial.Open(portName, mode)
 	if err != nil {
 		slog.Error("failed to open serial port", "port", portName, "baud", baud, "error", err)
@@ -97,27 +92,15 @@ func initProtocol(portName string, baud int, logCh chan logEntry) *coreBoard {
 		cmdExecOkCh <- cmdIx
 
 		stateExec := false
+		currCommandErrOut := "" // only capture first one. "" means success
 
 		r := bufio.NewReader(ser)
 		slog.Info("Starting serial read goroutine")
 		for {
 			var raw string
-			slog.Debug("Waiting for serial data...")
 			// Don't give up until success. Reduce log spam by exponential backoff.
 			waitTime := time.Millisecond * 500
 			for {
-				// test
-				/*
-					for {
-						b, err := r.ReadByte()
-						if err != nil {
-							slog.Debug("serial port read error; retrying", "error", err)
-						} else {
-							slog.Debug("read byte", "byte", b)
-						}
-					}
-				*/
-
 				raw, err = r.ReadString('\n')
 				if err == nil {
 					break
@@ -135,26 +118,19 @@ func initProtocol(portName string, baud int, logCh chan logEntry) *coreBoard {
 				time: time.Now(),
 			}
 
-			// Check any command has expired.
-			// TODO: this should be timer-based rather to unstuck client in all cases.
-			cmdCtxMtx.Lock()
-			for k, ctx := range cmdCtxMap {
-				if false { // !ctx.long && time.Since(ctx.sent) > maxCommandTimeout {
-					slog.Error("command timeout; probably board or comm failure", "commandIx", k, "time_sent", ctx.sent)
-					ctx.resCh <- "error: command timeout"
-					delete(cmdCtxMap, k)
-				}
-			}
-			cmdCtxMtx.Unlock()
-
-			if m.status != nil && m.status.State == MACHINE_CRIT {
-				slog.Warn("Ignoring received data after entering critical state", "raw", raw)
-				continue
-			}
-
 			if strings.HasPrefix(raw, "I") {
 				if stateExec {
 					// Previous command finished, allow next command execution.
+					cmdCtxMtx.Lock()
+					ctx, ok := cmdCtxMap[cmdIx]
+					if !ok {
+						slog.Error("response to unknown command", "commandIx", cmdIx)
+						panic("assertion failed")
+					}
+					ctx.resCh <- currCommandErrOut
+					delete(cmdCtxMap, cmdIx)
+					cmdCtxMtx.Unlock()
+
 					cmdIx++
 					cmdExecOkCh <- cmdIx
 				}
@@ -167,22 +143,10 @@ func initProtocol(portName string, baud int, logCh chan logEntry) *coreBoard {
 				} else {
 					slog.Warn("missing impl: ignored unparsable core status", "core", raw)
 				}
-
 			} else if strings.HasPrefix(raw, ">") {
 				stateExec = true
-
-				if strings.HasPrefix(raw, ">ack") {
-					// command response
-					result := ""
-					cmdCtxMtx.Lock()
-					ctx, ok := cmdCtxMap[cmdIx]
-					if !ok {
-						slog.Error("response to unknown command", "commandIx", cmdIx)
-						panic("assertion failed")
-					}
-					ctx.resCh <- result
-					delete(cmdCtxMap, cmdIx)
-					cmdCtxMtx.Unlock()
+				if strings.HasPrefix(raw, ">err ") {
+					currCommandErrOut = strings.TrimPrefix(raw, ">err ")
 				}
 			} else {
 				// others (unexpected)
@@ -202,21 +166,11 @@ func initProtocol(portName string, baud int, logCh chan logEntry) *coreBoard {
 					panic("assertion failed")
 				}
 
-				if m.status != nil && m.status.State == MACHINE_CRIT {
-					slog.Error("command not sent; machine in critical state", "cmd", cmdString)
-					cmd.resCh <- "error: machine in critical state"
-					continue
-				}
-
-				//longCommand := strings.HasPrefix(cmdString, "$H") || strings.HasPrefix(cmdString, "G1")
-				longCommand := true // anything can be long-command when it's after long command and sync=true
-
 				commandIx := <-cmdExecOkCh
 				cmdCtxMtx.Lock()
 				cmdCtxMap[commandIx] = commandContext{
 					sent:  time.Now(),
 					resCh: cmd.resCh,
-					long:  longCommand,
 				}
 				cmdCtxMtx.Unlock()
 

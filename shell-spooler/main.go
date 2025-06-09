@@ -127,7 +127,7 @@ func main() {
 		slog.Debug("/status")
 		resultCh := machine.enqueue("help")
 		select {
-		case <-time.After(1500 * time.Millisecond):
+		case <-time.After(500 * time.Millisecond):
 			slog.Debug("timeout waiting for help response in /status")
 		case <-resultCh:
 		}
