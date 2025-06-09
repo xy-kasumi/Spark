@@ -3,27 +3,38 @@
 
 const host = "http://localhost:9000";
 
+/**
+ * Calculates Adler-32 checksum for binary data.
+ * @param {Uint8Array} data - Binary data to checksum
+ * @returns {number} 32-bit unsigned checksum
+ */
 function calculateAdler32(data) {
     let a = 1, b = 0;
     const MOD_ADLER = 65521;
-    
+
     for (let i = 0; i < data.length; i++) {
         a = (a + data[i]) % MOD_ADLER;
         b = (b + a) % MOD_ADLER;
     }
-    
+
     return ((b << 16) | a) >>> 0;
 }
 
-function parseBlobLine(blobLine) {
+/**
+ * Parses ">blob <base64> <checksum>" line and validates payload.
+ * @param {string} blobLine - Line containing ">blob <base64> <checksum>"
+ * @returns {Uint8Array} Verified binary payload
+ * @throws {Error} On invalid format or checksum mismatch
+ */
+function parseBlobPayload(blobLine) {
     const parts = blobLine.split(' ');
-    if (parts.length < 3) {
+    if (parts.length < 3 || parts[0] !== ">blob") {
         throw new Error("Invalid blob format");
     }
-    
+
     const base64Payload = parts[1];
     const expectedChecksum = parts[2];
-    
+
     // decode base64 payload
     let binaryData;
     try {
@@ -35,14 +46,22 @@ function parseBlobLine(blobLine) {
     } catch (e) {
         throw new Error("Failed to decode base64: " + e.message);
     }
-    
+
     // verify checksum
     const actualChecksum = calculateAdler32(binaryData);
     if (actualChecksum.toString(16).padStart(8, '0') !== expectedChecksum) {
         throw new Error("Checksum mismatch");
     }
-    
-    // parse binary data into edm_poll_entry_t structs
+
+    return binaryData;
+}
+
+/**
+ * Parses binary data into EDM poll entries.
+ * @param {Uint8Array} binaryData - Raw binary data containing edm_poll_entry_t structs
+ * @returns {Array<{short: number, pulse: number, numPulse: number}>} Parsed entries with ratios 0-1
+ */
+function parseEdmPollEntries(binaryData) {
     const vals = [];
     for (let i = 0; i < binaryData.length; i += 4) {
         if (i + 3 < binaryData.length) {
@@ -50,15 +69,15 @@ function parseBlobLine(blobLine) {
             const r_open = binaryData[i + 1] / 255.0;
             const num_pulse = binaryData[i + 2];
             // skip reserved byte at i+3
-            
-            vals.push({ 
-                short: r_short, 
+
+            vals.push({
+                short: r_short,
                 pulse: r_open,
-                numPulse: num_pulse 
+                numPulse: num_pulse
             });
         }
     }
-    
+
     return vals;
 }
 
@@ -216,16 +235,17 @@ Vue.createApp({
             if (lastBlobIx < 0) {
                 return;
             }
-            
+
             // parse blob line
             let vals;
             try {
-                vals = parseBlobLine(outputLines[lastBlobIx]);
+                const binaryData = parseBlobPayload(outputLines[lastBlobIx]);
+                vals = parseEdmPollEntries(binaryData);
             } catch (e) {
                 console.error("Blob parsing error:", e.message);
                 return;
             }
-            
+
             const edmlData = [{
                 state: "blob",
                 numPulses: vals.length,
@@ -257,7 +277,7 @@ Vue.createApp({
 
                     ctx.fillStyle = 'lightgray';
                     ctx.fillRect(posx, posy + barHeight - d, barWidth, d - barHeight);
-                    
+
                     posx += barWidth;
                     if (posx >= width) {
                         posx = 0;
@@ -267,7 +287,7 @@ Vue.createApp({
             }
 
 
-    
+
 
         }
     }
