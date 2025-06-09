@@ -1,6 +1,66 @@
+// SPDX-FileCopyrightText: 2025 夕月霞
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 const host = "http://localhost:9000";
+
+function calculateAdler32(data) {
+    let a = 1, b = 0;
+    const MOD_ADLER = 65521;
+    
+    for (let i = 0; i < data.length; i++) {
+        a = (a + data[i]) % MOD_ADLER;
+        b = (b + a) % MOD_ADLER;
+    }
+    
+    return ((b << 16) | a) >>> 0;
+}
+
+function parseBlobLine(blobLine) {
+    const parts = blobLine.split(' ');
+    if (parts.length < 3) {
+        throw new Error("Invalid blob format");
+    }
+    
+    const base64Payload = parts[1];
+    const expectedChecksum = parts[2];
+    
+    // decode base64 payload
+    let binaryData;
+    try {
+        const binaryString = atob(base64Payload);
+        binaryData = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            binaryData[i] = binaryString.charCodeAt(i);
+        }
+    } catch (e) {
+        throw new Error("Failed to decode base64: " + e.message);
+    }
+    
+    // verify checksum
+    const actualChecksum = calculateAdler32(binaryData);
+    if (actualChecksum.toString(16).padStart(8, '0') !== expectedChecksum) {
+        throw new Error("Checksum mismatch");
+    }
+    
+    // parse binary data into edm_poll_entry_t structs
+    const vals = [];
+    for (let i = 0; i < binaryData.length; i += 4) {
+        if (i + 3 < binaryData.length) {
+            const r_short = binaryData[i] / 255.0;
+            const r_open = binaryData[i + 1] / 255.0;
+            const num_pulse = binaryData[i + 2];
+            // skip reserved byte at i+3
+            
+            vals.push({ 
+                short: r_short, 
+                pulse: r_open,
+                numPulse: num_pulse 
+            });
+        }
+    }
+    
+    return vals;
+}
 
 Vue.createApp({
     data() {
@@ -151,30 +211,26 @@ Vue.createApp({
                 return line.slice(ix + 1)
             }).filter(line => line !== null);
 
-            // remove last non-EDML lines
-            const lastLogIx = outputLines.findLastIndex(line => line.startsWith("[EDML|"));
-            if (lastLogIx < 0) {
-                // no EDML found
+            // find last blob line
+            const lastBlobIx = outputLines.findLastIndex(line => line.startsWith(">blob "));
+            if (lastBlobIx < 0) {
                 return;
             }
-            outputLines = outputLines.slice(0, lastLogIx + 1);
-
-            // remove all lines before the continuous EDML segment
-            const lastNonLogIx = outputLines.findLastIndex(line => !line.startsWith("[EDML|"));
-            outputLines = outputLines.slice(lastNonLogIx + 1);
-
-            // process log
-            const edmlData = outputLines.map(line => {
-                const elems = line.replace("[EDML|", "").replace("]", "").split(",");
-                const numPulses = parseInt(elems.at(-1));
-                const state = elems.at(-2);
-                const vals = elems.slice(0, -2).map(val => ({ pulse: parseInt(val[0]) * 0.1, short: parseInt(val[1]) * 0.1 }));
-                return {
-                    state: state,
-                    numPulses: numPulses,
-                    vals: vals
-                }
-            });
+            
+            // parse blob line
+            let vals;
+            try {
+                vals = parseBlobLine(outputLines[lastBlobIx]);
+            } catch (e) {
+                console.error("Blob parsing error:", e.message);
+                return;
+            }
+            
+            const edmlData = [{
+                state: "blob",
+                numPulses: vals.length,
+                vals: vals
+            }];
             console.log(edmlData);
 
             // draw
