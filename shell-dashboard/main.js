@@ -35,10 +35,11 @@ function parseBlobPayload(blobLine) {
     const base64Payload = parts[1];
     const expectedChecksum = parts[2];
 
-    // decode base64 payload
+    // decode base64 payload (URL-safe without padding)
     let binaryData;
     try {
-        const binaryString = atob(base64Payload);
+        const standardBase64 = base64Payload.replace(/-/g, '+').replace(/_/g, '/');
+        const binaryString = atob(standardBase64);
         binaryData = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
             binaryData[i] = binaryString.charCodeAt(i);
