@@ -33,8 +33,6 @@ These are necessary for building, testing, and using the machine.
   * purpose: visually validate G-code, iterate on machine kinematics
 * sim-wear: particle-based tool vs work simulation
   * purpose: validate & iterate on "sweep" patterns without physical experiments
-* sim-3PRR: 3PRR mechanism simulator
-  * purpose: validate 3PRR mechanism design
 * brand: contains project's visual identity such as logo
 
 These are useful resources to further the development of the machine and/or the Spark project.
