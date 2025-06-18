@@ -348,6 +348,22 @@ class View3D {
         const stock = generateStock();
         this.workStageBase.add(stock);
 
+        // Add water plane
+        this.waterLevel = 5; // X position of water surface
+        const waterGeom = new THREE.PlaneGeometry(60, 100);
+        const waterMat = new THREE.MeshBasicMaterial({ 
+            color: 0x0088ff, 
+            transparent: true, 
+            opacity: 0.3,
+            side: THREE.DoubleSide
+        });
+        this.waterPlane = new THREE.Mesh(waterGeom, waterMat);
+        this.waterPlane.rotation.y = Math.PI / 2; // Rotate to YZ plane
+        this.waterPlane.position.x = this.waterLevel;
+        this.waterPlane.position.y = 50; // Center at Y=50 (opBox Y size is 100)
+        this.waterPlane.position.z = 30; // Center at Z=30 (opBox Z size is 60)
+        this.scene.add(this.waterPlane);
+
         this.gcode = [];
         this.receiveBroadcast = true;
         this.totalGcodeLines = 0;
@@ -392,6 +408,10 @@ class View3D {
         gui.add(this, "valB").decimals(3).name("B").listen();
         gui.add(this, "valC").decimals(3).name("C").listen();
         gui.add(this, "valGWAbs").decimals(3).name("GW(abs)").listen();
+        
+        gui.add(this, "waterLevel", -10, 50, 0.1).name("Water Level").onChange(v => {
+            this.waterPlane.position.x = v;
+        });
     }
 
     init() {
