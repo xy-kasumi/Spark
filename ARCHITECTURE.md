@@ -60,6 +60,10 @@ Spooler provides non-realtime machine interface by:
 * keep G-code file cache locally
 * streams G-code reliably & monitors Core even when network is offline or dashboard is gone
 
+The command stream is high-level (G-code + system commands).
+Core buffers hopefully more than 1 second of G-code,
+to prevent occasional hiccups in Linux from causing troubles.
+
 Final setup of Split Shell
 ```mermaid
 graph LR
