@@ -591,6 +591,7 @@ class PipelineStorageDef {
     getBinds(bufs) {
         this.checkInput(bufs);
 
+        /** @type {[number, GPUBuffer][]} */
         const binds = [];
         for (const [varName, val] of Object.entries(bufs)) {
             if (val instanceof VoxelGridGpu) {
@@ -750,7 +751,7 @@ class PipelineUniformDef {
      * @param {Object} vars {varName: value}
      * @param {number} uniBufIx Index of the uniform buffer to use. (Needed when doing multiple dispatches in single CommandBuffer)
      * @throws {Error} If any input is invalid.
-     * @returns {[number, GPUBuffer, number, number][]} Array of [bindingId, buffer, offset, size]
+     * @returns {[number, GPUBuffer | null, number, number][]} Array of [bindingId, buffer, offset, size]
      */
     getUniformBufs(kernels, vars, uniBufIx = 0) {
         const maxNumUniBuf = 10;
@@ -772,6 +773,7 @@ class PipelineUniformDef {
             throw new Error("Too many uniform buffers at the same time");
         }
 
+        /** @type {[number, GPUBuffer | null, number, number][]} */
         const binds = [];
         const uniBuf = kernels.sharedUniBuffer[uniBufIx];
         // Writing everything to CPU and then single writeBuffer() is faster than multiple writeBuffer() calls,
@@ -833,6 +835,8 @@ export class GpuKernels {
      */
     constructor(device) {
         this.device = device;
+        /** @type {GPUBuffer[]?} */
+        this.sharedUniBuffer = null;
         this.wgSize = 128;
 
         /** @type {Object<string, Pipeline>} */
@@ -851,7 +855,7 @@ export class GpuKernels {
      * Utility to measure average time-peformance of many invocations.
      * returns end-mark function.
      * @param {string} name 
-     * @returns {Function}
+     * @returns {{ end: Function }}
      */
     perfBegin(name) {
         const t0 = performance.now();

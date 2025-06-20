@@ -102,3 +102,8 @@ type vec4f = number[];
 interface Navigator {
   gpu?: any;
 }
+
+// Set.difference() method (newer JS feature)
+interface Set<T> {
+  difference(other: Set<T>): Set<T>;
+}
