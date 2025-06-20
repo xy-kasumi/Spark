@@ -482,7 +482,7 @@ export class VoxelGridGpu {
      * @param {number} numY Grid dimension Y
      * @param {number} numZ Grid dimension Z
      * @param {Vector3} [ofs=new Vector3()] Voxel grid offset (local to world)
-     * @param {"u32" | "f32" | "vec3f"} type Type of cell
+     * @param {"u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>"} type Type of cell
      */
     constructor(kernels, res, numX, numY, numZ, ofs = new Vector3(), type = "u32") {
         GpuKernels.checkAllowedType(type);
@@ -940,8 +940,8 @@ export class GpuKernels {
      * Register WGSL snippet for use in {@link map}.
      * 
      * @param {string} name (not shared with registerMap2Fn)
-     * @param {"u32" | "f32"} inType Type of input voxel
-     * @param {"u32" | "f32"} outType Type of output voxel
+     * @param {"u32" | "f32" | "vec3f" | "vec4f" | "array<u32,8>"} inType Type of input voxel
+     * @param {"u32" | "f32" | "vec3f" | "vec4f" | "array<u32,8>"} outType Type of output voxel
      * @param {string} snippet (multi-line allowed)
      * @param {Object} uniforms Uniform variable defintions (can change for each invocation) {varName: type}
      * 
@@ -1292,9 +1292,9 @@ export class GpuKernels {
      * Filter data voxels by mask=1, and tightly pack resulting data into a buffer from the front.
      * This method does not provide final count; you need to get size using e.g. {@link reduce}.
      * 
-     * @param {VoxelGridGpu<u32>} maskVg 
-     * @param {VoxelGridGpu<vec4f>} dataVg 
-     * @param {GPUBuffer<vec4f>} outBuf
+     * @param {VoxelGridGpu} maskVg (u32 type)
+     * @param {VoxelGridGpu} dataVg (vec4f type)
+     * @param {GPUBuffer} outBuf (vec4f type)
      */
     packRaw(maskVg, dataVg, outBuf) {
         const grid = this.#checkGridCompat(maskVg, dataVg);
@@ -1451,7 +1451,6 @@ export class GpuKernels {
      * @param {PipelineUniformDef} uniformDef Pipeline uniforms
      * @param {string} shaderCode WGSL code
      * @returns {Pipeline} Created, wrapped pipeline
-     * @private
      */
     #createPipeline(entryPoint, storageDef, uniformDef, shaderCode) {
         const shaderModule = this.device.createShaderModule({ code: shaderCode, label: entryPoint });
@@ -1489,7 +1488,6 @@ export class GpuKernels {
      * @param {Object<string, GPUBuffer | VoxelGridGpu>} storages Storage variable values
      * @param {Object<string, any>} uniforms Uniform variable values.
      * @param {number} [uniBufIx] Index of begin of uniform buffer bindings.
-     * @private
      */
     #dispatchKernel(commandEncoder, pipeline, numThreads, storages, uniforms, uniBufIx = 0) {
         const { pipeline: gpuPipeline, storageDef, uniformDef } = pipeline;
@@ -1637,7 +1635,7 @@ export class GpuKernels {
 
     /**
      * Gets runtime uniform variables for {@link #gridUniformDefs}.
-     * @param {VoxelGridGpu} grid
+     * @param {VoxelGridGpu | {numX: number, numY: number, numZ: number, ofs: any, res: number}} grid
      * @param {string} prefix Prefix that matches what's given to {@link #gridUniformDefs} and {@link #gridFns}.
      * @returns {Object} Runtime uniform variables.
      */
@@ -1651,7 +1649,7 @@ export class GpuKernels {
     /**
      * Create new GPU-backed VoxelGrid, keeping shape of buf and optionally changing type.
      * @param {VoxelGridGpu | VoxelGridCpu} vg 
-     * @param {"u32" | "f32" | "vec3f" | "vec4f" | null} [type=null] Type of cell ("u32" | "f32"). If null, same as buf.
+     * @param {"u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>" | null} [type=null] Type of cell. If null, same as buf.
      * @returns {VoxelGridGpu} New buffer
      */
     createLike(vg, type = null) {
@@ -1664,8 +1662,8 @@ export class GpuKernels {
      * @returns {VoxelGridCpu} New buffer
      */
     createLikeCpu(vg) {
-        if (vg.type === "vec3f") {
-            throw new Error("Cannot create CPU-backed VoxelGrid for vec3f");
+        if (vg.type !== "u32" && vg.type !== "f32") {
+            throw new Error(`Cannot create CPU-backed VoxelGrid for type: ${vg.type}`);
         }
         return new VoxelGridCpu(vg.res, vg.numX, vg.numY, vg.numZ, vg.ofs, vg.type);
     }
@@ -1729,8 +1727,8 @@ export class GpuKernels {
      * Compute distance field using jump flood algorithm.
      * O(N^3 log(N)) compute
      * 
-     * @param {VoxelGridGpu<u32>} inSeedVg Positive cells = 0-distance (seed) cells.
-     * @param {VoxelGridGpu<f32>} outDistVg Distance field. Distance from nearest seed cell will be written.
+     * @param {VoxelGridGpu} inSeedVg (u32 type) Positive cells = 0-distance (seed) cells.
+     * @param {VoxelGridGpu} outDistVg (f32 type) Distance field. Distance from nearest seed cell will be written.
      */
     distField(inSeedVg, outDistVg) {
         const grid = this.#checkGridCompat(inSeedVg, outDistVg);
@@ -1892,8 +1890,8 @@ export class GpuKernels {
     async boundOfAxis(dir, inVg, boundary) {
         const projs = this.createLike(inVg, "f32");
         this.map("project_to_dir", inVg, projs, { dir });
-        const min = await this.reduce("min_ignore_invalid", projs);
-        const max = await this.reduce("max_ignore_invalid", projs);
+        const min = /** @type {number} */ (await this.reduce("min_ignore_invalid", projs));
+        const max = /** @type {number} */ (await this.reduce("max_ignore_invalid", projs));
         this.destroy(projs);
         const offset = this.boundaryOffset(inVg, boundary);
         return { min: min - offset, max: max + offset };
@@ -1971,8 +1969,8 @@ export class GpuKernels {
      * Mark each connected region with unique ID, using 6-neighbor.
      * O(numFlood) dispatches, O(N^3 * numFlood) compute.
      * 
-     * @param {VoxelGridGpu<u32>} inVg exists flag (non-zero: exists, 0: not exists)
-     * @param {VoxelGridGpu<u32>} outVg output; contains ID that denotes connected region. 0xffffffff means no cell.
+     * @param {VoxelGridGpu} inVg (u32 type) exists flag (non-zero: exists, 0: not exists)
+     * @param {VoxelGridGpu} outVg (u32 type) output; contains ID that denotes connected region. 0xffffffff means no cell.
      * @param {number} numFlood Number of floodings. For very simple shape, 1 is fine, and for "real-world" shape, 4 should be plenty.
      *   However, pathological shape would require 100s of passes. If numFlood is not enough, connected regions will return different IDs.
      */
@@ -2074,7 +2072,7 @@ export class GpuKernels {
      * Count will be approximate; correct for largest-by-far region,
      * but might discard smaller similar-sized regions even if they're in top-4.
      * 
-     * @param {VoxelGridGpu<u32>} vg 
+     * @param {VoxelGridGpu} vg (u32 type) 
      * @returns {Promise<Map<number, number>>}
      * @async
      */
@@ -2129,8 +2127,8 @@ export class GpuKernels {
 
     /**
      * Throws error if grids are not compatible and returns common grid parameters.
-     * @param {VoxelGridGpu} vg1 
-     * @param {...VoxelGridGpu} vgs Additional grids to check compatibility with
+     * @param {VoxelGridGpu | VoxelGridCpu} vg1 
+     * @param {...(VoxelGridGpu | VoxelGridCpu)} vgs Additional grids to check compatibility with
      * @returns {{res: number, numX: number, numY: number, numZ: number, ofs: Vector3}} Common grid parameters
      */
     #checkGridCompat(vg1, ...vgs) {
