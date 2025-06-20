@@ -1,4 +1,4 @@
 #!/bin/bash
 # Type check first-party JavaScript files with JSDoc annotations
-# Avoids processing third-party dependencies by using --noResolve
-tsc --noEmit --allowJs --checkJs --target ES2022 --lib ES2022,DOM --skipLibCheck --noResolve main.js mesh.js voxel.js "$@"
+# Uses paths mapping to redirect third-party imports to fake declarations
+tsc --project tsconfig.typecheck.json "$@"
