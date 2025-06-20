@@ -55,7 +55,7 @@ export const diceSurf = (surf, vg) => {
 /**
  * @param {Float32Array} surfTris Triangle soup [x0, y0, z0, x1, y1, z1, ...] (Must be CCW)
  * @param {number} sliceZ Z coordinate of slice plane
- * @returns {Float32Array} Contour edges (CCW)
+ * @returns {number[]} Contour edges (CCW)
  */
 const sliceSurfByPlane = (surfTris, sliceZ) => {
     const segs = [];
@@ -118,7 +118,7 @@ const sliceSurfByPlane = (surfTris, sliceZ) => {
 /**
  * Slice contours in 2D plane by a line, to give a set of segments.
  * 
- * @param {Float32Array} contEdges [x0, y0, x1, y1, ...]
+ * @param {number[]} contEdges [x0, y0, x1, y1, ...]
  * @param {number} sliceY Y coordinate of slice line
  * @returns {number[]} Segment set [x0, x1, x2, ...]
  */
