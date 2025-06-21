@@ -9,7 +9,7 @@ import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { N8AOPass } from './N8AO.js';
+import { N8AOPass } from '../N8AO.js';
 import { diceSurf } from './mesh.js';
 import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, VoxelGridCpu, GpuKernels } from './voxel.js';
 
