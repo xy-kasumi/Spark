@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { Vector3 } from 'three';
-import { createBoxShape, createCylinderShape, createELHShape, createSdf, uberSdfSnippet, uberSdfUniformDefs, uberSdfUniformVars, GpuKernels, VoxelGridCpu, VoxelGridGpu } from '../voxel.js';
+import { createBoxShape, createCylinderShape, createELHShape, createSdf, uberSdfSnippet, uberSdfUniformDefs, uberSdfUniformVars, GpuKernels, VoxelGridCpu, VoxelGridGpu } from '../dist/voxel.js';
 
 QUnit.module('cpu-sdf', function () {
     QUnit.test('sdf cube', function (assert) {

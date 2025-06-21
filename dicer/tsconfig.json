@@ -19,6 +19,7 @@
   },
   "include": [
     "*.js",
+    "*.ts",
     "N8AO.d.ts",
     "fake-3p.d.ts"
   ],

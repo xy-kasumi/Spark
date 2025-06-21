@@ -180,6 +180,14 @@ const createSdfBox = (center, halfVec0, halfVec1, halfVec2) => {
  * - has center: ofs + (ix + 0.5) * res
  */
 export class VoxelGridCpu {
+    res: number;
+    numX: number;
+    numY: number;
+    numZ: number;
+    ofs: any;
+    type: "u32" | "f32";
+    data: Uint32Array | Float32Array;
+
     /**
     * Create CPU-backed voxel grid.
     * @param {number} res Voxel resolution
@@ -189,7 +197,7 @@ export class VoxelGridCpu {
     * @param {Vector3} [ofs=new Vector3()] Voxel grid offset (local to world)
     * @param {"u32" | "f32"} type Cell type
     */
-    constructor(res, numX, numY, numZ, ofs = new Vector3(), type = "u32") {
+    constructor(res: number, numX: number, numY: number, numZ: number, ofs: any = new Vector3(), type: "u32" | "f32" = "u32") {
         this.res = res;
         this.numX = numX;
         this.numY = numY;
@@ -475,6 +483,15 @@ const wgslSdfBoxSnippet = (inVar, outVar) => {
  * - has center: ofs + (ix + 0.5) * res
  */
 export class VoxelGridGpu {
+    kernels: GpuKernels;
+    res: number;
+    numX: number;
+    numY: number;
+    numZ: number;
+    ofs: any;
+    type: string;
+    buffer: any;
+
     /**
      * @param {GpuKernels} kernels GpuKernels instance
      * @param {number} res Voxel resolution
@@ -504,12 +521,15 @@ export class VoxelGridGpu {
  */
 class PipelineStorageDef {
     static BINDING_ID_BEGIN = 0;
+    
+    bindings: {[varName: string]: {bindingId: number, elemType: string}};
+    shader: string;
 
     /**
      * @param {Object<string, string>} defs {varName: elemType} Storage array<> variable defintions (can change for each invocation).
      * @param {Object<string, string>} [atomicDefs] {varName: elemType} Storage atomic<> variable defintions (can change for each invocation).
      */
-    constructor(defs, atomicDefs = {}) {
+    constructor(defs: {[key: string]: string}, atomicDefs: {[key: string]: string} = {}) {
         let bindingId = PipelineStorageDef.BINDING_ID_BEGIN;
         const shaderLines = [];
         this.bindings = {};
@@ -610,11 +630,14 @@ class PipelineStorageDef {
  */
 class PipelineUniformDef {
     static BINDING_ID_BEGIN = 100;
+    
+    bindings: {[varName: string]: {bindingId: number, type: string}};
+    shader: string;
 
     /**
      * @param {Object} defs {varName: type} Uniform variable defintions (can change for each invocation).
      */
-    constructor(defs) {
+    constructor(defs: {[key: string]: string}) {
         let uniformBindingId = PipelineUniformDef.BINDING_ID_BEGIN;
         const shaderLines = [];
         this.bindings = {};
@@ -821,6 +844,21 @@ class PipelineUniformDef {
  * - 3D voxel part: 1D array part + 3D geometry utils.
  */
 export class GpuKernels {
+    device: any;
+    sharedUniBuffer: any[] | null;
+    wgSize: number;
+    mapPipelines: {[key: string]: any};
+    map2Pipelines: {[key: string]: any};
+    reducePipelines: {[key: string]: any};
+    perf: {[key: string]: any};
+    invalidValue: number;
+    jumpFloodPipeline: any;
+    shapeQueryPipeline: any;
+    connRegSweepPipeline: any;
+    packPipeline: any;
+    tempBufsCache: {[key: string]: any[]};
+    countInShapeCache: any;
+
     /**
      * Wrapped GPUComputePipeline object with variable definitions.
      * 
