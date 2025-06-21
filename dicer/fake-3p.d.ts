@@ -34,6 +34,16 @@ declare module 'three' {
   export const Float32BufferAttribute: any;
   export const Box3: any;
   export const Euler: any;
+  export const CylinderGeometry: any;
+  export const SphereGeometry: any;
+  export const LineLoop: any;
+  export const LineBasicMaterial: any;
+  export const Quaternion: any;
+  export const AxesHelper: any;
+  export const InstancedMesh: any;
+  export const MeshLambertMaterial: any;
+  export const MeshNormalMaterial: any;
+  export const LineSegments: any;
   export const REVISION: any;
   export const DoubleSide: any;
   export const FloatType: any;
@@ -107,3 +117,6 @@ interface Navigator {
 interface Set<T> {
   difference(other: Set<T>): Set<T>;
 }
+
+// lilgui global
+declare const lilgui: any;

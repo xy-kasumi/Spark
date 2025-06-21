@@ -29,8 +29,8 @@ const loadFont = async () => {
 };
 
 const debug = {
-    vlog: (o) => { throw new Error("not initialized yet"); },
-    vlogE: (o) => { throw new Error("not initialized yet"); },
+    vlog: /** @type {(o: any) => void} */ ((o) => { throw new Error("not initialized yet"); }),
+    vlogE: /** @type {(o: any) => void} */ ((o) => { throw new Error("not initialized yet"); }),
     strict: false, // should raise exception at logic boundary even when it can continue.
     log: true, // emit vlogs (this is useful, because currently vlogs are somewhat slow)
 };
@@ -290,7 +290,7 @@ class TrackingVoxelGrid {
                             tst = TG_FULL;
                             break;
                         default:
-                            throw `Unknown target value: ${target.data[i]}`;
+                            throw `Unknown target value: ${target.data[ixFlat]}`;
                     }
                     let wst = null;
                     switch (work.data[ixFlat]) {
@@ -310,7 +310,7 @@ class TrackingVoxelGrid {
                             wst = (tst === TG_FULL) ? W_DONE : W_REMAINING;
                             break;
                         default:
-                            throw `Unknown work value: ${work.data[i]}`;
+                            throw `Unknown work value: ${work.data[ixFlat]}`;
                     }
                     vxCpu.set(ix, iy, iz, TrackingVoxelGrid.combineTargetWork(tst, wst));
                 }
@@ -497,7 +497,7 @@ class TrackingVoxelGrid {
 
         this.#updateWorkDependentCache();
 
-        return numRemoved * this.res ** 3;
+        return /** @type {number} */ (numRemoved) * this.res ** 3;
     }
 
     #updateWorkDependentCache() {
@@ -521,7 +521,7 @@ class TrackingVoxelGrid {
         this.kernels.map("work_remaining", this.vx, flagVg);
         const cnt = await this.kernels.reduce("sum", flagVg);
         this.kernels.destroy(flagVg);
-        return cnt * this.res ** 3;
+        return /** @type {number} */ (cnt) * this.res ** 3;
     }
 
     /**
@@ -586,7 +586,8 @@ class TrackingVoxelGrid {
         await this.kernels.copyBuffer(resultBuf, readBuf);
         resultBuf.destroy();
         await readBuf.mapAsync(GPUMapMode.READ);
-        const results = new Uint32Array(readBuf.getMappedRange()).map(v => v > 0);
+        const data = new Uint32Array(readBuf.getMappedRange());
+        const results = Array.from(data).map(v => v > 0);
         readBuf.destroy();
         return results;
     }
@@ -711,7 +712,7 @@ const generateStockGeom = (stockRadius = 7.5, stockHeight = 15) => {
 
 /**
  * Create occupancy voxel grid visualization.
- * @param {VoxelGridCpu<u32>} vg Voxel grid to visualize (255:full, 128:partial, 0:empty)
+ * @param {VoxelGridCpu} vg Voxel grid to visualize (u32: 255:full, 128:partial, 0:empty)
  * @returns {THREE.Object3D} Visualization object
  */
 const createOccupancyVis = (vg) => {
@@ -813,18 +814,18 @@ const initCreateDeviationVis = (kernels) => {
 /**
  * Get max deviation from voxel grid.
  * @param {GpuKernels} kernels
- * @param {VoxelGridGpu<f32>} vg
+ * @param {VoxelGridGpu} vg - f32 voxel grid
  * @returns {Promise<number>} Maximum deviation
  * @async
  */
 const getMaxDeviation = async (kernels, vg) => {
-    return await kernels.reduce("max", vg);
+    return /** @type {number} */ (await kernels.reduce("max", vg));
 };
 
 /**
  * Create deviation voxel grid visualization. (blue: 0 deviation, red: maxDev deviation)
  * @param {GpuKernels} kernels
- * @param {VoxelGridGpu<f32>} vgCpu Voxel grid to visualize (>=0: deviation, -1: empty)
+ * @param {VoxelGridGpu} vg Voxel grid to visualize (f32: >=0: deviation, -1: empty)
  * @param {number} [maxDev=3] Maximum deviation to visualize.
  * @returns {Promise<THREE.Object3D>} Visualization object
  * @async
@@ -849,7 +850,7 @@ const createDeviationVis = async (kernels, vg, maxDev = 3) => {
     const dataVg = kernels.createLike(vg, "vec4f");
     kernels.map("visible_dev_mask", vg, maskVg);
     kernels.map("cv_dev_data", vg, dataVg);
-    const numVisible = await kernels.reduce("sum", maskVg);
+    const numVisible = /** @type {number} */ (await kernels.reduce("sum", maskVg));
     const packedResultBuf = kernels.createBuffer(16 * numVisible);
     kernels.packRaw(maskVg, dataVg, packedResultBuf);
     const packedResultBufCpu = new ArrayBuffer(16 * numVisible);
@@ -884,8 +885,8 @@ const createDeviationVis = async (kernels, vg, maxDev = 3) => {
 /**
  * Visualize "max deviation" in voxel grid.
  * @param {GpuKernels} kernels
- * @param {VoxelGridGpu<f32>} vg - Voxel grid to visualize
- * @param {number} - Maximum deviation to visualize
+ * @param {VoxelGridGpu} vg - Voxel grid to visualize (f32)
+ * @param {number} maxDev - Maximum deviation to visualize
  * @returns {Promise<THREE.Object3D>} Visualization object
  * @async
  */
@@ -897,7 +898,7 @@ const createMaxDeviationVis = async (kernels, vg, maxDev) => {
     const dataVg = kernels.createLike(vg, "vec4f");
     kernels.map("cv_dev_data", vg, dataVg);
 
-    const numLocs = await kernels.reduce("sum", maskVg);
+    const numLocs = /** @type {number} */ (await kernels.reduce("sum", maskVg));
     const locsBuf = kernels.createBuffer(16 * numLocs);
     kernels.packRaw(maskVg, dataVg, locsBuf);
 
@@ -1070,7 +1071,7 @@ const createBoxShapeFrom = (base, ...axisSpecs) => {
                 throw `Invalid anchor: ${anchor}`;
         }
     }
-    return createBoxShape(center, ...halfVecs);
+    return createBoxShape(center, halfVecs[0], halfVecs[1], halfVecs[2]);
 };
 
 
@@ -1439,7 +1440,7 @@ class Planner {
         this.machineConfig = sparkWg1Config; // in future, there will be multiple options.
 
         // tool vis
-        this.updateVisTransforms(new THREE.Vector3(-15, -15, 5), new THREE.Vector3(0, 0, 1), this.toolNaturalLength);
+        this.updateVisTransforms(new THREE.Vector3(-15, -15, 5), new THREE.Vector3(0, 0, 1), this.machineConfig.toolNaturalLength);
 
         // configuration
         this.ewrMax = 0.3;
@@ -1462,7 +1463,7 @@ class Planner {
         this.remainingVol = 0;
         this.deviation = 0;
         this.toolIx = 0;
-        this.toolLength = this.toolNaturalLength;
+        this.toolLength = this.machineConfig.toolNaturalLength;
         this.showPlanPath = true;
         this.highlightSweep = 2;
 
@@ -1485,7 +1486,7 @@ class Planner {
         gui.add(this, "genAllSweeps");
         gui.add(this, "genNextSweep");
         gui.add(this, "numSweeps").disable().onChange(_ => {
-            highlightGui.max(this.numSweeps);
+            this.highlightGui.max(this.numSweeps);
         }).listen();
         gui.add(this, "removedVol").name("Removed Vol (㎣)").decimals(9).disable().listen();
         gui.add(this, "remainingVol").name("Remaining Vol (㎣)").decimals(9).disable().listen();
@@ -1555,7 +1556,7 @@ class Planner {
 
     /**
      * Generate the next sweep.
-     * @returns {"done" | "break" | "continue"} "done": gen is done. "break": gen requests breakpoint for debug, restart needs manual intervention. "continue": gen should be continued.
+     * @returns {Promise<"done" | "break" | "continue">} "done": gen is done. "break": gen requests breakpoint for debug, restart needs manual intervention. "continue": gen should be continued.
      */
     async genNextSweep() {
         if (!this.gen) {
@@ -1795,7 +1796,7 @@ class Planner {
         //   state: "blocked" | "work" | "empty" // blocked = contains non-cuttable bits, work = cuttable & has non-zero work, empty = accessible and no work
         // }
         const rows = new Array(numRows);
-        const queries = [];
+        const queries = /** @type {Array<{shape: Object, query: "blocked" | "has_work"}>} */ ([]);
         for (let ixRow = 0; ixRow < numRows; ixRow++) {
             rows[ixRow] = new Array(numSegs);
             for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
@@ -2013,6 +2014,7 @@ class Planner {
         }
         return {
             partialPath: sweepPath,
+            ignoreOvercutErrors: false,
         };
     }
 
@@ -2051,7 +2053,7 @@ class Planner {
         // grid query for drilling
         // if ok, just drill it with helical downwards path.
         const drillHoleQs = [];
-        const queries = [];
+        const queries = /** @type {Array<{shape: Object, query: "blocked" | "has_work"}>} */ ([]);
         for (let ixScan0 = 0; ixScan0 < numScan0; ixScan0++) {
             for (let ixScan1 = 0; ixScan1 < numScan1; ixScan1++) {
                 const scanPt = offsetPoint(scanOrigin, [scanDir0, scanRes * ixScan0], [scanDir1, scanRes * ixScan1]);
@@ -2148,6 +2150,7 @@ class Planner {
         console.log(`genDrillSweep: took ${performance.now() - t0}ms`);
         return {
             partialPath: sweepPath,
+            ignoreOvercutErrors: false,
         };
     };
 
@@ -2265,7 +2268,7 @@ class View3D {
 
     clearVlogDebug() {
         this.vlogDebugs = [];
-        this.updateVis("vlog-debug", this.vlogDebugs, this.showVlogDebug);
+        this.updateVis("vlog-debug", this.vlogDebugs, this.vlogDebugShow);
     }
 
     initGui() {
@@ -2356,7 +2359,7 @@ class View3D {
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
 
         this.stats = new Stats();
-        container.appendChild(this.stats.dom);
+        this.container.appendChild(this.stats.dom);
 
         const guiStatsEl = document.createElement('div');
         guiStatsEl.classList.add('gui-stats');
