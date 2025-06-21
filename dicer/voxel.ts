@@ -6,19 +6,35 @@
  */
 import { Vector3, Vector4 } from 'three';
 
+interface CylinderShape {
+    type: "cylinder";
+    p: Vector3;
+    n: Vector3;
+    r: number;
+    h: number;
+}
+
+interface ELHShape {
+    type: "ELH";
+    p: Vector3;
+    q: Vector3;
+    n: Vector3;
+    r: number;
+    h: number;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // CPU code
 // These are written with simplicity & flexibility, to serve as test reference
 // and quick prototype / debug tool.
 
 /**
- * @param {Vector3} p Start point
- * @param {Vector3} n Direction (the cylinder extends infinitely towards n+ direction)
- * @param {number} r Radius
- * @param {number} h Height
- * @returns {Object} Shape
+ * @param p Start point
+ * @param n Direction (the cylinder extends infinitely towards n+ direction)
+ * @param r Radius
+ * @param h Height
  */
-export const createCylinderShape = (p, n, r, h) => {
+export const createCylinderShape = (p: Vector3, n: Vector3, r: number, h: number): CylinderShape => {
     if (n.length() !== 1) {
         throw "Cylinder direction not normalized";
     }
@@ -26,14 +42,13 @@ export const createCylinderShape = (p, n, r, h) => {
 };
 
 /**
- * @param {Vector3} p Start point
- * @param {Vector3} q End point
- * @param {Vector3} n Direction (p-q must be perpendicular to n). LH is extruded along n+, by h
- * @param {number} r Radius (>= 0)
- * @param {number} h Height (>= 0)
- * @returns {Object} Shape
+ * @param p Start point
+ * @param q End point
+ * @param n Direction (p-q must be perpendicular to n). LH is extruded along n+, by h
+ * @param r Radius (>= 0)
+ * @param h Height (>= 0)
  */
-export const createELHShape = (p, q, n, r, h) => {
+export const createELHShape = (p: Vector3, q: Vector3, n: Vector3, r: number, h: number): ELHShape => {
     if (n.length() !== 1) {
         throw "ELH direction not normalized";
     }
@@ -184,7 +199,7 @@ export class VoxelGridCpu {
     numX: number;
     numY: number;
     numZ: number;
-    ofs: any;
+    ofs: Vector3;
     type: "u32" | "f32";
     data: Uint32Array | Float32Array;
 
@@ -197,7 +212,7 @@ export class VoxelGridCpu {
     * @param {Vector3} [ofs=new Vector3()] Voxel grid offset (local to world)
     * @param {"u32" | "f32"} type Cell type
     */
-    constructor(res: number, numX: number, numY: number, numZ: number, ofs: any = new Vector3(), type: "u32" | "f32" = "u32") {
+    constructor(res: number, numX: number, numY: number, numZ: number, ofs: Vector3 = new Vector3(), type: "u32" | "f32" = "u32") {
         this.res = res;
         this.numX = numX;
         this.numY = numY;
@@ -488,20 +503,20 @@ export class VoxelGridGpu {
     numX: number;
     numY: number;
     numZ: number;
-    ofs: any;
+    ofs: Vector3;
     type: string;
     buffer: any;
 
     /**
-     * @param {GpuKernels} kernels GpuKernels instance
-     * @param {number} res Voxel resolution
-     * @param {number} numX Grid dimension X
-     * @param {number} numY Grid dimension Y
-     * @param {number} numZ Grid dimension Z
-     * @param {Vector3} [ofs=new Vector3()] Voxel grid offset (local to world)
-     * @param {"u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>"} type Type of cell
+     * @param kernels GpuKernels instance
+     * @param res Voxel resolution
+     * @param numX Grid dimension X
+     * @param numY Grid dimension Y
+     * @param numZ Grid dimension Z
+     * @param ofs Voxel grid offset (local to world)
+     * @param type Type of cell
      */
-    constructor(kernels, res, numX, numY, numZ, ofs = new Vector3(), type = "u32") {
+    constructor(kernels: GpuKernels, res: number, numX: number, numY: number, numZ: number, ofs: Vector3 = new Vector3(), type: "u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>" = "u32") {
         GpuKernels.checkAllowedType(type);
 
         this.kernels = kernels;

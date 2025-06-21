@@ -3,7 +3,13 @@
 
 declare module 'three' {
   export const Vector2: any;
-  export const Vector3: any;
+  export class Vector3 {
+    x: number;
+    y: number;
+    z: number;
+    constructor(x?: number, y?: number, z?: number);
+    [key: string]: any; // Allow any methods
+  }
   export const Vector4: any;
   export const Color: any;
   export const Matrix4: any;
