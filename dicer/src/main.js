@@ -10,7 +10,7 @@ import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { N8AOPass } from '../N8AO.js';
+import { N8AOPass } from '../vendor/n8ao/N8AO.js';
 import { diceSurf } from './mesh.js';
 import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, VoxelGridCpu, GpuKernels } from './voxel.js';
 
@@ -22,7 +22,7 @@ let font = null;
 
 const loadFont = async () => {
     return new Promise((resolve) => {
-        fontLoader.load("./Source Sans 3_Regular.json", (f) => {
+        fontLoader.load("../assets/fonts/Source Sans 3_Regular.json", (f) => {
             font = f;
             resolve();
         });
@@ -2380,7 +2380,7 @@ class View3D {
     loadStl(fname) {
         const loader = new STLLoader();
         loader.load(
-            `models/${fname}.stl`,
+            `../assets/models/${fname}.stl`,
             (geometry) => {
                 this.targetSurf = convGeomToSurf(geometry);
                 const aabb = computeAABB(this.targetSurf);

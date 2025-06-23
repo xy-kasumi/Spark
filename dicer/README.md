@@ -1,10 +1,10 @@
 
 ## Running Dicer
-Run `tsc`. This will generate `dist/`
+Run `./build.sh`. This will generate `dist/`.
 
-Serve the `dicer/` or `spark/`. Open `dicer/index.html` in browser.
+Serve the `dicer/` or `spark/`. Open `dicer/dist/index.html` in browser.
 
 ## Development
-`tsc --watch` to continuously update the code while developing.
+Run `./typecheck.sh` to check types correctness w/o touching `dist/`.
+Need to run `./build.sh` whenver source files are edited.
 
-`./typecheck.sh` to do just type-check w/o updating `dist/`.

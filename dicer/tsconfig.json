@@ -14,20 +14,16 @@
     "removeComments": false,
     "baseUrl": ".",
     "paths": {
-      "./N8AO.js": ["./N8AO"]
+      "vendor/n8ao/N8AO.js": ["vendor/n8ao/N8AO"]
     }
   },
   "include": [
-    "*.js",
-    "*.ts",
-    "N8AO.d.ts",
-    "fake-3p.d.ts"
+    "src/**/*",
+    "types/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "three.module.min.js",
-    "three-addons/**/*",
-    "N8AO.js"
+    "vendor/**/*"
   ]
 }

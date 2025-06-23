@@ -86,58 +86,17 @@ declare module 'three/addons/*' {
   export default {} as any;
 }
 
-declare module './N8AO.js' {
+declare module 'vendor/n8ao/N8AO.js' {
   export const N8AOPass: any;
   export default {} as any;
 }
 
-declare module './three.module.min.js' {
+declare module 'vendor/three/three.module.min.js' {
   export default {} as any;
 }
 
-declare module './three-addons/*' {
+declare module 'vendor/three/addons/*' {
   export default {} as any;
-}
-
-// WebGPU globals that your code uses
-declare const GPUBufferUsage: any;
-declare const GPUShaderStage: any; 
-declare const GPUMapMode: any;
-
-// WebGPU interfaces
-interface GPUBuffer {
-  size: number;
-  mapAsync(mode: any): Promise<void>;
-  getMappedRange(offset?: number, size?: number): ArrayBuffer;
-  unmap(): void;
-  destroy(): void;
-}
-
-interface GPUDevice {
-  limits: any;
-  queue: any;
-  createBuffer(descriptor: any): GPUBuffer;
-  createShaderModule(descriptor: any): any;
-  createComputePipeline(descriptor: any): any;
-  createBindGroupLayout(descriptor: any): any;
-  createBindGroup(descriptor: any): any;
-  createCommandEncoder(): GPUCommandEncoder;
-}
-
-interface GPUCommandEncoder {
-  beginComputePass(): any;
-  finish(): any;
-}
-
-// WebGPU shader types for JSDoc
-type u32 = number;
-type f32 = number;
-type vec3f = number[];
-type vec4f = number[];
-
-// Navigator WebGPU extension
-interface Navigator {
-  gpu?: any;
 }
 
 // Set.difference() method (newer JS feature)
