@@ -3,7 +3,7 @@
 /**
  * Triangle mesh rasterization into voxel grid.
  */
-import { VoxelGridCpu } from './voxel.js';
+import { VoxelGridCpu } from './cpu-geom.js';
 import { Vector2, Vector3 } from 'three';
 
 /**

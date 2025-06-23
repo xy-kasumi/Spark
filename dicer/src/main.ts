@@ -12,7 +12,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from '../vendor/n8ao/N8AO.js';
 import { diceSurf } from './mesh.js';
-import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, VoxelGridCpu, GpuKernels, Shape } from './voxel.js';
+import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, GpuKernels, Shape } from './gpu-geom.js';
+import { VoxelGridCpu } from './cpu-geom.js';
 import { Vector3 } from 'three';
 
 ////////////////////////////////////////////////////////////////////////////////
