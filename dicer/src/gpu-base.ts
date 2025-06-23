@@ -16,11 +16,6 @@ export interface Pipeline {
     uniformDef: PipelineUniformDef;
 }
 
-// Generic interface for buffer-like objects to avoid circular dependencies
-interface BufferLike {
-    buffer: GPUBuffer;
-    type: string;
-}
 
 /**
  * Returns on-memory size of allowed GPU type.
@@ -95,12 +90,12 @@ export class PipelineStorageDef {
      * @param allowPartial Don't rise error if some variables are missing. Useful for multi-pass advanced pipelines.
      * @throws If any input is invalid.
      */
-    checkInput(vals: { [key: string]: GPUBuffer | BufferLike }, allowPartial: boolean = false): void {
+    checkInput(vals: { [key: string]: GPUBuffer }, allowPartial: boolean = false): void {
         const unknownVars = new Set(Object.keys(vals)).difference(new Set(Object.keys(this.bindings)));
         if (unknownVars.size > 0) {
             console.warn("Unknown buffer provided: ", unknownVars);
         }
-        for (const [varName, { elemType }] of Object.entries(this.bindings)) {
+        for (const [varName] of Object.entries(this.bindings)) {
             const val = vals[varName];
             if (val === undefined) {
                 if (allowPartial) {
@@ -109,19 +104,6 @@ export class PipelineStorageDef {
                     throw new Error(`Required buffer variable "${varName}" not provided`);
                 }
             }
-            // Check type compatibility
-            if (val && typeof val === 'object' && 'buffer' in val && 'type' in val) {
-                // BufferLike object (VoxelGridGpu)
-                if (val.type !== elemType) {
-                    throw new Error(`"${varName}: array<${elemType}>" type mismatch; got ${val.type}`);
-                }
-                continue;
-            }
-            if (val && typeof val === 'object' && 'size' in val && 'destroy' in val) {
-                // Likely a GPUBuffer
-                continue;
-            }
-            throw new Error(`"${varName}: array<${elemType}>" got unsupported type: ${typeof val}`);
         }
     }
 
@@ -130,18 +112,12 @@ export class PipelineStorageDef {
      * @param bufs Storage variable values
      * @returns Buffer bindings. (bindingId, buffer)
      */
-    getBinds(bufs: { [key: string]: GPUBuffer | BufferLike }): [number, GPUBuffer][] {
+    getBinds(bufs: { [key: string]: GPUBuffer }): [number, GPUBuffer][] {
         this.checkInput(bufs);
 
         const binds: [number, GPUBuffer][] = [];
         for (const [varName, val] of Object.entries(bufs)) {
-            if (val && typeof val === 'object' && 'buffer' in val) {
-                // BufferLike object (VoxelGridGpu)
-                binds.push([this.bindings[varName].bindingId, val.buffer]);
-            } else {
-                // GPUBuffer
-                binds.push([this.bindings[varName].bindingId, val as GPUBuffer]);
-            }
+            binds.push([this.bindings[varName].bindingId, val]);
         }
         return binds;
     }

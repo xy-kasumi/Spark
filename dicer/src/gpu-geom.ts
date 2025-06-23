@@ -499,7 +499,7 @@ export class GpuKernels {
         }
         const grid = this.#checkGridCompat(inVg, outVg);
 
-        const storages = { vs_in: inVg, vs_out: outVg };
+        const storages = { vs_in: inVg.buffer, vs_out: outVg.buffer };
         uniforms = Object.assign({}, uniforms, this.#gridUniformVars(grid));
 
         pipeline.storageDef.checkInput(storages);
@@ -528,7 +528,7 @@ export class GpuKernels {
         }
         const grid = this.#checkGridCompat(inVg1, inVg2, outVg);
 
-        const storages = { vs_in1: inVg1, vs_in2: inVg2, vs_out: outVg };
+        const storages = { vs_in1: inVg1.buffer, vs_in2: inVg2.buffer, vs_out: outVg.buffer };
         uniforms = Object.assign({}, uniforms, this.#gridUniformVars(grid));
 
         pipeline.storageDef.checkInput(storages);
@@ -554,7 +554,7 @@ export class GpuKernels {
         if (!pipeline) {
             throw new Error(`Reduce fn "${fnName}" not registered`);
         }
-        pipeline.storageDef.checkInput({ vs_in: inVg }, true);
+        pipeline.storageDef.checkInput({ vs_in: inVg.buffer }, true);
 
         const valType = this.reducePipelines[fnName].storageDef.bindings["vs_in"].elemType; // A bit of hack.
         const valSize = sizeOfType(valType);
@@ -652,8 +652,8 @@ export class GpuKernels {
         const bufCount = this.createBuffer(4);
         const commandEncoder = this.device.createCommandEncoder();
         this.#dispatchKernel(commandEncoder, this.packPipeline, grid.numX * grid.numY * grid.numZ, {
-            vs_data: dataVg,
-            vs_mask: maskVg,
+            vs_data: dataVg.buffer,
+            vs_mask: maskVg.buffer,
             arr_out: outBuf,
             arr_index: bufCount,
         }, uniforms, 0);
@@ -803,7 +803,7 @@ export class GpuKernels {
         commandEncoder: GPUCommandEncoder,
         pipeline: Pipeline,
         numThreads: number,
-        storages: { [key: string]: GPUBuffer | VoxelGridGpu },
+        storages: { [key: string]: GPUBuffer },
         uniforms: { [key: string]: any },
         uniBufIx: number = 0
     ): void {
@@ -1287,9 +1287,9 @@ export class GpuKernels {
         Object.assign(uniformsZ, this.#gridUniformVars(grid));
         for (let i = 0; i < numFlood; i++) {
             // Since uniform variables are independent of i and only depends on axis, it's ok to reuse uniBufIx.
-            this.#dispatchKernel(commandEncoder, this.connRegSweepPipeline, grid.numY * grid.numZ, { vs: outVg }, uniformsX, 0);
-            this.#dispatchKernel(commandEncoder, this.connRegSweepPipeline, grid.numZ * grid.numX, { vs: outVg }, uniformsY, 1);
-            this.#dispatchKernel(commandEncoder, this.connRegSweepPipeline, grid.numX * grid.numY, { vs: outVg }, uniformsZ, 2);
+            this.#dispatchKernel(commandEncoder, this.connRegSweepPipeline, grid.numY * grid.numZ, { vs: outVg.buffer }, uniformsX, 0);
+            this.#dispatchKernel(commandEncoder, this.connRegSweepPipeline, grid.numZ * grid.numX, { vs: outVg.buffer }, uniformsY, 1);
+            this.#dispatchKernel(commandEncoder, this.connRegSweepPipeline, grid.numX * grid.numY, { vs: outVg.buffer }, uniformsZ, 2);
         }
         this.device.queue.submit([commandEncoder.finish()]);
     }
