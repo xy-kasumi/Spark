@@ -13,6 +13,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from '../vendor/n8ao/N8AO.js';
 import { diceSurf } from './mesh.js';
 import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, VoxelGridCpu, GpuKernels } from './voxel.js';
+import { Vector3 } from 'three';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Basis
@@ -20,8 +21,8 @@ import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, Voxe
 const fontLoader = new FontLoader();
 let font = null;
 
-const loadFont = async () => {
-    return new Promise((resolve) => {
+const loadFont = async (): Promise<void> => {
+    return new Promise<void>((resolve) => {
         fontLoader.load("../assets/fonts/Source Sans 3_Regular.json", (f) => {
             font = f;
             resolve();
@@ -30,10 +31,11 @@ const loadFont = async () => {
 };
 
 const debug = {
-    vlog: /** @type {(o: any) => void} */ ((o) => { throw new Error("not initialized yet"); }),
-    vlogE: /** @type {(o: any) => void} */ ((o) => { throw new Error("not initialized yet"); }),
+    vlog: ((o: any): void => { throw new Error("not initialized yet"); }),
+    vlogE: ((o: any): void => { throw new Error("not initialized yet"); }),
     strict: false, // should raise exception at logic boundary even when it can continue.
     log: true, // emit vlogs (this is useful, because currently vlogs are somewhat slow)
+    dotGeomCache: null as any,
 };
 
 // orange-teal-purple color palette for ABC axes.
@@ -145,10 +147,19 @@ const C_PARTIAL_REMAINING = 4; // current=full
  * Under the hood, it uses {@link VoxelGridGpu} to process various queries.
  */
 class TrackingVoxelGrid {
-    /**
-     * @param {GpuKernels} kernels
-     */
-    constructor(kernels) {
+    kernels: GpuKernels;
+    res: number;
+    numX: number;
+    numY: number; 
+    numZ: number;
+    ofs: Vector3;
+    vx: VoxelGridGpu;
+    distField: VoxelGridGpu;
+    cacheHasWork: VoxelGridGpu;
+    cacheBlocked: VoxelGridGpu;
+    protectedWorkBelowZ: number;
+
+    constructor(kernels: GpuKernels) {
         this.kernels = kernels;
 
         this.kernels.registerMapFn("set_protected_work_below_z", "u32", "u32", `
@@ -498,7 +509,7 @@ class TrackingVoxelGrid {
 
         this.#updateWorkDependentCache();
 
-        return /** @type {number} */ (numRemoved) * this.res ** 3;
+        return (numRemoved as number) * this.res ** 3;
     }
 
     #updateWorkDependentCache() {
@@ -522,7 +533,7 @@ class TrackingVoxelGrid {
         this.kernels.map("work_remaining", this.vx, flagVg);
         const cnt = await this.kernels.reduce("sum", flagVg);
         this.kernels.destroy(flagVg);
-        return /** @type {number} */ (cnt) * this.res ** 3;
+        return (cnt as number) * this.res ** 3;
     }
 
     /**
@@ -1202,16 +1213,28 @@ const sparkWg1Config = {
  * Utility to accumulate correct path for short-ish tool paths. (e.g. single sweep or part of it)
  */
 class PartialPath {
+    machineConfig: any;
+    sweepIx: number;
+    group: string;
+    normal: Vector3;
+    minToolLength: number;
+    toolIx: number;
+    toolLength: number;
+    minSweepRemoveShapes: any[];
+    maxSweepRemoveShapes: any[];
+    path: any[];
+    prevPtTipPos: Vector3 | null;
+
     /**
-     * @param {number} sweepIx - Sweep index
-     * @param {string} group - Group name
-     * @param {THREE.Vector3} normal - Normal vector
-     * @param {number} minToolLength - Minimum tool length required. Can change later with 
-     * @param {number} toolIx - Tool index
-     * @param {number} toolLength - Current tool length
-     * @param {Object} machineConfig - Target machine's physical configuration
+     * @param sweepIx - Sweep index
+     * @param group - Group name
+     * @param normal - Normal vector
+     * @param minToolLength - Minimum tool length required. Can change later with 
+     * @param toolIx - Tool index
+     * @param toolLength - Current tool length
+     * @param machineConfig - Target machine's physical configuration
      */
-    constructor(sweepIx, group, normal, minToolLength, toolIx, toolLength, machineConfig) {
+    constructor(sweepIx: number, group: string, normal: Vector3, minToolLength: number, toolIx: number, toolLength: number, machineConfig: any) {
         this.machineConfig = machineConfig;
 
         this.sweepIx = sweepIx;
@@ -1430,11 +1453,42 @@ class PartialPath {
  * Thus, planner instance should be kept, even when re-running planner from scratch.
  */
 class Planner {
+    updateVis: Function;
+    setVisVisibility: Function;
+    machineConfig: any;
+    ewrMax: number;
+    stockDiameter: number;
+    workCRot: number;
+    resMm: number;
+    stockCutWidth: number;
+    simWorkBuffer: number;
+    showWork: boolean;
+    showTarget: boolean;
+    targetSurf: any;
+    numSweeps: number;
+    showingSweep: number;
+    removedVol: number;
+    remainingVol: number;
+    deviation: number;
+    toolIx: number;
+    toolLength: number;
+    showPlanPath: boolean;
+    highlightSweep: number;
+    kernels: GpuKernels;
+    trvg: TrackingVoxelGrid;
+    planPath: any[];
+    highlightGui: any;
+    genSweeps: any;
+    baseZ: number;
+    aboveWorkSize: number;
+    gen: any;
+    stockSurf: any;
+
     /**
-     * @param {Function} updateVis - Function to update visualizations
-     * @param {Function} setVisVisibility - Function to set visualization visibility
+     * @param updateVis - Function to update visualizations
+     * @param setVisVisibility - Function to set visualization visibility
      */
-    constructor(updateVis, setVisVisibility) {
+    constructor(updateVis: Function, setVisVisibility: Function) {
         this.updateVis = updateVis;
         this.setVisVisibility = setVisVisibility;
 
@@ -2199,6 +2253,48 @@ class Planner {
  * Scene is in mm unit. Right-handed, X+ up. Work-coordinates.
  */
 class View3D {
+    // Three.js core objects
+    camera: any;
+    renderer: any;
+    scene: any;
+    composer: any;
+    controls: any;
+    stats: any;
+    container: any;
+    
+    // Visualization management
+    visGroups: any;
+    
+    // Debug logging
+    vlogDebugs: any[];
+    vlogErrors: any[];
+    lastNumVlogErrors: number;
+    vlogDebugEnable: boolean;
+    vlogDebugShow: boolean;
+    
+    // Model data
+    models: any;
+    model: string;
+    targetSurf: any;
+    
+    // Stock configuration
+    stockDiameter: number;
+    stockLength: number;
+    stockTopBuffer: number;
+    baseZ: number;
+    aboveWorkSize: number;
+    showStockMesh: boolean;
+    showTargetMesh: boolean;
+    
+    // Rendering settings
+    renderAoRadius: number;
+    renderDistFallOff: number;
+    renderAoItensity: number;
+    renderAoScreenRadius: boolean;
+    
+    // Planning module
+    modPlanner: Planner;
+
     constructor() {
         // Initialize basis
         this.init();
