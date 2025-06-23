@@ -7,18 +7,9 @@
  */
 import { Vector3, Vector4 } from 'three';
 import { Shape, createBoxShape, createCylinderShape, createELHShape, createSdf, VoxelGridCpu } from './cpu-geom.js';
+import { UniformVariables, Pipeline, PipelineStorageDef, PipelineUniformDef, checkAllowedType, sizeOfType } from './gpu-base.js';
 
 export { Shape, createBoxShape, createCylinderShape, createELHShape, createSdf, VoxelGridCpu };
-
-
-// WebGPU type definitions
-type UniformVariables = { [key: string]: number | number[] | Vector3 | Vector4 | boolean };
-
-interface Pipeline {
-    pipeline: GPUComputePipeline;
-    storageDef: PipelineStorageDef;
-    uniformDef: PipelineUniformDef;
-}
 
 
 /**
@@ -179,7 +170,7 @@ export class VoxelGridGpu {
     buffer: GPUBuffer;
 
     constructor(kernels: GpuKernels, res: number, numX: number, numY: number, numZ: number, ofs: Vector3 = new Vector3(), type: "u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>" = "u32") {
-        GpuKernels.checkAllowedType(type);
+        checkAllowedType(type);
 
         this.kernels = kernels;
         this.res = res;
@@ -188,335 +179,9 @@ export class VoxelGridGpu {
         this.numZ = numZ;
         this.ofs = ofs.clone();
         this.type = type;
-        this.buffer = kernels.createBuffer(numX * numY * numZ * GpuKernels.sizeOfType(type));
+        this.buffer = kernels.createBuffer(numX * numY * numZ * sizeOfType(type));
     }
 }
-
-/**
- * Represents storage variable definition of a single GPU Pipeline.
- * This should be used with {@link GpuKernels}.
- */
-class PipelineStorageDef {
-    static BINDING_ID_BEGIN = 0;
-
-    bindings: { [varName: string]: { bindingId: number, elemType: string } };
-    shader: string;
-
-    /**
-     * @param defs Storage array<> variable defintions (can change for each invocation).
-     * @param atomicDefs Storage atomic<> variable defintions (can change for each invocation).
-     */
-    constructor(defs: { [key: string]: string }, atomicDefs: { [key: string]: string } = {}) {
-        let bindingId = PipelineStorageDef.BINDING_ID_BEGIN;
-        const shaderLines = [];
-        this.bindings = {};
-        for (const [varName, elemType] of Object.entries(defs)) {
-            shaderLines.push(`@group(0) @binding(${bindingId}) var<storage, read_write> ${varName}: array<${elemType}>;`);
-            this.bindings[varName] = {
-                bindingId: bindingId,
-                elemType: elemType,
-            };
-            bindingId++;
-        }
-        for (const [varName, elemType] of Object.entries(atomicDefs)) {
-            shaderLines.push(`@group(0) @binding(${bindingId}) var<storage, read_write> ${varName}: atomic<${elemType}>;`);
-            this.bindings[varName] = {
-                bindingId: bindingId,
-                elemType: elemType,
-            };
-            bindingId++;
-        }
-        this.shader = shaderLines.join("\n") + "\n";
-    }
-
-    /**
-     * Get multi-line shader storage variable declarations.
-     * @returns Multi-line shader storage variable declarations. (e.g. "@group(0) @binding(0) var<storage, read_write> df: array<vec4f>;")
-     */
-    shaderVars(): string {
-        return this.shader;
-    }
-
-    /**
-     * Get binding IDs. (order might not match what's given to constructor)
-     * @returns Binding IDs of storage variables.
-     */
-    bindingIds(): number[] {
-        return Object.values(this.bindings).map(({ bindingId }) => bindingId);
-    }
-
-    /**
-     * Validate input values.
-     * @param vals Storage variable values
-     * @param allowPartial Don't rise error if some variables are missing. Useful for multi-pass advanced pipelines.
-     * @throws If any input is invalid.
-     */
-    checkInput(vals: { [key: string]: GPUBuffer | VoxelGridGpu }, allowPartial: boolean = false): void {
-        const unknownVars = new Set(Object.keys(vals)).difference(new Set(Object.keys(this.bindings)));
-        if (unknownVars.size > 0) {
-            console.warn("Unknown buffer provided: ", unknownVars);
-        }
-        for (const [varName, { elemType }] of Object.entries(this.bindings)) {
-            const val = vals[varName];
-            if (val === undefined) {
-                if (allowPartial) {
-                    continue;
-                } else {
-                    throw new Error(`Required buffer variable "${varName}" not provided`);
-                }
-            }
-            // Check type compatibility
-            if (val instanceof VoxelGridGpu) {
-                // additional check is possible for VoxelGridGpu
-                if (val.type !== elemType) {
-                    throw new Error(`"${varName}: array<${elemType}>" type mismatch; got ${val.type}`);
-                }
-                continue;
-            }
-            if (val && typeof val === 'object' && 'size' in val && 'destroy' in val) {
-                // Likely a GPUBuffer
-                continue;
-            }
-            throw new Error(`"${varName}: array<${elemType}>" got unsupported type: ${typeof val}`);
-        }
-    }
-
-    /**
-     * Get buffer bindings for given values.
-     * @param bufs Storage variable values
-     * @returns Buffer bindings. (bindingId, buffer)
-     */
-    getBinds(bufs: { [key: string]: GPUBuffer | VoxelGridGpu }): [number, GPUBuffer][] {
-        this.checkInput(bufs);
-
-        const binds: [number, GPUBuffer][] = [];
-        for (const [varName, val] of Object.entries(bufs)) {
-            if (val instanceof VoxelGridGpu) {
-                binds.push([this.bindings[varName].bindingId, val.buffer]);
-            } else {
-                binds.push([this.bindings[varName].bindingId, val]);
-            }
-        }
-        return binds;
-    }
-}
-
-/**
- * Represents uniform variable definition of a single GPU Pipeline.
- * This should be used with {@link GpuKernels}.
- */
-class PipelineUniformDef {
-    static BINDING_ID_BEGIN = 100;
-
-    bindings: { [varName: string]: { bindingId: number, type: string } };
-    shader: string;
-
-    /**
-     * @param defs Uniform variable defintions (can change for each invocation).
-     */
-    constructor(defs: { [key: string]: string }) {
-        let uniformBindingId = PipelineUniformDef.BINDING_ID_BEGIN;
-        const shaderLines = [];
-        this.bindings = {};
-        for (const [varName, type] of Object.entries(defs)) {
-            GpuKernels.checkAllowedType(type);
-            shaderLines.push(`@group(0) @binding(${uniformBindingId}) var<uniform> ${varName}: ${type};`);
-            this.bindings[varName] = {
-                bindingId: uniformBindingId,
-                type: type,
-            };
-            uniformBindingId++;
-        }
-        this.shader = shaderLines.join("\n") + "\n";
-    }
-
-    /**
-     * Get multi-line shader uniform variable declarations.
-     * @returns Multi-line shader uniform variable declarations. (e.g. "@group(0) @binding(200) var<uniform> dir: vec3f;\n ...")
-     */
-    shaderVars(): string {
-        return this.shader;
-    }
-
-    /**
-     * Get binding IDs. (order might not match what's given to constructor)
-     * @returns Binding IDs of uniform variables.
-     */
-    bindingIds(): number[] {
-        return Object.values(this.bindings).map(({ bindingId }) => bindingId);
-    }
-
-    /**
-     * Check runtime inputs can be handled correctly by this pipeline uniform definition.
-     * @param vars Uniform variable values
-     * @throws If any input is invalid.
-     */
-    checkInput(vars: UniformVariables): void {
-        const unknownVars = new Set(Object.keys(vars)).difference(new Set(Object.keys(this.bindings)));
-        if (unknownVars.size > 0) {
-            console.warn("Unknown uniform value provided: ", unknownVars);
-        }
-        for (const [varName, { type }] of Object.entries(this.bindings)) {
-            if (vars[varName] === undefined) {
-                throw new Error(`Required uniform variable "${varName}" not provided`);
-            }
-            const val = vars[varName];
-            switch (type) {
-                case "vec4f":
-                case "vec4u":
-                    if (this.extractArrayLikeOrVector(4, val) === null) {
-                        throw new Error(`Uniform variable "${varName}: ${type}" must be a Vector4 or array of 4 numbers`);
-                    }
-                    break;
-                case "vec3f":
-                case "vec3u":
-                    if (this.extractArrayLikeOrVector(3, val) === null) {
-                        throw new Error(`Uniform variable "${varName}: ${type}" must be a Vector3 or array of 3 numbers`);
-                    }
-                    break;
-                case "f32":
-                case "u32":
-                    if (typeof val !== "number") {
-                        throw new Error(`Uniform variable "${varName}: ${type}" must be a number`);
-                    }
-                    break;
-                default:
-                    throw new Error(`Unsupported uniform variable type: ${type}`);
-            }
-        }
-    }
-
-    /**
-     * Extract numbers from an array-like or vector with expectedLen elements.
-     * If invalid, return null. Doesn't return partial results.
-     * 
-     * @returns Array of numbers or null if invalid.
-     */
-    extractArrayLikeOrVector(expectedLen: number, val: number[] | Vector3 | Vector4 | any): number[] | null {
-        // Check for Vector3/Vector4 instances first
-        if (val instanceof Vector3 && expectedLen === 3) {
-            return [val.x, val.y, val.z];
-        }
-        if (val instanceof Vector4 && expectedLen === 4) {
-            return [val.x, val.y, val.z, val.w];
-        }
-
-        // Handle arrays
-        if (Array.isArray(val) && val.length === expectedLen) {
-            // Check all elements are numbers
-            for (let i = 0; i < expectedLen; i++) {
-                if (typeof val[i] !== "number") {
-                    return null;
-                }
-            }
-            return val as number[];
-        }
-
-        // Invalid for vector/array types
-        return null;
-    }
-
-    /**
-     * Return uniform buffers by setting given values.
-     * Caller can also call {@link checkInput} first, to check for input errors before any other GPU processing.
-     * Caller MUST NOT destroy buffer, as it uses shared internal buffer.
-     * As createBuffers relies on {@link GPUQueue.writeBuffer} to copy data to GPU,
-     * so if caller is using multiple dispatches in a single {@link GPUCommandEncoder},
-     * it must provide unique uniBufIx for each dispatch.
-     * 
-     * @example
-     * // Bad Example
-     * const cme = device.createCommandEncoder();
-     * const bind1 = pipeline.createBuffers(kernels, vars1);
-     * cme.dispatch(..., bind1); // this dispatch will see vars2, not vars1.
-     * const bind2 = pipeline.createBuffers(kernels, vars2);
-     * cme.dispatch(..., bind2);
-     * queue.submit([cme.finish()]);
-     * 
-     * // Bad Example, as seen by GPU
-     * const bind1 = pipeline.createBuffers(kernels, vars1);
-     * const bind2 = pipeline.createBuffers(kernels, vars2);
-     * const cme = device.createCommandEncoder();
-     * cme.dispatch(..., bind1);
-     * cme.dispatch(..., bind2);
-     * queue.submit([cme.finish()]);
-     * 
-     * // Good Example
-     * const cme = device.createCommandEncoder();
-     * const bind1 = pipeline.createBuffers(kernels, vars1, 0);
-     * cme.dispatch(..., bind1);
-     * const bind2 = pipeline.createBuffers(kernels, vars2, 1);
-     * cme.dispatch(..., bind2);
-     * queue.submit([cme.finish()]);
-     * 
-     * @param vars Uniform variable values
-     * @param uniBufIx Index of the uniform buffer to use. (Needed when doing multiple dispatches in single CommandBuffer)
-     * @throws If any input is invalid.
-     * @returns Array of [bindingId, buffer, offset, size]
-     */
-    getUniformBufs(kernels: GpuKernels, vars: UniformVariables, uniBufIx: number = 0): [number, GPUBuffer | null, number, number][] {
-        const maxNumUniBuf = 10;
-        const maxNumVars = 16;
-        const entrySize = Math.max(16, kernels.device.limits.minUniformBufferOffsetAlignment);
-        if (!kernels.sharedUniBuffer) {
-            kernels.sharedUniBuffer = [];
-            for (let i = 0; i < maxNumUniBuf; i++) {
-                kernels.sharedUniBuffer.push(kernels.createUniformBufferNonMapped(entrySize * maxNumVars));
-            }
-        }
-
-        this.checkInput(vars);
-
-        if (Object.entries(this.bindings).length > maxNumVars) {
-            throw new Error("Too many uniform variables");
-        }
-        if (uniBufIx >= maxNumUniBuf) {
-            throw new Error("Too many uniform buffers at the same time");
-        }
-
-        const binds = [] as [number, GPUBuffer | null, number, number][];
-        const uniBuf = kernels.sharedUniBuffer[uniBufIx];
-        // Writing everything to CPU and then single writeBuffer() is faster than multiple writeBuffer() calls,
-        // despite bigger total copy size.
-        const cpuBuf = new ArrayBuffer(entrySize * Object.entries(this.bindings).length);
-        let ix = 0;
-        for (const [varName, binding] of Object.entries(this.bindings)) {
-            const { bindingId, type } = binding;
-            const val = vars[varName];
-            const entryOffset = entrySize * ix;
-
-            if (type === "vec4f") {
-                const nums = this.extractArrayLikeOrVector(4, val);
-                if (nums === null) throw new Error(`Invalid vec4f value for ${varName}`);
-                new Float32Array(cpuBuf, entryOffset, 4).set(nums);
-            } else if (type === "vec3f") {
-                const nums = this.extractArrayLikeOrVector(3, val);
-                if (nums === null) throw new Error(`Invalid vec3f value for ${varName}`);
-                new Float32Array(cpuBuf, entryOffset, 3).set(nums);
-            } else if (type === "vec4u") {
-                const nums = this.extractArrayLikeOrVector(4, val);
-                if (nums === null) throw new Error(`Invalid vec4u value for ${varName}`);
-                new Uint32Array(cpuBuf, entryOffset, 4).set(nums);
-            } else if (type === "vec3u") {
-                const nums = this.extractArrayLikeOrVector(3, val);
-                if (nums === null) throw new Error(`Invalid vec3u value for ${varName}`);
-                new Uint32Array(cpuBuf, entryOffset, 3).set(nums);
-            } else if (type === "f32") {
-                new Float32Array(cpuBuf, entryOffset, 1).set([val as number]);
-            } else if (type === "u32") {
-                new Uint32Array(cpuBuf, entryOffset, 1).set([val as number]);
-            }
-            binds.push([bindingId, null, entryOffset, entrySize]);
-            ix++;
-        }
-        kernels.device.queue.writeBuffer(uniBuf, 0, cpuBuf, 0, cpuBuf.byteLength);
-        for (const bind of binds) {
-            bind[1] = uniBuf;
-        }
-        return binds;
-    }
-}
-
 
 /**
  * GPU utilities.
@@ -551,6 +216,22 @@ export class GpuKernels {
 
 
         this.#initGridUtils();
+    }
+
+    /**
+     * Get or create shared uniform buffer pool for the PipelineUniformDef.getUniformBufs method
+     */
+    #getSharedUniBuffer(): GPUBuffer[] {
+        const maxNumUniBuf = 10;
+        const maxNumVars = 16;
+        const entrySize = Math.max(16, this.device.limits.minUniformBufferOffsetAlignment);
+        if (!this.sharedUniBuffer) {
+            this.sharedUniBuffer = [];
+            for (let i = 0; i < maxNumUniBuf; i++) {
+                this.sharedUniBuffer.push(this.createUniformBufferNonMapped(entrySize * maxNumVars));
+            }
+        }
+        return this.sharedUniBuffer;
     }
 
 
@@ -631,8 +312,8 @@ export class GpuKernels {
         if (this.mapPipelines[name]) {
             throw new Error(`Map fn "${name}" already registered`);
         }
-        GpuKernels.checkAllowedType(inType);
-        GpuKernels.checkAllowedType(outType);
+        checkAllowedType(inType);
+        checkAllowedType(outType);
 
         const storageDef = new PipelineStorageDef({ vs_in: inType, vs_out: outType });
 
@@ -690,9 +371,9 @@ export class GpuKernels {
         if (this.map2Pipelines[name]) {
             throw new Error(`Map2 fn "${name}" already registered`);
         }
-        GpuKernels.checkAllowedType(inType1);
-        GpuKernels.checkAllowedType(inType2);
-        GpuKernels.checkAllowedType(outType);
+        checkAllowedType(inType1);
+        checkAllowedType(inType2);
+        checkAllowedType(outType);
 
         const storageDef = new PipelineStorageDef({ vs_in1: inType1, vs_in2: inType2, vs_out: outType });
 
@@ -752,7 +433,7 @@ export class GpuKernels {
         if (this.reducePipelines[name]) {
             throw new Error(`Reduce fn "${name}" already registered`);
         }
-        GpuKernels.checkAllowedType(valType);
+        checkAllowedType(valType);
         /*
         if (valType !== "u32" && valType !== "f32") {
             throw new Error(`Reduce fn "${name}": valType must be "u32" or "f32"`);
@@ -875,7 +556,7 @@ export class GpuKernels {
         pipeline.storageDef.checkInput({ vs_in: inVg }, true);
 
         const valType = this.reducePipelines[fnName].storageDef.bindings["vs_in"].elemType; // A bit of hack.
-        const valSize = GpuKernels.sizeOfType(valType);
+        const valSize = sizeOfType(valType);
 
         // Dispatch like the following to minimize copy.
         // inVg -(reduce)-> buf0 -(reduce)-> buf1 -(reduce)-> buf0 -> ...
@@ -928,7 +609,7 @@ export class GpuKernels {
      */
     async reduce(fnName: string, inVg: VoxelGridGpu): Promise<number | Uint32Array> {
         const valType = this.reducePipelines[fnName].storageDef.bindings["vs_in"].elemType; // A bit of hack.
-        const valSize = GpuKernels.sizeOfType(valType);
+        const valSize = sizeOfType(valType);
 
         const resultBuf = this.createBuffer(valSize);
         const readBuf = this.createBufferForCpuRead(valSize);
@@ -1147,11 +828,11 @@ export class GpuKernels {
      * @param uniBufIx Index of begin of uniform buffer bindings.
      */
     #dispatchKernel(
-        commandEncoder: GPUCommandEncoder, 
-        pipeline: Pipeline, 
-        numThreads: number, 
-        storages: { [key: string]: GPUBuffer | VoxelGridGpu }, 
-        uniforms: { [key: string]: any }, 
+        commandEncoder: GPUCommandEncoder,
+        pipeline: Pipeline,
+        numThreads: number,
+        storages: { [key: string]: GPUBuffer | VoxelGridGpu },
+        uniforms: { [key: string]: any },
         uniBufIx: number = 0
     ): void {
         const { pipeline: gpuPipeline, storageDef, uniformDef } = pipeline;
@@ -1160,7 +841,7 @@ export class GpuKernels {
         for (const [bindingId, buffer] of storageDef.getBinds(storages)) {
             entries.push({ binding: bindingId, resource: { buffer } });
         }
-        for (const [bindingId, buffer, offset, size] of uniformDef.getUniformBufs(this, uniforms, uniBufIx)) {
+        for (const [bindingId, buffer, offset, size] of uniformDef.getUniformBufs(this.device, () => this.#getSharedUniBuffer(), uniforms, uniBufIx)) {
             entries.push({ binding: bindingId, resource: { buffer, offset, size } });
         }
 
@@ -1302,7 +983,7 @@ export class GpuKernels {
      * @param prefix Prefix that matches what's given to {@link #gridUniformDefs} and {@link #gridFns}.
      */
     #gridUniformVars(
-        grid: VoxelGridGpu | {numX: number, numY: number, numZ: number, ofs: Vector3, res: number}, 
+        grid: VoxelGridGpu | { numX: number, numY: number, numZ: number, ofs: Vector3, res: number },
         prefix: string = ""
     ): { [key: string]: number[] | Vector4 } {
         return {
@@ -1315,7 +996,7 @@ export class GpuKernels {
      * Create new GPU-backed VoxelGrid, keeping shape of buf and optionally changing type.
      */
     createLike(
-        vg: VoxelGridGpu | VoxelGridCpu, 
+        vg: VoxelGridGpu | VoxelGridCpu,
         type: "u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>" | null = null
     ): VoxelGridGpu {
         return new VoxelGridGpu(this, vg.res, vg.numX, vg.numY, vg.numZ, vg.ofs, type ?? vg.type);
