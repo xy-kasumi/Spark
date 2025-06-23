@@ -6,6 +6,7 @@
  * See https://iquilezles.org/articles/distfunctions/ for nice introduction to SDF.
  */
 import { Vector3, Vector4 } from 'three';
+
 import { Shape, createBoxShape, createCylinderShape, createELHShape, createSdf, VoxelGridCpu, VoxelGrid } from './cpu-geom.js';
 import { UniformVariables, Pipeline, PipelineStorageDef, PipelineUniformDef, AllowedGpuType, sizeOfType } from './gpu-base.js';
 

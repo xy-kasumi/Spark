@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 夕月霞
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /**
- * ui-base provides {@link ModuleFramework} class & {@link Module} interface,
+ * framework provides {@link ModuleFramework} class & {@link Module} interface,
  * which is a UI framework that provides a single 3D view and lil-gui.
  */
 import * as THREE from 'three';
@@ -12,6 +12,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from '../vendor/n8ao/N8AO.js';
+
 import { debug } from './debug.js';
 
 /**

@@ -3,8 +3,9 @@
 /**
  * Triangle mesh rasterization into voxel grid.
  */
-import { VoxelGridCpu } from './cpu-geom.js';
 import { Vector2, Vector3 } from 'three';
+
+import { VoxelGridCpu } from './cpu-geom.js';
 
 /**
  * Voxelize a surface. Sets 255 for fully occupied, 128 for partially occupied, 0 for empty.
