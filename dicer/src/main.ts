@@ -793,9 +793,11 @@ class PartialPath {
 }
 
 /**
- * Interface for modules that can be registered with ModuleFramework
+ * Interface for modules that can be registered with ModuleFramework.
+ * Modules must call {@link ModuleFramework.registerModule} at the end of the constructor.
  */
 interface Module {
+    addGui(gui: any): void;
     animateHook?(): void;
 }
 
@@ -880,12 +882,15 @@ class ModulePlanner implements Module {
             this.kernels = new GpuKernels(await adapter.requestDevice());
             initCreateDeviationVis(this.kernels);
         })();
+
+        this.framework.registerModule(this);
     }
 
     /**
-     * @param gui lilgui instance
+     * Add planner-specific GUI controls
+     * @param gui GUI instance to add controls to
      */
-    guiHook(gui: any) {
+    addGui(gui: any) {
         gui.add(this, "resMm", [0.01, 0.05, 0.1, 0.2, 0.5]);
 
         gui.add(this, "genAllSweeps");
@@ -1626,6 +1631,7 @@ class ModuleFramework {
 
     // Module registry
     private modules: Array<Module> = [];
+    private gui: any;
 
     constructor() {
         // Initialize basis
@@ -1671,6 +1677,18 @@ class ModuleFramework {
         this.renderDistFallOff = 1.0;
         this.renderAoItensity = 5;
         this.renderAoScreenRadius = false;
+
+        // Initialize GUI
+        this.gui = new GUI();
+        
+        // Add framework-specific debug controls
+        this.gui.add(this, "vlogDebugEnable").onChange(v => {
+            debug.log = v;
+        });
+        this.gui.add(this, "vlogDebugShow").onChange(v => {
+            this.updateVis("vlog-debug", this.vlogDebugs, v);
+        });
+        this.gui.add(this, "clearVlogDebug");
     }
 
     init() {
@@ -1737,10 +1755,15 @@ class ModuleFramework {
     }
 
     /**
-     * Register a module that has animateHook method
+     * Register a module and set up its GUI
      */
     registerModule(module: Module) {
         this.modules.push(module);
+        
+        // Call addGui if the module implements it
+        if (module.addGui) {
+            module.addGui(this.gui);
+        }
     }
 
     /**
@@ -1806,7 +1829,7 @@ class ModuleFramework {
  * Core "module" - contains all UIs other than debug things.
  * Owns model config and G-code logic.
  */
-class ModuleMain {
+class ModuleMain implements Module {
     framework: ModuleFramework;
     
     // Model data
@@ -1848,13 +1871,44 @@ class ModuleMain {
         this.showTargetMesh = true;
         this.framework.updateVis("stock", [generateStockGeom(this.stockDiameter / 2, this.stockLength)], this.showStockMesh);
 
-        // Register planner module with framework
-        this.framework.registerModule(this.modPlanner);
-        this.initGui();
+        this.framework.registerModule(this);
     }
 
     #updateStockVis() {
         this.framework.updateVis("stock", [generateStockGeom(this.stockDiameter / 2, this.stockLength)], this.showStockMesh);
+    }
+
+    /**
+     * Add main module GUI controls
+     * @param gui GUI instance to add controls to
+     */
+    addGui(gui: any) {
+        gui.add(this, 'model', this.models).onChange((model) => {
+            this.framework.updateVis("targ-vg", []);
+            this.framework.updateVis("work-vg", []);
+            this.framework.updateVis("misc", []);
+            this.loadStl(model);
+        });
+        gui.add(this, "stockDiameter", 1, 30, 0.1).onChange(_ => {
+            this.#updateStockVis();
+            this.modPlanner.initPlan(this.targetSurf, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+        });
+        gui.add(this, "stockLength", 1, 30, 0.1).onChange(_ => {
+            this.baseZ = this.stockLength - this.aboveWorkSize;
+            this.#updateStockVis();
+            this.modPlanner.initPlan(this.targetSurf, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+        });
+        gui.add(this, "showStockMesh").onChange(v => {
+            this.framework.setVisVisibility("stock", v);
+        }).listen();
+        gui.add(this, "showTargetMesh").onChange(v => {
+            this.framework.setVisVisibility("target", v);
+        }).listen();
+
+        gui.add(this, "copyGcode");
+        gui.add(this, "sendGcodeToSim");
+
+        this.loadStl(this.model);
     }
 
     /**
@@ -1990,44 +2044,6 @@ class ModuleMain {
         return lines.join("\n");
     }
 
-    initGui() {
-        const gui = new GUI();
-        gui.add(this, 'model', this.models).onChange((model) => {
-            this.framework.updateVis("targ-vg", []);
-            this.framework.updateVis("work-vg", []);
-            this.framework.updateVis("misc", []);
-            this.loadStl(model);
-        });
-        gui.add(this, "stockDiameter", 1, 30, 0.1).onChange(_ => {
-            this.#updateStockVis();
-            this.modPlanner.initPlan(this.targetSurf, this.baseZ, this.aboveWorkSize, this.stockDiameter);
-        });
-        gui.add(this, "stockLength", 1, 30, 0.1).onChange(_ => {
-            this.baseZ = this.stockLength - this.aboveWorkSize;
-            this.#updateStockVis();
-            this.modPlanner.initPlan(this.targetSurf, this.baseZ, this.aboveWorkSize, this.stockDiameter);
-        });
-        gui.add(this, "showStockMesh").onChange(v => {
-            this.framework.setVisVisibility("stock", v);
-        }).listen();
-        gui.add(this, "showTargetMesh").onChange(v => {
-            this.framework.setVisVisibility("target", v);
-        }).listen();
-
-        gui.add(this.framework, "vlogDebugEnable").onChange(v => {
-            debug.log = v;
-        });
-        gui.add(this.framework, "vlogDebugShow").onChange(v => {
-            this.framework.updateVis("vlog-debug", this.framework.vlogDebugs, v);
-        });
-        gui.add(this.framework, "clearVlogDebug");
-        this.modPlanner.guiHook(gui);
-
-        gui.add(this, "copyGcode");
-        gui.add(this, "sendGcodeToSim");
-
-        this.loadStl(this.model);
-    }
 }
 
 
