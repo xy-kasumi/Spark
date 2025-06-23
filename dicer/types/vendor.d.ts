@@ -10,7 +10,14 @@ declare module 'three' {
     constructor(x?: number, y?: number, z?: number);
     [key: string]: any; // Allow any methods
   }
-  export const Vector4: any;
+  export class Vector4 {
+    x: number;
+    y: number;
+    z: number;
+    w: number;
+    constructor(x?: number, y?: number, z?: number, w?: number);
+    [key: string]: any; // Allow any methods
+  }
   export const Color: any;
   export const Matrix4: any;
   export const BufferGeometry: any;

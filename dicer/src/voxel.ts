@@ -34,6 +34,22 @@ interface BoxShape {
 
 type Shape = CylinderShape | ELHShape | BoxShape;
 
+// WebGPU type definitions
+type UniformVariables = { [key: string]: number | number[] | Vector3 | Vector4 | boolean };
+
+interface Pipeline {
+    pipeline: GPUComputePipeline;
+    storageDef: PipelineStorageDef;
+    uniformDef: PipelineUniformDef;
+}
+
+interface PerformanceMetrics {
+    time_ms_accum: number;
+    time_ms_min: number;
+    time_ms_max: number;
+    n: number;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // CPU code
 // These are written with simplicity & flexibility, to serve as test reference
@@ -695,7 +711,7 @@ class PipelineUniformDef {
      * @param vars {varName: value}
      * @throws If any input is invalid.
      */
-    checkInput(vars: { [key: string]: any }): void {
+    checkInput(vars: UniformVariables): void {
         const unknownVars = new Set(Object.keys(vars)).difference(new Set(Object.keys(this.bindings)));
         if (unknownVars.size > 0) {
             console.warn("Unknown uniform value provided: ", unknownVars);
@@ -738,23 +754,27 @@ class PipelineUniformDef {
      * @param val 
      * @returns Array of numbers or null if invalid.
      */
-    extractArrayLikeOrVector(expectedLen: number, val: any): number[] | null {
-        if (val.length === expectedLen) {
-            const nums = [];
+    extractArrayLikeOrVector(expectedLen: number, val: number[] | Vector3 | Vector4 | any): number[] | null {
+        // Check for Vector3/Vector4 instances first
+        if (val instanceof Vector3 && expectedLen === 3) {
+            return [val.x, val.y, val.z];
+        }
+        if (val instanceof Vector4 && expectedLen === 4) {
+            return [val.x, val.y, val.z, val.w];
+        }
+
+        // Handle arrays
+        if (Array.isArray(val) && val.length === expectedLen) {
+            // Check all elements are numbers
             for (let i = 0; i < expectedLen; i++) {
                 if (typeof val[i] !== "number") {
                     return null;
                 }
-                nums.push(val[i]);
             }
-            return nums;
+            return val as number[];
         }
-        if (expectedLen === 3 && val instanceof Vector3) {
-            return [val.x, val.y, val.z];
-        }
-        if (expectedLen === 4 && val instanceof Vector4) {
-            return [val.x, val.y, val.z, val.w];
-        }
+
+        // Invalid for vector/array types
         return null;
     }
 
@@ -797,7 +817,7 @@ class PipelineUniformDef {
      * @throws If any input is invalid.
      * @returns Array of [bindingId, buffer, offset, size]
      */
-    getUniformBufs(kernels: GpuKernels, vars: { [key: string]: any }, uniBufIx: number = 0): [number, GPUBuffer | null, number, number][] {
+    getUniformBufs(kernels: GpuKernels, vars: UniformVariables, uniBufIx: number = 0): [number, GPUBuffer | null, number, number][] {
         const maxNumUniBuf = 10;
         const maxNumVars = 16;
         const entrySize = Math.max(16, kernels.device.limits.minUniformBufferOffsetAlignment);
@@ -831,20 +851,24 @@ class PipelineUniformDef {
 
             if (type === "vec4f") {
                 const nums = this.extractArrayLikeOrVector(4, val);
+                if (nums === null) throw new Error(`Invalid vec4f value for ${varName}`);
                 new Float32Array(cpuBuf, entryOffset, 4).set(nums);
             } else if (type === "vec3f") {
                 const nums = this.extractArrayLikeOrVector(3, val);
+                if (nums === null) throw new Error(`Invalid vec3f value for ${varName}`);
                 new Float32Array(cpuBuf, entryOffset, 3).set(nums);
             } else if (type === "vec4u") {
                 const nums = this.extractArrayLikeOrVector(4, val);
+                if (nums === null) throw new Error(`Invalid vec4u value for ${varName}`);
                 new Uint32Array(cpuBuf, entryOffset, 4).set(nums);
             } else if (type === "vec3u") {
                 const nums = this.extractArrayLikeOrVector(3, val);
+                if (nums === null) throw new Error(`Invalid vec3u value for ${varName}`);
                 new Uint32Array(cpuBuf, entryOffset, 3).set(nums);
             } else if (type === "f32") {
-                new Float32Array(cpuBuf, entryOffset, 1).set([val]);
+                new Float32Array(cpuBuf, entryOffset, 1).set([val as number]);
             } else if (type === "u32") {
-                new Uint32Array(cpuBuf, entryOffset, 1).set([val]);
+                new Uint32Array(cpuBuf, entryOffset, 1).set([val as number]);
             }
             binds.push([bindingId, null, entryOffset, entrySize]);
             ix++;
@@ -865,20 +889,20 @@ class PipelineUniformDef {
  * - 3D voxel part: 1D array part + 3D geometry utils.
  */
 export class GpuKernels {
-    device: any;
-    sharedUniBuffer: any[] | null;
+    device: GPUDevice;
+    sharedUniBuffer: GPUBuffer[] | null;
     wgSize: number;
-    mapPipelines: { [key: string]: any };
-    map2Pipelines: { [key: string]: any };
-    reducePipelines: { [key: string]: any };
-    perf: { [key: string]: any };
+    mapPipelines: { [key: string]: Pipeline };
+    map2Pipelines: { [key: string]: Pipeline };
+    reducePipelines: { [key: string]: Pipeline };
+    perf: { [key: string]: PerformanceMetrics };
     invalidValue: number;
-    jumpFloodPipeline: any;
-    shapeQueryPipeline: any;
-    connRegSweepPipeline: any;
-    packPipeline: any;
-    tempBufsCache: { [key: string]: any[] };
-    countInShapeCache: any;
+    jumpFloodPipeline: Pipeline;
+    shapeQueryPipeline: Pipeline;
+    connRegSweepPipeline: Pipeline;
+    packPipeline: Pipeline;
+    tempBufsCache: { [key: string]: GPUBuffer[] };
+    countInShapeCache: { [key: string]: VoxelGridGpu } | null;
 
     /**
      * Wrapped GPUComputePipeline object with variable definitions.
@@ -953,10 +977,10 @@ export class GpuKernels {
         if (inBuf === outBuf) {
             return;
         }
-        const inIsCpu = inBuf instanceof ArrayBuffer;
-        const outIsCpu = outBuf instanceof ArrayBuffer;
-        const inSize = inIsCpu ? inBuf.byteLength : inBuf.size;
-        const outSize = outIsCpu ? outBuf.byteLength : outBuf.size;
+
+        const inSize = inBuf instanceof ArrayBuffer ? inBuf.byteLength : inBuf.size;
+        const outSize = outBuf instanceof ArrayBuffer ? outBuf.byteLength : outBuf.size;
+
         if (copySize === null) {
             if (inSize !== outSize) {
                 throw new Error(`Buffer size mismatch: ${inSize} !== ${outSize}`);
@@ -966,13 +990,13 @@ export class GpuKernels {
             throw new Error(`Buffer is smaller than copySize: ${inSize} < ${copySize} || ${outSize} < ${copySize}`);
         }
 
-        if (inIsCpu && outIsCpu) {
+        if (inBuf instanceof ArrayBuffer && outBuf instanceof ArrayBuffer) {
             // CPU->CPU: just clone
             new Uint8Array(outBuf, 0, copySize).set(new Uint8Array(inBuf, 0, copySize));
-        } else if (inIsCpu && !outIsCpu) {
+        } else if (inBuf instanceof ArrayBuffer && outBuf instanceof GPUBuffer) {
             // CPU->GPU: direct API.
             this.device.queue.writeBuffer(outBuf, 0, inBuf, 0, copySize);
-        } else if (!inIsCpu && outIsCpu) {
+        } else if (inBuf instanceof GPUBuffer && outBuf instanceof ArrayBuffer) {
             // GPU->CPU: via cpu-read buffer
             const tempBuf = this.createBufferForCpuRead(copySize);
             const commandEncoder = this.device.createCommandEncoder();
@@ -983,11 +1007,13 @@ export class GpuKernels {
             new Uint8Array(outBuf, 0, copySize).set(new Uint8Array(tempBuf.getMappedRange(0, copySize)));
             tempBuf.unmap();
             tempBuf.destroy();
-        } else {
+        } else if (inBuf instanceof GPUBuffer && outBuf instanceof GPUBuffer) {
             // GPU->GPU: direct copy
             const commandEncoder = this.device.createCommandEncoder();
             commandEncoder.copyBufferToBuffer(inBuf, 0, outBuf, 0, copySize);
             this.device.queue.submit([commandEncoder.finish()]);
+        } else {
+            throw new Error("Unreachable: invalid buffer type combination");
         }
     }
 
@@ -1193,7 +1219,7 @@ export class GpuKernels {
      * @param outVg
      * @param uniforms Uniform variable values.
      */
-    map(fnName: string, inVg: VoxelGridGpu, outVg: VoxelGridGpu, uniforms: { [key: string]: any } = {}) {
+    map(fnName: string, inVg: VoxelGridGpu, outVg: VoxelGridGpu, uniforms: UniformVariables = {}) {
         const pipeline = this.mapPipelines[fnName];
         if (!pipeline) {
             throw new Error(`Map fn "${fnName}" not registered`);
@@ -1222,7 +1248,7 @@ export class GpuKernels {
      * @param outVg 
      * @param uniforms Uniform variable values.
      */
-    map2(fnName: string, inVg1: VoxelGridGpu, inVg2: VoxelGridGpu, outVg: VoxelGridGpu, uniforms: { [key: string]: any } = {}) {
+    map2(fnName: string, inVg1: VoxelGridGpu, inVg2: VoxelGridGpu, outVg: VoxelGridGpu, uniforms: UniformVariables = {}) {
         const pipeline = this.map2Pipelines[fnName];
         if (!pipeline) {
             throw new Error(`Map2 fn "${fnName}" not registered`);
@@ -1507,7 +1533,7 @@ export class GpuKernels {
      * @param shaderCode WGSL code
      * @returns Created, wrapped pipeline
      */
-    #createPipeline(entryPoint: string, storageDef: PipelineStorageDef, uniformDef: PipelineUniformDef, shaderCode: string): any {
+    #createPipeline(entryPoint: string, storageDef: PipelineStorageDef, uniformDef: PipelineUniformDef, shaderCode: string): Pipeline {
         const shaderModule = this.device.createShaderModule({ code: shaderCode, label: entryPoint });
 
         const bindEntries = [];
@@ -1690,7 +1716,7 @@ export class GpuKernels {
 
     /**
      * Gets runtime uniform variables for {@link #gridUniformDefs}.
-     * @param {VoxelGridGpu | {numX: number, numY: number, numZ: number, ofs: any, res: number}} grid
+     * @param {VoxelGridGpu | {numX: number, numY: number, numZ: number, ofs: Vector3, res: number}} grid
      * @param {string} prefix Prefix that matches what's given to {@link #gridUniformDefs} and {@link #gridFns}.
      * @returns {Object} Runtime uniform variables.
      */
@@ -1942,7 +1968,7 @@ export class GpuKernels {
      * @returns 
      * @async
      */
-    async boundOfAxis(dir: string, inVg: VoxelGridGpu, boundary: "in" | "out" | "nearest"): Promise<{min: number, max: number}> {
+    async boundOfAxis(dir: Vector3, inVg: VoxelGridGpu, boundary: "in" | "out" | "nearest"): Promise<{ min: number, max: number }> {
         const projs = this.createLike(inVg, "f32");
         this.map("project_to_dir", inVg, projs, { dir });
         const min = (await this.reduce("min_ignore_invalid", projs)) as number;
@@ -2184,7 +2210,7 @@ export class GpuKernels {
      * @param vgs Additional grids to check compatibility with
      * @returns Common grid parameters
      */
-    #checkGridCompat(vg1: VoxelGridGpu | VoxelGridCpu, ...vgs: (VoxelGridGpu | VoxelGridCpu)[]): {res: number, numX: number, numY: number, numZ: number, ofs: Vector3} {
+    #checkGridCompat(vg1: VoxelGridGpu | VoxelGridCpu, ...vgs: (VoxelGridGpu | VoxelGridCpu)[]): { res: number, numX: number, numY: number, numZ: number, ofs: Vector3 } {
         for (const grid2 of vgs) {
             if (vg1.numX !== grid2.numX || vg1.numY !== grid2.numY || vg1.numZ !== grid2.numZ) {
                 throw new Error(`Grid size mismatch: ${vg1.numX}x${vg1.numY}x${vg1.numZ} vs ${grid2.numX}x${grid2.numY}x${grid2.numZ}`);
