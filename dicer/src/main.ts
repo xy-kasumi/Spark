@@ -792,7 +792,12 @@ class PartialPath {
     }
 }
 
-
+/**
+ * Interface for modules that can be registered with ModuleFramework
+ */
+interface Module {
+    animateHook?(): void;
+}
 
 /**
  * Planner class for generating tool paths.
@@ -800,9 +805,8 @@ class PartialPath {
  * This class is not pure function. It's a "module" with UIs and depends on debug stuff.
  * Thus, planner instance should be kept, even when re-running planner from scratch.
  */
-class ModulePlanner {
-    updateVis: Function;
-    setVisVisibility: Function;
+class ModulePlanner implements Module {
+    framework: ModuleFramework;
     machineConfig: any;
     ewrMax: number;
     stockDiameter: number;
@@ -833,12 +837,10 @@ class ModulePlanner {
     stockSurf: any;
 
     /**
-     * @param updateVis - Function to update visualizations
-     * @param setVisVisibility - Function to set visualization visibility
+     * @param framework - ModuleFramework instance for visualization management
      */
-    constructor(updateVis: Function, setVisVisibility: Function) {
-        this.updateVis = updateVis;
-        this.setVisVisibility = setVisVisibility;
+    constructor(framework: ModuleFramework) {
+        this.framework = framework;
 
         this.machineConfig = sparkWg1Config; // in future, there will be multiple options.
 
@@ -896,19 +898,19 @@ class ModulePlanner {
         gui.add(this, "deviation").name("Deviation (mm)").decimals(3).disable().listen();
         gui.add(this, "toolIx").disable().listen();
         gui.add(this, "showTarget")
-            .onChange(_ => this.setVisVisibility("targ-vg", this.showTarget))
+            .onChange(_ => this.framework.setVisVisibility("targ-vg", this.showTarget))
             .listen();
         gui.add(this, "showWork")
-            .onChange(_ => this.setVisVisibility("work-vg", this.showWork))
+            .onChange(_ => this.framework.setVisVisibility("work-vg", this.showWork))
             .listen();
         gui.add(this, "showPlanPath")
-            .onChange(_ => this.setVisVisibility("plan-path-vg", this.showPlanPath))
+            .onChange(_ => this.framework.setVisVisibility("plan-path-vg", this.showPlanPath))
             .listen();
         this.highlightGui = gui.add(this, "highlightSweep", 0, 50, 1).onChange(_ => {
             if (!this.planPath) {
                 return;
             }
-            this.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath);
+            this.framework.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath);
         }).listen();
     }
 
@@ -931,7 +933,7 @@ class ModulePlanner {
 
     updateVisTransforms(tipPos, tipNormal, toolLength) {
         const tool = generateTool(toolLength, this.machineConfig.toolNaturalDiameter);
-        this.updateVis("tool", [tool], false);
+        this.framework.updateVis("tool", [tool], false);
 
         tool.position.copy(tipPos);
         tool.setRotationFromMatrix(createRotationWithZ(tipNormal));
@@ -1018,10 +1020,10 @@ class ModulePlanner {
 
         this.planPath = [];
         const workDev = this.trvg.extractWorkWithDeviation();
-        this.updateVis("work-vg", [await createDeviationVis(this.kernels, workDev)], this.showWork);
+        this.framework.updateVis("work-vg", [await createDeviationVis(this.kernels, workDev)], this.showWork);
         this.kernels.destroy(workDev);
-        this.updateVis("targ-vg", [createOccupancyVis(await this.trvg.extractTarget())], this.showTarget);
-        this.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
+        this.framework.updateVis("targ-vg", [createOccupancyVis(await this.trvg.extractTarget())], this.showTarget);
+        this.framework.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
 
 
         ////////////////////////////////////////
@@ -1071,11 +1073,11 @@ class ModulePlanner {
                     // update visualizations
                     const workDeviation = this.trvg.extractWorkWithDeviation(true);
                     this.deviation = (await getMaxDeviation(this.kernels, workDeviation)) as number;
-                    this.updateVis("work-vg", [await createDeviationVis(this.kernels, workDeviation, this.deviation)], this.showWork);
-                    this.updateVis("work-max-dev", [await createMaxDeviationVis(this.kernels, workDeviation, this.deviation)]);
+                    this.framework.updateVis("work-vg", [await createDeviationVis(this.kernels, workDeviation, this.deviation)], this.showWork);
+                    this.framework.updateVis("work-max-dev", [await createMaxDeviationVis(this.kernels, workDeviation, this.deviation)]);
                     this.kernels.destroy(workDeviation);
 
-                    this.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath, false);
+                    this.framework.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath);
                     const lastPt = this.planPath[this.planPath.length - 1];
                     this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
 
@@ -1622,8 +1624,8 @@ class ModuleFramework {
     renderAoItensity: number;
     renderAoScreenRadius: boolean;
 
-    // Module registry for animateHook
-    private modules: Array<{ animateHook?: () => void }> = [];
+    // Module registry
+    private modules: Array<Module> = [];
 
     constructor() {
         // Initialize basis
@@ -1737,10 +1739,8 @@ class ModuleFramework {
     /**
      * Register a module that has animateHook method
      */
-    registerModule(module: any) {
-        if (module && typeof module.animateHook === 'function') {
-            this.modules.push(module);
-        }
+    registerModule(module: Module) {
+        this.modules.push(module);
     }
 
     /**
@@ -1826,8 +1826,9 @@ class ModuleMain {
     // Planning module
     modPlanner: ModulePlanner;
 
-    constructor(framework: ModuleFramework) {
+    constructor(framework: ModuleFramework, modPlanner: ModulePlanner) {
         this.framework = framework;
+        this.modPlanner = modPlanner;
 
         // Setup data
         this.models = {
@@ -1847,8 +1848,7 @@ class ModuleMain {
         this.showTargetMesh = true;
         this.framework.updateVis("stock", [generateStockGeom(this.stockDiameter / 2, this.stockLength)], this.showStockMesh);
 
-        // Setup modules & GUI
-        this.modPlanner = new ModulePlanner((group, vs, visible = true) => this.framework.updateVis(group, vs, visible), (group, visible = true) => this.framework.setVisVisibility(group, visible));
+        // Register planner module with framework
         this.framework.registerModule(this.modPlanner);
         this.initGui();
     }
@@ -2030,37 +2030,11 @@ class ModuleMain {
     }
 }
 
-/**
- * Legacy View3D class - now just a wrapper around ModuleFramework and ModuleMain
- */
-class View3D {
-    framework: ModuleFramework;
-    moduleMain: ModuleMain;
-
-    constructor() {
-        this.framework = new ModuleFramework();
-        this.moduleMain = new ModuleMain(this.framework);
-    }
-
-    // Legacy compatibility methods - delegate to appropriate modules
-    get modPlanner() { return this.moduleMain.modPlanner; }
-    updateVis(group: string, vs: Array<THREE.Object3D>, visible: boolean = true) { return this.framework.updateVis(group, vs, visible); }
-    addVis(group: string, vs: Array<THREE.Object3D>, visible: boolean = true) { return this.framework.addVis(group, vs, visible); }
-    setVisVisibility(group: string, visible: boolean) { return this.framework.setVisVisibility(group, visible); }
-    clearVlogDebug() { return this.framework.clearVlogDebug(); }
-    onWindowResize() { return this.framework.onWindowResize(); }
-    animate() { return this.framework.animate(); }
-}
 
 (async () => {
     await loadFont();
-    
-    // Instantiate ModuleFramework
     const framework = new ModuleFramework();
     
-    // Then instantiate ModuleMain and "register" to ModuleFramework
-    const moduleMain = new ModuleMain(framework);
-    
-    // Could register a future ModulePlanner here:
-    // const modulePlanner = new ModulePlanner(framework);
+    const modulePlanner = new ModulePlanner(framework);
+    const moduleMain = new ModuleMain(framework, modulePlanner);
 })();
