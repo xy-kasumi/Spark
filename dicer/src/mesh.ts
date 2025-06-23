@@ -10,10 +10,10 @@ import { Vector2, Vector3 } from 'three';
  * Voxelize a surface. Sets 255 for fully occupied, 128 for partially occupied, 0 for empty.
  * To test partialness, check 8 vertices of each voxel instead of center.
  * 
- * @param {Float32Array} surf Array of float, triangle soup. [x0, y0, z0, x1, y1, z1, ...]
- * @param {VoxelGridCpu} vg [out] VoxelGrid-like object. Needs to implement ofs, res, numX, numY, numZ, set, count, volume
+ * @param surf Array of float, triangle soup. [x0, y0, z0, x1, y1, z1, ...]
+ * @param vg [out] VoxelGrid-like object. Needs to implement ofs, res, numX, numY, numZ, set, count, volume
  */
-export const diceSurf = (surf, vg) => {
+export const diceSurf = (surf: Float32Array, vg: any) => {
     // Grid whose voxel centers matches vg's voxel verticies.
     const vertVg = new VoxelGridCpu(vg.res, vg.numX + 1, vg.numY + 1, vg.numZ + 1, vg.ofs.clone().add(new Vector3(1, 1, 1).multiplyScalar(-0.5 * vg.res)));
     for (let iz = 0; iz < vertVg.numZ; iz++) {
@@ -54,11 +54,11 @@ export const diceSurf = (surf, vg) => {
 };
 
 /**
- * @param {Float32Array} surfTris Triangle soup [x0, y0, z0, x1, y1, z1, ...] (Must be CCW)
- * @param {number} sliceZ Z coordinate of slice plane
- * @returns {number[]} Contour edges (CCW)
+ * @param surfTris Triangle soup [x0, y0, z0, x1, y1, z1, ...] (Must be CCW)
+ * @param sliceZ Z coordinate of slice plane
+ * @returns Contour edges (CCW)
  */
-const sliceSurfByPlane = (surfTris, sliceZ) => {
+const sliceSurfByPlane = (surfTris: Float32Array, sliceZ: number): number[] => {
     const segs = [];
 
     const p0 = new Vector3();
@@ -119,11 +119,11 @@ const sliceSurfByPlane = (surfTris, sliceZ) => {
 /**
  * Slice contours in 2D plane by a line, to give a set of segments.
  * 
- * @param {number[]} contEdges [x0, y0, x1, y1, ...]
- * @param {number} sliceY Y coordinate of slice line
- * @returns {number[]} Segment set [x0, x1, x2, ...]
+ * @param contEdges [x0, y0, x1, y1, ...]
+ * @param sliceY Y coordinate of slice line
+ * @returns Segment set [x0, x1, x2, ...]
  */
-const sliceContourByLine = (contEdges, sliceY) => {
+const sliceContourByLine = (contEdges: number[], sliceY: number): number[] => {
     const temp0 = new Vector2();
     const temp1 = new Vector2();
     const temp2 = new Vector2();
@@ -186,11 +186,11 @@ const sliceContourByLine = (contEdges, sliceY) => {
 
 /**
  * Tests if a value is inside a segment set
- * @param {number} q Query point
- * @param {number[]} xs Segment set [x0, x1], [x2, x3], ... (x0 < x1 < x2 < x3 < ...) even number of elements
- * @returns {boolean} True if q is inside
+ * @param q Query point
+ * @param xs Segment set [x0, x1], [x2, x3], ... (x0 < x1 < x2 < x3 < ...) even number of elements
+ * @returns True if q is inside
  */
-const isValueInside = (q, xs) => {
+const isValueInside = (q: number, xs: number[]): boolean => {
     for (let i = 0; i < xs.length; i += 2) {
         const x0 = xs[i];
         const x1 = xs[i + 1];
@@ -206,13 +206,13 @@ const isValueInside = (q, xs) => {
 
 /**
  * Intersect 3D line segment with Z plane
- * @param {Vector3} p Start point
- * @param {Vector3} q End point
- * @param {number} z Z coordinate of plane
- * @param {Vector3} buf [out] Buffer for intersection point
- * @returns {Vector3} Intersection point
+ * @param p Start point
+ * @param q End point
+ * @param z Z coordinate of plane
+ * @param buf [out] Buffer for intersection point
+ * @returns Intersection point
  */
-const isectLine = (p, q, z, buf = new Vector3()) => {
+const isectLine = (p: Vector3, q: Vector3, z: number, buf = new Vector3()): Vector3 => {
     const d = q.z - p.z;
     const t = (d === 0) ? 0.5 : (z - p.z) / d;
     return buf.copy(p).lerp(q, t);
@@ -220,13 +220,13 @@ const isectLine = (p, q, z, buf = new Vector3()) => {
 
 /**
  * Intersect 2D line segment with Y line
- * @param {Vector2} p Start point
- * @param {Vector2} q End point
- * @param {number} y Y coordinate of line
- * @param {Vector2} buf [out] Buffer for intersection point
- * @returns {Vector2} Intersection point
+ * @param p Start point
+ * @param q End point
+ * @param y Y coordinate of line
+ * @param buf [out] Buffer for intersection point
+ * @returns Intersection point
  */
-const isectLine2 = (p, q, y, buf = new Vector2()) => {
+const isectLine2 = (p: Vector2, q: Vector2, y: number, buf = new Vector2()): Vector2 => {
     const d = q.y - p.y;
     const t = (d === 0) ? 0.5 : (y - p.y) / d;
     return buf.copy(p).lerp(q, t);

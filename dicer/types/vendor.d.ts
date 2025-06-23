@@ -2,7 +2,12 @@
 // Everything exports 'any' to avoid type checking third-party code
 
 declare module 'three' {
-  export const Vector2: any;
+  export class Vector2 {
+    x: number;
+    y: number;
+    constructor(x?: number, y?: number);
+    [key: string]: any; // Allow any methods
+  }
   export class Vector3 {
     x: number;
     y: number;
