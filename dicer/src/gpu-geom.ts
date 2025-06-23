@@ -390,8 +390,6 @@ class PipelineUniformDef {
      * Extract numbers from an array-like or vector with expectedLen elements.
      * If invalid, return null. Doesn't return partial results.
      * 
-     * @param expectedLen 
-     * @param val 
      * @returns Array of numbers or null if invalid.
      */
     extractArrayLikeOrVector(expectedLen: number, val: number[] | Vector3 | Vector4 | any): number[] | null {
@@ -451,7 +449,6 @@ class PipelineUniformDef {
      * cme.dispatch(..., bind2);
      * queue.submit([cme.finish()]);
      * 
-     * @param kernels 
      * @param vars Uniform variable values
      * @param uniBufIx Index of the uniform buffer to use. (Needed when doing multiple dispatches in single CommandBuffer)
      * @throws If any input is invalid.
@@ -562,8 +559,6 @@ export class GpuKernels {
      * Normally, size of inBuf and outBuf must match.
      * But if size is specified, size can differ as long as they're both same or larger than size.
      * 
-     * @param inBuf
-     * @param outBuf
      * @param copySize Size of data to copy.
      */
     async copyBuffer(inBuf: ArrayBuffer | GPUBuffer, outBuf: ArrayBuffer | GPUBuffer, copySize: number | null = null): Promise<void> {
