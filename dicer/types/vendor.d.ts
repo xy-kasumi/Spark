@@ -118,15 +118,3 @@ interface Set<T> {
 
 // lilgui global
 declare const lilgui: any;
-
-// QUnit global
-declare const QUnit: {
-  module(name: string, callback: () => void): void;
-  test(name: string, callback: (assert: QUnitAssert) => void | Promise<void>): void;
-};
-
-interface QUnitAssert {
-  equal(actual: any, expected: any, message?: string): void;
-  notEqual(actual: any, expected: any, message?: string): void;
-  closeTo(actual: number, expected: number, delta: number, message?: string): void;
-}
