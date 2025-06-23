@@ -23,11 +23,34 @@ declare module 'three' {
     constructor(x?: number, y?: number, z?: number, w?: number);
     [key: string]: any; // Allow any methods
   }
-  export const Color: any;
-  export const Matrix4: any;
-  export const BufferGeometry: any;
-  export const BufferAttribute: any;
-  export const Object3D: any;
+  export class Color {
+    constructor();
+    constructor(color: string | number | Color);
+    constructor(r: number, g: number, b: number);
+    [key: string]: any;
+  }
+  export class Matrix4 {
+    constructor();
+    constructor(
+      n11?: number, n12?: number, n13?: number, n14?: number,
+      n21?: number, n22?: number, n23?: number, n24?: number,
+      n31?: number, n32?: number, n33?: number, n34?: number,
+      n41?: number, n42?: number, n43?: number, n44?: number
+    );
+    [key: string]: any;
+  }
+  export class BufferGeometry {
+    constructor();
+    [key: string]: any;
+  }
+  export class BufferAttribute {
+    constructor(array: any, itemSize: number);
+    [key: string]: any;
+  }
+  export class Object3D {
+    constructor();
+    [key: string]: any;
+  }
   export const Scene: any;
   export const Camera: any;
   export const PerspectiveCamera: any;

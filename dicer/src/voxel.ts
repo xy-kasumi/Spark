@@ -32,7 +32,7 @@ interface BoxShape {
     halfVec2: Vector3;
 }
 
-type Shape = CylinderShape | ELHShape | BoxShape;
+export type Shape = CylinderShape | ELHShape | BoxShape;
 
 // WebGPU type definitions
 type UniformVariables = { [key: string]: number | number[] | Vector3 | Vector4 | boolean };

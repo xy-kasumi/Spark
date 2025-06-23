@@ -12,7 +12,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from '../vendor/n8ao/N8AO.js';
 import { diceSurf } from './mesh.js';
-import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, VoxelGridCpu, GpuKernels } from './voxel.js';
+import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, VoxelGridCpu, GpuKernels, Shape } from './voxel.js';
 import { Vector3 } from 'three';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -44,13 +44,13 @@ const axisColorB = new THREE.Color(0x1abc9c);
 const axisColorC = new THREE.Color(0x9b59b6);
 
 /**
- * @param {THREE.Vector3} p Start point
- * @param {THREE.Vector3} n Direction vector
- * @param {number} r Radius
- * @param {THREE.Color} col Color
+ * @param p Start point
+ * @param n Direction vector
+ * @param r Radius
+ * @param col Color
  * @returns {THREE.Mesh} Cylinder visualization mesh
  */
-const visCylinder = (p, n, r, col) => {
+const visCylinder = (p: THREE.Vector3, n: THREE.Vector3, r: number, col: THREE.Color | string) => {
     // Cylinder lies along Y axis, centered at origin.
     const geom = new THREE.CylinderGeometry(r, r, 30, 8);
     const mat = new THREE.MeshBasicMaterial({ color: col, wireframe: true });
@@ -67,11 +67,11 @@ const visCylinder = (p, n, r, col) => {
 /**
  * Quick visualization of a point.
  * 
- * @param {THREE.Vector3} p Location in work coords
- * @param {THREE.Color | string} col Color
+ * @param p Location in work coords
+ * @param col Color
  * @returns {THREE.Mesh} Sphere visualization mesh
  */
-const visDot = (p, col) => {
+const visDot = (p: THREE.Vector3, col: THREE.Color | string) => {
     if (!debug.dotGeomCache) {
         debug.dotGeomCache = new THREE.SphereGeometry(0.1);
     }
@@ -84,13 +84,13 @@ const visDot = (p, col) => {
 /**
  * Quick visualization of a quad. {p, p+a, p+b, p+a+b} as wireframe.
  * 
- * @param {THREE.Vector3} p Origin
- * @param {THREE.Vector3} a First edge vector
- * @param {THREE.Vector3} b Second edge vector
- * @param {THREE.Color} color Color
+ * @param p Origin
+ * @param a First edge vector
+ * @param b Second edge vector
+ * @param color Color
  * @returns {THREE.Mesh} Quad visualization mesh
  */
-const visQuad = (p, a, b, color) => {
+const visQuad = (p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3, color: THREE.Color | string) => {
     const geom = new THREE.BufferGeometry();
     const pos = new Float32Array([
         p.x, p.y, p.z,
@@ -104,13 +104,13 @@ const visQuad = (p, a, b, color) => {
 };
 
 /**
- * @param {THREE.Vector3} p Location in work coords
- * @param {string} text Text to display
- * @param {number} [size=0.25] Text size
- * @param {string} [color="#222222"] Text color
+ * @param p Location in work coords
+ * @param text Text to display
+ * @param size Text size
+ * @param color Text color
  * @returns {THREE.Mesh} Text visualization mesh
  */
-const visText = (p, text, size = 0.25, color = "#222222") => {
+const visText = (p: THREE.Vector3, text: string, size: number = 0.25, color: string = "#222222") => {
     const textGeom = new TextGeometry(text, {
         font,
         size,
@@ -272,12 +272,12 @@ class TrackingVoxelGrid {
     /**
      * Configure work & target. Must be called before any other methods.
      * 
-     * @param {VoxelGridCpu} work VoxelGrid (0: empty, 128: partial, 255: full)
-     * @param {VoxelGridCpu} target VoxelGrid (0: empty, 128: partial, 255: full)
+     * @param work VoxelGrid (0: empty, 128: partial, 255: full)
+     * @param target VoxelGrid (0: empty, 128: partial, 255: full)
      * @returns {Promise<void>}
      * @async
      */
-    async setFromWorkAndTarget(work, target) {
+    async setFromWorkAndTarget(work: VoxelGridCpu, target: VoxelGridCpu) {
         this.res = work.res;
         this.numX = work.numX;
         this.numY = work.numY;
@@ -335,11 +335,11 @@ class TrackingVoxelGrid {
 
     /**
      * Designate work below specified z to be protected. Primarily used to mark stock that should be kept for next session.
-     * @param {number} z Z+ in work coords.
+     * @param z Z+ in work coords.
      * @returns {Promise<void>}
      * @async
      */
-    async setProtectedWorkBelowZ(z) {
+    async setProtectedWorkBelowZ(z: number) {
         this.protectedWorkBelowZ = z;
         const tempVg = this.kernels.createLike(this.vx);
         await this.kernels.copy(this.vx, tempVg);
@@ -353,10 +353,10 @@ class TrackingVoxelGrid {
      * Positive value indicates deviation. 0 for perfect finish or inside. -1 for empty regions.
      * Caller must destroy the returned voxel grid.
      * 
-     * @param {boolean} [excludeProtectedWork=false] If true, exclude protected work.
+     * @param excludeProtectedWork If true, exclude protected work.
      * @returns {VoxelGridGpu} (f32)
      */
-    extractWorkWithDeviation(excludeProtectedWork = false) {
+    extractWorkWithDeviation(excludeProtectedWork: boolean = false) {
         let zThresh = excludeProtectedWork ? this.protectedWorkBelowZ + this.res : -1e3; // +this.res ensures removal of cells just at the Z boundary.
         const res = this.kernels.createLike(this.vx, "f32");
         this.kernels.map2("work_deviation", this.distField, this.vx, res, { "vx_diag": this.res * Math.sqrt(3), "exclude_below_z": zThresh });
@@ -365,10 +365,10 @@ class TrackingVoxelGrid {
 
     /**
      * Extract work volume as voxels. Each cell will contain 1 if it has work, 0 otherwise.
-     * @param {boolean} excludeProtectedWork 
+     * @param excludeProtectedWork 
      * @returns {VoxelGridGpu} (u32) 1 exists
      */
-    extractWorkFlag(excludeProtectedWork = false) {
+    extractWorkFlag(excludeProtectedWork: boolean = false) {
         let zThresh = excludeProtectedWork ? this.protectedWorkBelowZ + this.res : -1e3; // +this.res ensures removal of cells just at the Z boundary.
         const res = this.kernels.createLike(this.vx, "u32");
         this.kernels.map("extract_work", this.vx, res, { "exclude_below_z": zThresh });
@@ -408,13 +408,13 @@ class TrackingVoxelGrid {
      * Rough removal means, this cut can process TG_EMPTY cells, but not TG_PARTIAL cells.
      * When cut can potentially affect TG_PARTIAL cells, it will be error (as rough cut might ruin the voxel irreversibly).
      * 
-     * @param {Array} minShapes array of shapes, treated as union of all shapes
-     * @param {Array} maxShapes array of shapes, treated as union of all shapes
-     * @param {boolean} [ignoreOvercutErrors=false] if true, ignore overcut errors. Hack to get final cut done.
+     * @param minShapes array of shapes, treated as union of all shapes
+     * @param maxShapes array of shapes, treated as union of all shapes
+     * @param ignoreOvercutErrors if true, ignore overcut errors. Hack to get final cut done.
      * @returns {Promise<number>} volume of neewly removed work.
      * @async
      */
-    async commitRemoval(minShapes, maxShapes, ignoreOvercutErrors = false) {
+    async commitRemoval(minShapes: Shape[], maxShapes: Shape[], ignoreOvercutErrors: boolean = false) {
         console.log("Commit removal", minShapes, maxShapes);
         const minVg = this.kernels.createLike(this.vx, "u32");
         const maxVg = this.kernels.createLike(this.vx, "u32");
@@ -540,11 +540,11 @@ class TrackingVoxelGrid {
      * Returns range of the work in normal direction conservatively.
      * Conservative means: "no-work" region never has work, despite presence of quantization error.
      * 
-     * @param {THREE.Vector3} dir Unit direction vector, in work coords.
+     * @param dir Unit direction vector, in work coords.
      * @returns {Promise<{min: number, max: number}>} Offsets. No work exists outside the range.
      * @async
      */
-    async queryWorkRange(dir) {
+    async queryWorkRange(dir: THREE.Vector3) {
         const work = this.kernels.createLike(this.vx, "u32");
         this.kernels.map("work_remaining", this.vx, work);
         const result = await this.kernels.boundOfAxis(dir, work, "out");
@@ -555,33 +555,33 @@ class TrackingVoxelGrid {
     /**
      * Returns true if given shape contains cut-forbidden parts.
      * Conservative: voxels with potential overlaps will be considered for block-detection.
-     * @param {Object} shape Shape object, created by {@link createCylinderShape}, {@link createELHShape}, etc.
+     * @param shape Shape object, created by {@link createCylinderShape}, {@link createELHShape}, etc.
      * @returns {Promise<boolean>} true if blocked, false otherwise
      * @async
      */
-    async queryBlocked(shape) {
+    async queryBlocked(shape: Shape) {
         return await this.kernels.countInShape(shape, this.cacheBlocked, "out") > 0;
     }
 
     /**
      * Returns true if given shape contains work to do. Does not guarantee it's workable (not blocked).
      * 
-     * @param {Object} shape Shape object, created by {@link createCylinderShape}, {@link createELHShape}, etc.
+     * @param shape Shape object, created by {@link createCylinderShape}, {@link createELHShape}, etc.
      * @returns {Promise<boolean>} true if has work, false otherwise
      * @async
      */
-    async queryHasWork(shape) {
+    async queryHasWork(shape: Shape) {
         return await this.kernels.countInShape(shape, this.cacheHasWork, "nearest") > 0;
     }
 
     /**
      * Much faster way to get result for multiple {@link queryBlocked} or {@link queryHasWork} calls.
      * 
-     * @param {Array<{shape: Object, query: "blocked" | "has_work"}>} queries 
+     * @param queries 
      * @returns {Promise<Array<boolean>>} results
      * @async
      */
-    async parallelQuery(queries) {
+    async parallelQuery(queries: {shape: Shape, query: "blocked" | "has_work"}[]) {
         const resultBuf = this.kernels.createBuffer(4 * queries.length);
         for (let i = 0; i < queries.length; i++) {
             const { shape, query } = queries[i];
@@ -618,22 +618,22 @@ class TrackingVoxelGrid {
 
     /**
      * Get center coordinates of cell at given indices
-     * @param {number} ix X coordinate
-     * @param {number} iy Y coordinate
-     * @param {number} iz Z coordinate
+     * @param ix X coordinate
+     * @param iy Y coordinate
+     * @param iz Z coordinate
      * @returns {THREE.Vector3} Center point of cell
      */
-    #centerOf(ix, iy, iz) {
+    #centerOf(ix: number, iy: number, iz: number) {
         return new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res).add(this.ofs);
     }
 }
 
 /**
  * Computes AABB for bunch of points
- * @param {Float32Array} pts Points array [x0, y0, z0, x1, y1, z1, ...]
+ * @param pts Points array [x0, y0, z0, x1, y1, z1, ...]
  * @returns {{min: THREE.Vector3, max: THREE.Vector3}} AABB bounds
  */
-const computeAABB = (pts) => {
+const computeAABB = (pts: Float32Array) => {
     const min = new THREE.Vector3(Infinity, Infinity, Infinity);
     const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
     for (let i = 0; i < pts.length; i += 3) {
@@ -646,11 +646,11 @@ const computeAABB = (pts) => {
 
 /**
  * Initialize voxel grid for storing points
- * @param {Float32Array} pts Points array [x0, y0, z0, x1, y1, z1, ...]
- * @param {number} resMm Voxel resolution
+ * @param pts Points array [x0, y0, z0, x1, y1, z1, ...]
+ * @param resMm Voxel resolution
  * @returns {VoxelGridCpu} Initialized voxel grid
  */
-const initVGForPoints = (pts, resMm) => {
+const initVGForPoints = (pts: Float32Array, resMm: number) => {
     const MARGIN_MM = resMm; // want to keep boundary one voxel clear to avoid any mishaps. resMm should be enough.
     const { min, max } = computeAABB(pts);
     const center = min.clone().add(max).divideScalar(2);
@@ -665,10 +665,10 @@ const initVGForPoints = (pts, resMm) => {
 
 /**
  * Apply translation to geometry in-place
- * @param {THREE.BufferGeometry} geom Geometry to translate
- * @param {THREE.Vector3} trans Translation vector
+ * @param geom Geometry to translate
+ * @param trans Translation vector
  */
-const translateGeom = (geom, trans) => {
+const translateGeom = (geom: THREE.BufferGeometry, trans: THREE.Vector3) => {
     const pos = geom.getAttribute("position").array;
     for (let i = 0; i < pos.length; i += 3) {
         pos[i + 0] += trans.x;
@@ -680,10 +680,10 @@ const translateGeom = (geom, trans) => {
 
 /**
  * Get "triangle soup" representation from a geometry
- * @param {THREE.BufferGeometry} geom Input geometry
+ * @param geom Input geometry
  * @returns {Float32Array} Triangle soup array
  */
-const convGeomToSurf = (geom) => {
+const convGeomToSurf = (geom: THREE.BufferGeometry) => {
     if (geom.index === null) {
         return geom.getAttribute("position").array;
     } else {
@@ -707,11 +707,11 @@ const convGeomToSurf = (geom) => {
 
 /**
  * Generate stock cylinder geometry, spanning Z [0, stockHeight]
- * @param {number} [stockRadius=7.5] Radius of the stock
- * @param {number} [stockHeight=15] Height of the stock
+ * @param stockRadius Radius of the stock
+ * @param stockHeight Height of the stock
  * @returns {THREE.BufferGeometry} Stock cylinder geometry
  */
-const generateStockGeom = (stockRadius = 7.5, stockHeight = 15) => {
+const generateStockGeom = (stockRadius: number = 7.5, stockHeight: number = 15) => {
     const geom = new THREE.CylinderGeometry(stockRadius, stockRadius, stockHeight, 64, 1);
     const transf = new THREE.Matrix4().compose(
         new THREE.Vector3(0, 0, stockHeight / 2),
@@ -724,10 +724,10 @@ const generateStockGeom = (stockRadius = 7.5, stockHeight = 15) => {
 
 /**
  * Create occupancy voxel grid visualization.
- * @param {VoxelGridCpu} vg Voxel grid to visualize (u32: 255:full, 128:partial, 0:empty)
+ * @param vg Voxel grid to visualize (u32: 255:full, 128:partial, 0:empty)
  * @returns {THREE.Object3D} Visualization object
  */
-const createOccupancyVis = (vg) => {
+const createOccupancyVis = (vg: VoxelGridCpu) => {
     if (vg.type !== "u32") {
         throw `Invalid vg type for occupancy: ${vg.type}`;
     }
@@ -825,24 +825,24 @@ const initCreateDeviationVis = (kernels) => {
 
 /**
  * Get max deviation from voxel grid.
- * @param {GpuKernels} kernels
- * @param {VoxelGridGpu} vg - f32 voxel grid
+ * @param kernels
+ * @param vg f32 voxel grid
  * @returns {Promise<number>} Maximum deviation
  * @async
  */
-const getMaxDeviation = async (kernels, vg) => {
+const getMaxDeviation = async (kernels: GpuKernels, vg: VoxelGridGpu) => {
     return /** @type {number} */ (await kernels.reduce("max", vg));
 };
 
 /**
  * Create deviation voxel grid visualization. (blue: 0 deviation, red: maxDev deviation)
- * @param {GpuKernels} kernels
- * @param {VoxelGridGpu} vg Voxel grid to visualize (f32: >=0: deviation, -1: empty)
- * @param {number} [maxDev=3] Maximum deviation to visualize.
+ * @param kernels
+ * @param vg Voxel grid to visualize (f32: >=0: deviation, -1: empty)
+ * @param maxDev Maximum deviation to visualize.
  * @returns {Promise<THREE.Object3D>} Visualization object
  * @async
  */
-const createDeviationVis = async (kernels, vg, maxDev = 3) => {
+const createDeviationVis = async (kernels: GpuKernels, vg: VoxelGridGpu, maxDev: number = 3) => {
     if (vg.type !== "f32") {
         throw `Invalid vg type for deviation: ${vg.type}`;
     }
@@ -862,7 +862,7 @@ const createDeviationVis = async (kernels, vg, maxDev = 3) => {
     const dataVg = kernels.createLike(vg, "vec4f");
     kernels.map("visible_dev_mask", vg, maskVg);
     kernels.map("cv_dev_data", vg, dataVg);
-    const numVisible = /** @type {number} */ (await kernels.reduce("sum", maskVg));
+    const numVisible = (await kernels.reduce("sum", maskVg)) as number;
     const packedResultBuf = kernels.createBuffer(16 * numVisible);
     kernels.packRaw(maskVg, dataVg, packedResultBuf);
     const packedResultBufCpu = new ArrayBuffer(16 * numVisible);
@@ -896,13 +896,13 @@ const createDeviationVis = async (kernels, vg, maxDev = 3) => {
 
 /**
  * Visualize "max deviation" in voxel grid.
- * @param {GpuKernels} kernels
- * @param {VoxelGridGpu} vg - Voxel grid to visualize (f32)
- * @param {number} maxDev - Maximum deviation to visualize
+ * @param kernels
+ * @param vg Voxel grid to visualize (f32)
+ * @param maxDev Maximum deviation to visualize
  * @returns {Promise<THREE.Object3D>} Visualization object
  * @async
  */
-const createMaxDeviationVis = async (kernels, vg, maxDev) => {
+const createMaxDeviationVis = async (kernels: GpuKernels, vg: VoxelGridGpu, maxDev: number) => {
     // Extract cells where dev == max_dev, and pack into array.
     const maskVg = kernels.createLike(vg, "u32");
     kernels.map("max_dev_mask", vg, maskVg, { max_dev: maxDev });
@@ -910,7 +910,7 @@ const createMaxDeviationVis = async (kernels, vg, maxDev) => {
     const dataVg = kernels.createLike(vg, "vec4f");
     kernels.map("cv_dev_data", vg, dataVg);
 
-    const numLocs = /** @type {number} */ (await kernels.reduce("sum", maskVg));
+    const numLocs = (await kernels.reduce("sum", maskVg)) as number;
     const locsBuf = kernels.createBuffer(16 * numLocs);
     kernels.packRaw(maskVg, dataVg, locsBuf);
 
@@ -934,11 +934,11 @@ const createMaxDeviationVis = async (kernels, vg, maxDev) => {
 /**
  * Visualize tool tip path in machine coordinates.
  *
- * @param {Array<THREE.Vector3>} path - Array of path segments
- * @param {number} [highlightSweep] - If specified, highlight this sweep.
+ * @param path Array of path segments
+ * @param highlightSweep If specified, highlight this sweep.
  * @returns {THREE.Object3D} Path visualization object
  */
-const createPathVis = (path, highlightSweep = -1) => {
+const createPathVis = (path: Array<THREE.Vector3>, highlightSweep: number = -1) => {
     if (path.length === 0) {
         return new THREE.Object3D();
     }
@@ -1016,10 +1016,10 @@ const createPathVis = (path, highlightSweep = -1) => {
 
 /**
  * Generates a rotation matrix such that Z+ axis will be formed into "z" vector.
- * @param {THREE.Vector3} z Z-basis vector
+ * @param z Z-basis vector
  * @returns {THREE.Matrix4} Rotation matrix
  */
-const createRotationWithZ = (z) => {
+const createRotationWithZ = (z: THREE.Vector3) => {
     // orthogonalize, with given Z-basis.
     const basisZ = z;
     let basisY;
@@ -1043,11 +1043,11 @@ const createRotationWithZ = (z) => {
 /**
  * Utility to created a offset point by given vector & coeffcients.
  * e.g. offset(segBegin, [feedDir, segmentLength * 0.5], [normal, feedDepth * 0.5])
- * @param {THREE.Vector3} p - Point to offset (readonly)
- * @param {Array<[THREE.Vector3, number]>} offsets - List of vector & coefficient pairs
+ * @param p Point to offset (readonly)
+ * @param offsets List of vector & coefficient pairs
  * @returns {THREE.Vector3} Offset point (new instance)
  */
-const offsetPoint = (p, ...offsets) => {
+const offsetPoint = (p: THREE.Vector3, ...offsets: Array<[THREE.Vector3, number]>) => {
     const ret = p.clone();
     const temp = new THREE.Vector3();
     for (const [v, k] of offsets) {
@@ -1059,11 +1059,11 @@ const offsetPoint = (p, ...offsets) => {
 
 /**
  * Utility to create box shape from base point and axis specs.
- * @param {THREE.Vector3} base - Base point
- * @param {Array<[string, THREE.Vector3, number]>} axisSpecs - List of anchor ("center", "origin") & base vector & k. base vector * k must span full-size of the box.
+ * @param base Base point
+ * @param axisSpecs List of anchor ("center", "origin") & base vector & k. base vector * k must span full-size of the box.
  * @returns {Object} Box shape
  */
-const createBoxShapeFrom = (base, ...axisSpecs) => {
+const createBoxShapeFrom = (base: THREE.Vector3, ...axisSpecs: Array<[string, THREE.Vector3, number]>) => {
     if (axisSpecs.length !== 3) {
         throw "Invalid axis specs";
     }
@@ -1089,12 +1089,12 @@ const createBoxShapeFrom = (base, ...axisSpecs) => {
 
 /**
  * Generate stock visualization.
- * @param {number} [stockRadius=7.5] - Radius of the stock
- * @param {number} [stockHeight=15] - Height of the stock
- * @param {number} [baseZ=0] - Z+ in machine coords where work coords Z=0 (bottom of the targer surface).
+ * @param stockRadius Radius of the stock
+ * @param stockHeight Height of the stock
+ * @param baseZ Z+ in machine coords where work coords Z=0 (bottom of the targer surface).
  * @returns {THREE.Object3D} Stock visualization object
  */
-const generateStock = (stockRadius = 7.5, stockHeight = 15, baseZ = 0) => {
+const generateStock = (stockRadius: number = 7.5, stockHeight: number = 15, baseZ: number = 0) => {
     const stock = new THREE.Mesh(
         generateStockGeom(stockRadius, stockHeight),
         new THREE.MeshLambertMaterial({ color: "blue", wireframe: true, transparent: true, opacity: 0.05 }));
@@ -1148,16 +1148,16 @@ const sparkWg1Config = {
     /**
      * Computes tool base & work table pos from tip target.
      *
-     * @param {THREE.Vector3} tipPos - Tip position in work or machine coordinates (determined by isPosW)
-     * @param {THREE.Vector3} tipNormalW - Tip normal in work coordinates. Tip normal corresponds to work surface, and points towards tool holder
-     * @param {number} toolLength - Tool length
-     * @param {boolean} isPosW - True if tipPos is in work coordinates, false if in machine coordinates
+     * @param tipPos Tip position in work or machine coordinates (determined by isPosW)
+     * @param tipNormalW Tip normal in work coordinates. Tip normal corresponds to work surface, and points towards tool holder
+     * @param toolLength Tool length
+     * @param isPosW True if tipPos is in work coordinates, false if in machine coordinates
      * @returns {{vals: {x: number, y: number, z: number, b: number, c: number}, tipPosM: THREE.Vector3, tipPosW: THREE.Vector3}}
      *   - vals: Machine instructions for moving work table & tool base
      *   - tipPosM: Tip position in machine coordinates
      *   - tipPosW: Tip position in work coordinates
      */
-    solveIk(tipPos, tipNormalW, toolLength, isPosW) {
+    solveIk(tipPos: THREE.Vector3, tipNormalW: THREE.Vector3, toolLength: number, isPosW: boolean) {
         // Order of determination ("IK")
         // 1. Determine B,C axis
         // 2. Determine X,Y,Z axis
@@ -1253,9 +1253,9 @@ class PartialPath {
 
     /**
      * Update minimum tool length.
-     * @param {number} newMinToolLength - New minimum tool length
+     * @param newMinToolLength New minimum tool length
      */
-    updateMinToolLength(newMinToolLength) {
+    updateMinToolLength(newMinToolLength: number) {
         if (this.machineConfig.toolNaturalLength < newMinToolLength) {
             throw "required min tool length impossible";
         }
@@ -1284,9 +1284,9 @@ class PartialPath {
 
     /**
      * Discard given length of the tool. Replace to a new tool if necessary.
-     * @param {number} discardLength - Length of the tool to discard
+     * @param discardLength Length of the tool to discard
      */
-    discardToolTip(discardLength) {
+    discardToolTip(discardLength: number) {
         const toolLenAfter = this.toolLength - discardLength;
         if (toolLenAfter < this.minToolLength) {
             this.#changeTool();
@@ -1358,10 +1358,10 @@ class PartialPath {
 
     /**
      * Add non-material-removing move. (i.e. G0 move)
-     * @param {string} type - label for this move
-     * @param {THREE.Vector3} tipPos - Tip position in work coordinates
+     * @param type label for this move
+     * @param tipPos Tip position in work coordinates
      */
-    nonRemove(type, tipPos) {
+    nonRemove(type: string, tipPos: THREE.Vector3) {
         this.path.push(this.#withAxisValue(type, { tipPosW: tipPos }));
         this.prevPtTipPos = tipPos;
     }
@@ -1370,20 +1370,20 @@ class PartialPath {
      * Add min-shape without changing path.
      * This can be used when caller knows min-cut happens due to combination of multiple remove() calls,
      * but min-cut cannot be easily attributed to individual remove() calls separately.
-     * @param {Object} shape - Shape to add
+     * @param shape Shape to add
      */
-    addMinRemoveShape(shape) {
+    addMinRemoveShape(shape: Shape) {
         this.minSweepRemoveShapes.push(shape);
     }
 
     /**
      * Add material-removing move. (i.e. G1 move) The move must be horizontal.
-     * @param {THREE.Vector3} tipPos - Tip position in work coordinates
-     * @param {number} toolRotDelta - Tool rotation delta in radians
-     * @param {number} maxDiameter - Maximum diameter of the tool
-     * @param {number} minDiameter - Minimum diameter of the tool
+     * @param tipPos Tip position in work coordinates
+     * @param toolRotDelta Tool rotation delta in radians
+     * @param maxDiameter Maximum diameter of the tool
+     * @param minDiameter Minimum diameter of the tool
      */
-    removeHorizontal(tipPos, toolRotDelta, maxDiameter, minDiameter) {
+    removeHorizontal(tipPos: THREE.Vector3, toolRotDelta: number, maxDiameter: number, minDiameter: number) {
         if (this.prevPtTipPos === null) {
             throw "nonRemove() need to be called before removeHorizontal()";
         }
@@ -1401,12 +1401,12 @@ class PartialPath {
 
     /**
      * Add material-removing move. (i.e. G1 move) The move must be vertical.
-     * @param {THREE.Vector3} tipPos - Tip position in work coordinates
-     * @param {number} toolRotDelta - Tool rotation delta in radians
-     * @param {number} diameter - Diameter of the tool
-     * @param {number} uncutDepth - Depth that might not be cut (reduce min cut by this)
+     * @param tipPos Tip position in work coordinates
+     * @param toolRotDelta Tool rotation delta in radians
+     * @param diameter Diameter of the tool
+     * @param uncutDepth Depth that might not be cut (reduce min cut by this)
      */
-    removeVertical(tipPos, toolRotDelta, diameter, uncutDepth) {
+    removeVertical(tipPos: THREE.Vector3, toolRotDelta: number, diameter: number, uncutDepth: number) {
         if (this.prevPtTipPos === null) {
             throw "nonRemove() need to be called before removeVertical()";
         }
@@ -1533,9 +1533,9 @@ class Planner {
     }
 
     /**
-     * @param {lilgui} gui - lilgui instance
+     * @param gui lilgui instance
      */
-    guiHook(gui) {
+    guiHook(gui: any) {
         gui.add(this, "resMm", [0.01, 0.05, 0.1, 0.2, 0.5]);
 
         gui.add(this, "genAllSweeps");
@@ -1592,12 +1592,12 @@ class Planner {
     /**
      * Setup new targets.
      *
-     * @param {THREE.BufferGeometry} targetSurf - Target surface geometry
-     * @param {number} baseZ - Z+ in machine coords where work coords Z=0 (bottom of the targer surface).
-     * @param {number} aboveWorkSize - Length of stock to be worked "above" baseZ plane. Note below-baseZ work will be still removed to cut off the work.
-     * @param {number} stockDiameter - Diameter of the stock.
+     * @param targetSurf Target surface geometry
+     * @param baseZ Z+ in machine coords where work coords Z=0 (bottom of the targer surface).
+     * @param aboveWorkSize Length of stock to be worked "above" baseZ plane. Note below-baseZ work will be still removed to cut off the work.
+     * @param stockDiameter Diameter of the stock.
      */
-    initPlan(targetSurf, baseZ, aboveWorkSize, stockDiameter) {
+    initPlan(targetSurf: THREE.BufferGeometry, baseZ: number, aboveWorkSize: number, stockDiameter: number) {
         this.targetSurf = targetSurf;
         this.stockDiameter = stockDiameter;
         this.baseZ = baseZ;
@@ -1692,11 +1692,11 @@ class Planner {
 
         /**
          * Verify and commit sweep.
-         * @param {{partialPath: PartialPath, ignoreOvercutErrors: boolean}} sweep - Sweep to commit
+         * @param sweep Sweep to commit
          * @returns {Promise<boolean>} true if committed, false if rejected.
          * @async
          */
-        const tryCommitSweep = async (sweep) => {
+        const tryCommitSweep = async (sweep: {partialPath: PartialPath, ignoreOvercutErrors: boolean}) => {
             const t0 = performance.now();
             try {
                 const volRemoved = await this.trvg.commitRemoval(
@@ -1722,7 +1722,7 @@ class Planner {
 
                     // update visualizations
                     const workDeviation = this.trvg.extractWorkWithDeviation(true);
-                    this.deviation = await getMaxDeviation(this.kernels, workDeviation);
+                    this.deviation = (await getMaxDeviation(this.kernels, workDeviation)) as number;
                     this.updateVis("work-vg", [await createDeviationVis(this.kernels, workDeviation, this.deviation)], this.showWork);
                     this.updateVis("work-max-dev", [await createMaxDeviationVis(this.kernels, workDeviation, this.deviation)]);
                     this.kernels.destroy(workDeviation);
@@ -1789,14 +1789,14 @@ class Planner {
      * Generate "planar sweep", directly below given plane.
      * Planer sweep only uses horizontal cuts.
      * 
-     * @param {THREE.Vector3} normal Normal vector, in work coords. = tip normal
-     * @param {number} offset Offset from the plane. offset * normal forms the plane.
-     * @param {number} toolDiameter Tool diameter to use for this sweep.
-     * @param {number} feedDepth cut depth to use for this sweep.
+     * @param normal Normal vector, in work coords. = tip normal
+     * @param offset Offset from the plane. offset * normal forms the plane.
+     * @param toolDiameter Tool diameter to use for this sweep.
+     * @param feedDepth cut depth to use for this sweep.
      * @returns {Promise<{partialPath: PartialPath, ignoreOvercutErrors: boolean} | null>} null if impossible
      * @async
      */
-    async genPlanarSweep(normal, offset, toolDiameter, feedDepth) {
+    async genPlanarSweep(normal: THREE.Vector3, offset: number, toolDiameter: number, feedDepth: number) {
         console.log(`genPlanarSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), offset: ${offset}, toolDiameter: ${toolDiameter}`);
         let t0True = performance.now();
         let t0 = performance.now();
@@ -2076,12 +2076,12 @@ class Planner {
     /**
      * Generate "drill sweep", axis=normal. Single drill sweep is single hole.
      * 
-     * @param {THREE.Vector3} normal Normal vector, in work coords. = tip normal
-     * @param {number} toolDiameter Tool diameter to use for this sweep.
+     * @param normal Normal vector, in work coords. = tip normal
+     * @param toolDiameter Tool diameter to use for this sweep.
      * @returns {Promise<{partialPath: PartialPath, ignoreOvercutErrors: boolean} | null>} null if impossible
      * @async
      */
-    async genDrillSweep(normal, toolDiameter) {
+    async genDrillSweep(normal: THREE.Vector3, toolDiameter: number) {
         console.log(`genDrillSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), toolDiameter: ${toolDiameter}`);
         const t0 = performance.now();
 
@@ -2471,9 +2471,9 @@ class View3D {
 
     /**
      * Load STL model
-     * @param {string} fname Model filename
+     * @param fname Model filename
      */
-    loadStl(fname) {
+    loadStl(fname: string) {
         const loader = new STLLoader();
         loader.load(
             `../assets/models/${fname}.stl`,
@@ -2604,11 +2604,11 @@ class View3D {
 
     /**
      * Add visualizations to a visualization group.
-     * @param {string} group Group identifier
-     * @param {Array<THREE.Object3D>} vs Array of objects to add
-     * @param {boolean} [visible=true] Whether the objects should be visible
+     * @param group Group identifier
+     * @param vs Array of objects to add
+     * @param visible Whether the objects should be visible
      */
-    addVis(group, vs, visible = true) {
+    addVis(group: string, vs: Array<THREE.Object3D>, visible: boolean = true) {
         if (this.visGroups[group]) {
             for (const v of vs) {
                 this.scene.add(v);
@@ -2620,11 +2620,11 @@ class View3D {
 
     /**
      * Update visualization group
-     * @param {string} group Group identifier
-     * @param {Array<THREE.Object3D>} vs Array of objects to visualize
-     * @param {boolean} [visible=true] Whether the group should be visible
+     * @param group Group identifier
+     * @param vs Array of objects to visualize
+     * @param visible Whether the group should be visible
      */
-    updateVis(group, vs, visible = true) {
+    updateVis(group: string, vs: Array<THREE.Object3D>, visible: boolean = true) {
         if (this.visGroups[group]) {
             this.visGroups[group].forEach(v => this.scene.remove(v));
         }
@@ -2637,10 +2637,10 @@ class View3D {
 
     /**
      * Set visibility of visualization group
-     * @param {string} group Group identifier
-     * @param {boolean} visible Whether the group should be visible
+     * @param group Group identifier
+     * @param visible Whether the group should be visible
      */
-    setVisVisibility(group, visible) {
+    setVisVisibility(group: string, visible: boolean) {
         if (this.visGroups[group]) {
             this.visGroups[group].forEach(v => v.visible = visible);
         }
