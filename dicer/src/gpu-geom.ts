@@ -11,6 +11,12 @@ import { UniformVariables, Pipeline, PipelineStorageDef, PipelineUniformDef, All
 
 export { Shape, createBoxShape, createCylinderShape, createELHShape, createSdf, VoxelGridCpu };
 
+export enum Boundary {
+    In,
+    Out,
+    Nearest
+}
+
 
 /**
  * Uniform variable list for {@link uberSdfSnippet}.
@@ -1000,7 +1006,7 @@ export class GpuKernels {
     /**
      * Writes "1" to all voxels contained in shape, "0" to other voxels.
      */
-    async fillShape(shape: Shape, vg: VoxelGridGpu, boundary: "in" | "out" | "nearest"): Promise<void> {
+    async fillShape(shape: Shape, vg: VoxelGridGpu, boundary: Boundary): Promise<void> {
         // TODO: Gen candidate big voxels & dispatch them.
 
         const options = { offset: this.boundaryOffset(vg, boundary) };
@@ -1181,7 +1187,7 @@ export class GpuKernels {
      * @param inVg non-zero means existence.
      * @param boundary
      */
-    async boundOfAxis(dir: Vector3, inVg: VoxelGridGpu, boundary: "in" | "out" | "nearest"): Promise<{ min: number, max: number }> {
+    async boundOfAxis(dir: Vector3, inVg: VoxelGridGpu, boundary: Boundary): Promise<{ min: number, max: number }> {
         const projs = this.createLike(inVg, "f32");
         this.map("project_to_dir", inVg, projs, { dir });
         const min = (await this.reduce("min_ignore_invalid", projs)) as number;
@@ -1200,7 +1206,7 @@ export class GpuKernels {
      * @param resultBuf
      * @param resultBufOffset result will be written to [resultBufOffset, resultBufOffset + 4) as u32.
      */
-    countInShapeRaw(shape: Shape, inVg: VoxelGridGpu, boundary: "in" | "out" | "nearest", resultBuf: GPUBuffer, resultBufOffset: number) {
+    countInShapeRaw(shape: Shape, inVg: VoxelGridGpu, boundary: Boundary, resultBuf: GPUBuffer, resultBufOffset: number) {
         const BLOCK_SIZE = 4;
         const nbx = Math.floor(inVg.numX / BLOCK_SIZE) + 1;
         const nby = Math.floor(inVg.numY / BLOCK_SIZE) + 1;
@@ -1242,7 +1248,7 @@ export class GpuKernels {
      * @param inVg (u32). Non-zero means exist.
      * @param boundary
      */
-    async countInShape(shape: Shape, inVg: VoxelGridGpu, boundary: "in" | "out" | "nearest"): Promise<number> {
+    async countInShape(shape: Shape, inVg: VoxelGridGpu, boundary: Boundary): Promise<number> {
         const resultBuf = this.createBuffer(4);
         const readBuf = this.createBufferForCpuRead(4);
 
@@ -1401,17 +1407,16 @@ export class GpuKernels {
      * @param boundary 
      * @returns Offset
      */
-    boundaryOffset(vg: VoxelGridGpu, boundary: "in" | "out" | "nearest"): number {
+    boundaryOffset(vg: VoxelGridGpu, boundary: Boundary): number {
         const maxVoxelCenterOfs = vg.res * Math.sqrt(3) * 0.5;
-        const offset = {
-            "in": -maxVoxelCenterOfs,
-            "out": maxVoxelCenterOfs,
-            "nearest": 0,
-        }[boundary];
-        if (offset === undefined) {
-            throw new Error(`Invalid boundary: ${boundary}`);
+        switch (boundary) {
+            case Boundary.In:
+                return -maxVoxelCenterOfs;
+            case Boundary.Out:
+                return maxVoxelCenterOfs;
+            case Boundary.Nearest:
+                return 0;
         }
-        return offset;
     }
 
     /**

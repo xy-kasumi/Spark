@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { Vector3 } from 'three';
 import { createBoxShape, createCylinderShape, createELHShape, createSdf, VoxelGridCpu } from '../cpu-geom.js';
-import { uberSdfSnippet, uberSdfUniformDefs, uberSdfUniformVars, GpuKernels, VoxelGridGpu } from '../gpu-geom.js';
+import { uberSdfSnippet, uberSdfUniformDefs, uberSdfUniformVars, GpuKernels, VoxelGridGpu, Boundary } from '../gpu-geom.js';
 
 QUnit.module('gpu-sdf', function () {
     QUnit.test('sdf cylinder match cpu impl', async function (assert) {
@@ -139,7 +139,7 @@ QUnit.module('gpu', function () {
 
         const sdf = createSdf(shape);
         const ref = gridCpu.countIf((v, p) => v > 0 && sdf(p) <= 0);
-        const test = await kernels.countInShape(shape, gridGpu, "nearest");
+        const test = await kernels.countInShape(shape, gridGpu, Boundary.Nearest);
         assert.equal(test, ref);
     });
 

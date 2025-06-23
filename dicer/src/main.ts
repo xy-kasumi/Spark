@@ -12,7 +12,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from '../vendor/n8ao/N8AO.js';
 import { diceSurf } from './mesh.js';
-import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, GpuKernels, Shape } from './gpu-geom.js';
+import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, GpuKernels, Shape, Boundary } from './gpu-geom.js';
 import { VoxelGridCpu } from './cpu-geom.js';
 import { Vector3 } from 'three';
 
@@ -414,10 +414,10 @@ class TrackingVoxelGrid {
         const minVg = this.kernels.createLike(this.vx, "u32");
         const maxVg = this.kernels.createLike(this.vx, "u32");
         for (const shape of minShapes) {
-            await this.kernels.fillShape(shape, minVg, "in");
+            await this.kernels.fillShape(shape, minVg, Boundary.In);
         }
         for (const shape of maxShapes) {
-            await this.kernels.fillShape(shape, maxVg, "out");
+            await this.kernels.fillShape(shape, maxVg, Boundary.Out);
         }
 
         // Check no-reversal of min/max. As this is relatively rare & easy to spot error, we don't log them.
@@ -542,7 +542,7 @@ class TrackingVoxelGrid {
     async queryWorkRange(dir: THREE.Vector3): Promise<{min: number, max: number}> {
         const work = this.kernels.createLike(this.vx, "u32");
         this.kernels.map("work_remaining", this.vx, work);
-        const result = await this.kernels.boundOfAxis(dir, work, "out");
+        const result = await this.kernels.boundOfAxis(dir, work, Boundary.Out);
         this.kernels.destroy(work);
         return result;
     }
@@ -555,7 +555,7 @@ class TrackingVoxelGrid {
      * @async
      */
     async queryBlocked(shape: Shape): Promise<boolean> {
-        return await this.kernels.countInShape(shape, this.cacheBlocked, "out") > 0;
+        return await this.kernels.countInShape(shape, this.cacheBlocked, Boundary.Out) > 0;
     }
 
     /**
@@ -566,7 +566,7 @@ class TrackingVoxelGrid {
      * @async
      */
     async queryHasWork(shape: Shape): Promise<boolean> {
-        return await this.kernels.countInShape(shape, this.cacheHasWork, "nearest") > 0;
+        return await this.kernels.countInShape(shape, this.cacheHasWork, Boundary.Nearest) > 0;
     }
 
     /**
@@ -582,9 +582,9 @@ class TrackingVoxelGrid {
             const { shape, query } = queries[i];
             const offset = i * 4;
             if (query === "blocked") {
-                this.kernels.countInShapeRaw(shape, this.cacheBlocked, "out", resultBuf, offset);
+                this.kernels.countInShapeRaw(shape, this.cacheBlocked, Boundary.Out, resultBuf, offset);
             } else if (query === "has_work") {
-                this.kernels.countInShapeRaw(shape, this.cacheHasWork, "nearest", resultBuf, offset);
+                this.kernels.countInShapeRaw(shape, this.cacheHasWork, Boundary.Nearest, resultBuf, offset);
             } else {
                 throw `Invalid query type: ${query}`;
             }
