@@ -1,7 +1,13 @@
 #!/bin/bash
-set -e
 
 echo "Building dicer..."
+
+# Validate TypeScript first (without emitting files)
+echo "Validating TypeScript..."
+if ! tsc --noEmit; then
+    echo "TypeScript validation failed. Aborting build."
+    exit 1
+fi
 
 # Clean dist directory (preserve specific HTML files for hot-reload)
 mkdir -p dist
