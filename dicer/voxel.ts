@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2025 夕月霞
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /**
  * WebGPU-accelerated voxel operations and SDF (signed distance function) based queries.
@@ -22,6 +23,16 @@ interface ELHShape {
     r: number;
     h: number;
 }
+
+interface BoxShape {
+    type: "box";
+    center: Vector3;
+    halfVec0: Vector3;
+    halfVec1: Vector3;
+    halfVec2: Vector3;
+}
+
+type Shape = CylinderShape | ELHShape | BoxShape;
 
 ////////////////////////////////////////////////////////////////////////////////
 // CPU code
@@ -62,13 +73,13 @@ export const createELHShape = (p: Vector3, q: Vector3, n: Vector3, r: number, h:
 };
 
 /**
- * @param {Vector3} center Center of the box
- * @param {Vector3} halfVec0 Half vector of the box (must be perpendicular to halfVec1 & halfVec2)
- * @param {Vector3} halfVec1 Half vector of the box (must be perpendicular to halfVec0 & halfVec2)
- * @param {Vector3} halfVec2 Half vector of the box (must be perpendicular to halfVec0 & halfVec1)
- * @returns {Object} Shape
+ * @param center Center of the box
+ * @param halfVec0 Half vector of the box (must be perpendicular to halfVec1 & halfVec2)
+ * @param halfVec1 Half vector of the box (must be perpendicular to halfVec0 & halfVec2)
+ * @param halfVec2 Half vector of the box (must be perpendicular to halfVec0 & halfVec1)
+ * @returns Shape
  */
-export const createBoxShape = (center, halfVec0, halfVec1, halfVec2) => {
+export const createBoxShape = (center: Vector3, halfVec0: Vector3, halfVec1: Vector3, halfVec2: Vector3): BoxShape => {
     if (halfVec0.dot(halfVec1) !== 0 || halfVec0.dot(halfVec2) !== 0 || halfVec1.dot(halfVec2) !== 0) {
         throw "Half vectors must be perpendicular to each other";
     }
@@ -77,10 +88,10 @@ export const createBoxShape = (center, halfVec0, halfVec1, halfVec2) => {
 
 /**
  * Returns a SDF for a shape.
- * @param {Object} shape Shape object, created by {@link createCylinderShape}, {@link createELHShape}, etc.
- * @returns {Function} SDF: Vector3 -> number (+: outside, 0: surface, -: inside)
+ * @param shape Shape object, created by {@link createCylinderShape}, {@link createELHShape}, etc.
+ * @returns SDF: Vector3 -> number (+: outside, 0: surface, -: inside)
  */
-export const createSdf = (shape) => {
+export const createSdf = (shape: Shape): ((x: Vector3) => number) => {
     switch (shape.type) {
         case "cylinder":
             return createSdfCylinder(shape.p, shape.n, shape.r, shape.h);
@@ -88,19 +99,17 @@ export const createSdf = (shape) => {
             return createSdfElh(shape.p, shape.q, shape.n, shape.r, shape.h);
         case "box":
             return createSdfBox(shape.center, shape.halfVec0, shape.halfVec1, shape.halfVec2);
-        default:
-            throw `Unknown shape type: ${shape.type}`;
     }
 };
 
 /**
- * @param {Vector3} p Start point
- * @param {Vector3} n Direction (the cylinder extends infinitely towards n+ direction)
- * @param {number} r Radius
- * @param {number} h Height
- * @returns {Function} SDF: Vector3 -> number (+: outside, 0: surface, -: inside)
+ * @param p Start point
+ * @param n Direction (the cylinder extends infinitely towards n+ direction)
+ * @param r Radius
+ * @param h Height
+ * @returns SDF: Vector3 -> number (+: outside, 0: surface, -: inside)
  */
-const createSdfCylinder = (p, n, r, h) => {
+const createSdfCylinder = (p: Vector3, n: Vector3, r: number, h: number): ((x: Vector3) => number) => {
     const temp = new Vector3();
     const sdf = x => {
         const dx = temp.copy(x).sub(p);
@@ -122,14 +131,14 @@ const createSdfCylinder = (p, n, r, h) => {
 };
 
 /**
- * @param {Vector3} p Start point
- * @param {Vector3} q End point
- * @param {Vector3} n Direction (p-q must be perpendicular to n). LH is extruded along n+, by h
- * @param {number} r Radius (>= 0)
- * @param {number} h Height (>= 0)
- * @returns {Function} SDF: Vector3 -> number (+: outside, 0: surface, -: inside)
+ * @param p Start point
+ * @param q End point
+ * @param n Direction (p-q must be perpendicular to n). LH is extruded along n+, by h
+ * @param r Radius (>= 0)
+ * @param h Height (>= 0)
+ * @returns SDF: Vector3 -> number (+: outside, 0: surface, -: inside)
  */
-const createSdfElh = (p, q, n, r, h) => {
+const createSdfElh = (p: Vector3, q: Vector3, n: Vector3, r: number, h: number): ((x: Vector3) => number) => {
     const dq = q.clone().sub(p);
     const dqLenSq = dq.dot(dq);
     const clamp01 = x => {
@@ -159,13 +168,13 @@ const createSdfElh = (p, q, n, r, h) => {
 };
 
 /**
- * @param {Vector3} center Center of the box
- * @param {Vector3} halfVec0 Half vector of the box (must be perpendicular to halfVec1 & halfVec2)
- * @param {Vector3} halfVec1 Half vector of the box (must be perpendicular to halfVec0 & halfVec2)
- * @param {Vector3} halfVec2 Half vector of the box (must be perpendicular to halfVec0 & halfVec1)
- * @returns {Function} SDF: Vector3 -> number (+: outside, 0: surface, -: inside)
+ * @param center Center of the box
+ * @param halfVec0 Half vector of the box (must be perpendicular to halfVec1 & halfVec2)
+ * @param halfVec1 Half vector of the box (must be perpendicular to halfVec0 & halfVec2)
+ * @param halfVec2 Half vector of the box (must be perpendicular to halfVec0 & halfVec1)
+ * @returns SDF: Vector3 -> number (+: outside, 0: surface, -: inside)
  */
-const createSdfBox = (center, halfVec0, halfVec1, halfVec2) => {
+const createSdfBox = (center: Vector3, halfVec0: Vector3, halfVec1: Vector3, halfVec2: Vector3): ((p: Vector3) => number) => {
     const unitVec0 = halfVec0.clone().normalize();
     const unitVec1 = halfVec1.clone().normalize();
     const unitVec2 = halfVec2.clone().normalize();
@@ -205,12 +214,12 @@ export class VoxelGridCpu {
 
     /**
     * Create CPU-backed voxel grid.
-    * @param {number} res Voxel resolution
-    * @param {number} numX Grid dimension X
-    * @param {number} numY Grid dimension Y
-    * @param {number} numZ Grid dimension Z
-    * @param {Vector3} [ofs=new Vector3()] Voxel grid offset (local to world)
-    * @param {"u32" | "f32"} type Cell type
+    * @param res Voxel resolution
+    * @param numX Grid dimension X
+    * @param numY Grid dimension Y
+    * @param numZ Grid dimension Z
+    * @param ofs Voxel grid offset (local to world)
+    * @param type Cell type
     */
     constructor(res: number, numX: number, numY: number, numZ: number, ofs: Vector3 = new Vector3(), type: "u32" | "f32" = "u32") {
         this.res = res;
@@ -241,32 +250,32 @@ export class VoxelGridCpu {
 
     /**
      * Set value at given coordinates
-     * @param {number} ix X coordinate
-     * @param {number} iy Y coordinate
-     * @param {number} iz Z coordinate
-     * @param {number} val Value to set
+     * @param ix X coordinate
+     * @param iy Y coordinate
+     * @param iz Z coordinate
+     * @param val Value to set
      */
-    set(ix, iy, iz, val) {
+    set(ix: number, iy: number, iz: number, val: number) {
         this.data[ix + iy * this.numX + iz * this.numX * this.numY] = val;
     }
 
     /**
      * Get value at given coordinates
-     * @param {number} ix X coordinate
-     * @param {number} iy Y coordinate
-     * @param {number} iz Z coordinate
-     * @returns {number} Value at coordinates
+     * @param ix X coordinate
+     * @param iy Y coordinate
+     * @param iz Z coordinate
+     * @returns Value at coordinates
      */
-    get(ix, iy, iz) {
+    get(ix: number, iy: number, iz: number): number {
         return this.data[ix + iy * this.numX + iz * this.numX * this.numY];
     }
 
     /**
      * Set all cells to given value
-     * @param {number} val Value to fill
-     * @returns {VoxelGridCpu} this
+     * @param val Value to fill
+     * @returns this
      */
-    fill(val) {
+    fill(val: number): VoxelGridCpu {
         this.data.fill(val);
         return this;
     }
@@ -274,7 +283,7 @@ export class VoxelGridCpu {
     /**
      * Apply pred to all cells.
      */
-    map(pred) {
+    map(pred: (val: number, pos: Vector3) => number) {
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
                 for (let ix = 0; ix < this.numX; ix++) {
@@ -288,10 +297,10 @@ export class VoxelGridCpu {
 
     /**
      * Count number of cells that satisfy the predicate.
-     * @param {(any, Vector3) => boolean} pred Predicate function (val, pos) => result
-     * @returns {number} Count of cells that satisfy predicate
+     * @param pred Predicate function (val, pos) => result
+     * @returns Count of cells that satisfy predicate
      */
-    countIf(pred) {
+    countIf(pred: (val: number, pos: Vector3) => boolean): number {
         let cnt = 0;
         for (let iz = 0; iz < this.numZ; iz++) {
             for (let iy = 0; iy < this.numY; iy++) {
@@ -331,12 +340,12 @@ export class VoxelGridCpu {
 
     /**
      * Get center coordinates of cell at given index
-     * @param {number} ix X coordinate
-     * @param {number} iy Y coordinate
-     * @param {number} iz Z coordinate
-     * @returns {Vector3} Center point of cell
+     * @param ix X coordinate
+     * @param iy Y coordinate
+     * @param iz Z coordinate
+     * @returns Center point of cell
      */
-    centerOf(ix, iy, iz) {
+    centerOf(ix: number, iy: number, iz: number): Vector3 {
         return new Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res).add(this.ofs);
     }
 }
@@ -359,10 +368,9 @@ export const uberSdfUniformDefs = {
 
 /**
  * Generates SDF uniform variable dictionary for given shape.
- * @param {Object} shape 
- * @returns {Object} Uniform variable dictionary
+ * @param shape 
  */
-export const uberSdfUniformVars = (shape) => {
+export const uberSdfUniformVars = (shape: Shape): { [key: string]: number | Vector3 } => {
     if (shape.type === "cylinder") {
         return {
             _sd_ty: 0,
@@ -387,8 +395,6 @@ export const uberSdfUniformVars = (shape) => {
             _sd_p2: shape.halfVec1,
             _sd_p3: shape.halfVec2,
         };
-    } else {
-        throw new Error(`Unsupported shape type: ${shape.type}`);
     }
 };
 
@@ -536,15 +542,15 @@ export class VoxelGridGpu {
  */
 class PipelineStorageDef {
     static BINDING_ID_BEGIN = 0;
-    
-    bindings: {[varName: string]: {bindingId: number, elemType: string}};
+
+    bindings: { [varName: string]: { bindingId: number, elemType: string } };
     shader: string;
 
     /**
      * @param {Object<string, string>} defs {varName: elemType} Storage array<> variable defintions (can change for each invocation).
      * @param {Object<string, string>} [atomicDefs] {varName: elemType} Storage atomic<> variable defintions (can change for each invocation).
      */
-    constructor(defs: {[key: string]: string}, atomicDefs: {[key: string]: string} = {}) {
+    constructor(defs: { [key: string]: string }, atomicDefs: { [key: string]: string } = {}) {
         let bindingId = PipelineStorageDef.BINDING_ID_BEGIN;
         const shaderLines = [];
         this.bindings = {};
@@ -645,14 +651,14 @@ class PipelineStorageDef {
  */
 class PipelineUniformDef {
     static BINDING_ID_BEGIN = 100;
-    
-    bindings: {[varName: string]: {bindingId: number, type: string}};
+
+    bindings: { [varName: string]: { bindingId: number, type: string } };
     shader: string;
 
     /**
      * @param {Object} defs {varName: type} Uniform variable defintions (can change for each invocation).
      */
-    constructor(defs: {[key: string]: string}) {
+    constructor(defs: { [key: string]: string }) {
         let uniformBindingId = PipelineUniformDef.BINDING_ID_BEGIN;
         const shaderLines = [];
         this.bindings = {};
@@ -862,16 +868,16 @@ export class GpuKernels {
     device: any;
     sharedUniBuffer: any[] | null;
     wgSize: number;
-    mapPipelines: {[key: string]: any};
-    map2Pipelines: {[key: string]: any};
-    reducePipelines: {[key: string]: any};
-    perf: {[key: string]: any};
+    mapPipelines: { [key: string]: any };
+    map2Pipelines: { [key: string]: any };
+    reducePipelines: { [key: string]: any };
+    perf: { [key: string]: any };
     invalidValue: number;
     jumpFloodPipeline: any;
     shapeQueryPipeline: any;
     connRegSweepPipeline: any;
     packPipeline: any;
-    tempBufsCache: {[key: string]: any[]};
+    tempBufsCache: { [key: string]: any[] };
     countInShapeCache: any;
 
     /**
@@ -1320,7 +1326,7 @@ export class GpuKernels {
         const readBuf = this.createBufferForCpuRead(valSize);
 
         this.reduceRaw(fnName, inVg, resultBuf, 0);
-        
+
         await this.copyBuffer(resultBuf, readBuf, valSize);
         resultBuf.destroy();
 
@@ -1366,7 +1372,7 @@ export class GpuKernels {
     }
 
     #compilePackPipeline() {
-        const storageDef = new PipelineStorageDef({vs_data: "vec4f", vs_mask: "u32", arr_out: "vec4f"}, {arr_index: "u32"});
+        const storageDef = new PipelineStorageDef({ vs_data: "vec4f", vs_mask: "u32", arr_out: "vec4f" }, { arr_index: "u32" });
         const uniformDef = new PipelineUniformDef(this.#gridUniformDefs());
 
         this.packPipeline = this.#createPipeline("pack", storageDef, uniformDef, `
@@ -2032,11 +2038,11 @@ export class GpuKernels {
         this.map("connreg_init", inVg, outVg);
 
         const commandEncoder = this.device.createCommandEncoder();
-        const uniformsX = {axis: 0};
+        const uniformsX = { axis: 0 };
         Object.assign(uniformsX, this.#gridUniformVars(grid));
-        const uniformsY = {axis: 1};
+        const uniformsY = { axis: 1 };
         Object.assign(uniformsY, this.#gridUniformVars(grid));
-        const uniformsZ = {axis: 2};
+        const uniformsZ = { axis: 2 };
         Object.assign(uniformsZ, this.#gridUniformVars(grid));
         for (let i = 0; i < numFlood; i++) {
             // Since uniform variables are independent of i and only depends on axis, it's ok to reuse uniBufIx.
@@ -2132,7 +2138,7 @@ export class GpuKernels {
     async top4Labels(vg) {
         const histogramVg = this.createLike(vg, "array<u32,8>");
         this.map("count_top4_init", vg, histogramVg);
-        
+
         const result = await this.reduce("count_top4_approx", histogramVg);
         this.destroy(histogramVg);
 
