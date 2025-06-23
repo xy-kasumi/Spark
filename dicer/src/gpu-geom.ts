@@ -20,12 +20,6 @@ interface Pipeline {
     uniformDef: PipelineUniformDef;
 }
 
-interface PerformanceMetrics {
-    time_ms_accum: number;
-    time_ms_min: number;
-    time_ms_max: number;
-    n: number;
-}
 
 /**
  * Uniform variable list for {@link uberSdfSnippet}.
@@ -540,7 +534,6 @@ export class GpuKernels {
     mapPipelines: { [key: string]: Pipeline };
     map2Pipelines: { [key: string]: Pipeline };
     reducePipelines: { [key: string]: Pipeline };
-    perf: { [key: string]: PerformanceMetrics };
     invalidValue: number;
     jumpFloodPipeline: Pipeline;
     shapeQueryPipeline: Pipeline;
@@ -559,40 +552,10 @@ export class GpuKernels {
         this.map2Pipelines = {};
         this.reducePipelines = {};
 
-        this.perf = {};
 
         this.#initGridUtils();
     }
 
-    /**
-     * Utility to measure average time-peformance of many invocations.
-     * Returns end-mark function.
-     */
-    perfBegin(name: string): { end: () => void } {
-        const t0 = performance.now();
-        const end = () => {
-            if (!this.perf[name]) {
-                this.perf[name] = {
-                    time_ms_accum: 0,
-                    time_ms_min: Infinity,
-                    time_ms_max: 0,
-                    n: 0,
-                };
-            }
-            const time_ms = performance.now() - t0;
-            const p = this.perf[name];
-            p.time_ms_accum += time_ms;
-            p.time_ms_min = Math.min(p.time_ms_min, time_ms);
-            p.time_ms_max = Math.max(p.time_ms_max, time_ms);
-            p.n++;
-            if (p.n % 100 === 0) {
-                console.log(`${name}: avg=${(p.time_ms_accum / p.n).toFixed(2)}ms (N=${p.n} min=${p.time_ms_min.toFixed(2)}ms max=${p.time_ms_max.toFixed(2)}ms)`);
-            }
-        };
-        return {
-            end: end
-        };
-    }
 
     /**
      * Copy data from inBuf to outBuf. This can cross CPU/GPU boundary.
