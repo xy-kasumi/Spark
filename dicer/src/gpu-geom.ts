@@ -11,12 +11,17 @@ import { UniformVariables, Pipeline, PipelineStorageDef, PipelineUniformDef, All
 
 export { Shape, createBoxShape, createCylinderShape, createELHShape, createSdf, VoxelGridCpu };
 
+/**
+ * Specifies voxel - shape intersection rounding behavior.
+ * - In: voxel set is contained by the shape.
+ * - Out: voxel set contains the shape.
+ * - Nearest: voxel set is roughly same as the shape. Some voxels can be outside, some can be inside.
+ */
 export enum Boundary {
     In,
     Out,
     Nearest
 }
-
 
 /**
  * Uniform variable list for {@link uberSdfSnippet}.
@@ -176,7 +181,6 @@ export class VoxelGridGpu {
     buffer: GPUBuffer;
 
     constructor(kernels: GpuKernels, res: number, numX: number, numY: number, numZ: number, ofs: Vector3 = new Vector3(), type: AllowedGpuType = "u32") {
-
         this.kernels = kernels;
         this.res = res;
         this.numX = numX;
@@ -209,7 +213,6 @@ export class GpuKernels {
     tempBufsCache: { [key: string]: GPUBuffer[] };
     countInShapeCache: { [key: string]: VoxelGridGpu } | null;
 
-
     constructor(device: GPUDevice) {
         this.device = device;
         this.sharedUniBuffer = null;
@@ -218,7 +221,6 @@ export class GpuKernels {
         this.mapPipelines = {};
         this.map2Pipelines = {};
         this.reducePipelines = {};
-
 
         this.#initGridUtils();
     }
