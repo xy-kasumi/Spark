@@ -6,7 +6,7 @@
 import { createELHShape, createCylinderShape, VoxelGridGpu, GpuKernels, Shape, Boundary } from './gpu-geom.js';
 import { VoxelGridCpu } from './cpu-geom.js';
 import { Vector3 } from 'three';
-import { debug, visDot } from './ui-base.js';
+import { debug, visDot } from './debug.js';
 
 const TG_FULL = 0; // fully occupied
 const TG_PARTIAL = 1; // partially occupied
