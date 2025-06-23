@@ -7,6 +7,17 @@
  */
 import { Vector3 } from 'three';
 
+/**
+ * Common interface for voxel grid geometry properties.
+ */
+export interface VoxelGrid {
+    res: number;
+    numX: number;
+    numY: number;
+    numZ: number;
+    ofs: Vector3;
+}
+
 interface CylinderShape {
     type: "cylinder";
     p: Vector3;
@@ -198,7 +209,7 @@ const createSdfBox = (center: Vector3, halfVec0: Vector3, halfVec1: Vector3, hal
  * - occupies volume: [ofs + ix * res, ofs + (ix + 1) * res)
  * - has center: ofs + (ix + 0.5) * res
  */
-export class VoxelGridCpu {
+export class VoxelGridCpu implements VoxelGrid {
     res: number;
     numX: number;
     numY: number;

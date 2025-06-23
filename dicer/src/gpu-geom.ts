@@ -6,22 +6,10 @@
  * See https://iquilezles.org/articles/distfunctions/ for nice introduction to SDF.
  */
 import { Vector3, Vector4 } from 'three';
-import { Shape, createBoxShape, createCylinderShape, createELHShape, createSdf, VoxelGridCpu } from './cpu-geom.js';
+import { Shape, createBoxShape, createCylinderShape, createELHShape, createSdf, VoxelGridCpu, VoxelGrid } from './cpu-geom.js';
 import { UniformVariables, Pipeline, PipelineStorageDef, PipelineUniformDef, AllowedGpuType, sizeOfType } from './gpu-base.js';
 
-export { Shape, createBoxShape, createCylinderShape, createELHShape, createSdf, VoxelGridCpu };
-
-/**
- * Specifies voxel - shape intersection rounding behavior.
- * - In: voxel set is contained by the shape.
- * - Out: voxel set contains the shape.
- * - Nearest: voxel set is roughly same as the shape. Some voxels can be outside, some can be inside.
- */
-export enum Boundary {
-    In,
-    Out,
-    Nearest
-}
+export { Shape, createBoxShape, createCylinderShape, createELHShape, createSdf, VoxelGridCpu, VoxelGrid };
 
 /**
  * Uniform variable list for {@link uberSdfSnippet}.
@@ -170,7 +158,7 @@ const wgslSdfBoxSnippet = (inVar: string, outVar: string): string => {
  * - occupies volume: [ofs + ix * res, ofs + (ix + 1) * res)
  * - has center: ofs + (ix + 0.5) * res
  */
-export class VoxelGridGpu {
+export class VoxelGridGpu implements VoxelGrid {
     kernels: GpuKernels;
     res: number;
     numX: number;
@@ -190,6 +178,18 @@ export class VoxelGridGpu {
         this.type = type;
         this.buffer = kernels.createBuffer(numX * numY * numZ * sizeOfType(type));
     }
+}
+
+/**
+ * Specifies voxel - shape intersection rounding behavior.
+ * - In: voxel set is contained by the shape.
+ * - Out: voxel set contains the shape.
+ * - Nearest: voxel set is roughly same as the shape. Some voxels can be outside, some can be inside.
+ */
+export enum Boundary {
+    In,
+    Out,
+    Nearest
 }
 
 /**
@@ -435,11 +435,6 @@ export class GpuKernels {
         if (this.reducePipelines[name]) {
             throw new Error(`Reduce fn "${name}" already registered`);
         }
-        /*
-        if (valType !== "u32" && valType !== "f32") {
-            throw new Error(`Reduce fn "${name}": valType must be "u32" or "f32"`);
-        }
-            */
 
         const storageDef = new PipelineStorageDef({ vs_in: valType, vs_out: valType });
 
@@ -954,10 +949,7 @@ export class GpuKernels {
      * Gets runtime uniform variables for {@link #gridUniformDefs}.
      * @param prefix Prefix that matches what's given to {@link #gridUniformDefs} and {@link #gridFns}.
      */
-    #gridUniformVars(
-        grid: VoxelGridGpu | { numX: number, numY: number, numZ: number, ofs: Vector3, res: number },
-        prefix: string = ""
-    ): { [key: string]: number[] | Vector4 } {
+    #gridUniformVars(grid: VoxelGrid, prefix: string = ""): { [key: string]: number[] | Vector4 } {
         return {
             [prefix + "nums"]: [grid.numX, grid.numY, grid.numZ],
             [prefix + "ofs_res"]: new Vector4(grid.ofs.x, grid.ofs.y, grid.ofs.z, grid.res),
@@ -967,10 +959,7 @@ export class GpuKernels {
     /**
      * Create new GPU-backed VoxelGrid, keeping shape of buf and optionally changing type.
      */
-    createLike(
-        vg: VoxelGridGpu | VoxelGridCpu,
-        type: "u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>" | null = null
-    ): VoxelGridGpu {
+    createLike(vg: VoxelGridGpu | VoxelGridCpu, type?: AllowedGpuType): VoxelGridGpu {
         return new VoxelGridGpu(this, vg.res, vg.numX, vg.numY, vg.numZ, vg.ofs, type ?? vg.type);
     }
 
@@ -1427,7 +1416,7 @@ export class GpuKernels {
      * @param vgs Additional grids to check compatibility with
      * @returns Common grid parameters
      */
-    #checkGridCompat(vg1: VoxelGridGpu | VoxelGridCpu, ...vgs: (VoxelGridGpu | VoxelGridCpu)[]): { res: number, numX: number, numY: number, numZ: number, ofs: Vector3 } {
+    #checkGridCompat(vg1: VoxelGridGpu | VoxelGridCpu, ...vgs: (VoxelGridGpu | VoxelGridCpu)[]): VoxelGrid {
         for (const grid2 of vgs) {
             if (vg1.numX !== grid2.numX || vg1.numY !== grid2.numY || vg1.numZ !== grid2.numZ) {
                 throw new Error(`Grid size mismatch: ${vg1.numX}x${vg1.numY}x${vg1.numZ} vs ${grid2.numX}x${grid2.numY}x${grid2.numZ}`);
