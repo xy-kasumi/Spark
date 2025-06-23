@@ -7,7 +7,7 @@
  */
 import { Vector3, Vector4 } from 'three';
 import { Shape, createBoxShape, createCylinderShape, createELHShape, createSdf, VoxelGridCpu } from './cpu-geom.js';
-import { UniformVariables, Pipeline, PipelineStorageDef, PipelineUniformDef, checkAllowedType, sizeOfType } from './gpu-base.js';
+import { UniformVariables, Pipeline, PipelineStorageDef, PipelineUniformDef, AllowedGpuType, sizeOfType } from './gpu-base.js';
 
 export { Shape, createBoxShape, createCylinderShape, createELHShape, createSdf, VoxelGridCpu };
 
@@ -15,7 +15,7 @@ export { Shape, createBoxShape, createCylinderShape, createELHShape, createSdf, 
 /**
  * Uniform variable list for {@link uberSdfSnippet}.
  */
-export const uberSdfUniformDefs = {
+export const uberSdfUniformDefs: { [key: string]: AllowedGpuType } = {
     "_sd_ty": "u32",
     "_sd_p0": "vec3f",
     "_sd_p1": "vec3f",
@@ -166,11 +166,10 @@ export class VoxelGridGpu {
     numY: number;
     numZ: number;
     ofs: Vector3;
-    type: "u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>";
+    type: AllowedGpuType;
     buffer: GPUBuffer;
 
-    constructor(kernels: GpuKernels, res: number, numX: number, numY: number, numZ: number, ofs: Vector3 = new Vector3(), type: "u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>" = "u32") {
-        checkAllowedType(type);
+    constructor(kernels: GpuKernels, res: number, numX: number, numY: number, numZ: number, ofs: Vector3 = new Vector3(), type: AllowedGpuType = "u32") {
 
         this.kernels = kernels;
         this.res = res;
@@ -308,12 +307,10 @@ export class GpuKernels {
      * 
      * You can assume in/out are always different buffers.
      */
-    registerMapFn(name: string, inType: "u32" | "f32" | "vec3f" | "vec4f" | "array<u32,8>", outType: "u32" | "f32" | "vec3f" | "vec4f" | "array<u32,8>", snippet: string, uniforms: { [key: string]: string } = {}) {
+    registerMapFn(name: string, inType: AllowedGpuType, outType: AllowedGpuType, snippet: string, uniforms: { [key: string]: AllowedGpuType } = {}) {
         if (this.mapPipelines[name]) {
             throw new Error(`Map fn "${name}" already registered`);
         }
-        checkAllowedType(inType);
-        checkAllowedType(outType);
 
         const storageDef = new PipelineStorageDef({ vs_in: inType, vs_out: outType });
 
@@ -367,13 +364,10 @@ export class GpuKernels {
      * 
      * You can assume vi1/vi2/vo are always different buffers.
      */
-    registerMap2Fn(name: string, inType1: "u32" | "f32", inType2: "u32" | "f32", outType: "u32" | "f32", snippet: string, uniforms: { [key: string]: string } = {}) {
+    registerMap2Fn(name: string, inType1: AllowedGpuType, inType2: AllowedGpuType, outType: AllowedGpuType, snippet: string, uniforms: { [key: string]: AllowedGpuType } = {}) {
         if (this.map2Pipelines[name]) {
             throw new Error(`Map2 fn "${name}" already registered`);
         }
-        checkAllowedType(inType1);
-        checkAllowedType(inType2);
-        checkAllowedType(outType);
 
         const storageDef = new PipelineStorageDef({ vs_in1: inType1, vs_in2: inType2, vs_out: outType });
 
@@ -429,11 +423,10 @@ export class GpuKernels {
      * 
      * Example of computing min: registerReduceFn("min", "float", "1e10", "vo = min(vi1, vi2);")
      */
-    registerReduceFn(name: string, valType: string, initVal: string, snippet: string) {
+    registerReduceFn(name: string, valType: AllowedGpuType, initVal: string, snippet: string) {
         if (this.reducePipelines[name]) {
             throw new Error(`Reduce fn "${name}" already registered`);
         }
-        checkAllowedType(valType);
         /*
         if (valType !== "u32" && valType !== "f32") {
             throw new Error(`Reduce fn "${name}": valType must be "u32" or "f32"`);
@@ -442,7 +435,7 @@ export class GpuKernels {
 
         const storageDef = new PipelineStorageDef({ vs_in: valType, vs_out: valType });
 
-        const uniforms = { num_active: "u32" };
+        const uniforms: { [key: string]: AllowedGpuType } = { num_active: "u32" };
         const uniformDef = new PipelineUniformDef(uniforms);
 
         this.reducePipelines[name] = this.#createPipeline(`reduce_${name}`, storageDef, uniformDef, `
@@ -685,35 +678,6 @@ export class GpuKernels {
         `);
     }
 
-    /**
-     * Throws error if ty is not allowed in map/map2 or grid types.
-     * @param ty 
-     */
-    static checkAllowedType(ty: string) {
-        // Special handling for now, because array is only used in one place.
-        if (ty === "array<u32,8>") {
-            return;
-        }
-        if (ty !== "u32" && ty !== "f32" && ty !== "vec3f" && ty !== "vec4f" && ty !== "vec3u" && ty !== "vec4u") {
-            throw new Error("Invalid type: " + ty);
-        }
-    }
-
-    /**
-     * Returns on-memory size of type (that passes {@link #checkAllowedType}).
-     * @param ty 
-     */
-    static sizeOfType(ty: string): number {
-        return {
-            "u32": 4,
-            "f32": 4,
-            "vec3u": 16, // 16, not 12, because of alignment. https://www.w3.org/TR/WGSL/#alignment-and-size
-            "vec3f": 16, // 16, not 12, because of alignment. https://www.w3.org/TR/WGSL/#alignment-and-size
-            "vec4u": 16,
-            "vec4f": 16,
-            "array<u32,8>": 32,
-        }[ty];
-    }
 
     /**
      * Create buffer for compute.
@@ -956,7 +920,7 @@ export class GpuKernels {
     }
 
 
-    #gridUniformDefs(prefix = "") {
+    #gridUniformDefs(prefix = ""): { [key: string]: AllowedGpuType } {
         // nums: numX, numY, numZ
         // ofs_res: xyz=ofs, w=res
         return { [prefix + "nums"]: "vec3u", [prefix + "ofs_res"]: "vec4f" };
@@ -1091,7 +1055,7 @@ export class GpuKernels {
         // df: xyz=seed, w=dist (-1 is invalid)
         const storageDef = new PipelineStorageDef({ df: "vec4f" });
 
-        const uniforms = { jump_step: "u32" };
+        const uniforms: { [key: string]: AllowedGpuType } = { jump_step: "u32" };
         Object.assign(uniforms, this.#gridUniformDefs());
         const uniformDef = new PipelineUniformDef(uniforms);
 
@@ -1146,7 +1110,7 @@ export class GpuKernels {
     #compileShapeQueryPipeline() {
         const storageDef = new PipelineStorageDef({ vs_in_fine: "u32", vs_out_coarse: "u32" });
 
-        const uniforms = {
+        const uniforms: { [key: string]: AllowedGpuType } = {
             block_size: "u32",
             fine_offset: "f32",
         };
@@ -1328,7 +1292,7 @@ export class GpuKernels {
         // X-scan: dispatchIx = iy + num_y * iz
         // Y-scan: dispatchIx = iz + num_z * ix
         // Z-scan: dispatchIx = ix + num_x * iy
-        const uniforms = { axis: "u32" };
+        const uniforms: { [key: string]: AllowedGpuType } = { axis: "u32" };
         Object.assign(uniforms, this.#gridUniformDefs());
         const uniformDef = new PipelineUniformDef(uniforms);
 

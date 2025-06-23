@@ -7,6 +7,7 @@
 import { Vector3, Vector4 } from 'three';
 
 // WebGPU type definitions
+export type AllowedGpuType = "u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>";
 export type UniformVariables = { [key: string]: number | number[] | Vector3 | Vector4 | boolean };
 
 export interface Pipeline {
@@ -22,22 +23,9 @@ interface BufferLike {
 }
 
 /**
- * Throws error if ty is not allowed in map/map2 or grid types.
+ * Returns on-memory size of allowed GPU type.
  */
-export function checkAllowedType(ty: string): void {
-    // Special handling for now, because array is only used in one place.
-    if (ty === "array<u32,8>") {
-        return;
-    }
-    if (ty !== "u32" && ty !== "f32" && ty !== "vec3f" && ty !== "vec4f" && ty !== "vec3u" && ty !== "vec4u") {
-        throw new Error("Invalid type: " + ty);
-    }
-}
-
-/**
- * Returns on-memory size of type (that passes {@link checkAllowedType}).
- */
-export function sizeOfType(ty: string): number {
+export function sizeOfType(ty: AllowedGpuType): number {
     return {
         "u32": 4,
         "f32": 4,
@@ -55,14 +43,14 @@ export function sizeOfType(ty: string): number {
 export class PipelineStorageDef {
     static BINDING_ID_BEGIN = 0;
 
-    bindings: { [varName: string]: { bindingId: number, elemType: string } };
+    bindings: { [varName: string]: { bindingId: number, elemType: AllowedGpuType } };
     shader: string;
 
     /**
      * @param defs Storage array<> variable defintions (can change for each invocation).
      * @param atomicDefs Storage atomic<> variable defintions (can change for each invocation).
      */
-    constructor(defs: { [key: string]: string }, atomicDefs: { [key: string]: string } = {}) {
+    constructor(defs: { [key: string]: AllowedGpuType }, atomicDefs: { [key: string]: AllowedGpuType } = {}) {
         let bindingId = PipelineStorageDef.BINDING_ID_BEGIN;
         const shaderLines = [];
         this.bindings = {};
@@ -165,18 +153,17 @@ export class PipelineStorageDef {
 export class PipelineUniformDef {
     static BINDING_ID_BEGIN = 100;
 
-    bindings: { [varName: string]: { bindingId: number, type: string } };
+    bindings: { [varName: string]: { bindingId: number, type: AllowedGpuType } };
     shader: string;
 
     /**
      * @param defs Uniform variable defintions (can change for each invocation).
      */
-    constructor(defs: { [key: string]: string }) {
+    constructor(defs: { [key: string]: AllowedGpuType }) {
         let uniformBindingId = PipelineUniformDef.BINDING_ID_BEGIN;
         const shaderLines = [];
         this.bindings = {};
         for (const [varName, type] of Object.entries(defs)) {
-            checkAllowedType(type);
             shaderLines.push(`@group(0) @binding(${uniformBindingId}) var<uniform> ${varName}: ${type};`);
             this.bindings[varName] = {
                 bindingId: uniformBindingId,
