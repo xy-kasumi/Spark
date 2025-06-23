@@ -800,7 +800,7 @@ class PartialPath {
  * This class is not pure function. It's a "module" with UIs and depends on debug stuff.
  * Thus, planner instance should be kept, even when re-running planner from scratch.
  */
-class Planner {
+class ModulePlanner {
     updateVis: Function;
     setVisVisibility: Function;
     machineConfig: any;
@@ -1591,16 +1591,12 @@ class Planner {
 
 
 
-////////////////////////////////////////////////////////////////////////////////
-// 3D view (Module + basis)
-
-
 
 /**
- * Provides basic UI framework, 3D scene, and mesh/gcode I/O UI.
+ * Framework for modules by combining three.js canvas & lil-gui.
  * Scene is in mm unit. Right-handed, X+ up. Work-coordinates.
  */
-class View3D {
+class ModuleFramework {
     // Three.js core objects
     camera: any;
     renderer: any;
@@ -1620,28 +1616,14 @@ class View3D {
     vlogDebugEnable: boolean;
     vlogDebugShow: boolean;
     
-    // Model data
-    models: any;
-    model: string;
-    targetSurf: any;
-    
-    // Stock configuration
-    stockDiameter: number;
-    stockLength: number;
-    stockTopBuffer: number;
-    baseZ: number;
-    aboveWorkSize: number;
-    showStockMesh: boolean;
-    showTargetMesh: boolean;
-    
     // Rendering settings
     renderAoRadius: number;
     renderDistFallOff: number;
     renderAoItensity: number;
     renderAoScreenRadius: boolean;
-    
-    // Planning module
-    modPlanner: Planner;
+
+    // Module registry for animateHook
+    private modules: Array<{ animateHook?: () => void }> = [];
 
     constructor() {
         // Initialize basis
@@ -1680,24 +1662,6 @@ class View3D {
         gridHelperBottom.rotateX(Math.PI / 2);
         this.scene.add(gridHelperBottom);
 
-        // Setup data
-        this.models = {
-            GT2_PULLEY: "GT2_pulley",
-            HELICAL_GEAR: "helical_gear",
-            HELICAL_GEAR_STANDING: "helical_gear_standing",
-            LATTICE: "cube_lattice",
-            BENCHY: "benchy_25p",
-            BOLT_M3: "M3x10",
-        };
-
-        this.model = this.models.GT2_PULLEY;
-        this.stockDiameter = 15;
-        this.stockLength = 20;
-        this.stockTopBuffer = 0.5;
-        this.showStockMesh = true;
-        this.showTargetMesh = true;
-        this.updateVis("stock", [generateStock(this.stockDiameter / 2, this.stockLength)], this.showStockMesh);
-
         this.vlogDebugEnable = true;
         this.vlogDebugShow = false;
 
@@ -1705,54 +1669,6 @@ class View3D {
         this.renderDistFallOff = 1.0;
         this.renderAoItensity = 5;
         this.renderAoScreenRadius = false;
-
-        // Setup modules & GUI
-        this.modPlanner = new Planner((group, vs, visible = true) => this.updateVis(group, vs, visible), (group, visible = true) => this.setVisVisibility(group, visible));
-        this.initGui();
-    }
-
-    clearVlogDebug() {
-        this.vlogDebugs = [];
-        this.updateVis("vlog-debug", this.vlogDebugs, this.vlogDebugShow);
-    }
-
-    initGui() {
-        const gui = new GUI();
-        gui.add(this, 'model', this.models).onChange((model) => {
-            this.updateVis("targ-vg", []);
-            this.updateVis("work-vg", []);
-            this.updateVis("misc", []);
-            this.loadStl(model);
-        });
-        gui.add(this, "stockDiameter", 1, 30, 0.1).onChange(_ => {
-            this.#updateStockVis();
-            this.modPlanner.initPlan(this.targetSurf, this.baseZ, this.aboveWorkSize, this.stockDiameter);
-        });
-        gui.add(this, "stockLength", 1, 30, 0.1).onChange(_ => {
-            this.baseZ = this.stockLength - this.aboveWorkSize;
-            this.#updateStockVis();
-            this.modPlanner.initPlan(this.targetSurf, this.baseZ, this.aboveWorkSize, this.stockDiameter);
-        });
-        gui.add(this, "showStockMesh").onChange(v => {
-            this.setVisVisibility("stock", v);
-        }).listen();
-        gui.add(this, "showTargetMesh").onChange(v => {
-            this.setVisVisibility("target", v);
-        }).listen();
-
-        gui.add(this, "vlogDebugEnable").onChange(v => {
-            debug.log = v;
-        });
-        gui.add(this, "vlogDebugShow").onChange(v => {
-            this.updateVis("vlog-debug", this.vlogDebugs, v);
-        });
-        gui.add(this, "clearVlogDebug");
-        this.modPlanner.guiHook(gui);
-
-        gui.add(this, "copyGcode");
-        gui.add(this, "sendGcodeToSim");
-
-        this.loadStl(this.model);
     }
 
     init() {
@@ -1813,8 +1729,132 @@ class View3D {
         Object.assign(window, { scene: this.scene });
     }
 
+    clearVlogDebug() {
+        this.vlogDebugs = [];
+        this.updateVis("vlog-debug", this.vlogDebugs, this.vlogDebugShow);
+    }
+
+    /**
+     * Register a module that has animateHook method
+     */
+    registerModule(module: any) {
+        if (module && typeof module.animateHook === 'function') {
+            this.modules.push(module);
+        }
+    }
+
+    /**
+     * Visualization management
+     */
+    addVis(group: string, vs: Array<THREE.Object3D>, visible: boolean = true) {
+        if (!this.visGroups[group]) {
+            this.visGroups[group] = [];
+            this.visGroups[group].visible = visible;
+        }
+        for (let v of vs) {
+            this.visGroups[group].push(v);
+            this.scene.add(v);
+            v.visible = visible;
+        }
+    }
+
+    updateVis(group: string, vs: Array<THREE.Object3D>, visible: boolean = true) {
+        if (this.visGroups[group]) {
+            this.visGroups[group].forEach(v => this.scene.remove(v));
+        }
+        this.visGroups[group] = vs;
+        for (let v of vs) {
+            this.scene.add(v);
+            v.visible = visible;
+        }
+    }
+
+    setVisVisibility(group: string, visible: boolean) {
+        if (this.visGroups[group]) {
+            this.visGroups[group].forEach(v => v.visible = visible);
+        }
+    }
+
+    onWindowResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.composer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    animate() {
+        // Call animateHook on all registered modules
+        for (const module of this.modules) {
+            if (module.animateHook) {
+                module.animateHook();
+            }
+        }
+
+        const numVlogErrors = this.vlogErrors.length;
+        if (numVlogErrors != this.lastNumVlogErrors) {
+            console.log(`Number of vlog errors: ${numVlogErrors}`);
+            this.lastNumVlogErrors = numVlogErrors;
+        }
+
+        this.controls.update();
+        this.composer.render();
+        this.stats.update();
+    }
+}
+
+/**
+ * Core "module" - contains all UIs other than debug things.
+ * Owns model config and G-code logic.
+ */
+class ModuleMain {
+    framework: ModuleFramework;
+    
+    // Model data
+    models: any;
+    model: string;
+    targetSurf: any;
+    
+    // Stock configuration
+    stockDiameter: number;
+    stockLength: number;
+    stockTopBuffer: number;
+    baseZ: number;
+    aboveWorkSize: number;
+    showStockMesh: boolean;
+    showTargetMesh: boolean;
+    
+    // Planning module
+    modPlanner: ModulePlanner;
+
+    constructor(framework: ModuleFramework) {
+        this.framework = framework;
+
+        // Setup data
+        this.models = {
+            GT2_PULLEY: "GT2_pulley",
+            HELICAL_GEAR: "helical_gear",
+            HELICAL_GEAR_STANDING: "helical_gear_standing",
+            LATTICE: "cube_lattice",
+            BENCHY: "benchy_25p",
+            BOLT_M3: "M3x10",
+        };
+
+        this.model = this.models.GT2_PULLEY;
+        this.stockDiameter = 15;
+        this.stockLength = 20;
+        this.stockTopBuffer = 0.5;
+        this.showStockMesh = true;
+        this.showTargetMesh = true;
+        this.framework.updateVis("stock", [generateStockGeom(this.stockDiameter / 2, this.stockLength)], this.showStockMesh);
+
+        // Setup modules & GUI
+        this.modPlanner = new ModulePlanner((group, vs, visible = true) => this.framework.updateVis(group, vs, visible), (group, visible = true) => this.framework.setVisVisibility(group, visible));
+        this.framework.registerModule(this.modPlanner);
+        this.initGui();
+    }
+
     #updateStockVis() {
-        this.updateVis("stock", [generateStock(this.stockDiameter / 2, this.stockLength, this.baseZ)], this.showStockMesh);
+        this.framework.updateVis("stock", [generateStockGeom(this.stockDiameter / 2, this.stockLength)], this.showStockMesh);
     }
 
     /**
@@ -1841,33 +1881,33 @@ class View3D {
                     transparent: true,
                     opacity: 0.8,
                 });
-                this.updateVis("target", [new THREE.Mesh(geometry, material)]);
+                this.framework.updateVis("target", [new THREE.Mesh(geometry, material)]);
             },
-            (xhr) => {
-                console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
+            (progress) => {
+                console.log('Loading progress: ', progress);
             },
             (error) => {
-                console.log(error);
+                console.error('Loading error: ', error);
             }
         );
     }
 
     copyGcode() {
-        const prog = this.generateGcode();
-        navigator.clipboard.writeText(prog);
+        const gcode = this.generateGcode();
+        navigator.clipboard.writeText(gcode);
+        console.log("G-code copied to clipboard");
     }
 
     sendGcodeToSim() {
-        const prog = this.generateGcode();
-        new BroadcastChannel("gcode").postMessage(prog);
+        const gcode = this.generateGcode();
+        const bc = new BroadcastChannel("gcode");
+        bc.postMessage(gcode);
+        bc.close();
+        console.log("G-code sent to sim");
     }
 
-    /**
-     * Generate G-code from plan path
-     * @returns Generated G-code
-     */
     generateGcode(): string {
-        const planPath = this.modPlanner.planPath;
+        const planPath = this.modPlanner.planPath || [];
 
         let prevSweep = null;
         let prevType = null;
@@ -1950,76 +1990,77 @@ class View3D {
         return lines.join("\n");
     }
 
-    /**
-     * Add visualizations to a visualization group.
-     * @param group Group identifier
-     * @param vs Array of objects to add
-     * @param visible Whether the objects should be visible
-     */
-    addVis(group: string, vs: Array<THREE.Object3D>, visible: boolean = true) {
-        if (this.visGroups[group]) {
-            for (const v of vs) {
-                this.scene.add(v);
-                this.visGroups[group].push(v);
-                v.visible = visible;
-            }
-        }
-    }
-
-    /**
-     * Update visualization group
-     * @param group Group identifier
-     * @param vs Array of objects to visualize
-     * @param visible Whether the group should be visible
-     */
-    updateVis(group: string, vs: Array<THREE.Object3D>, visible: boolean = true) {
-        if (this.visGroups[group]) {
-            this.visGroups[group].forEach(v => this.scene.remove(v));
-        }
-        vs.forEach(v => {
-            this.scene.add(v);
-            v.visible = visible;
+    initGui() {
+        const gui = new GUI();
+        gui.add(this, 'model', this.models).onChange((model) => {
+            this.framework.updateVis("targ-vg", []);
+            this.framework.updateVis("work-vg", []);
+            this.framework.updateVis("misc", []);
+            this.loadStl(model);
         });
-        this.visGroups[group] = vs;
+        gui.add(this, "stockDiameter", 1, 30, 0.1).onChange(_ => {
+            this.#updateStockVis();
+            this.modPlanner.initPlan(this.targetSurf, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+        });
+        gui.add(this, "stockLength", 1, 30, 0.1).onChange(_ => {
+            this.baseZ = this.stockLength - this.aboveWorkSize;
+            this.#updateStockVis();
+            this.modPlanner.initPlan(this.targetSurf, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+        });
+        gui.add(this, "showStockMesh").onChange(v => {
+            this.framework.setVisVisibility("stock", v);
+        }).listen();
+        gui.add(this, "showTargetMesh").onChange(v => {
+            this.framework.setVisVisibility("target", v);
+        }).listen();
+
+        gui.add(this.framework, "vlogDebugEnable").onChange(v => {
+            debug.log = v;
+        });
+        gui.add(this.framework, "vlogDebugShow").onChange(v => {
+            this.framework.updateVis("vlog-debug", this.framework.vlogDebugs, v);
+        });
+        gui.add(this.framework, "clearVlogDebug");
+        this.modPlanner.guiHook(gui);
+
+        gui.add(this, "copyGcode");
+        gui.add(this, "sendGcodeToSim");
+
+        this.loadStl(this.model);
+    }
+}
+
+/**
+ * Legacy View3D class - now just a wrapper around ModuleFramework and ModuleMain
+ */
+class View3D {
+    framework: ModuleFramework;
+    moduleMain: ModuleMain;
+
+    constructor() {
+        this.framework = new ModuleFramework();
+        this.moduleMain = new ModuleMain(this.framework);
     }
 
-    /**
-     * Set visibility of visualization group
-     * @param group Group identifier
-     * @param visible Whether the group should be visible
-     */
-    setVisVisibility(group: string, visible: boolean) {
-        if (this.visGroups[group]) {
-            this.visGroups[group].forEach(v => v.visible = visible);
-        }
-    }
-
-    onWindowResize() {
-        const width = window.innerWidth;
-        const height = window.innerHeight;
-
-        this.camera.aspect = width / height;
-        this.camera.updateProjectionMatrix();
-
-        this.renderer.setSize(width, height);
-        this.composer.setSize(width, height);
-    }
-
-    animate() {
-        this.modPlanner.animateHook();
-
-        if (this.vlogErrors.length > this.lastNumVlogErrors) {
-            console.warn(`${this.vlogErrors.length - this.lastNumVlogErrors} new errors`);
-            this.lastNumVlogErrors = this.vlogErrors.length;
-        }
-
-        this.controls.update();
-        this.composer.render();
-        this.stats.update();
-    }
+    // Legacy compatibility methods - delegate to appropriate modules
+    get modPlanner() { return this.moduleMain.modPlanner; }
+    updateVis(group: string, vs: Array<THREE.Object3D>, visible: boolean = true) { return this.framework.updateVis(group, vs, visible); }
+    addVis(group: string, vs: Array<THREE.Object3D>, visible: boolean = true) { return this.framework.addVis(group, vs, visible); }
+    setVisVisibility(group: string, visible: boolean) { return this.framework.setVisVisibility(group, visible); }
+    clearVlogDebug() { return this.framework.clearVlogDebug(); }
+    onWindowResize() { return this.framework.onWindowResize(); }
+    animate() { return this.framework.animate(); }
 }
 
 (async () => {
     await loadFont();
-    const view = new View3D();
+    
+    // Instantiate ModuleFramework
+    const framework = new ModuleFramework();
+    
+    // Then instantiate ModuleMain and "register" to ModuleFramework
+    const moduleMain = new ModuleMain(framework);
+    
+    // Could register a future ModulePlanner here:
+    // const modulePlanner = new ModulePlanner(framework);
 })();
