@@ -103,10 +103,31 @@ declare module './three-addons/*' {
 declare const GPUBufferUsage: any;
 declare const GPUShaderStage: any; 
 declare const GPUMapMode: any;
-declare const GPUBuffer: any;
-declare const GPUCommandEncoder: any;
-declare const GPUComputePipeline: any;
-declare const GPUDevice: any;
+
+// WebGPU interfaces
+interface GPUBuffer {
+  size: number;
+  mapAsync(mode: any): Promise<void>;
+  getMappedRange(offset?: number, size?: number): ArrayBuffer;
+  unmap(): void;
+  destroy(): void;
+}
+
+interface GPUDevice {
+  limits: any;
+  queue: any;
+  createBuffer(descriptor: any): GPUBuffer;
+  createShaderModule(descriptor: any): any;
+  createComputePipeline(descriptor: any): any;
+  createBindGroupLayout(descriptor: any): any;
+  createBindGroup(descriptor: any): any;
+  createCommandEncoder(): GPUCommandEncoder;
+}
+
+interface GPUCommandEncoder {
+  beginComputePass(): any;
+  finish(): any;
+}
 
 // WebGPU shader types for JSDoc
 type u32 = number;
