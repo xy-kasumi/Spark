@@ -174,7 +174,7 @@ QUnit.module('gpu', function () {
 
         // Prepare arbitrary filled grids.
         const gridCpu = new VoxelGridCpu(0.1, 10, 10, 10, new Vector3(0, 0, 0), "u32");
-        gridCpu.map((v, p) => p.z > 0.5);
+        gridCpu.map((v, p) => p.z > 0.5 ? 1 : 0);
         const gridGpu = kernels.createLike(gridCpu);
         await kernels.copy(gridCpu, gridGpu);
 
