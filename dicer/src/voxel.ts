@@ -837,8 +837,7 @@ class PipelineUniformDef {
             throw new Error("Too many uniform buffers at the same time");
         }
 
-        /** @type {[number, GPUBuffer | null, number, number][]} */
-        const binds = [];
+        const binds = [] as [number, GPUBuffer | null, number, number][];
         const uniBuf = kernels.sharedUniBuffer[uniBufIx];
         // Writing everything to CPU and then single writeBuffer() is faster than multiple writeBuffer() calls,
         // despite bigger total copy size.

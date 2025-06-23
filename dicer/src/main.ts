@@ -831,7 +831,7 @@ const initCreateDeviationVis = (kernels) => {
  * @async
  */
 const getMaxDeviation = async (kernels: GpuKernels, vg: VoxelGridGpu) => {
-    return /** @type {number} */ (await kernels.reduce("max", vg));
+    return (await kernels.reduce("max", vg)) as number;
 };
 
 /**
@@ -1851,7 +1851,7 @@ class Planner {
         //   state: "blocked" | "work" | "empty" // blocked = contains non-cuttable bits, work = cuttable & has non-zero work, empty = accessible and no work
         // }
         const rows = new Array(numRows);
-        const queries = /** @type {Array<{shape: Object, query: "blocked" | "has_work"}>} */ ([]);
+        const queries = [] as {shape: Shape, query: "blocked" | "has_work"}[];
         for (let ixRow = 0; ixRow < numRows; ixRow++) {
             rows[ixRow] = new Array(numSegs);
             for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
@@ -2108,7 +2108,7 @@ class Planner {
         // grid query for drilling
         // if ok, just drill it with helical downwards path.
         const drillHoleQs = [];
-        const queries = /** @type {Array<{shape: Object, query: "blocked" | "has_work"}>} */ ([]);
+        const queries = [] as {shape: Shape, query: "blocked" | "has_work"}[];
         for (let ixScan0 = 0; ixScan0 < numScan0; ixScan0++) {
             for (let ixScan1 = 0; ixScan1 < numScan1; ixScan1++) {
                 const scanPt = offsetPoint(scanOrigin, [scanDir0, scanRes * ixScan0], [scanDir1, scanRes * ixScan1]);
