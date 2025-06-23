@@ -970,7 +970,6 @@ export class GpuKernels {
      * @param inBuf
      * @param outBuf
      * @param copySize Size of data to copy.
-     * @returns 
      * @async
      */
     async copyBuffer(inBuf: ArrayBuffer | GPUBuffer, outBuf: ArrayBuffer | GPUBuffer, copySize: number | null = null): Promise<void> {
@@ -1337,7 +1336,6 @@ export class GpuKernels {
      * 
      * @param fnName Function registered in {@link registerReduceFn}.
      * @param inVg 
-     * @returns 
      * @async
      */
     async reduce(fnName: string, inVg: VoxelGridGpu): Promise<number | Uint32Array> {
@@ -1435,7 +1433,6 @@ export class GpuKernels {
     /**
      * Returns on-memory size of type (that passes {@link #checkAllowedType}).
      * @param ty 
-     * @returns 
      */
     static sizeOfType(ty: string): number {
         return {
@@ -1965,7 +1962,6 @@ export class GpuKernels {
      * @param dir Unit vector representing axis to check.
      * @param inVg non-zero means existence.
      * @param boundary
-     * @returns 
      * @async
      */
     async boundOfAxis(dir: Vector3, inVg: VoxelGridGpu, boundary: "in" | "out" | "nearest"): Promise<{ min: number, max: number }> {
@@ -2028,7 +2024,6 @@ export class GpuKernels {
      * @param shape
      * @param inVg (u32). Non-zero means exist.
      * @param boundary
-     * @returns 
      * @async
      */
     async countInShape(shape: Shape, inVg: VoxelGridGpu, boundary: "in" | "out" | "nearest"): Promise<number> {
