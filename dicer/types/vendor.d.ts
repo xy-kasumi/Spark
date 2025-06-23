@@ -56,7 +56,10 @@ declare module 'three' {
   export const PerspectiveCamera: any;
   export const OrthographicCamera: any;
   export const WebGLRenderer: any;
-  export const Mesh: any;
+  export class Mesh {
+    constructor(geometry?: any, material?: any);
+    [key: string]: any;
+  }
   export const Material: any;
   export const MeshBasicMaterial: any;
   export const MeshStandardMaterial: any;

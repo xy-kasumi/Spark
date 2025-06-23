@@ -256,9 +256,9 @@ export class VoxelGridCpu {
 
     /**
      * Creates a deep copy of this voxel grid
-     * @returns {VoxelGridCpu} New voxel grid instance
+     * @returns New voxel grid instance
      */
-    clone() {
+    clone(): VoxelGridCpu {
         const vg = new VoxelGridCpu(this.res, this.numX, this.numY, this.numZ, this.ofs, this.type);
         vg.data.set(this.data);
         return vg;
@@ -334,9 +334,9 @@ export class VoxelGridCpu {
 
     /**
      * Get maximum value in grid
-     * @returns {number} Maximum value
+     * @returns Maximum value
      */
-    max() {
+    max(): number {
         let max = -Infinity;
         for (let i = 0; i < this.data.length; i++) {
             if (this.data[i] > max) {
@@ -348,9 +348,9 @@ export class VoxelGridCpu {
 
     /**
      * Calculate volume of positive cells
-     * @returns {number} Volume in cubic units
+     * @returns Volume in cubic units
      */
-    volume() {
+    volume(): number {
         return this.countIf((val) => val > 0) * this.res ** 3;
     }
 
@@ -933,7 +933,7 @@ export class GpuKernels {
      * Utility to measure average time-peformance of many invocations.
      * returns end-mark function.
      * @param {string} name 
-     * @returns {{ end: Function }}
+     * @returns Timing object with end function
      */
     perfBegin(name) {
         const t0 = performance.now();
@@ -1714,7 +1714,7 @@ export class GpuKernels {
      * Gets runtime uniform variables for {@link #gridUniformDefs}.
      * @param {VoxelGridGpu | {numX: number, numY: number, numZ: number, ofs: Vector3, res: number}} grid
      * @param {string} prefix Prefix that matches what's given to {@link #gridUniformDefs} and {@link #gridFns}.
-     * @returns {Object} Runtime uniform variables.
+     * @returns Runtime uniform variables.
      */
     #gridUniformVars(grid, prefix = "") {
         return {
@@ -1727,7 +1727,7 @@ export class GpuKernels {
      * Create new GPU-backed VoxelGrid, keeping shape of buf and optionally changing type.
      * @param {VoxelGridGpu | VoxelGridCpu} vg 
      * @param {"u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>" | null} [type=null] Type of cell. If null, same as buf.
-     * @returns {VoxelGridGpu} New buffer
+     * @returns New buffer
      */
     createLike(vg, type = null) {
         return new VoxelGridGpu(this, vg.res, vg.numX, vg.numY, vg.numZ, vg.ofs, type ?? vg.type);
@@ -1736,7 +1736,7 @@ export class GpuKernels {
     /**
      * Create new CPU-backed VoxelGrid, keeping shape of buf.
      * @param {VoxelGridGpu | VoxelGridCpu} vg 
-     * @returns {VoxelGridCpu} New buffer
+     * @returns New buffer
      */
     createLikeCpu(vg) {
         if (vg.type !== "u32" && vg.type !== "f32") {
@@ -1750,7 +1750,6 @@ export class GpuKernels {
      *
      * @param {VoxelGridGpu | VoxelGridCpu} inVg 
      * @param {VoxelGridGpu | VoxelGridCpu} outVg 
-     * @returns {Promise<void>}
      * @async
      */
     async copy(inVg, outVg) {
@@ -1778,7 +1777,6 @@ export class GpuKernels {
      * @param {Object} shape 
      * @param {VoxelGridGpu} vg (in-place)
      * @param {"in" | "out" | "nearest"} boundary 
-     * @returns {Promise<void>}
      * @async
      */
     async fillShape(shape, vg, boundary) {
