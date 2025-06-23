@@ -40,7 +40,6 @@ export const uberSdfUniformDefs = {
 
 /**
  * Generates SDF uniform variable dictionary for given shape.
- * @param shape 
  */
 export const uberSdfUniformVars = (shape: Shape): { [key: string]: number | Vector3 } => {
     if (shape.type === "cylinder") {
@@ -182,18 +181,9 @@ export class VoxelGridGpu {
     numY: number;
     numZ: number;
     ofs: Vector3;
-    type: string;
+    type: "u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>";
     buffer: GPUBuffer;
 
-    /**
-     * @param kernels GpuKernels instance
-     * @param res Voxel resolution
-     * @param numX Grid dimension X
-     * @param numY Grid dimension Y
-     * @param numZ Grid dimension Z
-     * @param ofs Voxel grid offset (local to world)
-     * @param type Type of cell
-     */
     constructor(kernels: GpuKernels, res: number, numX: number, numY: number, numZ: number, ofs: Vector3 = new Vector3(), type: "u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>" = "u32") {
         GpuKernels.checkAllowedType(type);
 
@@ -219,8 +209,8 @@ class PipelineStorageDef {
     shader: string;
 
     /**
-     * @param defs {varName: elemType} Storage array<> variable defintions (can change for each invocation).
-     * @param atomicDefs {varName: elemType} Storage atomic<> variable defintions (can change for each invocation).
+     * @param defs Storage array<> variable defintions (can change for each invocation).
+     * @param atomicDefs Storage atomic<> variable defintions (can change for each invocation).
      */
     constructor(defs: { [key: string]: string }, atomicDefs: { [key: string]: string } = {}) {
         let bindingId = PipelineStorageDef.BINDING_ID_BEGIN;
@@ -263,7 +253,7 @@ class PipelineStorageDef {
 
     /**
      * Validate input values.
-     * @param vals {varName: value}
+     * @param vals Storage variable values
      * @param allowPartial Don't rise error if some variables are missing. Useful for multi-pass advanced pipelines.
      * @throws If any input is invalid.
      */
@@ -299,7 +289,7 @@ class PipelineStorageDef {
 
     /**
      * Get buffer bindings for given values.
-     * @param bufs {varName: value}
+     * @param bufs Storage variable values
      * @returns Buffer bindings. (bindingId, buffer)
      */
     getBinds(bufs: { [key: string]: GPUBuffer | VoxelGridGpu }): [number, GPUBuffer][] {
@@ -328,7 +318,7 @@ class PipelineUniformDef {
     shader: string;
 
     /**
-     * @param defs {varName: type} Uniform variable defintions (can change for each invocation).
+     * @param defs Uniform variable defintions (can change for each invocation).
      */
     constructor(defs: { [key: string]: string }) {
         let uniformBindingId = PipelineUniformDef.BINDING_ID_BEGIN;
@@ -364,7 +354,7 @@ class PipelineUniformDef {
 
     /**
      * Check runtime inputs can be handled correctly by this pipeline uniform definition.
-     * @param vars {varName: value}
+     * @param vars Uniform variable values
      * @throws If any input is invalid.
      */
     checkInput(vars: UniformVariables): void {
@@ -468,7 +458,7 @@ class PipelineUniformDef {
      * queue.submit([cme.finish()]);
      * 
      * @param kernels 
-     * @param vars {varName: value}
+     * @param vars Uniform variable values
      * @param uniBufIx Index of the uniform buffer to use. (Needed when doing multiple dispatches in single CommandBuffer)
      * @throws If any input is invalid.
      * @returns Array of [bindingId, buffer, offset, size]
@@ -559,18 +549,7 @@ export class GpuKernels {
     tempBufsCache: { [key: string]: GPUBuffer[] };
     countInShapeCache: { [key: string]: VoxelGridGpu } | null;
 
-    /**
-     * Wrapped GPUComputePipeline object with variable definitions.
-     * 
-     * @typedef {Object} Pipeline
-     * @property {GPUComputePipeline} pipeline
-     * @property {PipelineStorageDef} storageDef
-     * @property {PipelineUniformDef} uniformDef
-     */
 
-    /**
-     * @param device 
-     */
     constructor(device: GPUDevice) {
         this.device = device;
         this.sharedUniBuffer = null;
@@ -587,11 +566,9 @@ export class GpuKernels {
 
     /**
      * Utility to measure average time-peformance of many invocations.
-     * returns end-mark function.
-     * @param {string} name 
-     * @returns Timing object with end function
+     * Returns end-mark function.
      */
-    perfBegin(name) {
+    perfBegin(name: string): { end: () => void } {
         const t0 = performance.now();
         const end = () => {
             if (!this.perf[name]) {
@@ -625,7 +602,6 @@ export class GpuKernels {
      * @param inBuf
      * @param outBuf
      * @param copySize Size of data to copy.
-     * @async
      */
     async copyBuffer(inBuf: ArrayBuffer | GPUBuffer, outBuf: ArrayBuffer | GPUBuffer, copySize: number | null = null): Promise<void> {
         if (inBuf === outBuf) {
@@ -678,7 +654,7 @@ export class GpuKernels {
      * @param inType Type of input voxel
      * @param outType Type of output voxel
      * @param snippet (multi-line allowed)
-     * @param uniforms Uniform variable defintions (can change for each invocation) {varName: type}
+     * @param uniforms Uniform variable defintions (can change for each invocation)
      * 
      * Snippet can use following variables:
      * - p: vec3f: voxel center position
@@ -739,7 +715,7 @@ export class GpuKernels {
      * @param inType2 Type of input voxel
      * @param outType Type of output voxel
      * @param snippet (multi-line allowed)
-     * @param uniforms Uniform variable defintions (can change for each invocation) {varName: type}
+     * @param uniforms Uniform variable defintions (can change for each invocation)
      * 
      * Snippet can use following variables:
      * - p: vec3f, voxel center position
@@ -991,7 +967,6 @@ export class GpuKernels {
      * 
      * @param fnName Function registered in {@link registerReduceFn}.
      * @param inVg 
-     * @async
      */
     async reduce(fnName: string, inVg: VoxelGridGpu): Promise<number | Uint32Array> {
         const valType = this.reducePipelines[fnName].storageDef.bindings["vs_in"].elemType; // A bit of hack.
@@ -1105,8 +1080,6 @@ export class GpuKernels {
      * Create buffer for compute.
      * Supports: read/write from shader, bulk-copy from/to other buffer, very slow write from CPU
      * Does not support: bulk read to CPU
-     * @param size Size in bytes
-     * @returns Created buffer
      */
     createBuffer(size: number): GPUBuffer {
         return this.device.createBuffer({
@@ -1118,9 +1091,6 @@ export class GpuKernels {
 
     /**
      * Create uniform buffer & initialize with initFn.
-     * @param size Size in bytes
-     * @param initFn Function to initialize buffer data, called with mapped ArrayBuffer
-     * @returns Created buffer (no longer mapped, directly usable)
      */
     createUniformBuffer(size: number, initFn: (buffer: ArrayBuffer) => void): GPUBuffer {
         const buf = this.device.createBuffer({
@@ -1215,14 +1185,17 @@ export class GpuKernels {
 
     /**
      * Enqueue kernel dispatch to the command encoder.
-     * @param {GPUCommandEncoder} commandEncoder Command encoder
-     * @param {Pipeline} pipeline Pipeline to use
-     * @param {number} numThreads Number of total threads (kernel executions). Note actual thread count will be higher (round up by this.wgSize).
-     * @param {Object<string, GPUBuffer | VoxelGridGpu>} storages Storage variable values
-     * @param {Object<string, any>} uniforms Uniform variable values.
-     * @param {number} [uniBufIx] Index of begin of uniform buffer bindings.
+     * @param numThreads Number of total threads (kernel executions). Note actual thread count will be higher (round up by this.wgSize).
+     * @param uniBufIx Index of begin of uniform buffer bindings.
      */
-    #dispatchKernel(commandEncoder, pipeline, numThreads, storages, uniforms, uniBufIx = 0) {
+    #dispatchKernel(
+        commandEncoder: GPUCommandEncoder, 
+        pipeline: Pipeline, 
+        numThreads: number, 
+        storages: { [key: string]: GPUBuffer | VoxelGridGpu }, 
+        uniforms: { [key: string]: any }, 
+        uniBufIx: number = 0
+    ): void {
         const { pipeline: gpuPipeline, storageDef, uniformDef } = pipeline;
 
         const entries = [];
@@ -1368,11 +1341,12 @@ export class GpuKernels {
 
     /**
      * Gets runtime uniform variables for {@link #gridUniformDefs}.
-     * @param {VoxelGridGpu | {numX: number, numY: number, numZ: number, ofs: Vector3, res: number}} grid
-     * @param {string} prefix Prefix that matches what's given to {@link #gridUniformDefs} and {@link #gridFns}.
-     * @returns Runtime uniform variables.
+     * @param prefix Prefix that matches what's given to {@link #gridUniformDefs} and {@link #gridFns}.
      */
-    #gridUniformVars(grid, prefix = "") {
+    #gridUniformVars(
+        grid: VoxelGridGpu | {numX: number, numY: number, numZ: number, ofs: Vector3, res: number}, 
+        prefix: string = ""
+    ): { [key: string]: number[] | Vector4 } {
         return {
             [prefix + "nums"]: [grid.numX, grid.numY, grid.numZ],
             [prefix + "ofs_res"]: new Vector4(grid.ofs.x, grid.ofs.y, grid.ofs.z, grid.res),
@@ -1381,20 +1355,18 @@ export class GpuKernels {
 
     /**
      * Create new GPU-backed VoxelGrid, keeping shape of buf and optionally changing type.
-     * @param {VoxelGridGpu | VoxelGridCpu} vg 
-     * @param {"u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>" | null} [type=null] Type of cell. If null, same as buf.
-     * @returns New buffer
      */
-    createLike(vg, type = null) {
+    createLike(
+        vg: VoxelGridGpu | VoxelGridCpu, 
+        type: "u32" | "f32" | "vec3f" | "vec4f" | "vec3u" | "vec4u" | "array<u32,8>" | null = null
+    ): VoxelGridGpu {
         return new VoxelGridGpu(this, vg.res, vg.numX, vg.numY, vg.numZ, vg.ofs, type ?? vg.type);
     }
 
     /**
      * Create new CPU-backed VoxelGrid, keeping shape of buf.
-     * @param {VoxelGridGpu | VoxelGridCpu} vg 
-     * @returns New buffer
      */
-    createLikeCpu(vg) {
+    createLikeCpu(vg: VoxelGridGpu | VoxelGridCpu): VoxelGridCpu {
         if (vg.type !== "u32" && vg.type !== "f32") {
             throw new Error(`Cannot create CPU-backed VoxelGrid for type: ${vg.type}`);
         }
@@ -1403,12 +1375,8 @@ export class GpuKernels {
 
     /**
      * Copy data from inBuf to outBuf. This can cross CPU/GPU boundary.
-     *
-     * @param {VoxelGridGpu | VoxelGridCpu} inVg 
-     * @param {VoxelGridGpu | VoxelGridCpu} outVg 
-     * @async
      */
-    async copy(inVg, outVg) {
+    async copy(inVg: VoxelGridGpu | VoxelGridCpu, outVg: VoxelGridGpu | VoxelGridCpu): Promise<void> {
         if (inVg === outVg) {
             return;
         }
@@ -1420,22 +1388,16 @@ export class GpuKernels {
 
     /**
      * Destroy & free VoxelGrid's backing buffer.
-     * @param {VoxelGridGpu} vg 
      */
-    destroy(vg) {
+    destroy(vg: VoxelGridGpu): void {
         vg.buffer.destroy();
         vg.buffer = null;
     }
 
     /**
      * Writes "1" to all voxels contained in shape, "0" to other voxels.
-     * 
-     * @param {Object} shape 
-     * @param {VoxelGridGpu} vg (in-place)
-     * @param {"in" | "out" | "nearest"} boundary 
-     * @async
      */
-    async fillShape(shape, vg, boundary) {
+    async fillShape(shape: Shape, vg: VoxelGridGpu, boundary: "in" | "out" | "nearest"): Promise<void> {
         // TODO: Gen candidate big voxels & dispatch them.
 
         const options = { offset: this.boundaryOffset(vg, boundary) };
@@ -1458,10 +1420,10 @@ export class GpuKernels {
      * Compute distance field using jump flood algorithm.
      * O(N^3 log(N)) compute
      * 
-     * @param {VoxelGridGpu} inSeedVg (u32 type) Positive cells = 0-distance (seed) cells.
-     * @param {VoxelGridGpu} outDistVg (f32 type) Distance field. Distance from nearest seed cell will be written.
+     * @param inSeedVg (u32 type) Positive cells = 0-distance (seed) cells.
+     * @param outDistVg (f32 type) Distance field. Distance from nearest seed cell will be written.
      */
-    distField(inSeedVg, outDistVg) {
+    distField(inSeedVg: VoxelGridGpu, outDistVg: VoxelGridGpu): void {
         const grid = this.#checkGridCompat(inSeedVg, outDistVg);
 
         // xyz=seed, w=dist. w=-1 means invalid (no seed) data.
@@ -1615,7 +1577,6 @@ export class GpuKernels {
      * @param dir Unit vector representing axis to check.
      * @param inVg non-zero means existence.
      * @param boundary
-     * @async
      */
     async boundOfAxis(dir: Vector3, inVg: VoxelGridGpu, boundary: "in" | "out" | "nearest"): Promise<{ min: number, max: number }> {
         const projs = this.createLike(inVg, "f32");
@@ -1677,7 +1638,6 @@ export class GpuKernels {
      * @param shape
      * @param inVg (u32). Non-zero means exist.
      * @param boundary
-     * @async
      */
     async countInShape(shape: Shape, inVg: VoxelGridGpu, boundary: "in" | "out" | "nearest"): Promise<number> {
         const resultBuf = this.createBuffer(4);
@@ -1802,7 +1762,6 @@ export class GpuKernels {
      * but might discard smaller similar-sized regions even if they're in top-4.
      * 
      * @param vg (u32 type) 
-     * @async
      */
     async top4Labels(vg: VoxelGridGpu): Promise<Map<number, number>> {
         const histogramVg = this.createLike(vg, "array<u32,8>");
