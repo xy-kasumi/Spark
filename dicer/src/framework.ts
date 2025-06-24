@@ -26,7 +26,8 @@ export interface Module {
 
 /**
  * Framework for modules by combining three.js canvas & lil-gui.
- * Scene is in mm unit. Right-handed, X+ up. Work-coordinates.
+ * Scene is in mm unit. Right-handed, Z+ up. Orientation is aligned with work-coordinates (G55),
+ * but there is offset for work stock setup.
  */
 export class ModuleFramework {
     // Three.js core objects
@@ -95,6 +96,8 @@ export class ModuleFramework {
         gridHelperBottom.rotateX(Math.PI / 2);
         this.scene.add(gridHelperBottom);
 
+        this.scene.add(new THREE.AxesHelper(10));
+
         this.vlogDebugEnable = true;
         this.vlogDebugShow = false;
 
@@ -123,9 +126,9 @@ export class ModuleFramework {
         const aspect = width / height;
         this.camera = new THREE.OrthographicCamera(-25 * aspect, 25 * aspect, 25, -25, 1, 150);
         this.camera.position.x = 15;
-        this.camera.position.y = 40;
+        this.camera.position.y = 30;
         this.camera.position.z = 20;
-        this.camera.up.set(1, 0, 0);
+        this.camera.up.set(0, 0, 1);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setPixelRatio(window.devicePixelRatio);
