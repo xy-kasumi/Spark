@@ -274,6 +274,28 @@ const createMaxDeviationVis = async (kernels: GpuKernels, vg: VoxelGridGpu, maxD
     return vis;
 };
 
+interface PathSegment {
+    type: string;
+    tipPosM: THREE.Vector3;
+    tipPosW: THREE.Vector3;
+    axisValues: {
+        x: number;
+        y: number;
+        z: number;
+        b: number;
+        c: number;
+    };
+    sweep: number;
+    group: string;
+    tipNormalW: THREE.Vector3;
+    toolRotDelta?: number;
+    grindDelta?: number;
+}
+
+interface Sweep {
+    partialPath: PartialPath;
+    ignoreOvercutErrors: boolean;
+}
 
 /**
  * Visualize tool tip path in machine coordinates.
@@ -282,7 +304,7 @@ const createMaxDeviationVis = async (kernels: GpuKernels, vg: VoxelGridGpu, maxD
  * @param highlightSweep If specified, highlight this sweep.
  * @returns Path visualization object
  */
-const createPathVis = (path: Array<any>, highlightSweep: number = -1): THREE.Object3D => {
+const createPathVis = (path: Array<PathSegment>, highlightSweep: number = -1): THREE.Object3D => {
     if (path.length === 0) {
         return new THREE.Object3D();
     }
@@ -548,9 +570,9 @@ class PartialPath {
     minToolLength: number;
     toolIx: number;
     toolLength: number;
-    minSweepRemoveShapes: any[];
-    maxSweepRemoveShapes: any[];
-    path: any[];
+    minSweepRemoveShapes: Shape[];
+    maxSweepRemoveShapes: Shape[];
+    path: PathSegment[];
     prevPtTipPos: Vector3 | null;
 
     /**
@@ -595,7 +617,7 @@ class PartialPath {
         this.minToolLength = newMinToolLength;
     }
 
-    #withAxisValue(type: any, pt: any): any {
+    #withAxisValue(type: any, pt: any): PathSegment {
         const isPosW = pt.tipPosW !== undefined;
         const ikResult = this.machineConfig.solveIk(isPosW ? pt.tipPosW : pt.tipPosM, this.normal, this.toolLength, isPosW);
         return {
@@ -801,13 +823,13 @@ export class ModulePlanner implements Module {
     highlightSweep: number;
     kernels: GpuKernels;
     trvg: TrackingVoxelGrid;
-    planPath: any[];
+    planPath: PathSegment[];
     highlightGui: any;
     genSweeps: "continue" | "awaiting" | "none";
     baseZ: number;
     aboveWorkSize: number;
-    gen: any;
-    stockSurf: any;
+    gen: AsyncGenerator<"break" | undefined, void, unknown>;
+    stockSurf: Float32Array;
 
     /**
      * @param framework - ModuleFramework instance for visualization management
@@ -961,7 +983,7 @@ export class ModulePlanner implements Module {
      * Yields "break" to request pausing execution for debug inspection.
      * Otherwise yields undefined to request an animation frame before continuing.
      */
-    async *#pathGenerator() {
+    async *#pathGenerator(): AsyncGenerator<"break" | undefined, void, unknown> {
         const t0 = performance.now();
 
         ////////////////////////////////////////
@@ -1022,7 +1044,7 @@ export class ModulePlanner implements Module {
          * @returns true if committed, false if rejected.
          * @async
          */
-        const tryCommitSweep = async (sweep: {partialPath: PartialPath, ignoreOvercutErrors: boolean}) => {
+        const tryCommitSweep = async (sweep: Sweep) => {
             const t0 = performance.now();
             try {
                 const volRemoved = await this.trvg.commitRemoval(
@@ -1120,9 +1142,8 @@ export class ModulePlanner implements Module {
      * @param toolDiameter Tool diameter to use for this sweep.
      * @param feedDepth cut depth to use for this sweep.
      * @returns null if impossible
-     * @async
      */
-    async genPlanarSweep(normal: THREE.Vector3, offset: number, toolDiameter: number, feedDepth: number) {
+    async genPlanarSweep(normal: THREE.Vector3, offset: number, toolDiameter: number, feedDepth: number): Promise<Sweep | null> {
         console.log(`genPlanarSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), offset: ${offset}, toolDiameter: ${toolDiameter}`);
         let t0True = performance.now();
         let t0 = performance.now();
@@ -1405,9 +1426,8 @@ export class ModulePlanner implements Module {
      * @param normal Normal vector, in work coords. = tip normal
      * @param toolDiameter Tool diameter to use for this sweep.
      * @returns null if impossible
-     * @async
      */
-    async genDrillSweep(normal: THREE.Vector3, toolDiameter: number) {
+    async genDrillSweep(normal: THREE.Vector3, toolDiameter: number): Promise<Sweep | null> {
         console.log(`genDrillSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), toolDiameter: ${toolDiameter}`);
         const t0 = performance.now();
 
@@ -1537,10 +1557,8 @@ export class ModulePlanner implements Module {
 
     /**
      * Generate "part off" sweep.
-     * @returns Partial path with overcut error settings
-     * @async
      */
-    async genPartOffSweep() {
+    async genPartOffSweep(): Promise<Sweep> {
         // TODO: use rectangular tool for efficiency.
         // for now, just use circular tool because impl is simpler.
         const normal = new THREE.Vector3(1, 0, 0);
