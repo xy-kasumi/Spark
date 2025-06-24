@@ -49,6 +49,14 @@ const generateStockGeom = (stockRadius: number = 7.5, stockHeight: number = 15):
     return geom;
 };
 
+const generateStockVis = (stockRadius: number = 7.5, stockHeight: number = 15, baseZ: number = 0): THREE.Object3D => {
+    const geom = generateStockGeom(stockRadius, stockHeight);
+    const mat = new THREE.MeshLambertMaterial({ color: "blue", wireframe: true, transparent: true, opacity: 0.05 });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.z = -baseZ;
+    return mesh;
+};
+
 /**
  * Core "module" - contains all UIs other than debug things.
  * Owns model config and G-code logic.
@@ -93,13 +101,13 @@ export class ModuleLayout implements Module {
         this.stockTopBuffer = 0.5;
         this.showStockMesh = true;
         this.showTargetMesh = true;
-        this.framework.updateVis("stock", [generateStockGeom(this.stockDiameter / 2, this.stockLength)], this.showStockMesh);
+        this.framework.updateVis("stock", [generateStockVis(this.stockDiameter / 2, this.stockLength, this.baseZ)], this.showStockMesh);
 
         this.framework.registerModule(this);
     }
 
     #updateStockVis() {
-        this.framework.updateVis("stock", [generateStockGeom(this.stockDiameter / 2, this.stockLength)], this.showStockMesh);
+        this.framework.updateVis("stock", [generateStockVis(this.stockDiameter / 2, this.stockLength, this.baseZ)], this.showStockMesh);
     }
 
     /**
