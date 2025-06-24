@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
 import { ModuleFramework, Module } from './framework.js';
 import { ModulePlanner } from './mod-planner.js';
@@ -58,16 +59,15 @@ const generateStockVis = (stockRadius: number = 7.5, stockHeight: number = 15, b
 };
 
 /**
- * Core "module" - contains all UIs other than debug things.
- * Owns model config and G-code logic.
+ * Module that controls model loading, laying out the model & work, and sending out G-code.
  */
 export class ModuleLayout implements Module {
     framework: ModuleFramework;
     
     // Model data
-    models: any;
+    models: Record<string, string>;
     model: string;
-    targetSurf: any;
+    targetSurf: Float32Array;
     
     // Stock configuration
     stockDiameter: number;
@@ -114,7 +114,7 @@ export class ModuleLayout implements Module {
      * Add main module GUI controls
      * @param gui GUI instance to add controls to
      */
-    addGui(gui: any) {
+    addGui(gui: GUI) {
         gui.add(this, 'model', this.models).onChange((model) => {
             this.framework.updateVis("targ-vg", []);
             this.framework.updateVis("work-vg", []);

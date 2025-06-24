@@ -20,7 +20,7 @@ import { debug } from './debug.js';
  * Modules must call {@link ModuleFramework.registerModule} at the end of the constructor.
  */
 export interface Module {
-    addGui(gui: any): void;
+    addGui(gui: GUI): void;
     animateHook?(): void;
 }
 
@@ -30,20 +30,20 @@ export interface Module {
  */
 export class ModuleFramework {
     // Three.js core objects
-    camera: any;
-    renderer: any;
-    scene: any;
-    composer: any;
-    controls: any;
+    camera: THREE.OrthographicCamera;
+    renderer: THREE.WebGLRenderer;
+    scene: THREE.Scene;
+    composer: EffectComposer;
+    controls: OrbitControls;
     stats: any;
-    container: any;
+    container: HTMLDivElement;
 
     // Visualization management
     visGroups: any;
 
     // Debug logging
-    vlogDebugs: any[];
-    vlogErrors: any[];
+    vlogDebugs: THREE.Object3D[];
+    vlogErrors: THREE.Object3D[];
     lastNumVlogErrors: number;
     vlogDebugEnable: boolean;
     vlogDebugShow: boolean;
@@ -56,7 +56,7 @@ export class ModuleFramework {
 
     // Module registry
     private modules: Array<Module> = [];
-    private gui: any;
+    private gui: GUI;
 
     constructor() {
         // Initialize basis
@@ -131,7 +131,7 @@ export class ModuleFramework {
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(width, height);
         this.renderer.setAnimationLoop(() => this.animate());
-        this.container = document.getElementById('container');
+        this.container = document.getElementById('container') as HTMLDivElement;
         this.container.appendChild(this.renderer.domElement);
 
         this.scene = new THREE.Scene();

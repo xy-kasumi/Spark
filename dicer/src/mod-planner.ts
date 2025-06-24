@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import * as THREE from 'three';
 import { Vector3 } from 'three';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
 import { debug, visDot, visQuad } from './debug.js';
 import { ModuleFramework, Module } from './framework.js';
@@ -273,6 +274,7 @@ const createMaxDeviationVis = async (kernels: GpuKernels, vg: VoxelGridGpu, maxD
     return vis;
 };
 
+
 /**
  * Visualize tool tip path in machine coordinates.
  *
@@ -280,7 +282,7 @@ const createMaxDeviationVis = async (kernels: GpuKernels, vg: VoxelGridGpu, maxD
  * @param highlightSweep If specified, highlight this sweep.
  * @returns Path visualization object
  */
-const createPathVis = (path: Array<THREE.Vector3>, highlightSweep: number = -1): THREE.Object3D => {
+const createPathVis = (path: Array<any>, highlightSweep: number = -1): THREE.Object3D => {
     if (path.length === 0) {
         return new THREE.Object3D();
     }
@@ -593,7 +595,7 @@ class PartialPath {
         this.minToolLength = newMinToolLength;
     }
 
-    #withAxisValue(type, pt) {
+    #withAxisValue(type: any, pt: any): any {
         const isPosW = pt.tipPosW !== undefined;
         const ikResult = this.machineConfig.solveIk(isPosW ? pt.tipPosW : pt.tipPosM, this.normal, this.toolLength, isPosW);
         return {
@@ -666,7 +668,7 @@ class PartialPath {
     /**
      * Add tool-grind movement.
      */
-    #grindTool(discardLength) {
+    #grindTool(discardLength: number) {
         // TODO: proper collision avoidance
         // TODO: offset by discardLength
         // TODO: emit RICH_STATE
@@ -801,7 +803,7 @@ export class ModulePlanner implements Module {
     trvg: TrackingVoxelGrid;
     planPath: any[];
     highlightGui: any;
-    genSweeps: any;
+    genSweeps: "continue" | "awaiting" | "none";
     baseZ: number;
     aboveWorkSize: number;
     gen: any;
@@ -859,7 +861,7 @@ export class ModulePlanner implements Module {
      * Add planner-specific GUI controls
      * @param gui GUI instance to add controls to
      */
-    addGui(gui: any) {
+    addGui(gui: GUI) {
         gui.add(this, "resMm", [0.01, 0.05, 0.1, 0.2, 0.5]);
 
         gui.add(this, "genAllSweeps");

@@ -51,11 +51,19 @@ declare module 'three' {
     constructor();
     [key: string]: any;
   }
-  export const Scene: any;
+  export class Scene {
+    [key: string]: any;
+  }
   export const Camera: any;
   export const PerspectiveCamera: any;
-  export const OrthographicCamera: any;
-  export const WebGLRenderer: any;
+  export class OrthographicCamera {
+    constructor(left: number, right: number, top: number, bottom: number, near: number, far: number);
+    [key: string]: any;
+  }
+  export class WebGLRenderer {
+    constructor(parameters?: any);
+    [key: string]: any;
+  }
   export class Mesh {
     constructor(geometry?: any, material?: any);
     [key: string]: any;
@@ -107,7 +115,10 @@ declare module 'three' {
 
 declare module 'three/addons/*' {
   export const Pass: any;
-  export const EffectComposer: any;
+  export class EffectComposer {
+    constructor(renderer: any, renderTarget?: any);
+    [key: string]: any;
+  }
   export const RenderPass: any;
   export const OutputPass: any;
   export const ShaderPass: any;
@@ -115,10 +126,19 @@ declare module 'three/addons/*' {
   export const STLLoader: any;
   export const FontLoader: any;
   export const TextGeometry: any;
-  export const OrbitControls: any;
+  export class OrbitControls {
+    constructor(object: any, domElement?: HTMLElement);
+    [key: string]: any;
+  }
   export const BufferGeometryUtils: any;
-  export const Stats: any;
-  export const GUI: any;
+  export class Stats {
+    constructor();
+    [key: string]: any;
+  }
+  export class GUI {
+    constructor();
+    [key: string]: any;
+  }
   export const CopyShader: any;
   export const OutputShader: any;
   export default {} as any;
