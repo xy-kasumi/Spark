@@ -93,6 +93,7 @@ export class ModuleLayout implements Module {
             LATTICE: "cube_lattice",
             BENCHY: "benchy_25p",
             BOLT_M3: "M3x10",
+            FRACTAL_STEP: "fractal_step",
         };
 
         this.model = this.models.GT2_PULLEY;
@@ -152,6 +153,12 @@ export class ModuleLayout implements Module {
         loader.load(
             `../assets/models/${fname}.stl`,
             (geometry) => {
+                // hack to align geometry
+                // TODO: Remove this when we have part orientation setup in GUI.
+                if (fname === this.models.FRACTAL_STEP) {
+                    geometry.translate(-1, 0, 2);
+                }
+
                 this.targetSurf = convGeomToSurf(geometry);
                 const aabb = computeAABB(this.targetSurf);
                 // assuming aabb.min.z == 0.
