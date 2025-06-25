@@ -23,13 +23,15 @@ type writeLineResponse struct {
 	Time    string `json:"time"`
 }
 
-type getLinesRequest struct {
-	LineNumSince int `json:"line_num_since,omitempty"` // Optional: line number to start from (inclusive). If omitted, returns all lines.
-	NumLines     int `json:"num_lines,omitempty"`      // Optional: maximum number of lines to return. If omitted, returns up to 1000 lines.
+type queryLinesRequest struct {
+	FromLine int `json:"from_line,omitempty"` // Optional: start from this line number (inclusive), 1-based
+	ToLine   int `json:"to_line,omitempty"`   // Optional: up to this line number (exclusive), 1-based
+	Tail     int `json:"tail,omitempty"`      // Optional: get last N lines (overrides from/to)
 }
 
-type getLinesResponse struct {
-	Lines []lineInfo `json:"lines"` // actual lines, ordered by line number (ascending)
+type queryLinesResponse struct {
+	Count int        `json:"count"` // total number of matching lines
+	Lines []lineInfo `json:"lines"` // actual lines (max 1000), ordered by line number (ascending)
 	Now   string     `json:"now"`   // current recognized time of spooler in format "2006-01-02 15:04:05.000" (local time)
 }
 
@@ -108,26 +110,71 @@ func (ls *lineStorage) addLine(dir string, content string) (int, time.Time) {
 	return l.num, now
 }
 
-// Get lines from storage
-func (ls *lineStorage) getLines(lineNumSince int, numLines int) []line {
+// Query lines by range [fromLine, toLine)
+// fromLine: inclusive, 1-based line number (0 means from beginning)
+// toLine: exclusive, 1-based line number (0 means to end)
+func (ls *lineStorage) queryRange(fromLine, toLine int) []line {
 	ls.mu.RLock()
 	defer ls.mu.RUnlock()
 
-	if numLines == 0 || numLines > 1000 {
-		numLines = 1000
+	if len(ls.lines) == 0 {
+		return []line{}
 	}
 
-	result := make([]line, 0, numLines)
-	for _, l := range ls.lines {
-		if l.num >= lineNumSince {
-			result = append(result, l)
-			if len(result) >= numLines {
+	var startIdx, endIdx int
+
+	// Find start index
+	if fromLine > 0 {
+		startIdx = 0
+		for i, l := range ls.lines {
+			if l.num >= fromLine {
+				startIdx = i
 				break
 			}
 		}
+		// If no line found with num >= fromLine, return empty
+		if startIdx == 0 && len(ls.lines) > 0 && ls.lines[0].num > fromLine {
+			return []line{}
+		}
+	} else {
+		startIdx = 0
 	}
 
-	return result
+	// Find end index
+	if toLine > 0 {
+		endIdx = len(ls.lines)
+		for i, l := range ls.lines {
+			if l.num >= toLine {
+				endIdx = i
+				break
+			}
+		}
+	} else {
+		endIdx = len(ls.lines)
+	}
+
+	if startIdx >= endIdx {
+		return []line{}
+	}
+
+	return ls.lines[startIdx:endIdx]
+}
+
+// Query last N lines
+func (ls *lineStorage) queryTail(n int) []line {
+	ls.mu.RLock()
+	defer ls.mu.RUnlock()
+
+	if len(ls.lines) == 0 || n <= 0 {
+		return []line{}
+	}
+
+	startIdx := len(ls.lines) - n
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
+	return ls.lines[startIdx:]
 }
 
 func main() {
@@ -192,23 +239,44 @@ func main() {
 		}
 
 		slog.Debug("/query-lines")
-		var req getLinesRequest
+		var req queryLinesRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, "invalid JSON: %v", err)
 			return
 		}
 
-		// Default to line 1 if not specified
-		if req.LineNumSince == 0 {
-			req.LineNumSince = 1
+		// Validate: tail cannot be used with from_line or to_line
+		if req.Tail > 0 && (req.FromLine > 0 || req.ToLine > 0) {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "tail cannot be used with from_line or to_line")
+			return
 		}
 
-		// Get lines from storage
-		lines := storage.getLines(req.LineNumSince, req.NumLines)
+		// Validate range parameters
+		if req.FromLine < 0 || req.ToLine < 0 || req.Tail < 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "line numbers cannot be negative")
+			return
+		}
+
+		// Get lines from storage using appropriate method
+		var lines []line
+		if req.Tail > 0 {
+			lines = storage.queryTail(req.Tail)
+		} else {
+			lines = storage.queryRange(req.FromLine, req.ToLine)
+		}
+		totalCount := len(lines)
+
+		const maxLines = 1000 // Limit response to 1000 lines
+		if len(lines) > maxLines {
+			lines = lines[:maxLines]
+		}
 
 		// Convert to response format
-		resp := getLinesResponse{
+		resp := queryLinesResponse{
+			Count: totalCount,
 			Lines: make([]lineInfo, len(lines)),
 			Now:   formatSpoolerTime(time.Now()),
 		}
