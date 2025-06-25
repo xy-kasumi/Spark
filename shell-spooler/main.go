@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2025 夕月霞
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package main
 
@@ -7,85 +8,50 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"slices"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 )
 
-// New API (WIP)
-// Common domain:
-// * line: integer (>=1) that uniquely identifies any command or response. Line number starts from 1 when spooler starts. Each line is a string w/o newlines.
-// * time: timestamp in format "2006-01-02 15:04:05.000" (local time). Not guaranteed to be precise globally, but it guaranteed to be monotonic.
-//         more specifically, each line has single timestamp (first byte sent/received). It holds that:
-//         *  linenum(line1) > linenum(line2) => time(line1) >= time(line2)
-//         *  time(line1) > time(line2) => linenum(line1) > linenum(line2)
-//         ">=" because timestamp can collide if two lines are close together in time; line number provides the proper ordering.
+// Line-based API
 type writeLineRequest struct {
 	Line string `json:"line"` // single line of command. cannot contain newline.
 }
 
 type writeLineResponse struct {
-	LineNum int `json:"line_num"`
-	Time string `json:"time"`
+	LineNum int    `json:"line_num"`
+	Time    string `json:"time"`
 }
 
-type queryLinesRequest struct {
-	Begin int `json:"begin"` // Optional: line number to start from (inclusive). 1 means first line. If omitted, defaults to 1.
+type getLinesRequest struct {
+	LineNumSince int `json:"line_num_since,omitempty"` // Optional: line number to start from (inclusive). If omitted, returns all lines.
+	NumLines     int `json:"num_lines,omitempty"`      // Optional: maximum number of lines to return. If omitted, returns up to 1000 lines.
 }
 
-type queryLinesResponse struct {
-	Count int `json:"count"` // number of matching lines. This will be exact count, which will work even if lines is truncated.
-	Lines []lineInfo `json:"lines"` // actual lines, ordered by line number (ascending). Truncated to max of 1000 lines.
+type getLinesResponse struct {
+	Lines []lineInfo `json:"lines"` // actual lines, ordered by line number (ascending)
 }
 
 type lineInfo struct {
-	LineNum int	`json:"line_num"`
-	Dir string	`json:"dir"` // "up" for client->host, "down" for host->client
-	Content string	`json:"content"` // content of the line, without newlines
-	Time string	`json:"time"` // timestamp of the line in format "2006-01-02 15:04:05.000" (local time)
+	LineNum int    `json:"line_num"`
+	Dir     string `json:"dir"`     // "up" for client->host, "down" for host->client
+	Content string `json:"content"` // content of the line, without newlines
+	Time    string `json:"time"`    // timestamp of the line in format "2006-01-02 15:04:05.000" (local time)
 }
 
-
-// Old API
-type writeRequest struct {
-	Commands []string `json:"commands"` // list of commands. cannot contain newline
+// Internal line storage
+type line struct {
+	num     int
+	dir     string // "up" or "down"
+	content string
+	time    time.Time
 }
 
-type writeResponse struct {
-	Error          *string   `json:"error"`           // error of request processing itself. null means no error (commands are executed).
-	CommandSuccess bool      `json:"command_success"` // true if all commands succesfully executed.
-	CommandErrors  []*string `json:"command_errors"`  // errors for each command. null if success.
-}
-
-type statusResponse struct {
-	Status string  `json:"status"`
-	XPos   float64 `json:"x_pos"`
-	YPos   float64 `json:"y_pos"`
-	ZPos   float64 `json:"z_pos"`
-}
-
-type machineState int
-
-const (
-	MACHINE_OFFLINE machineState = iota
-	MACHINE_OK
-	MACHINE_CRIT
-)
-
-type machineStatus struct {
-	XPos    float64
-	YPos    float64
-	ZPos    float64
-	State   machineState
-	CritMsg string
-}
-
-// Data that arrived within certain time gap.
-type logEntry struct {
-	up   bool // up: client->host, down: host->client
-	data string
-	time time.Time
+// Global line storage
+type lineStorage struct {
+	mu      sync.RWMutex
+	lines   []line
+	nextNum int
 }
 
 // handleCommon returns true if caller should continue RPC processing.
@@ -110,16 +76,52 @@ func respondJson(w http.ResponseWriter, resp any) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-func packLog(up bool, data string, time time.Time) string {
-	var builder strings.Builder
-	builder.WriteString(time.Local().Format("2006-01-02 15:04:05.000"))
-	if up {
-		builder.WriteString(">")
-	} else {
-		builder.WriteString("<")
+// Create new lineStorage instance
+func newLineStorage() *lineStorage {
+	return &lineStorage{
+		lines:   make([]line, 0),
+		nextNum: 1,
 	}
-	builder.WriteString(data)
-	return builder.String()
+}
+
+// Add a line to storage
+func (ls *lineStorage) addLine(dir string, content string) (int, time.Time) {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+
+	now := time.Now()
+	l := line{
+		num:     ls.nextNum,
+		dir:     dir,
+		content: content,
+		time:    now,
+	}
+	ls.lines = append(ls.lines, l)
+	ls.nextNum++
+
+	return l.num, now
+}
+
+// Get lines from storage
+func (ls *lineStorage) getLines(lineNumSince int, numLines int) []line {
+	ls.mu.RLock()
+	defer ls.mu.RUnlock()
+
+	if numLines == 0 || numLines > 1000 {
+		numLines = 1000
+	}
+
+	result := make([]line, 0, numLines)
+	for _, l := range ls.lines {
+		if l.num >= lineNumSince {
+			result = append(result, l)
+			if len(result) >= numLines {
+				break
+			}
+		}
+	}
+
+	return result
 }
 
 func main() {
@@ -133,135 +135,86 @@ func main() {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
 
-	// log
-	logCh := make(chan logEntry)
-	var logPtr atomic.Pointer[[]logEntry]
-	go func() {
-		var buf []logEntry
-		for {
-			log := <-logCh
-			buf = append(buf, log)
+	// Initialize line storage
+	storage := newLineStorage()
 
-			logForRead := slices.Clone(buf)
-			logPtr.Store(&logForRead)
-		}
-	}()
-
-	machine := initProtocol(*portName, *baud, logCh)
-	if machine == nil {
+	// Initialize serial protocol
+	ser := initSerial(*portName, *baud, storage)
+	if ser == nil {
 		return
 	}
-	defer machine.Close()
+	defer ser.Close()
 
-	// HTTP handler to write data
-	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+	// HTTP handler to write a single line
+	http.HandleFunc("/write-line", func(w http.ResponseWriter, r *http.Request) {
 		if !handleCommom(w, r) {
 			return
 		}
 
-		slog.Debug("/status")
-		resultCh := machine.enqueue("help")
-		select {
-		case <-time.After(500 * time.Millisecond):
-			slog.Debug("timeout waiting for help response in /status")
-		case <-resultCh:
-		}
-
-		mStat := machine.getStatus()
-
-		resp := statusResponse{Status: "OK"}
-		resp.XPos = mStat.XPos
-		resp.YPos = mStat.YPos
-		resp.ZPos = mStat.ZPos
-		if mStat.State == MACHINE_CRIT {
-			resp.Status = "critical: " + mStat.CritMsg
-		}
-
-		respondJson(w, &resp)
-	})
-
-	// TODO: This should become a G-code or macro-ish thing in /write, maybe.
-	http.HandleFunc("/init", func(w http.ResponseWriter, r *http.Request) {
-		if !handleCommom(w, r) {
-			return
-		}
-
-		slog.Debug("/init")
-		var req writeRequest
+		slog.Debug("/write-line")
+		var req writeLineRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, "invalid JSON: %v", err)
 			return
 		}
 
-		resultCh := machine.enqueueSeq(homeCommandSeq)
-		<-resultCh
+		// Validate request
+		if strings.Contains(req.Line, "\n") {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "line cannot contain newline")
+			return
+		}
 
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "doing")
+		// Write to serial
+		ser.writeLine(req.Line)
+
+		// Add to storage
+		lineNum, timestamp := storage.addLine("up", req.Line)
+
+		resp := writeLineResponse{
+			LineNum: lineNum,
+			Time:    timestamp.Local().Format("2006-01-02 15:04:05.000"),
+		}
+		respondJson(w, &resp)
 	})
 
-	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
+	// HTTP handler to get lines
+	http.HandleFunc("/get-lines", func(w http.ResponseWriter, r *http.Request) {
 		if !handleCommom(w, r) {
 			return
 		}
 
-		slog.Debug("/write")
-		var req writeRequest
+		slog.Debug("/get-lines")
+		var req getLinesRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, "invalid JSON: %v", err)
 			return
 		}
 
-		// Validate request content
-		if len(req.Commands) == 0 {
-			errMsg := `1 or more "commands" required`
-			resp := writeResponse{Error: &errMsg}
-			respondJson(w, &resp)
-			return
+		// Default to line 1 if not specified
+		if req.LineNumSince == 0 {
+			req.LineNumSince = 1
 		}
-		for _, cmd := range req.Commands {
-			if strings.Contains(cmd, "\n") {
-				errMsg := fmt.Sprintf(`command cannot contain newline: %q`, cmd)
-				resp := writeResponse{Error: &errMsg}
-				respondJson(w, &resp)
-				return
+
+		// Get lines from storage
+		lines := storage.getLines(req.LineNumSince, req.NumLines)
+
+		// Convert to response format
+		resp := getLinesResponse{
+			Lines: make([]lineInfo, len(lines)),
+		}
+		for i, l := range lines {
+			resp.Lines[i] = lineInfo{
+				LineNum: l.num,
+				Dir:     l.dir,
+				Content: l.content,
+				Time:    l.time.Local().Format("2006-01-02 15:04:05.000"),
 			}
 		}
 
-		// Execute
-		resultCh := machine.enqueueSeq(req.Commands)
-		errors := <-resultCh
-
-		resp := writeResponse{CommandSuccess: true}
-		for _, err := range errors {
-			if err != "" {
-				resp.CommandSuccess = false
-				resp.CommandErrors = append(resp.CommandErrors, &err)
-			} else {
-				resp.CommandErrors = append(resp.CommandErrors, nil)
-			}
-		}
 		respondJson(w, &resp)
-	})
-
-	http.HandleFunc("/get-core-log", func(w http.ResponseWriter, r *http.Request) {
-		if !handleCommom(w, r) {
-			return
-		}
-
-		slog.Debug("/get-core-log")
-		builder := strings.Builder{}
-		logs := logPtr.Load()
-		for _, log := range *logs {
-			builder.WriteString(packLog(log.up, log.data, log.time))
-			builder.WriteString("\n")
-		}
-		output := builder.String()
-
-		resp := map[string]string{"output": output}
-		respondJson(w, resp)
 	})
 
 	slog.Info("HTTP server started listening", "port", *addr)
