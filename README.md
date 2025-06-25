@@ -44,4 +44,8 @@ Typically they do so by allowing quicker iteration.
 dicer can send G-code directly to sim-machine (if they're served from the same origin),
 by using [Broadcast Channel API](https://developer.mozilla.org/en-US/docs/Web/API/Broadcast_Channel_API).
 
+### Tips
 Note: "localhost" and "127.0.0.1" are considered different origins.
+
+When `./build.sh` or `./watch.sh` cause directory listing page to show up;
+* If you're using VSCode Live Server, configure "live server wait" to be larger than build time. e.g. 1500 (ms)
