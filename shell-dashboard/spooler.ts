@@ -8,12 +8,11 @@ interface LogLine {
     time: string;
 }
 
-interface StatusInfo {
+interface SpoolerStatus {
     x?: number;
     y?: number;
     z?: number;
-    ready?: boolean;
-    status?: string;
+    state: SpoolerState;
 }
 
 interface QueuedCommand {
@@ -22,7 +21,14 @@ interface QueuedCommand {
     reject: (reason: Error) => void;
 }
 
-type SpoolerStatus = 'api-offline' | 'board-offline' | 'idle' | 'unknown' | 'busy';
+/**
+ * @property api-offline - Spooler API not working
+ * @property board-offline - API is OK, board response timed out
+ * @property idle - API is OK, board is known to be idle state (ready to receive commands)
+ * @property unknown - API is OK, board is in unknown state
+ * @property busy - API is OK, board is known to be busy (or probably busy)
+ */
+type SpoolerState = 'api-offline' | 'board-offline' | 'idle' | 'unknown' | 'busy';
 
 /**
  * SpoolerClient handles all communication with shell-spooler using the new line-based API.
@@ -36,16 +42,16 @@ class SpoolerClient {
     private deviceReady: boolean;
     private lastLineNum: number;
     private isPolling: boolean;
-    private status: SpoolerStatus;
+    private status: SpoolerState;
     private lastCommandTime: number | null;
     private lastResponseTime: number | null;
     private pingIntervalMs: number;
     private commandTimeoutMs: number;
     private pingTimer: number | null;
     
-    public onStatusUpdate: ((status: StatusInfo) => void) | null;
+    public onStatusUpdate: ((status: SpoolerStatus) => void) | null;
     public onLogLine: ((line: LogLine) => void) | null;
-    public onStatusChange: ((newStatus: SpoolerStatus, oldStatus: SpoolerStatus) => void) | null;
+    public onStatusChange: ((newStatus: SpoolerState, oldStatus: SpoolerState) => void) | null;
     public onError: ((error: Error) => void) | null;
 
     /**
@@ -82,7 +88,7 @@ class SpoolerClient {
      * Set status and notify if changed
      * @param newStatus - New status value
      */
-    private _setStatus(newStatus: SpoolerStatus): void {
+    private setStatus(newStatus: SpoolerState): void {
         if (this.status !== newStatus) {
             const oldStatus = this.status;
             this.status = newStatus;
@@ -96,35 +102,35 @@ class SpoolerClient {
     /**
      * Start polling for new lines from the spooler
      */
-    startPolling() {
+    startPolling(): void {
         this.isPolling = true;
-        this._pollLoop(this.apiIntervalMs);
-        this._startPingLoop();
+        this.pollLoop(this.apiIntervalMs);
+        this.startPingLoop();
     }
     
     /**
      * Stop polling
      */
-    stopPolling() {
+    stopPolling(): void {
         this.isPolling = false;
-        this._stopPingLoop();
+        this.stopPingLoop();
     }
     
     /**
      * Internal polling loop
      * @param intervalMs - Polling interval in milliseconds
      */
-    private async _pollLoop(intervalMs: number): Promise<void> {
+    private async pollLoop(intervalMs: number): Promise<void> {
         while (this.isPolling) {
-            await this._fetchNewLines();
-            await this._delay(intervalMs);
+            await this.fetchNewLines();
+            await this.delay(intervalMs);
         }
     }
     
     /**
      * Fetch new lines from the spooler
      */
-    private async _fetchNewLines(): Promise<void> {
+    private async fetchNewLines(): Promise<void> {
         try {
             const response = await fetch(`${this.host}/query-lines`, {
                 method: 'POST',
@@ -146,14 +152,14 @@ class SpoolerClient {
                 const serverTime = new Date(now).getTime();
                 const commandAge = serverTime - this.lastCommandTime;
                 if (commandAge > this.commandTimeoutMs) {
-                    this._setStatus('board-offline');
+                    this.setStatus('board-offline');
                 }
             }
             
             // Process lines and update status based on responses
             let hasStatusInfo = false;
             for (const line of lines) {
-                this._processLine(line);
+                this.processLine(line);
                 this.lastLineNum = line.line_num;
                 
                 // Track if we got status information from board
@@ -168,16 +174,16 @@ class SpoolerClient {
                 // Stay in unknown state
             } else if (hasStatusInfo && (this.status === 'unknown' || this.status === 'board-offline')) {
                 // We got status info, update accordingly
-                this._setStatus(this.deviceReady ? 'idle' : 'busy');
+                this.setStatus(this.deviceReady ? 'idle' : 'busy');
             }
             
             // API is working
             if (this.status === 'api-offline') {
-                this._setStatus('unknown');
+                this.setStatus('unknown');
             }
             
         } catch (error) {
-            this._setStatus('api-offline');
+            this.setStatus('api-offline');
             console.log("spooler error", error);
         }
     }
@@ -186,7 +192,7 @@ class SpoolerClient {
      * Process a single line from the spooler
      * @param line - Line object with line_num, dir, content, time
      */
-    private _processLine(line: LogLine): void {
+    private processLine(line: LogLine): void {
         // Notify UI of new log line
         if (this.onLogLine) {
             this.onLogLine(line);
@@ -195,10 +201,10 @@ class SpoolerClient {
         // Handle device responses (lines from device to host)
         if (line.dir === 'down' && line.content.startsWith('I')) {
             this.deviceReady = true;
-            this._setStatus('idle');
+            this.setStatus('idle');
             
             // Parse and notify status update
-            const status = this._parseStatus(line.content);
+            const status = this.parseStatus(line.content);
             if (status && this.onStatusUpdate) {
                 this.onStatusUpdate(status);
             }
@@ -210,7 +216,7 @@ class SpoolerClient {
             }
             
             // Process next queued command
-            this._processQueue();
+            this.processQueue();
         }
         
         // Handle errors
@@ -220,7 +226,7 @@ class SpoolerClient {
                 this.currentCommand = null;
             }
             this.deviceReady = true;
-            this._processQueue();
+            this.processQueue();
         }
     }
     
@@ -229,23 +235,21 @@ class SpoolerClient {
      * @param line - Status line content
      * @returns Status object or null if not parseable
      */
-    private _parseStatus(line: string): StatusInfo | null {
+    private parseStatus(line: string): SpoolerStatus | null {
         const match = line.match(/I ready X([\d.-]+) Y([\d.-]+) Z([\d.-]+)/);
         if (match) {
             return {
                 x: parseFloat(match[1]),
                 y: parseFloat(match[2]),
                 z: parseFloat(match[3]),
-                ready: true,
-                status: 'OK'
+                state: 'idle'
             };
         }
         
         // Handle other status formats if needed
         if (line.startsWith('I ')) {
             return {
-                ready: true,
-                status: 'OK'
+                state: 'idle'
             };
         }
         
@@ -261,7 +265,7 @@ class SpoolerClient {
         return new Promise((resolve, reject) => {
             this.commandQueue.push({ command, resolve, reject });
             if (this.deviceReady && !this.currentCommand) {
-                this._processQueue();
+                this.processQueue();
             }
         });
     }
@@ -282,14 +286,14 @@ class SpoolerClient {
     /**
      * Process the command queue
      */
-    private async _processQueue(): Promise<void> {
+    private async processQueue(): Promise<void> {
         if (this.commandQueue.length === 0 || !this.deviceReady || this.currentCommand) {
             return;
         }
         
         this.currentCommand = this.commandQueue.shift();
         this.deviceReady = false;
-        this._setStatus('busy');
+        this.setStatus('busy');
         
         try {
             const response = await fetch(`${this.host}/write-line`, {
@@ -310,7 +314,7 @@ class SpoolerClient {
             this.currentCommand.reject(error);
             this.currentCommand = null;
             this.deviceReady = true;
-            this._setStatus('api-offline');
+            this.setStatus('api-offline');
         }
     }
     
@@ -355,17 +359,17 @@ class SpoolerClient {
     /**
      * Start the ping loop for keeping connection alive
      */
-    private _startPingLoop(): void {
-        this._stopPingLoop(); // Clear any existing timer
+    private startPingLoop(): void {
+        this.stopPingLoop(); // Clear any existing timer
         this.pingTimer = setInterval(() => {
-            this._sendPingIfNeeded();
+            this.sendPingIfNeeded();
         }, this.pingIntervalMs);
     }
     
     /**
      * Stop the ping loop
      */
-    private _stopPingLoop(): void {
+    private stopPingLoop(): void {
         if (this.pingTimer) {
             clearInterval(this.pingTimer);
             this.pingTimer = null;
@@ -375,7 +379,7 @@ class SpoolerClient {
     /**
      * Send ping command if in appropriate state
      */
-    private async _sendPingIfNeeded(): Promise<void> {
+    private async sendPingIfNeeded(): Promise<void> {
         // Only ping in idle, unknown, or board-offline states
         if (this.status === 'idle' || this.status === 'unknown' || this.status === 'board-offline') {
             try {
@@ -392,7 +396,7 @@ class SpoolerClient {
      * @param ms - Milliseconds to delay
      * @returns Promise that resolves after delay
      */
-    private _delay(ms: number): Promise<void> {
+    private delay(ms: number): Promise<void> {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 }
