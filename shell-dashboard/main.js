@@ -92,8 +92,7 @@ Vue.createApp({
         return {
             // UI State
             command_text: '',
-            spooler_status: 'Unknown',
-            core_status: 'Unknown',
+            client_status: 'unknown',
             log_lines: [],
             exec_status: '',
             xp: 0,
@@ -114,22 +113,45 @@ Vue.createApp({
         
         log_output() {
             return this.log_lines
-                .map(line => `${line.time}${line.dir === 'up' ? '>' : '<'}${line.content}`)
+                .map(line => `${line.time}${line.dir === 'up' ? '↑' : '↓'}${line.content}`)
                 .join('\n');
+        },
+        
+        ui_status() {
+            // Map 5 states to 3 UI states
+            switch (this.client_status) {
+                case 'idle': return 'idle';
+                case 'busy': return 'busy';
+                case 'api-offline':
+                case 'board-offline':
+                case 'unknown': return 'offline';
+                default: return 'offline';
+            }
+        },
+        
+        status_emoji() {
+            switch (this.ui_status) {
+                case 'idle': return '🔵';
+                case 'busy': return '🟠';
+                case 'offline': return '⚫';
+                default: return '⚫';
+            }
         }
     },
     
     mounted() {
         // Initialize client
-        this.client = new SpoolerClient(host);
+        this.client = new SpoolerClient(host, 1000);
         
         // Setup callbacks
         this.client.onStatusUpdate = (status) => {
             if (status.x !== undefined) this.xp = status.x;
             if (status.y !== undefined) this.yp = status.y;
             if (status.z !== undefined) this.zp = status.z;
-            this.core_status = status.status || (status.ready ? 'OK' : 'Busy');
-            this.spooler_status = 'Connected';
+        };
+        
+        this.client.onStatusChange = (newStatus, oldStatus) => {
+            this.client_status = newStatus;
         };
         
         this.client.onLogLine = (line) => {
@@ -145,12 +167,8 @@ Vue.createApp({
             });
         };
         
-        this.client.onError = (error) => {
-            this.spooler_status = 'Error: ' + error.message;
-        };
-        
         // Start polling
-        this.client.startPolling(1000);
+        this.client.startPolling();
     },
     
     beforeUnmount() {
@@ -160,15 +178,6 @@ Vue.createApp({
     },
     
     methods: {
-        /**
-         * Refresh status and log (now handled automatically by polling)
-         */
-        async refresh() {
-            // Status and logs are updated automatically via polling
-            // This can force a UI update if needed
-            this.$forceUpdate();
-        },
-        
         /**
          * Initialize/home the machine
          */
