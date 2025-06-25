@@ -179,13 +179,13 @@ func main() {
 		respondJson(w, &resp)
 	})
 
-	// HTTP handler to get lines
-	http.HandleFunc("/get-lines", func(w http.ResponseWriter, r *http.Request) {
+	// HTTP handler to query lines
+	http.HandleFunc("/query-lines", func(w http.ResponseWriter, r *http.Request) {
 		if !handleCommom(w, r) {
 			return
 		}
 
-		slog.Debug("/get-lines")
+		slog.Debug("/query-lines")
 		var req getLinesRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			w.WriteHeader(http.StatusBadRequest)

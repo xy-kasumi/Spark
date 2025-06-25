@@ -82,171 +82,173 @@ function parseEdmPollEntries(binaryData) {
     return vals;
 }
 
+// Init commands (moved from config.go)
+// These were commented out in the original config.go
+const initCommands = [
+];
+
 Vue.createApp({
     data() {
         return {
+            // UI State
             command_text: '',
             spooler_status: 'Unknown',
             core_status: 'Unknown',
-            log_output: '',
+            log_lines: [],
             exec_status: '',
             xp: 0,
             yp: 0,
             zp: 0,
+            
+            // Protocol client
+            client: null,
         }
     },
+    
     computed: {
         commands() {
-            return this.command_text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+            return this.command_text.split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0);
         },
+        
+        log_output() {
+            return this.log_lines
+                .map(line => `${line.time}${line.dir === 'up' ? '>' : '<'}${line.content}`)
+                .join('\n');
+        }
     },
-    methods: {
-        async refresh() {
-            try {
-                const res = await fetch(host + '/status', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({})
-                });
-                const text = await res.text();
-                if (!res.ok) {
-                    this.spooler_status = 'Connected (Error; No JSON)';
-                    return;
-                }
-                const respJson = JSON.parse(text);
-                this.spooler_status = 'Connected';
-                this.core_status = respJson.status;
-                this.xp = respJson.x_pos;
-                this.yp = respJson.y_pos;
-                this.zp = respJson.z_pos;
-            } catch (err) {
-                this.spooler_status = 'Failed to connect';
-                return;
+    
+    mounted() {
+        // Initialize client
+        this.client = new SpoolerClient(host);
+        
+        // Setup callbacks
+        this.client.onStatusUpdate = (status) => {
+            if (status.x !== undefined) this.xp = status.x;
+            if (status.y !== undefined) this.yp = status.y;
+            if (status.z !== undefined) this.zp = status.z;
+            this.core_status = status.status || (status.ready ? 'OK' : 'Busy');
+            this.spooler_status = 'Connected';
+        };
+        
+        this.client.onLogLine = (line) => {
+            this.log_lines.push(line);
+            // Keep last 1000 lines
+            if (this.log_lines.length > 1000) {
+                this.log_lines.shift();
             }
-
-            const res = await fetch(host + '/get-core-log', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
-            });
-            const text = await res.text();
-            if (!res.ok) {
-                return;
-            }
-            const respJson = JSON.parse(text);
-            this.log_output = respJson.output;
             this.$nextTick(() => {
-                this.$refs.logOutput.scrollTop = this.$refs.logOutput.scrollHeight;
+                if (this.$refs.logOutput) {
+                    this.$refs.logOutput.scrollTop = this.$refs.logOutput.scrollHeight;
+                }
             });
+        };
+        
+        this.client.onError = (error) => {
+            this.spooler_status = 'Error: ' + error.message;
+        };
+        
+        // Start polling
+        this.client.startPolling(1000);
+    },
+    
+    beforeUnmount() {
+        if (this.client) {
+            this.client.stopPolling();
+        }
+    },
+    
+    methods: {
+        /**
+         * Refresh status and log (now handled automatically by polling)
+         */
+        async refresh() {
+            // Status and logs are updated automatically via polling
+            // This can force a UI update if needed
+            this.$forceUpdate();
         },
+        
+        /**
+         * Initialize/home the machine
+         */
         async init() {
+            this.exec_status = 'Initializing...';
             try {
-                const res = await fetch(host + '/init', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({})
-                });
-                const text = await res.text();
-                if (!res.ok) throw new Error(text);
-                this.status = 'Success: ' + text;
-            } catch (err) {
-                this.status = 'Error: ' + err.message;
+                if (initCommands.length > 0) {
+                    await this.client.sendCommands(initCommands);
+                } else {
+                    // Send a simple status query if no init commands
+                    await this.client.sendCommand('$X');
+                }
+                this.exec_status = 'Initialized';
+            } catch (error) {
+                this.exec_status = 'Init Error: ' + error.message;
             }
-            await this.refresh();
         },
+        
+        /**
+         * Send user commands
+         */
         async send() {
-            this.exec_status = 'executing...';
-            try {
-                const res = await fetch(host + '/write', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ commands: this.commands })
-                });
-                const text = await res.text();
-                if (!res.ok) {
-                    throw new Error(text);
-                }
-                const respJson = JSON.parse(text);
-                if (respJson.error) {
-                    this.exec_status = "Command Error: " + respJson.error;
-                    return;
-                }
-                if (!respJson.command_success) {
-                    const errorLocs = [];
-                    for (let i = 0; i < respJson.command_errors.length; i++) {
-                        const err = respJson.command_errors[i];
-                        if (err === null) continue;
-                        errorLocs.push(`${commands[i]}: ${err}`);
-                    }
-                    this.exec_status = "Command Failed: " + errorLocs.join(', ');;
-                    return;
-                }
-                this.exec_status = "Success";
-            } catch (err) {
-                this.exec_status = '';
-                this.spooler_status = 'Error: ' + err.message;
+            if (this.commands.length === 0) {
+                return;
             }
-            await this.refresh();
+            
+            this.exec_status = 'Executing...';
+            try {
+                await this.client.sendCommands(this.commands);
+                this.exec_status = 'Success';
+            } catch (error) {
+                this.exec_status = 'Error: ' + error.message;
+            }
         },
+        
+        /**
+         * Cancel current operation
+         */
         async cancel() {
             try {
-                this.exec_status = 'Sending Ctrl-Y...';
-                const res = await fetch(host + '/write', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ commands: ['\x19'] })
-                });
-                const text = await res.text();
-                if (!res.ok) {
-                    throw new Error(text);
-                }
-                const respJson = JSON.parse(text);
-                if (respJson.error) {
-                    this.exec_status = "Command Error: " + respJson.error;
-                    return;
-                }
-                if (!respJson.command_success) {
-                    const errorLocs = [];
-                    for (let i = 0; i < respJson.command_errors.length; i++) {
-                        const err = respJson.command_errors[i];
-                        if (err === null) continue;
-                        errorLocs.push(`${commands[i]}: ${err}`);
-                    }
-                    this.exec_status = "Command Failed: " + errorLocs.join(', ');;
-                    return;
-                }
-                this.exec_status = "Success";
-            } catch (err) {
-                this.exec_status = '';
-                this.spooler_status = 'Error: ' + err.message;
+                await this.client.sendCancel();
+                this.exec_status = 'Cancelled';
+            } catch (error) {
+                this.exec_status = 'Cancel Error: ' + error.message;
             }
-            await this.refresh();
         },
+        
+        /**
+         * Analyze log for blob data and draw EDML visualization
+         */
         analyze_log() {
-            let outputLines = this.log_output.split('\n').map(line => {
-                const ix = line.indexOf('>');
-                if (ix < 0) {
-                    return null;
-                }
-                return line.slice(ix + 1)
-            }).filter(line => line !== null);
-
-            // find last blob line
-            const lastBlobIx = outputLines.findLastIndex(line => line.startsWith(">blob "));
-            if (lastBlobIx < 0) {
+            // Find last blob line in log_lines
+            const blobLine = this.log_lines
+                .filter(line => line.content.startsWith('>blob '))
+                .pop();
+                
+            if (!blobLine) {
+                console.log("No blob data found in log");
                 return;
             }
-
-            // parse blob line
-            let vals;
+            
             try {
-                const binaryData = parseBlobPayload(outputLines[lastBlobIx]);
-                vals = parseEdmPollEntries(binaryData);
+                const binaryData = parseBlobPayload(blobLine.content);
+                const vals = parseEdmPollEntries(binaryData);
+                this.drawEdml(vals);
             } catch (e) {
                 console.error("Blob parsing error:", e.message);
+            }
+        },
+        
+        /**
+         * Draw EDML visualization on canvas
+         * @param {Array} vals - EDM poll entries
+         */
+        drawEdml(vals) {
+            if (!this.$refs.edml) {
+                console.error("EDML canvas not found");
                 return;
             }
-
+            
             const edmlData = [{
                 state: "blob",
                 numPulses: vals.length,
@@ -256,7 +258,6 @@ Vue.createApp({
 
             // draw
             const ctx = this.$refs.edml.getContext('2d');
-            //ctx.save();
             const width = 500;
             const height = 1000;
             const barWidth = 2;
@@ -286,10 +287,6 @@ Vue.createApp({
                     }
                 }
             }
-
-
-
-
         }
     }
 }).mount('#app');
