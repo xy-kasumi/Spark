@@ -13,6 +13,41 @@ import (
 	"time"
 )
 
+// New API (WIP)
+// Common domain:
+// * line: integer (>=1) that uniquely identifies any command or response. Line number starts from 1 when spooler starts. Each line is a string w/o newlines.
+// * time: timestamp in format "2006-01-02 15:04:05.000" (local time). Not guaranteed to be precise globally, but it guaranteed to be monotonic.
+//         more specifically, each line has single timestamp (first byte sent/received). It holds that:
+//         *  linenum(line1) > linenum(line2) => time(line1) >= time(line2)
+//         *  time(line1) > time(line2) => linenum(line1) > linenum(line2)
+//         ">=" because timestamp can collide if two lines are close together in time; line number provides the proper ordering.
+type writeLineRequest struct {
+	Line string `json:"line"` // single line of command. cannot contain newline.
+}
+
+type writeLineResponse struct {
+	LineNum int `json:"line_num"`
+	Time string `json:"time"`
+}
+
+type queryLinesRequest struct {
+	Begin int `json:"begin"` // Optional: line number to start from (inclusive). 1 means first line. If omitted, defaults to 1.
+}
+
+type queryLinesResponse struct {
+	Count int `json:"count"` // number of matching lines. This will be exact count, which will work even if lines is truncated.
+	Lines []lineInfo `json:"lines"` // actual lines, ordered by line number (ascending). Truncated to max of 1000 lines.
+}
+
+type lineInfo struct {
+	LineNum int	`json:"line_num"`
+	Dir string	`json:"dir"` // "up" for client->host, "down" for host->client
+	Content string	`json:"content"` // content of the line, without newlines
+	Time string	`json:"time"` // timestamp of the line in format "2006-01-02 15:04:05.000" (local time)
+}
+
+
+// Old API
 type writeRequest struct {
 	Commands []string `json:"commands"` // list of commands. cannot contain newline
 }
