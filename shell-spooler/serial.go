@@ -59,7 +59,7 @@ func (sh *serialHandler) readLoop() {
 		slog.Debug("received", "line", line)
 
 		// Add to storage
-		sh.storage.addLine("down", line)
+		sh.storage.addLine("up", line)
 	}
 }
 

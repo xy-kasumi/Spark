@@ -170,7 +170,7 @@ func main() {
 		ser.writeLine(req.Line)
 
 		// Add to storage
-		lineNum, timestamp := storage.addLine("up", req.Line)
+		lineNum, timestamp := storage.addLine("down", req.Line)
 
 		resp := writeLineResponse{
 			LineNum: lineNum,
