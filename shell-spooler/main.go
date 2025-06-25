@@ -30,6 +30,7 @@ type getLinesRequest struct {
 
 type getLinesResponse struct {
 	Lines []lineInfo `json:"lines"` // actual lines, ordered by line number (ascending)
+	Now   string     `json:"now"`   // current recognized time of spooler in format "2006-01-02 15:04:05.000" (local time)
 }
 
 type lineInfo struct {
@@ -45,6 +46,11 @@ type line struct {
 	dir     string // "up" or "down"
 	content string
 	time    time.Time
+}
+
+// formatTimestamp formats a time.Time to the standard string format used by the API
+func formatSpoolerTime(t time.Time) string {
+	return t.Local().Format("2006-01-02 15:04:05.000")
 }
 
 // Global line storage
@@ -174,7 +180,7 @@ func main() {
 
 		resp := writeLineResponse{
 			LineNum: lineNum,
-			Time:    timestamp.Local().Format("2006-01-02 15:04:05.000"),
+			Time:    formatSpoolerTime(timestamp),
 		}
 		respondJson(w, &resp)
 	})
@@ -204,13 +210,14 @@ func main() {
 		// Convert to response format
 		resp := getLinesResponse{
 			Lines: make([]lineInfo, len(lines)),
+			Now:   formatSpoolerTime(time.Now()),
 		}
 		for i, l := range lines {
 			resp.Lines[i] = lineInfo{
 				LineNum: l.num,
 				Dir:     l.dir,
 				Content: l.content,
-				Time:    l.time.Local().Format("2006-01-02 15:04:05.000"),
+				Time:    formatSpoolerTime(l.time),
 			}
 		}
 
