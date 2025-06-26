@@ -47,5 +47,8 @@ by using [Broadcast Channel API](https://developer.mozilla.org/en-US/docs/Web/AP
 ### Tips
 Note: "localhost" and "127.0.0.1" are considered different origins.
 
-When `./build.sh` or `./watch.sh` cause directory listing page to show up;
-* If you're using VSCode Live Server, configure "live server wait" to be larger than build time. e.g. 1500 (ms)
+When `./build.sh` or `./watch.sh` cause directory listing page to show up:
+* Configure `liveServer.settings.wait` to be larger than build time. e.g. 1500 (ms)
+
+When log output from spooler is causing refresh:
+* Add `"**/logs/**"` to `liveServer.settings.ignoreFiles`.
