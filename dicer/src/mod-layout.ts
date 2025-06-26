@@ -212,18 +212,22 @@ export class ModuleLayout implements Module {
 
         const lines = [];
 
+        const initToolLen = 25; // must be larger than actual current tool len to avoid collision
+        const targToolLen = 23; // target tool length after grinding
+        const grinderZEvacBuffer = 15; // buffer for Z evacuation after grinding
+
         lines.push(`; init`);
         lines.push(`G28`);  // home
 
         lines.push(`G54`); // use grinder coordinate system
-        lines.push(`G0 Y0 Z40 X5`); // safe position (25mm initial length + 15mm buffer)
-        lines.push(`G0 Z23`); // insert tool into grinder (target length=23mm)
+        lines.push(`G0 Y0 Z${grinderZEvacBuffer + initToolLen} X5`); // safe position
+        lines.push(`G0 Z${targToolLen}`); // insert tool into grinder
 
-        lines.push(`M10 R120`); // start wire feed. TODO: dwell a bit so that tension stabilizes.
+        lines.push(`M10 R120`); // start wire feed.
         lines.push(`M4 P100 Q5 R10`); // high for grinding.
         lines.push(`G1 X-5`); // cut tool end
 
-        lines.push(`G0 Z38`); // evaculate (23mm + 15mm buffer)
+        lines.push(`G0 Z${grinderZEvacBuffer + targToolLen}38`); // evaculate
         lines.push(`M11`); // end wire feed
 
 
