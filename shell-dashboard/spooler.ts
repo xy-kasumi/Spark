@@ -136,8 +136,7 @@ class SpoolerClient {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    line_num_since: this.lastLineNum + 1,
-                    num_lines: 100
+                    from_line: this.lastLineNum + 1
                 })
             });
             
@@ -145,9 +144,10 @@ class SpoolerClient {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             
-            const { lines, now }: { lines: LogLine[], now: string } = await response.json();
+            const { lines, count, now }: { lines: LogLine[], count: number, now: string } = await response.json();
             
             // Check for board timeout if we have a pending command
+            /*
             if (this.currentCommand && this.lastCommandTime) {
                 const serverTime = new Date(now).getTime();
                 const commandAge = serverTime - this.lastCommandTime;
@@ -155,6 +155,7 @@ class SpoolerClient {
                     this.setStatus('board-offline');
                 }
             }
+                */
             
             // Process lines and update status based on responses
             let hasStatusInfo = false;
