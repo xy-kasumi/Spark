@@ -117,40 +117,40 @@ func (ls *lineStorage) queryRange(fromLine, toLine int) []line {
 	ls.mu.RLock()
 	defer ls.mu.RUnlock()
 
-	if len(ls.lines) == 0 {
+	numLines := len(ls.lines)
+	if numLines == 0 {
 		return []line{}
 	}
 
-	var startIdx, endIdx int
+	// Note: line numbers are 1-based, slice indices are 0-based.
+	// We assume line numbers in storage are contiguous and start from 1.
+	// So, for line number `n`, its index is `n-1`.
 
-	// Find start index
+	var startIdx int
 	if fromLine > 0 {
-		startIdx = 0
-		for i, l := range ls.lines {
-			if l.num >= fromLine {
-				startIdx = i
-				break
-			}
-		}
-		// If no line found with num >= fromLine, return empty
-		if startIdx == 0 && len(ls.lines) > 0 && ls.lines[0].num > fromLine {
-			return []line{}
-		}
+		startIdx = fromLine - 1
 	} else {
+		startIdx = 0 // fromLine <= 0 means from the beginning
+	}
+
+	if startIdx < 0 {
 		startIdx = 0
 	}
 
-	// Find end index
+	if startIdx >= numLines {
+		return []line{} // fromLine is after all stored lines
+	}
+
+	var endIdx int
 	if toLine > 0 {
-		endIdx = len(ls.lines)
-		for i, l := range ls.lines {
-			if l.num >= toLine {
-				endIdx = i
-				break
-			}
-		}
+		// toLine is exclusive, so the index is toLine - 1.
+		endIdx = toLine - 1
 	} else {
-		endIdx = len(ls.lines)
+		endIdx = numLines // toLine <= 0 means to the end
+	}
+
+	if endIdx > numLines {
+		endIdx = numLines
 	}
 
 	if startIdx >= endIdx {
