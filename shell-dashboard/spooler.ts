@@ -14,8 +14,9 @@ interface LogLine {
  * @property idle - API is OK, board is known to be idle state (ready to receive commands)
  * @property unknown - API is OK, board is in unknown state
  * @property busy - API is OK, board is known to be busy (or probably busy)
+ * @property busy-healthcheck - API is OK, board is busy due to auto-initiated ping
  */
-type SpoolerState = 'api-offline' | 'board-offline' | 'idle' | 'unknown' | 'busy';
+type SpoolerState = 'api-offline' | 'board-offline' | 'idle' | 'unknown' | 'busy' | 'busy-healthcheck';
 
 /**
  * SpoolerController handles state check & command queue.
@@ -25,7 +26,6 @@ class SpoolerController {
     private readonly apiIntervalMs: number;
     private readonly pingIntervalMs: number;
 
-    private pingTimer: number | null;
     private isPolling: boolean;
 
     private commandQueue: string[];
@@ -34,22 +34,21 @@ class SpoolerController {
     private statusText: string;
     
     public onUpdate: ((state: SpoolerState, status: string) => void) | null;
+    public onQueueChange: (() => void) | null;
 
     /**
      * @param host base URL of the shell-spooler server
-     * @param apiIntervalMs API polling interval in milliseconds
-     * @param pingIntervalMs ping interval in milliseconds
-     * @param commandTimeoutMs command timeout in milliseconds
+     * @param pollMs API polling & state check interval in milliseconds
+     * @param pingIntervalMs ping interval in milliseconds (must be multiples of pollMs)
      */
-    constructor(host: string, apiIntervalMs = 500, pingIntervalMs = 5000, commandTimeoutMs = 1000) {
+    constructor(host: string, pollMs = 500, pingIntervalMs = 5000) {
         this.host = host;
-        this.apiIntervalMs = apiIntervalMs;
+        this.apiIntervalMs = pollMs;
         this.pingIntervalMs = pingIntervalMs;
 
         this.commandQueue = [];
 
         this.isPolling = false;
-        this.pingTimer = null;
         
         // Enhanced status tracking
         this.state = 'unknown';
@@ -57,6 +56,7 @@ class SpoolerController {
         
         // Callbacks for UI updates
         this.onUpdate = null;
+        this.onQueueChange = null;
     }
     
     /**
@@ -87,7 +87,6 @@ class SpoolerController {
     startPolling(): void {
         this.isPolling = true;
         this.pollLoop(this.apiIntervalMs);
-        this.startPingLoop();
     }
     
     /**
@@ -95,7 +94,6 @@ class SpoolerController {
      */
     stopPolling(): void {
         this.isPolling = false;
-        this.stopPingLoop();
     }
     
     /**
@@ -103,8 +101,27 @@ class SpoolerController {
      * @param intervalMs - Polling interval in milliseconds
      */
     private async pollLoop(intervalMs: number): Promise<void> {
+        let pingCounter = 0;
+        const pingInterval = Math.floor(this.pingIntervalMs / intervalMs);
+        
         while (this.isPolling) {
             await this.fetchNewLines();
+            
+            // Process commands only when idle
+            if (this.state === 'idle') {
+                await this.processCommandQueue();
+            }
+            
+            // Handle ping timing for appropriate states  
+            pingCounter++;
+            if (pingCounter >= pingInterval) {
+                if ((this.state === 'idle' || this.state === 'unknown' || this.state === 'board-offline') && 
+                    this.commandQueue.length === 0) {
+                    await this.sendCommand('ping', true);
+                }
+                pingCounter = 0;
+            }
+            
             await this.delay(intervalMs);
         }
     }
@@ -147,9 +164,6 @@ class SpoolerController {
             this.setState('api-offline');
             console.log("spooler error", error);
         }
-        
-        // Process command queue if state allows
-        await this.processCommandQueue();
     }
     
     /**
@@ -165,18 +179,26 @@ class SpoolerController {
     }
     
     /**
-     * Process command queue if state is idle and queue has commands
+     * Process command queue (assumes state check already done)
      */
     private async processCommandQueue(): Promise<void> {
-        if (this.state !== 'idle' || this.commandQueue.length === 0) {
+        if (this.commandQueue.length === 0) {
             return;
         }
         
         const command = this.commandQueue.shift();
-        if (!command) {
-            return;
+        if (this.onQueueChange) {
+            this.onQueueChange();
         }
-        
+        await this.sendCommand(command, false);
+    }
+    
+    /**
+     * Send a command to the spooler
+     * @param command - Command to send
+     * @param isHealthcheck - Whether this is an auto-initiated healthcheck
+     */
+    private async sendCommand(command: string, isHealthcheck: boolean): Promise<void> {
         try {
             const response = await fetch(`${this.host}/write-line`, {
                 method: 'POST',
@@ -187,21 +209,27 @@ class SpoolerController {
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-            
-            // Command sent successfully, state will be updated by polling
+
+            // Set appropriate busy state
+            this.setState(isHealthcheck ? 'busy-healthcheck' : 'busy');
         } catch (error) {
             // Command failed, set state to offline
             this.setState('api-offline');
         }
     }
     
-    
     /**
      * Add a command to the queue
-     * @param command - Command string to enqueue
+     * @param command - Command string to enqueue (ignores empty commands)
      */
     enqueueCommand(command: string): void {
-        this.commandQueue.push(command);
+        const trimmed = command.trim();
+        if (trimmed.length > 0) {
+            this.commandQueue.push(trimmed);
+            if (this.onQueueChange) {
+                this.onQueueChange();
+            }
+        }
     }
     
     /**
@@ -218,6 +246,9 @@ class SpoolerController {
     cancel(): void {
         // Clear queue
         this.commandQueue.length = 0;
+        if (this.onQueueChange) {
+            this.onQueueChange();
+        }
         
         // Send cancel command directly
         fetch(`${this.host}/write-line`, {
@@ -229,45 +260,6 @@ class SpoolerController {
         });
     }
     
-    /**
-     * Check if commands are currently being executed
-     * @returns True if commands are being executed
-     */
-    isExecuting(): boolean {
-        return this.commandQueue.length > 0;
-    }
-    
-    /**
-     * Start the ping loop for keeping connection alive
-     */
-    private startPingLoop(): void {
-        this.stopPingLoop(); // Clear any existing timer
-        this.pingTimer = setInterval(() => {
-            this.sendPingIfNeeded();
-        }, this.pingIntervalMs);
-    }
-    
-    /**
-     * Stop the ping loop
-     */
-    private stopPingLoop(): void {
-        if (this.pingTimer) {
-            clearInterval(this.pingTimer);
-            this.pingTimer = null;
-        }
-    }
-    
-    /**
-     * Send ping command if in appropriate state
-     */
-    private async sendPingIfNeeded(): Promise<void> {
-        // Only ping in idle, unknown, or board-offline states
-        if (this.state === 'idle' || this.state === 'unknown' || this.state === 'board-offline') {
-            // Add ping to queue - it will be processed when state is idle
-            this.enqueueCommand('ping');
-        }
-    }
-
     /**
      * Utility function to delay execution
      * @param ms - Milliseconds to delay

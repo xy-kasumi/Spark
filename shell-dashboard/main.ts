@@ -49,6 +49,7 @@ Vue.createApp({
             commandText: '',
             clientStatus: 'unknown',
             statusText: '',
+            commandQueue: [],
         }
     },
     
@@ -60,9 +61,10 @@ Vue.createApp({
         },
         
         uiStatus() {
-            // Map 5 states to 3 UI states
+            // Map 6 states to 3 UI states
             switch (this.clientStatus) {
-                case 'idle': return 'idle';
+                case 'idle':
+                case 'busy-healthcheck': return 'idle';
                 case 'busy': return 'busy';
                 case 'api-offline':
                 case 'board-offline':
@@ -81,17 +83,15 @@ Vue.createApp({
         },
         
         initButtonText() {
-            return this.clientStatus === 'idle' ? 'Init' : 'Enqueue Init';
+            return (this.clientStatus === 'idle' || this.clientStatus === 'busy-healthcheck') ? 'Init' : 'Enqueue Init';
         },
         
         executeButtonText() {
-            return this.clientStatus === 'idle' ? 'Execute' : 'Enqueue';
+            return (this.clientStatus === 'idle' || this.clientStatus === 'busy-healthcheck') ? 'Execute' : 'Enqueue';
         },
         
         queueStatus() {
-            if (!client) return '';
-            
-            const queueLength = client.peekQueue().length;
+            const queueLength = this.commandQueue.length;
             if (queueLength === 0) {
                 return '';
             }
@@ -109,6 +109,10 @@ Vue.createApp({
         client.onUpdate = (state, status) => {
             this.clientStatus = state;
             this.statusText = status;
+        };
+        
+        client.onQueueChange = () => {
+            this.commandQueue = client.peekQueue();
         };
         
         // Start polling
