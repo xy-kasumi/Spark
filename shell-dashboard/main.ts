@@ -46,9 +46,7 @@ Vue.createApp({
             command_text: '',
             client_status: 'unknown',
             exec_status: '',
-            xp: 0,
-            yp: 0,
-            zp: 0,
+            statusText: '',
             
             // Protocol client
             client: null,
@@ -89,14 +87,9 @@ Vue.createApp({
         this.client = new SpoolerClient(host, 1000);
         
         // Setup callbacks
-        this.client.onStatusUpdate = (status) => {
-            if (status.x !== undefined) this.xp = status.x;
-            if (status.y !== undefined) this.yp = status.y;
-            if (status.z !== undefined) this.zp = status.z;
-        };
-        
-        this.client.onStatusChange = (newStatus, oldStatus) => {
-            this.client_status = newStatus;
+        this.client.onUpdate = (state, status) => {
+            this.client_status = state;
+            this.statusText = status;
         };
         
         
