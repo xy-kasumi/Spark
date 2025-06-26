@@ -57,8 +57,9 @@ Assumption is that:
 * Linux single board computer (e.g. Raspberry Pi) handles every UI
 
 Spooler provides non-realtime machine interface by:
-* keep G-code file cache locally
+* keep G-code cache locally
 * streams G-code reliably & monitors Core even when network is offline or dashboard is gone
+* spooler's knowledge of the protocol or G-code is minimum; it's basically a HTTP-accessible line-based storage
 
 The command stream is high-level (G-code + system commands).
 Core buffers hopefully more than 1 second of G-code,
