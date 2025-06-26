@@ -8,13 +8,6 @@ interface LogLine {
     time: string;
 }
 
-
-interface QueuedCommand {
-    command: string;
-    resolve: (value: string) => void;
-    reject: (reason: Error) => void;
-}
-
 /**
  * @property api-offline - Spooler API not working
  * @property board-offline - API is OK, board response timed out (NOT IMPLEMENTED YET)
@@ -35,15 +28,12 @@ class SpoolerController {
     private pingTimer: number | null;
     private isPolling: boolean;
 
-    private commandQueue: QueuedCommand[];
-    private currentCommand: QueuedCommand | null;
-    private deviceReady: boolean;
+    private commandQueue: string[];
 
     private state: SpoolerState;
     private statusText: string;
     
     public onUpdate: ((state: SpoolerState, status: string) => void) | null;
-    public onError: ((error: Error) => void) | null;
 
     /**
      * @param host base URL of the shell-spooler server
@@ -57,8 +47,6 @@ class SpoolerController {
         this.pingIntervalMs = pingIntervalMs;
 
         this.commandQueue = [];
-        this.currentCommand = null;
-        this.deviceReady = true;
 
         this.isPolling = false;
         this.pingTimer = null;
@@ -69,7 +57,6 @@ class SpoolerController {
         
         // Callbacks for UI updates
         this.onUpdate = null;
-        this.onError = null;
     }
     
     /**
@@ -160,6 +147,9 @@ class SpoolerController {
             this.setState('api-offline');
             console.log("spooler error", error);
         }
+        
+        // Process command queue if state allows
+        await this.processCommandQueue();
     }
     
     /**
@@ -175,93 +165,68 @@ class SpoolerController {
     }
     
     /**
-     * Send a single command to the device
-     * @param command - Command string to send
-     * @returns Promise that resolves with device response
+     * Process command queue if state is idle and queue has commands
      */
-    async sendCommand(command: string): Promise<string> {
-        return new Promise((resolve, reject) => {
-            this.commandQueue.push({ command, resolve, reject });
-            if (this.deviceReady && !this.currentCommand) {
-                this.processQueue();
-            }
-        });
-    }
-    
-    /**
-     * Send multiple commands in sequence
-     * @param commands - Array of command strings
-     * @returns Promise that resolves with array of responses
-     */
-    async sendCommands(commands: string[]): Promise<string[]> {
-        const results = [];
-        for (const cmd of commands) {
-            results.push(await this.sendCommand(cmd));
-        }
-        return results;
-    }
-    
-    /**
-     * Process the command queue
-     */
-    private async processQueue(): Promise<void> {
-        if (this.commandQueue.length === 0 || !this.deviceReady || this.currentCommand) {
+    private async processCommandQueue(): Promise<void> {
+        if (this.state !== 'idle' || this.commandQueue.length === 0) {
             return;
         }
         
-        this.currentCommand = this.commandQueue.shift();
-        this.deviceReady = false;
-        this.setState('busy');
+        const command = this.commandQueue.shift();
+        if (!command) {
+            return;
+        }
         
         try {
             const response = await fetch(`${this.host}/write-line`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ line: this.currentCommand.command })
+                body: JSON.stringify({ line: command })
             });
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             
-            // Track command timing for timeout detection
-            const responseData: { time: string } = await response.json();
+            // Command sent successfully, state will be updated by polling
         } catch (error) {
-            this.currentCommand.reject(error);
-            this.currentCommand = null;
-            this.deviceReady = true;
+            // Command failed, set state to offline
             this.setState('api-offline');
         }
     }
     
+    
     /**
-     * Send cancel command (bypasses queue)
+     * Add a command to the queue
+     * @param command - Command string to enqueue
      */
-    async sendCancel(): Promise<void> {
+    enqueueCommand(command: string): void {
+        this.commandQueue.push(command);
+    }
+    
+    /**
+     * Get a copy of the current command queue
+     * @returns Array of queued command strings
+     */
+    peekQueue(): string[] {
+        return [...this.commandQueue];
+    }
+    
+    /**
+     * Clear the command queue and send cancel command
+     */
+    cancel(): void {
         // Clear queue
-        while (this.commandQueue.length > 0) {
-            const cmd = this.commandQueue.shift();
-            cmd.reject(new Error('Cancelled'));
-        }
-        
-        // Cancel current command
-        if (this.currentCommand) {
-            this.currentCommand.reject(new Error('Cancelled'));
-            this.currentCommand = null;
-        }
+        this.commandQueue.length = 0;
         
         // Send cancel command directly
-        try {
-            await fetch(`${this.host}/write-line`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ line: '!' })
-            });
-        } catch (error) {
-            if (this.onError) {
-                this.onError(error);
-            }
-        }
+        fetch(`${this.host}/write-line`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ line: '!' })
+        }).catch(error => {
+            console.log("cancel error", error);
+        });
     }
     
     /**
@@ -269,7 +234,7 @@ class SpoolerController {
      * @returns True if commands are being executed
      */
     isExecuting(): boolean {
-        return this.currentCommand !== null || this.commandQueue.length > 0;
+        return this.commandQueue.length > 0;
     }
     
     /**
@@ -298,12 +263,8 @@ class SpoolerController {
     private async sendPingIfNeeded(): Promise<void> {
         // Only ping in idle, unknown, or board-offline states
         if (this.state === 'idle' || this.state === 'unknown' || this.state === 'board-offline') {
-            try {
-                // Send ping command
-                await this.sendCommand('ping');
-            } catch (error) {
-                // Ping failed, will be handled by normal error handling
-            }
+            // Add ping to queue - it will be processed when state is idle
+            this.enqueueCommand('ping');
         }
     }
 

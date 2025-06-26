@@ -79,7 +79,8 @@ Vue.createApp({
                 case 'offline': return '⚫';
                 default: return '⚫';
             }
-        }
+        },
+        
     },
     
     mounted() {
@@ -90,6 +91,7 @@ Vue.createApp({
         this.client.onUpdate = (state, status) => {
             this.client_status = state;
             this.statusText = status;
+            this.updateExecStatus();
         };
         
         
@@ -105,50 +107,63 @@ Vue.createApp({
     
     methods: {
         /**
+         * Update exec status based on queue state
+         */
+        updateExecStatus() {
+            if (!this.client) return;
+            
+            const queueLength = this.client.peekQueue().length;
+            if (queueLength === 0) {
+                if (!this.exec_status || this.exec_status.includes('queued') || this.exec_status.includes('executing')) {
+                    this.exec_status = 'Ready';
+                }
+                return;
+            }
+            
+            if (this.client_status === 'busy') {
+                this.exec_status = `executing... (${queueLength} more commands in queue)`;
+            } else {
+                this.exec_status = `${queueLength} commands queued`;
+            }
+        },
+        
+        /**
          * Initialize/home the machine
          */
-        async init() {
-            this.exec_status = 'Initializing...';
-            try {
-                if (initCommands.length > 0) {
-                    await this.client.sendCommands(initCommands);
-                } else {
-                    // Send a simple status query if no init commands
-                    await this.client.sendCommand('$X');
+        init() {
+            if (initCommands.length > 0) {
+                for (const cmd of initCommands) {
+                    this.client.enqueueCommand(cmd);
                 }
-                this.exec_status = 'Initialized';
-            } catch (error) {
-                this.exec_status = 'Init Error: ' + error.message;
+            } else {
+                // Send a simple status query if no init commands
+                this.client.enqueueCommand('$X');
             }
+            this.updateExecStatus();
         },
         
         /**
          * Send user commands
          */
-        async send() {
+        send() {
             if (this.commands.length === 0) {
                 return;
             }
             
-            this.exec_status = 'Executing...';
-            try {
-                await this.client.sendCommands(this.commands);
-                this.exec_status = 'Success';
-            } catch (error) {
-                this.exec_status = 'Error: ' + error.message;
+            for (const cmd of this.commands) {
+                this.client.enqueueCommand(cmd);
             }
+            this.updateExecStatus();
         },
         
         /**
          * Cancel current operation
          */
-        async cancel() {
-            try {
-                await this.client.sendCancel();
-                this.exec_status = 'Cancelled';
-            } catch (error) {
-                this.exec_status = 'Cancel Error: ' + error.message;
-            }
+        cancel() {
+            this.client.cancel();
+            this.exec_status = 'Cancelled';
+            // Update status after a brief delay to show the new queue state
+            setTimeout(() => this.updateExecStatus(), 100);
         },
         
         /**
