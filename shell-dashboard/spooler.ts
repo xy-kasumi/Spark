@@ -150,7 +150,11 @@ class SpoolerController {
             } else {
                 const line = lines[lines.length - 1];
                 if (line.dir === 'down') {
-                    this.setState('busy');
+                    if (line.content.startsWith('!')) {
+                        this.setState('unknown');
+                    } else {
+                        this.setState('busy');
+                    }
                 } else {
                     const isIdle = line.content.startsWith('I');
                     if (isIdle) {
