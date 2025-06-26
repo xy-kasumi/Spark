@@ -39,30 +39,29 @@ function parseEdmPollEntries(binaryData: Uint8Array): EdmPollEntry[] {
 const initCommands: string[] = [
 ];
 
+// Global client instance for performance
+let client: SpoolerController | null = null;
+
 Vue.createApp({
     data() {
         return {
             // UI State
-            command_text: '',
-            client_status: 'unknown',
-            exec_status: '',
+            commandText: '',
+            clientStatus: 'unknown',
             statusText: '',
-            
-            // Protocol client
-            client: null,
         }
     },
     
     computed: {
         commands() {
-            return this.command_text.split('\n')
+            return this.commandText.split('\n')
                 .map(line => line.trim())
                 .filter(line => line.length > 0);
         },
         
-        ui_status() {
+        uiStatus() {
             // Map 5 states to 3 UI states
-            switch (this.client_status) {
+            switch (this.clientStatus) {
                 case 'idle': return 'idle';
                 case 'busy': return 'busy';
                 case 'api-offline':
@@ -72,8 +71,8 @@ Vue.createApp({
             }
         },
         
-        status_emoji() {
-            switch (this.ui_status) {
+        statusEmoji() {
+            switch (this.uiStatus) {
                 case 'idle': return '🔵';
                 case 'busy': return '🟠';
                 case 'offline': return '⚫';
@@ -81,95 +80,87 @@ Vue.createApp({
             }
         },
         
+        initButtonText() {
+            return this.clientStatus === 'idle' ? 'Init' : 'Enqueue Init';
+        },
+        
+        executeButtonText() {
+            return this.clientStatus === 'idle' ? 'Execute' : 'Enqueue';
+        },
+        
+        queueStatus() {
+            if (!client) return '';
+            
+            const queueLength = client.peekQueue().length;
+            if (queueLength === 0) {
+                return '';
+            }
+            
+            return `${queueLength} commands in queue`;
+        },
+        
     },
     
     mounted() {
         // Initialize client
-        this.client = new SpoolerController(host, 1000);
+        client = new SpoolerController(host, 1000);
         
         // Setup callbacks
-        this.client.onUpdate = (state, status) => {
-            this.client_status = state;
+        client.onUpdate = (state, status) => {
+            this.clientStatus = state;
             this.statusText = status;
-            this.updateExecStatus();
         };
         
-        
         // Start polling
-        this.client.startPolling();
+        client.startPolling();
     },
     
     beforeUnmount() {
-        if (this.client) {
-            this.client.stopPolling();
+        if (client) {
+            client.stopPolling();
         }
     },
     
     methods: {
         /**
-         * Update exec status based on queue state
-         */
-        updateExecStatus() {
-            if (!this.client) return;
-            
-            const queueLength = this.client.peekQueue().length;
-            if (queueLength === 0) {
-                if (!this.exec_status || this.exec_status.includes('queued') || this.exec_status.includes('executing')) {
-                    this.exec_status = 'Ready';
-                }
-                return;
-            }
-            
-            if (this.client_status === 'busy') {
-                this.exec_status = `executing... (${queueLength} more commands in queue)`;
-            } else {
-                this.exec_status = `${queueLength} commands queued`;
-            }
-        },
-        
-        /**
          * Initialize/home the machine
          */
         init() {
-            if (initCommands.length > 0) {
-                for (const cmd of initCommands) {
-                    this.client.enqueueCommand(cmd);
-                }
-            } else {
-                // Send a simple status query if no init commands
-                this.client.enqueueCommand('$X');
+            if (!client) {
+                return;
             }
-            this.updateExecStatus();
+            
+            for (const cmd of initCommands) {
+                client.enqueueCommand(cmd);
+            }
         },
         
         /**
          * Send user commands
          */
         send() {
-            if (this.commands.length === 0) {
+            if (!client || this.commands.length === 0) {
                 return;
             }
             
             for (const cmd of this.commands) {
-                this.client.enqueueCommand(cmd);
+                client.enqueueCommand(cmd);
             }
-            this.updateExecStatus();
+            this.commandText = '';
         },
         
         /**
          * Cancel current operation
          */
         cancel() {
-            this.client.cancel();
-            this.exec_status = 'Cancelled';
-            // Update status after a brief delay to show the new queue state
-            setTimeout(() => this.updateExecStatus(), 100);
+            if (!client) return;
+            client.cancel();
         },
         
         /**
          * Analyze log for blob data and draw EDML visualization
          */
-        analyze_log() {
+        analyzeLog() {
             // TODO: Fix data source - log_lines was removed with Serial Log feature
             console.log("analyze_log called but data source not available");
             return;

@@ -13,20 +13,18 @@
         <div class="pure-u-2-5">
             <h1>Status</h1>
             <p>
-                <span :title="'Detailed status: ' + client_status">{{ status_emoji }} {{ ui_status }}</span>
+                <span :title="'Detailed status: ' + clientStatus">{{ statusEmoji }} {{ uiStatus }}</span>
             </p>
-
-            <h1>Axes</h1>
             <div>{{ statusText }}</div>
-            <button class="pure-button" @click="init">Init</button>
+            <div>{{ queueStatus }}</div>
 
             <h1>Manual Command</h1>
-            <textarea class="pure-input-1-2" v-model="command_text" rows="10" cols="50"
+            <button class="pure-button" @click="init">{{ initButtonText }}</button>
+            <textarea class="pure-input-1-2" v-model="commandText" rows="10" cols="50"
                 placeholder="Enter G-code or commands"></textarea><br />
-            <button class="pure-button" @click="send" :disabled="commands.length === 0">Execute</button>
+            <button class="pure-button" @click="send" :disabled="commands.length === 0">{{ executeButtonText }}</button>
             <button class="pure-button" @click="cancel">Cancel</button>
-            <p>Exec Status: {{ exec_status }}</p>
-            <button class="pure-button" @click="analyze_log">Analyze Log</button>
+            <button class="pure-button" @click="analyzeLog">Analyze Log</button>
         </div>
         <div class="pure-u-3-5">
             <h1>EDML (250ms/line)</h1>
