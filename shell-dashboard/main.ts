@@ -3,60 +3,6 @@
 
 const host = "http://localhost:9000";
 
-/**
- * Calculates Adler-32 checksum for binary data.
- * @param data - Binary data to checksum
- * @returns 32-bit unsigned checksum
- */
-function calculateAdler32(data: Uint8Array): number {
-    let a = 1, b = 0;
-    const MOD_ADLER = 65521;
-
-    for (let i = 0; i < data.length; i++) {
-        a = (a + data[i]) % MOD_ADLER;
-        b = (b + a) % MOD_ADLER;
-    }
-
-    return ((b << 16) | a) >>> 0;
-}
-
-/**
- * Parses ">blob <base64> <checksum>" line and validates payload.
- * @param blobLine - Line containing ">blob <base64> <checksum>"
- * @returns Verified binary payload
- * @throws On invalid format or checksum mismatch
- */
-function parseBlobPayload(blobLine: string): Uint8Array {
-    const parts = blobLine.split(' ');
-    if (parts.length < 3 || parts[0] !== ">blob") {
-        throw new Error("Invalid blob format");
-    }
-
-    const base64Payload = parts[1];
-    const expectedChecksum = parts[2];
-
-    // decode base64 payload (URL-safe without padding)
-    let binaryData: Uint8Array;
-    try {
-        const standardBase64 = base64Payload.replace(/-/g, '+').replace(/_/g, '/');
-        const binaryString = atob(standardBase64);
-        binaryData = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-            binaryData[i] = binaryString.charCodeAt(i);
-        }
-    } catch (e) {
-        throw new Error("Failed to decode base64: " + e.message);
-    }
-
-    // verify checksum
-    const actualChecksum = calculateAdler32(binaryData);
-    if (actualChecksum.toString(16).padStart(8, '0') !== expectedChecksum) {
-        throw new Error("Checksum mismatch");
-    }
-
-    return binaryData;
-}
-
 interface EdmPollEntry {
     short: number;
     pulse: number;
@@ -99,7 +45,6 @@ Vue.createApp({
             // UI State
             command_text: '',
             client_status: 'unknown',
-            log_lines: [],
             exec_status: '',
             xp: 0,
             yp: 0,
@@ -115,12 +60,6 @@ Vue.createApp({
             return this.command_text.split('\n')
                 .map(line => line.trim())
                 .filter(line => line.length > 0);
-        },
-        
-        log_output() {
-            return this.log_lines
-                .map(line => `${line.time}${line.dir === 'up' ? '↑' : '↓'}${line.content}`)
-                .join('\n');
         },
         
         ui_status() {
@@ -160,18 +99,6 @@ Vue.createApp({
             this.client_status = newStatus;
         };
         
-        this.client.onLogLine = (line) => {
-            this.log_lines.push(line);
-            // Keep last 1000 lines
-            if (this.log_lines.length > 1000) {
-                this.log_lines.shift();
-            }
-            this.$nextTick(() => {
-                if (this.$refs.logOutput) {
-                    this.$refs.logOutput.scrollTop = this.$refs.logOutput.scrollHeight;
-                }
-            });
-        };
         
         // Start polling
         this.client.startPolling();
@@ -235,23 +162,27 @@ Vue.createApp({
          * Analyze log for blob data and draw EDML visualization
          */
         analyze_log() {
-            // Find last blob line in log_lines
-            const blobLine = this.log_lines
-                .filter(line => line.content.startsWith('>blob '))
-                .pop();
-                
-            if (!blobLine) {
-                console.log("No blob data found in log");
-                return;
-            }
+            // TODO: Fix data source - log_lines was removed with Serial Log feature
+            console.log("analyze_log called but data source not available");
+            return;
             
-            try {
-                const binaryData = parseBlobPayload(blobLine.content);
-                const vals = parseEdmPollEntries(binaryData);
-                this.drawEdml(vals);
-            } catch (e) {
-                console.error("Blob parsing error:", e.message);
-            }
+            // Original implementation for reference:
+            // const blobLine = this.log_lines
+            //     .filter(line => line.content.startsWith('>blob '))
+            //     .pop();
+            //     
+            // if (!blobLine) {
+            //     console.log("No blob data found in log");
+            //     return;
+            // }
+            // 
+            // try {
+            //     const binaryData = parseBlobPayload(blobLine.content);
+            //     const vals = parseEdmPollEntries(binaryData);
+            //     this.drawEdml(vals);
+            // } catch (e) {
+            //     console.error("Blob parsing error:", e.message);
+            // }
         },
         
         /**

@@ -50,7 +50,6 @@ class SpoolerClient {
     private pingTimer: number | null;
     
     public onStatusUpdate: ((status: SpoolerStatus) => void) | null;
-    public onLogLine: ((line: LogLine) => void) | null;
     public onStatusChange: ((newStatus: SpoolerState, oldStatus: SpoolerState) => void) | null;
     public onError: ((error: Error) => void) | null;
 
@@ -79,7 +78,6 @@ class SpoolerClient {
         
         // Callbacks for UI updates
         this.onStatusUpdate = null;
-        this.onLogLine = null;
         this.onStatusChange = null;
         this.onError = null;
     }
@@ -194,11 +192,6 @@ class SpoolerClient {
      * @param line - Line object with line_num, dir, content, time
      */
     private processLine(line: LogLine): void {
-        // Notify UI of new log line
-        if (this.onLogLine) {
-            this.onLogLine(line);
-        }
-        
         // Handle device responses (lines from device to host)
         if (line.dir === 'down' && line.content.startsWith('I')) {
             this.deviceReady = true;
@@ -400,4 +393,59 @@ class SpoolerClient {
     private delay(ms: number): Promise<void> {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
+}
+
+
+/**
+ * Calculates Adler-32 checksum for binary data.
+ * @param data - Binary data to checksum
+ * @returns 32-bit unsigned checksum
+ */
+function calculateAdler32(data: Uint8Array): number {
+    let a = 1, b = 0;
+    const MOD_ADLER = 65521;
+
+    for (let i = 0; i < data.length; i++) {
+        a = (a + data[i]) % MOD_ADLER;
+        b = (b + a) % MOD_ADLER;
+    }
+
+    return ((b << 16) | a) >>> 0;
+}
+
+/**
+ * Parses ">blob <base64> <checksum>" line and validates payload.
+ * @param blobLine - Line containing ">blob <base64> <checksum>"
+ * @returns Verified binary payload
+ * @throws On invalid format or checksum mismatch
+ */
+function parseBlobPayload(blobLine: string): Uint8Array {
+    const parts = blobLine.split(' ');
+    if (parts.length < 3 || parts[0] !== ">blob") {
+        throw new Error("Invalid blob format");
+    }
+
+    const base64Payload = parts[1];
+    const expectedChecksum = parts[2];
+
+    // decode base64 payload (URL-safe without padding)
+    let binaryData: Uint8Array;
+    try {
+        const standardBase64 = base64Payload.replace(/-/g, '+').replace(/_/g, '/');
+        const binaryString = atob(standardBase64);
+        binaryData = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            binaryData[i] = binaryString.charCodeAt(i);
+        }
+    } catch (e) {
+        throw new Error("Failed to decode base64: " + e.message);
+    }
+
+    // verify checksum
+    const actualChecksum = calculateAdler32(binaryData);
+    if (actualChecksum.toString(16).padStart(8, '0') !== expectedChecksum) {
+        throw new Error("Checksum mismatch");
+    }
+
+    return binaryData;
 }
