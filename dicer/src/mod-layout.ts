@@ -227,7 +227,7 @@ export class ModuleLayout implements Module {
         lines.push(`M4 P100 Q5 R10`); // high for grinding.
         lines.push(`G1 X-5`); // cut tool end
 
-        lines.push(`G0 Z${grinderZEvacBuffer + targToolLen}38`); // evaculate
+        lines.push(`G0 Z${grinderZEvacBuffer + targToolLen}`); // evaculate
         lines.push(`M11`); // end wire feed
 
 
