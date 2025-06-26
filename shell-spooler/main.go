@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -42,26 +41,6 @@ type lineInfo struct {
 	Time    string `json:"time"`    // timestamp of the line in format "2006-01-02 15:04:05.000" (local time)
 }
 
-// Internal line storage
-type line struct {
-	num     int
-	dir     string // "up" or "down"
-	content string
-	time    time.Time
-}
-
-// formatTimestamp formats a time.Time to the standard string format used by the API
-func formatSpoolerTime(t time.Time) string {
-	return t.Local().Format("2006-01-02 15:04:05.000")
-}
-
-// Global line storage
-type lineStorage struct {
-	mu      sync.RWMutex
-	lines   []line
-	nextNum int
-}
-
 // handleCommon returns true if caller should continue RPC processing.
 func handleCommom(w http.ResponseWriter, r *http.Request) bool {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -84,103 +63,11 @@ func respondJson(w http.ResponseWriter, resp any) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// Create new lineStorage instance
-func newLineStorage() *lineStorage {
-	return &lineStorage{
-		lines:   make([]line, 0),
-		nextNum: 1,
-	}
-}
-
-// Add a line to storage
-func (ls *lineStorage) addLine(dir string, content string) (int, time.Time) {
-	ls.mu.Lock()
-	defer ls.mu.Unlock()
-
-	now := time.Now()
-	l := line{
-		num:     ls.nextNum,
-		dir:     dir,
-		content: content,
-		time:    now,
-	}
-	ls.lines = append(ls.lines, l)
-	ls.nextNum++
-
-	return l.num, now
-}
-
-// Query lines by range [fromLine, toLine)
-// fromLine: inclusive, 1-based line number (0 means from beginning)
-// toLine: exclusive, 1-based line number (0 means to end)
-func (ls *lineStorage) queryRange(fromLine, toLine int) []line {
-	ls.mu.RLock()
-	defer ls.mu.RUnlock()
-
-	numLines := len(ls.lines)
-	if numLines == 0 {
-		return []line{}
-	}
-
-	// Note: line numbers are 1-based, slice indices are 0-based.
-	// We assume line numbers in storage are contiguous and start from 1.
-	// So, for line number `n`, its index is `n-1`.
-
-	var startIdx int
-	if fromLine > 0 {
-		startIdx = fromLine - 1
-	} else {
-		startIdx = 0 // fromLine <= 0 means from the beginning
-	}
-
-	if startIdx < 0 {
-		startIdx = 0
-	}
-
-	if startIdx >= numLines {
-		return []line{} // fromLine is after all stored lines
-	}
-
-	var endIdx int
-	if toLine > 0 {
-		// toLine is exclusive, so the index is toLine - 1.
-		endIdx = toLine - 1
-	} else {
-		endIdx = numLines // toLine <= 0 means to the end
-	}
-
-	if endIdx > numLines {
-		endIdx = numLines
-	}
-
-	if startIdx >= endIdx {
-		return []line{}
-	}
-
-	return ls.lines[startIdx:endIdx]
-}
-
-// Query last N lines
-func (ls *lineStorage) queryTail(n int) []line {
-	ls.mu.RLock()
-	defer ls.mu.RUnlock()
-
-	if len(ls.lines) == 0 || n <= 0 {
-		return []line{}
-	}
-
-	startIdx := len(ls.lines) - n
-	if startIdx < 0 {
-		startIdx = 0
-	}
-
-	return ls.lines[startIdx:]
-}
-
 func main() {
 	portName := flag.String("port", "COM3", "Serial port name")
 	baud := flag.Int("baud", 115200, "Serial port baud rate")
 	addr := flag.String("addr", ":9000", "HTTP listen address")
+	logDir := flag.String("log-dir", "logs", "Directory for log files (relative to current directory)")
 	verbose := flag.Bool("verbose", false, "Verbose logging")
 	flag.Parse()
 
@@ -189,7 +76,8 @@ func main() {
 	}
 
 	// Initialize line storage
-	storage := newLineStorage()
+	storage := newLineStorage(*logDir)
+	defer storage.Close()
 
 	// Initialize serial protocol
 	ser := initSerial(*portName, *baud, storage)
