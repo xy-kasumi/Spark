@@ -220,12 +220,14 @@ class SpoolerController {
     
     /**
      * Add a command to the queue
-     * @param command - Command string to enqueue (ignores empty commands)
+     * @param command - Command string to enqueue (ignores empty commands and G-code comments)
      */
     enqueueCommand(command: string): void {
-        const trimmed = command.trim();
-        if (trimmed.length > 0) {
-            this.commandQueue.push(trimmed);
+        // Remove G-code style comments (everything after semicolon)
+        const withoutComment = command.split(';')[0].trim();
+        
+        if (withoutComment.length > 0) {
+            this.commandQueue.push(withoutComment);
             if (this.onQueueChange) {
                 this.onQueueChange();
             }
