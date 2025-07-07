@@ -47,14 +47,17 @@ func newLineStorage(logDir string) *lineStorage {
 		return ls
 	}
 
-	// Scan for existing session files to determine next session number
-	sessNum := ls.findNextSessionNumber(logDir)
-
 	// Create log file
 	now := time.Now()
-	filename := fmt.Sprintf("%s-sess%d-serial.txt", now.Format("2006-01-02"), sessNum)
-	logPath := filepath.Join(logDir, filename)
+	
+	// Find next available filename for today
+	filename := ls.findNextFileName(logDir, now)
+	if filename == "" {
+		slog.Error("failed to read log directory, continuing without log file", "dir", logDir)
+		return ls
+	}
 
+	logPath := filepath.Join(logDir, filename)
 	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		slog.Error("failed to create log file", "path", logPath, "error", err)
@@ -62,22 +65,22 @@ func newLineStorage(logDir string) *lineStorage {
 	}
 
 	ls.logFile = file
-	slog.Info("created log file", "path", logPath, "session", sessNum)
+	slog.Info("created log file", "path", logPath)
 
 	return ls
 }
 
-// findNextSessionNumber scans the log directory for existing session files
-// and returns the next available session number
-func (ls *lineStorage) findNextSessionNumber(logDir string) int {
+// findNextFileName scans the log directory for existing session files
+// and returns the next available filename for today
+func (ls *lineStorage) findNextFileName(logDir string, now time.Time) string {
+	today := now.Format("2006-01-02")
+	
 	entries, err := os.ReadDir(logDir)
 	if err != nil {
-		slog.Debug("could not read log directory", "dir", logDir, "error", err)
-		return 0
+		return ""
 	}
-
 	// Pattern to match: YYYY-MM-DD-sessN-serial.txt
-	pattern := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-sess(\d+)-serial\.txt$`)
+	pattern := regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})-sess(\d+)-serial\.txt$`)
 	maxSession := -1
 
 	for _, entry := range entries {
@@ -86,15 +89,20 @@ func (ls *lineStorage) findNextSessionNumber(logDir string) int {
 		}
 
 		matches := pattern.FindStringSubmatch(entry.Name())
-		if len(matches) == 2 {
-			sessionNum, err := strconv.Atoi(matches[1])
-			if err == nil && sessionNum > maxSession {
-				maxSession = sessionNum
+		if len(matches) == 3 {
+			fileDate := matches[1]
+			// Only consider files from today
+			if fileDate == today {
+				sessionNum, err := strconv.Atoi(matches[2])
+				if err == nil && sessionNum > maxSession {
+					maxSession = sessionNum
+				}
 			}
 		}
 	}
 
-	return maxSession + 1
+	nextSession := maxSession + 1
+	return fmt.Sprintf("%s-sess%d-serial.txt", today, nextSession)
 }
 
 // Add a line to storage and log file
