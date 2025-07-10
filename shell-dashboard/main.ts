@@ -37,6 +37,10 @@ function parseEdmPollEntries(binaryData: Uint8Array): EdmPollEntry[] {
 // Init commands (moved from config.go)
 // These were commented out in the original config.go
 const initCommands: string[] = [
+    "set m.6.unitsteps 679.06",
+    "set cs.g.pos.x -58",
+    "set cs.g.pos.y 62",
+    "set cs.g.pos.z -73",
 ];
 
 // Global client instance for performance
