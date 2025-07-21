@@ -330,3 +330,59 @@ function parseBlobPayload(blobLine: string): Uint8Array {
 
     return binaryData;
 }
+
+/**
+ * Spooler API client for making HTTP requests to shell-spooler.
+ * This is separate from SpoolerController and provides raw API access.
+ */
+const spoolerApi = {
+    /**
+     * Query log lines from the spooler.
+     * @param host - Base URL of the shell-spooler server
+     * @param params - Query parameters (tail, from_line, to_line)
+     * @returns Response with count, lines array, and timestamp
+     */
+    async queryLines(host: string, params: { tail?: number; from_line?: number; to_line?: number }): Promise<{ count: number; lines: LogLine[]; now: string }> {
+        const response = await fetch(`${host}/query-lines`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(params)
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    },
+    
+    /**
+     * Get the last blob from upward (machine response) log lines.
+     * @param host - Base URL of the shell-spooler server
+     * @param tail - Number of lines to query (default: 100)
+     * @returns Parsed blob data or null if not found
+     */
+    async getLastUpBlob(host: string, tail: number = 100): Promise<Uint8Array | null> {
+        try {
+            const result = await this.queryLines(host, { tail });
+            
+            // Find the last line with dir="up" that starts with ">blob"
+            for (let i = result.lines.length - 1; i >= 0; i--) {
+                const line = result.lines[i];
+                if (line.dir === 'up' && line.content.startsWith('>blob')) {
+                    try {
+                        return parseBlobPayload(line.content);
+                    } catch (e) {
+                        console.error('Failed to parse blob:', e);
+                        return null;
+                    }
+                }
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('Failed to query lines:', error);
+            return null;
+        }
+    }
+};

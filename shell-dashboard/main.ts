@@ -171,28 +171,20 @@ Vue.createApp({
         /**
          * Analyze log for blob data and draw EDML visualization
          */
-        analyzeLog() {
-            // TODO: Fix data source - log_lines was removed with Serial Log feature
-            console.log("analyze_log called but data source not available");
-            return;
-            
-            // Original implementation for reference:
-            // const blobLine = this.log_lines
-            //     .filter(line => line.content.startsWith('>blob '))
-            //     .pop();
-            //     
-            // if (!blobLine) {
-            //     console.log("No blob data found in log");
-            //     return;
-            // }
-            // 
-            // try {
-            //     const binaryData = parseBlobPayload(blobLine.content);
-            //     const vals = parseEdmPollEntries(binaryData);
-            //     this.drawEdml(vals);
-            // } catch (e) {
-            //     console.error("Blob parsing error:", e.message);
-            // }
+        async analyzeLog() {
+            try {
+                const blobData = await spoolerApi.getLastUpBlob(host, 1000);
+                
+                if (!blobData) {
+                    console.log("No blob data found in log");
+                    return;
+                }
+                
+                const vals = parseEdmPollEntries(blobData);
+                this.drawEdml(vals);
+            } catch (e) {
+                console.error("Blob analysis error:", e.message);
+            }
         },
         
         /**
