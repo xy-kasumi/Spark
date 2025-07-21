@@ -5,6 +5,7 @@ const host = "http://localhost:9000";
 
 interface EdmPollEntry {
     short: number;
+    open: number;
     pulse: number;
     numPulse: number;
 }
@@ -25,7 +26,8 @@ function parseEdmPollEntries(binaryData: Uint8Array): EdmPollEntry[] {
 
             vals.push({
                 short: r_short,
-                pulse: r_open,
+                open: r_open,
+                pulse: num_pulse > 0 ? (1 - (r_short + r_open)) : 0,
                 numPulse: num_pulse
             });
         }
@@ -217,16 +219,18 @@ Vue.createApp({
             for (let row of edmlData) {
                 for (let val of row.vals) {
                     let d = 0;
-                    ctx.fillStyle = '#00aeef';
+                    ctx.fillStyle = '#00aeef'; // blue = pulse
                     ctx.fillRect(posx, posy + barHeight, barWidth, -val.pulse * barHeight);
                     d += val.pulse * barHeight;
 
-                    ctx.fillStyle = '#F03266';
+                    ctx.fillStyle = '#F03266'; // red = short
                     ctx.fillRect(posx, posy + barHeight - d, barWidth, -val.short * barHeight);
                     d += val.short * barHeight;
 
-                    ctx.fillStyle = 'lightgray';
-                    ctx.fillRect(posx, posy + barHeight - d, barWidth, d - barHeight);
+                    ctx.fillStyle = 'lightgray'; // gray = open
+                    ctx.fillRect(posx, posy + barHeight - d, barWidth, -val.open * barHeight);
+
+                    // (white = no activity)
 
                     posx += barWidth;
                     if (posx >= width) {
