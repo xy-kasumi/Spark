@@ -43,9 +43,9 @@ const initCommands: string[] = [
     "set cs.g.pos.x -58",
     "set cs.g.pos.y 76",
     "set cs.g.pos.z -73",
-    "set cs.w.pos.x -58.f",
-    "set cs.w.pos.y 17.f",
-    "set cs.w.pos.z -89.f",
+    "set cs.w.pos.x -58",
+    "set cs.w.pos.y 17",
+    "set cs.w.pos.z -89",
 ];
 
 // Global client instance for performance
