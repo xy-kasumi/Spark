@@ -17,13 +17,14 @@
             </p>
             <div>{{ statusText }}</div>
             <div>{{ queueStatus }}</div>
+            <div>{{ rebootStatus }}</div>
 
             <h1>Manual Command</h1>
             <button class="pure-button" @click="init">{{ initButtonText }}</button>
             <br/>
             <textarea class="pure-input-1-2" v-model="commandText" rows="10" cols="50"
                 placeholder="Enter G-code or commands"></textarea><br />
-            <button class="pure-button" @click="send" :disabled="commands.length === 0">{{ executeButtonText }}</button>
+            <button class="pure-button" @click="send" :disabled="commands.length === 0 || !assumeInitialized">{{ executeButtonText }}</button>
             <button class="pure-button" @click="cancel">Cancel</button>
             <button class="pure-button" @click="analyzeLog">Analyze Log</button>
         </div>

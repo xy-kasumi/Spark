@@ -59,6 +59,8 @@ Vue.createApp({
             clientStatus: 'unknown',
             statusText: '',
             commandQueue: [],
+            rebootTime: null as string | null,
+            assumeInitialized: true, // true if we think init commands were executed or enqueued
         }
     },
     
@@ -108,6 +110,17 @@ Vue.createApp({
             return `${queueLength} commands in queue`;
         },
         
+        rebootStatus() {
+            if (!this.rebootTime) {
+                return '';
+            }
+            if (!this.assumeInitialized) {
+                return `rebooted at ${this.rebootTime} (not initialized)`;
+            } else {
+                return `rebooted at ${this.rebootTime}`;
+            }
+        },
+        
     },
     
     mounted() {
@@ -122,6 +135,11 @@ Vue.createApp({
         
         client.onQueueChange = () => {
             this.commandQueue = client.peekQueue();
+        };
+        
+        client.onReboot = () => {
+            this.rebootTime = new Date().toLocaleTimeString();
+            this.assumeInitialized = false;
         };
         
         // Start polling
@@ -146,6 +164,9 @@ Vue.createApp({
             for (const cmd of initCommands) {
                 client.enqueueCommand(cmd);
             }
+            
+            // Assume machine will be initialized after init commands
+            this.assumeInitialized = true;
         },
         
         /**
