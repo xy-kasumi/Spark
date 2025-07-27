@@ -339,10 +339,10 @@ const spoolerApi = {
     /**
      * Query log lines from the spooler.
      * @param host - Base URL of the shell-spooler server
-     * @param params - Query parameters (tail, from_line, to_line)
+     * @param params - Query parameters (tail, from_line, to_line, filter_dir, filter_regex)
      * @returns Response with count, lines array, and timestamp
      */
-    async queryLines(host: string, params: { tail?: number; from_line?: number; to_line?: number }): Promise<{ count: number; lines: LogLine[]; now: string }> {
+    async queryLines(host: string, params: { tail?: number; from_line?: number; to_line?: number; filter_dir?: "up" | "down"; filter_regex?: string }): Promise<{ count: number; lines: LogLine[]; now: string }> {
         const response = await fetch(`${host}/query-lines`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -359,27 +359,26 @@ const spoolerApi = {
     /**
      * Get the last blob from upward (machine response) log lines.
      * @param host - Base URL of the shell-spooler server
-     * @param tail - Number of lines to query (default: 100)
      * @returns Parsed blob data or null if not found
      */
-    async getLastUpBlob(host: string, tail: number = 100): Promise<Uint8Array | null> {
+    async getLastUpBlob(host: string): Promise<Uint8Array | null> {
         try {
-            const result = await this.queryLines(host, { tail });
-            
-            // Find the last line with dir="up" that starts with ">blob"
-            for (let i = result.lines.length - 1; i >= 0; i--) {
-                const line = result.lines[i];
-                if (line.dir === 'up' && line.content.startsWith('>blob')) {
-                    try {
-                        return parseBlobPayload(line.content);
-                    } catch (e) {
-                        console.error('Failed to parse blob:', e);
-                        return null;
-                    }
-                }
+            const result = await this.queryLines(host, { 
+                filter_dir: "up", 
+                filter_regex: "^>blob" 
+            });
+            if (result.lines.length === 0) {
+                return null;
             }
             
-            return null;
+            // Get the last line
+            const lastBlobLine = result.lines[result.lines.length - 1];
+            try {
+                return parseBlobPayload(lastBlobLine.content);
+            } catch (e) {
+                console.error('Failed to parse blob:', e);
+                return null;
+            }
         } catch (error) {
             console.error('Failed to query lines:', error);
             return null;

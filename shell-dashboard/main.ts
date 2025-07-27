@@ -175,7 +175,7 @@ Vue.createApp({
          */
         async analyzeLog() {
             try {
-                const blobData = await spoolerApi.getLastUpBlob(host, 1000);
+                const blobData = await spoolerApi.getLastUpBlob(host);
                 
                 if (!blobData) {
                     console.log("No blob data found in log");
