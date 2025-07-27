@@ -25,6 +25,7 @@ class SpoolerController {
     private readonly host: string;
     private readonly apiIntervalMs: number;
     private readonly pingIntervalMs: number;
+    private static readonly FAST_INTERVAL_MS = 10;
 
     private isPolling: boolean;
 
@@ -32,7 +33,8 @@ class SpoolerController {
 
     private state: SpoolerState;
     private statusText: string;
-    
+    private lastCommandTime: number; // unix time (seconds)
+
     public onUpdate: ((state: SpoolerState, status: string) => void) | null;
     public onQueueChange: (() => void) | null;
 
@@ -49,16 +51,17 @@ class SpoolerController {
         this.commandQueue = [];
 
         this.isPolling = false;
-        
+
         // Enhanced status tracking
         this.state = 'unknown';
         this.statusText = '';
-        
+        this.lastCommandTime = 0;
+
         // Callbacks for UI updates
         this.onUpdate = null;
         this.onQueueChange = null;
     }
-    
+
     /**
      * Set state and notify callback
      * @param newState - New state value
@@ -67,20 +70,19 @@ class SpoolerController {
     private setState(newState: SpoolerState, newStatus?: string): void {
         const stateChanged = this.state !== newState;
         const statusChanged = newStatus !== undefined && this.statusText !== newStatus;
-        
+
         if (stateChanged) {
             this.state = newState;
         }
         if (statusChanged) {
             this.statusText = newStatus!;
         }
-        
+
         if ((stateChanged || statusChanged) && this.onUpdate) {
             this.onUpdate(this.state, this.statusText);
         }
     }
-    
-    
+
     /**
      * Start polling for new lines from the spooler
      */
@@ -88,44 +90,42 @@ class SpoolerController {
         this.isPolling = true;
         this.pollLoop(this.apiIntervalMs);
     }
-    
+
     /**
      * Stop polling
      */
     stopPolling(): void {
         this.isPolling = false;
     }
-    
+
     /**
      * Internal polling loop
      * @param intervalMs - Polling interval in milliseconds
      */
     private async pollLoop(intervalMs: number): Promise<void> {
-        let pingCounter = 0;
-        const pingInterval = Math.floor(this.pingIntervalMs / intervalMs);
-        
         while (this.isPolling) {
             await this.fetchNewLines();
-            
+
             // Process commands only when idle
             if (this.state === 'idle') {
                 await this.processCommandQueue();
             }
-            
+
             // Handle ping timing for appropriate states  
-            pingCounter++;
-            if (pingCounter >= pingInterval) {
-                if ((this.state === 'idle' || this.state === 'unknown' || this.state === 'board-offline') && 
+            const timeSinceLastCommand = Date.now() - this.lastCommandTime;
+            if (timeSinceLastCommand >= this.pingIntervalMs) {
+                if ((this.state === 'idle' || this.state === 'unknown' || this.state === 'board-offline') &&
                     this.commandQueue.length === 0) {
                     await this.sendCommand('ping', true);
                 }
-                pingCounter = 0;
             }
-            
-            await this.delay(intervalMs);
+
+            // Use fast polling when queue has items, normal polling otherwise
+            const delay = this.commandQueue.length > 0 ? SpoolerController.FAST_INTERVAL_MS : intervalMs;
+            await this.delay(delay);
         }
     }
-    
+
     /**
      * Fetch new lines from the spooler
      */
@@ -138,11 +138,11 @@ class SpoolerController {
                     tail: 1
                 })
             });
-            
+
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-            
+
             const { lines, count, now }: { lines: LogLine[], count: number, now: string } = await response.json();
 
             if (count === 0) {
@@ -169,7 +169,7 @@ class SpoolerController {
             console.log("spooler error", error);
         }
     }
-    
+
     /**
      * Parse machine status from "I ready ..." lines
      * @param line - Status line content
@@ -181,7 +181,7 @@ class SpoolerController {
         }
         return null;
     }
-    
+
     /**
      * Process command queue (assumes state check already done)
      */
@@ -189,14 +189,14 @@ class SpoolerController {
         if (this.commandQueue.length === 0) {
             return;
         }
-        
+
         const command = this.commandQueue.shift();
         if (this.onQueueChange) {
             this.onQueueChange();
         }
         await this.sendCommand(command, false);
     }
-    
+
     /**
      * Send a command to the spooler
      * @param command - Command to send
@@ -209,10 +209,13 @@ class SpoolerController {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ line: command })
             });
-            
+
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
+
+            // Record when command was sent
+            this.lastCommandTime = Date.now();
 
             // Set appropriate busy state
             this.setState(isHealthcheck ? 'busy-healthcheck' : 'busy');
@@ -221,7 +224,7 @@ class SpoolerController {
             this.setState('api-offline');
         }
     }
-    
+
     /**
      * Add a command to the queue
      * @param command - Command string to enqueue (ignores empty commands and G-code comments)
@@ -229,7 +232,7 @@ class SpoolerController {
     enqueueCommand(command: string): void {
         // Remove G-code style comments (everything after semicolon)
         const withoutComment = command.split(';')[0].trim();
-        
+
         if (withoutComment.length > 0) {
             this.commandQueue.push(withoutComment);
             if (this.onQueueChange) {
@@ -237,7 +240,7 @@ class SpoolerController {
             }
         }
     }
-    
+
     /**
      * Get a copy of the current command queue
      * @returns Array of queued command strings
@@ -245,7 +248,7 @@ class SpoolerController {
     peekQueue(): string[] {
         return [...this.commandQueue];
     }
-    
+
     /**
      * Clear the command queue and send cancel command
      */
@@ -255,7 +258,7 @@ class SpoolerController {
         if (this.onQueueChange) {
             this.onQueueChange();
         }
-        
+
         // Send cancel command directly
         fetch(`${this.host}/write-line`, {
             method: 'POST',
@@ -265,7 +268,7 @@ class SpoolerController {
             console.log("cancel error", error);
         });
     }
-    
+
     /**
      * Utility function to delay execution
      * @param ms - Milliseconds to delay
@@ -348,14 +351,14 @@ const spoolerApi = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(params)
         });
-        
+
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         return await response.json();
     },
-    
+
     /**
      * Get the last blob from upward (machine response) log lines.
      * @param host - Base URL of the shell-spooler server
@@ -363,14 +366,14 @@ const spoolerApi = {
      */
     async getLastUpBlob(host: string): Promise<Uint8Array | null> {
         try {
-            const result = await this.queryLines(host, { 
-                filter_dir: "up", 
-                filter_regex: "^>blob" 
+            const result = await this.queryLines(host, {
+                filter_dir: "up",
+                filter_regex: "^>blob"
             });
             if (result.lines.length === 0) {
                 return null;
             }
-            
+
             // Get the last line
             const lastBlobLine = result.lines[result.lines.length - 1];
             try {
