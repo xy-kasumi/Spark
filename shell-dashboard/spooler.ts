@@ -37,6 +37,7 @@ class SpoolerController {
 
     public onUpdate: ((state: SpoolerState, status: string) => void) | null;
     public onQueueChange: (() => void) | null;
+    public onReboot: (() => void) | null;
 
     /**
      * @param host base URL of the shell-spooler server
@@ -60,6 +61,7 @@ class SpoolerController {
         // Callbacks for UI updates
         this.onUpdate = null;
         this.onQueueChange = null;
+        this.onReboot = null;
     }
 
     /**
@@ -158,6 +160,9 @@ class SpoolerController {
                 } else {
                     const isIdle = line.content.startsWith('I');
                     if (isIdle) {
+                        if (line.content.startsWith('I Spark corefw')) {
+                            this.handleReboot();
+                        }
                         this.setState('idle', this.parseStatus(line.content));
                     } else {
                         this.setState('busy');
@@ -180,6 +185,21 @@ class SpoolerController {
             return line.substring(8).trim();
         }
         return null;
+    }
+
+    /**
+     * Handle board reboot detection
+     */
+    private handleReboot(): void {
+        // Cancel pending commands
+        this.commandQueue.length = 0;
+        if (this.onQueueChange) {
+            this.onQueueChange();
+        }
+
+        if (this.onReboot) {
+            this.onReboot();
+        }
     }
 
     /**
