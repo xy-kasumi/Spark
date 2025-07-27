@@ -49,7 +49,7 @@ func newLineStorage(logDir string) *lineStorage {
 
 	// Create log file
 	now := time.Now()
-	
+
 	// Find next available filename for today
 	filename := ls.findNextFileName(logDir, now)
 	if filename == "" {
@@ -74,7 +74,7 @@ func newLineStorage(logDir string) *lineStorage {
 // and returns the next available filename for today
 func (ls *lineStorage) findNextFileName(logDir string, now time.Time) string {
 	today := now.Format("2006-01-02")
-	
+
 	entries, err := os.ReadDir(logDir)
 	if err != nil {
 		return ""
@@ -122,9 +122,9 @@ func (ls *lineStorage) addLine(dir string, content string) (int, time.Time) {
 
 	// Write to log file if available
 	if ls.logFile != nil {
-		logLine := fmt.Sprintf("%s %d %s %s\n", 
+		logLine := fmt.Sprintf("%s %d %s %s\n",
 			formatSpoolerTime(now), l.num, dir, content)
-		
+
 		if _, err := ls.logFile.WriteString(logLine); err != nil {
 			slog.Error("failed to write to log file", "error", err)
 		} else {
@@ -136,6 +136,96 @@ func (ls *lineStorage) addLine(dir string, content string) (int, time.Time) {
 	return l.num, now
 }
 
+// ScanRange represents either a line range or tail mode
+type ScanRange interface {
+	// Extract returns the lines from the given slice according to the scan range
+	Extract(lines []line) []line
+}
+
+// RangeScan represents scanning from FromLine to ToLine
+// Requirement: ToLine >= FromLine.
+type RangeScan struct {
+	FromLine *int // Start line (inclusive, 1-based), nil means from beginning
+	ToLine   *int // End line (exclusive, 1-based), nil means to end
+}
+
+func (r RangeScan) Extract(lines []line) []line {
+	start := 0
+	if r.FromLine != nil && *r.FromLine > 0 {
+		start = *r.FromLine - 1
+		if start >= len(lines) {
+			return []line{}
+		}
+	}
+
+	end := len(lines)
+	if r.ToLine != nil && *r.ToLine > 0 {
+		end = *r.ToLine - 1 // Convert to 0-based
+		if end > len(lines) {
+			end = len(lines)
+		}
+	}
+
+	return lines[start:end]
+}
+
+// TailScan represents scanning last N lines
+type TailScan struct {
+	N int // Number of lines from end
+}
+
+func (t TailScan) Extract(lines []line) []line {
+	if t.N <= 0 {
+		return []line{}
+	}
+
+	if t.N >= len(lines) {
+		return lines
+	}
+
+	return lines[len(lines)-t.N:]
+}
+
+// QueryOptions specifies parameters for querying lines
+type QueryOptions struct {
+	// Range specification (optional: all lines if nil)
+	Scan ScanRange
+
+	// Filters (all are optional and combined with AND)
+	FilterDir   string         // "up" or "down", empty means any
+	FilterRegex *regexp.Regexp // Compiled regex, nil means no filter
+}
+
+// Query lines with the given options
+func (ls *lineStorage) Query(opts QueryOptions) []line {
+	ls.mu.RLock()
+	defer ls.mu.RUnlock()
+
+	// Apply scan range.
+	lines := ls.lines
+	if opts.Scan != nil {
+		lines = opts.Scan.Extract(ls.lines)
+	}
+
+	// Apply filters.
+	var result []line
+	for _, l := range lines {
+		// Direction filter
+		if opts.FilterDir != "" && l.dir != opts.FilterDir {
+			continue
+		}
+
+		// Regex filter
+		if opts.FilterRegex != nil && !opts.FilterRegex.MatchString(l.content) {
+			continue
+		}
+
+		result = append(result, l)
+	}
+	return result
+}
+
+// Deprecated: Use Query() instead
 // Query lines by range [fromLine, toLine)
 // fromLine: inclusive, 1-based line number (0 means from beginning)
 // toLine: exclusive, 1-based line number (0 means to end)
@@ -186,6 +276,7 @@ func (ls *lineStorage) queryRange(fromLine, toLine int) []line {
 	return ls.lines[startIdx:endIdx]
 }
 
+// Deprecated: Use Query() instead
 // Query last N lines
 func (ls *lineStorage) queryTail(n int) []line {
 	ls.mu.RLock()

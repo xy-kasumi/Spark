@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -23,9 +24,11 @@ type writeLineResponse struct {
 }
 
 type queryLinesRequest struct {
-	FromLine int `json:"from_line,omitempty"` // Optional: start from this line number (inclusive), 1-based
-	ToLine   int `json:"to_line,omitempty"`   // Optional: up to this line number (exclusive), 1-based
-	Tail     int `json:"tail,omitempty"`      // Optional: get last N lines (overrides from/to)
+	FromLine    int    `json:"from_line,omitempty"`    // Optional: start from this line number (inclusive), 1-based
+	ToLine      int    `json:"to_line,omitempty"`      // Optional: up to this line number (exclusive), 1-based
+	Tail        int    `json:"tail,omitempty"`         // Optional: get last N lines (overrides from/to)
+	FilterDir   string `json:"filter_dir,omitempty"`   // Optional: "up" or "down" direction filter
+	FilterRegex string `json:"filter_regex,omitempty"` // Optional: regex filter (RE2 syntax)
 }
 
 type queryLinesResponse struct {
@@ -134,29 +137,83 @@ func main() {
 			return
 		}
 
-		// Validate: tail cannot be used with from_line or to_line
-		if req.Tail > 0 && (req.FromLine > 0 || req.ToLine > 0) {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "tail cannot be used with from_line or to_line")
-			return
-		}
+		tailExists := req.Tail > 0
+		rangeExists := req.FromLine > 0 || req.ToLine > 0
 
 		// Validate range parameters
-		if req.FromLine < 0 || req.ToLine < 0 || req.Tail < 0 {
+		if tailExists && rangeExists {
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "line numbers cannot be negative")
+			fmt.Fprintf(w, "tail: cannot be used together ranges (from_line, to_line)")
+			return
+		}
+		if rangeExists {
+			if req.FromLine < 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprintf(w, "from_line: must be >= 1")
+				return
+			}
+			if req.ToLine < 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprintf(w, "to_line: must be >= 1")
+				return
+			}
+
+			rangeFullySpecified := req.FromLine > 0 && req.ToLine > 0
+			if rangeFullySpecified && req.ToLine < req.FromLine {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprintf(w, "to_line must be >= from_line")
+				return
+			}
+		}
+		if tailExists && req.Tail < 1 {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "tail: must be >= 1")
 			return
 		}
 
-		// Get lines from storage using appropriate method
-		var lines []line
-		if req.Tail > 0 {
-			lines = storage.queryTail(req.Tail)
-		} else {
-			lines = storage.queryRange(req.FromLine, req.ToLine)
+		// Validate filter_dir
+		if req.FilterDir != "" && req.FilterDir != "up" && req.FilterDir != "down" {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "filter_dir: must be 'up' or 'down'")
+			return
 		}
-		totalCount := len(lines)
 
+		// Compile regex if provided
+		var filterRegex *regexp.Regexp
+		if req.FilterRegex != "" {
+			var err error
+			filterRegex, err = regexp.Compile(req.FilterRegex)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprintf(w, "filter_regex: invalid regex %v", err)
+				return
+			}
+		}
+
+		// Build query options
+		opts := QueryOptions{
+			FilterDir:   req.FilterDir,
+			FilterRegex: filterRegex,
+		}
+
+		// Build scan range
+		if tailExists {
+			opts.Scan = TailScan{N: req.Tail}
+		} else if rangeExists {
+			rangeScan := RangeScan{}
+			if req.FromLine > 0 {
+				rangeScan.FromLine = &req.FromLine
+			}
+			if req.ToLine > 0 {
+				rangeScan.ToLine = &req.ToLine
+			}
+			opts.Scan = rangeScan
+		}
+
+		// Query lines from storage
+		lines := storage.Query(opts)
+
+		totalCount := len(lines)
 		const maxLines = 1000 // Limit response to 1000 lines
 		if len(lines) > maxLines {
 			lines = lines[:maxLines]

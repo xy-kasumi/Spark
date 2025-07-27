@@ -64,14 +64,26 @@ Query logged lines.
   from_line?: number  // Start line (inclusive, 1-based)
   to_line?: number    // End line (exclusive, 1-based)
   tail?: number       // Get last N lines
+  filter_dir?: "up" | "down", // Direction filter (any if omitted)
+  filter_regex?: string     // Regex filter (RE2 syntax)
 }
 ```
+
+The query semantics: apply "filter" to each line within "scan range" and return order-preserved results.
+
+Scan Range
 
 * If none is specified, the query scans all lines.
 * If `from` and/or `to` is specified, the query scans the range. Cannot specify `tail` in this mode.
   * missing `from`: from the beginning
   * missing `to`: to the end
 * If `tail` is specified, the query scans last N lines. Cannot specify `from` nor `to` in this mode.
+
+Filter
+
+* Multiple filters are combined as AND
+* omitted fields means matches any
+* `filter_regex`: follows [RE2 syntax](https://github.com/google/re2/wiki/Syntax)
 
 
 **Response Type**
@@ -112,6 +124,31 @@ Response:
       "content": "G1 X10 Y20",
       "time": "2025-07-27 15:04:04.500"
     },
+    {
+      "line_num": 123,
+      "dir": "up",
+      "content": ">ack",
+      "time": "2025-07-27 15:04:04.600"
+    }
+  ],
+  "now": "2025-07-27 15:04:05.000"
+}
+```
+
+Request with filter:
+```json
+{
+  "tail": 100,
+  "filter_dir": "up",
+  "filter_regex": "^>"
+}
+```
+
+Response
+```json
+{
+  "count": 1,
+  "lines": [
     {
       "line_num": 123,
       "dir": "up",
