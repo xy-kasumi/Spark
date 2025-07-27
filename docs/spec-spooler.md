@@ -1,20 +1,124 @@
 # Spooler Spec
 
-This doc specifies how Spooler should behave.
+Spooler is line-based I/O buffer between UIs (e.g. shell-dashboard) and the core.
 
-Spooler is a stateful server that exposes the machine to the dashboard web apps or potentially other programs.
-Spooler is part of the Shell.
+Spooler doesn't know about core protocols or G-code. It just assumes it's line-based bi-directional stream.
+Implementation of UIs can be stateless by relying on query capability of the spooler.
 
-Spooler's purpose:
-* Freeup dashboard dev from needing to care about realtime requirements of the machine.
-* Freeup Core responsibility by handling data storage, sorting etc. in (single-board) PC environment.
+Spooler also serves as reliable comm log for debug purpose.
 
-Spooler needs to maintain semi-realtime (freeze of more than 1sec is not allowed) connection to the Core.
+## HTTP API
 
-Spooler knows about grblHAL (or other Core protocol) and translates it to more friendly and universal form.
-Spooler does NOT know about G-code semantics. It only knows about its semantics and grblHAL protocol.
-But spooler does know about board & machine configuration (number of axes etc).
+### Core concepts
+* direction: dataflow direction. Either `up` or `down`. `up` means towards the user (core -> spooler -> UI). `down` means away from the user. (UI -> spooler -> core).
+  * This removes confusion of "RX" vs "TX"
+* line number: Stats from 1 and incremented. Both `up` and `down` lines belong to same line number space. Line number is reset to 1 iff spooler is restarted.
 
-Main functionalities:
-* Buffers big G-code and streams into the machine. Streaming state is controlled from the API.
-* Gathers log from the machine and make it available via API
+
+### POST /write-line
+
+Write a line to the serial device.
+
+**Request Type**
+
+```typescript
+{
+  line: string  // Line content (no newlines allowed)
+}
+```
+
+**Response Type**
+
+```typescript
+{
+  line_num: number  // Assigned line number
+  time: string      // Local timestamp "YYYY-MM-DD HH:MM:SS.mmm", just after line is sent to the device.
+}
+```
+
+**Examples**
+
+Request:
+```json
+{
+  "line": "G1 X10 Y20"
+}
+```
+
+Response:
+```json
+{
+  "line_num": 123,
+  "time": "2025-07-27 15:04:05.000"
+}
+```
+
+### POST /query-lines
+
+Query logged lines.
+
+**Request Type**
+
+```typescript
+{
+  from_line?: number  // Start line (inclusive, 1-based)
+  to_line?: number    // End line (exclusive, 1-based)
+  tail?: number       // Get last N lines
+}
+```
+
+* If none is specified, the query scans all lines.
+* If `from` and/or `to` is specified, the query scans the range. Cannot specify `tail` in this mode.
+  * missing `from`: from the beginning
+  * missing `to`: to the end
+* If `tail` is specified, the query scans last N lines. Cannot specify `from` nor `to` in this mode.
+
+
+**Response Type**
+
+```typescript
+{
+  count: number       // Total matching lines
+  lines: Array<{
+    line_num: number  // Line number
+    dir: "up" | "down"  // Direction
+    content: string   // Line content
+    time: string      // Local timestamp "YYYY-MM-DD HH:MM:SS.mmm"
+  }>
+  now: string         // Current spooler time
+}
+```
+
+Returns matches lines. Count contains exact count, but lines is truncated by first 1000 matching lines.
+
+
+**Examples**
+
+Request:
+```json
+{
+  "tail": 50
+}
+```
+
+Response:
+```json
+{
+  "count": 2,
+  "lines": [
+    {
+      "line_num": 122,
+      "dir": "down",
+      "content": "G1 X10 Y20",
+      "time": "2025-07-27 15:04:04.500"
+    },
+    {
+      "line_num": 123,
+      "dir": "up",
+      "content": ">ack",
+      "time": "2025-07-27 15:04:04.600"
+    }
+  ],
+  "now": "2025-07-27 15:04:05.000"
+}
+```
