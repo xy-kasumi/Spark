@@ -27,6 +27,19 @@
             <button class="pure-button" @click="send" :disabled="commands.length === 0 || !assumeInitialized">{{ executeButtonText }}</button>
             <button class="pure-button" @click="cancel">Cancel</button>
             <button class="pure-button" @click="analyzeLog">Analyze Log</button>
+
+            <h1>Recent G1</h1>
+            <div v-if="g1Commands.length === 0">
+                <em>No G1 commands</em>
+            </div>
+            <div v-else>
+                <div v-for="g1 in g1Commands" :key="g1.startLineNum">
+                    {{ g1.startTime.split(' ')[1] }} ~ 
+                    {{ g1.duration }}s
+                    <span v-if="!g1.endTime">(executing)</span>
+                    {{ g1.command }}
+                </div>
+            </div>
         </div>
         <div class="pure-u-3-5">
             <h1>EDML (250ms/line)</h1>

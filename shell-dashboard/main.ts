@@ -9,6 +9,14 @@ interface EdmPollEntry {
     pulse: number;
 }
 
+interface G1Command {
+    startTime: string;
+    startLineNum: number;
+    command: string;
+    duration?: number;
+    endTime?: string;
+}
+
 /**
  * Parses binary data into EDM poll entries.
  * @param binaryData - Raw binary data containing edm_poll_entry_t structs
@@ -59,6 +67,7 @@ Vue.createApp({
             commandQueue: [],
             rebootTime: null as string | null,
             assumeInitialized: true, // true if we think init commands were executed or enqueued
+            g1Commands: [] as G1Command[],
         }
     },
     
@@ -194,6 +203,10 @@ Vue.createApp({
          */
         async analyzeLog() {
             try {
+                // Analyze G1 commands
+                await this.analyzeG1Commands();
+                
+                // Analyze blob data
                 const blobData = await spoolerApi.getLastUpBlob(host);
                 
                 if (!blobData) {
@@ -205,6 +218,73 @@ Vue.createApp({
                 this.drawEdml(vals);
             } catch (e) {
                 console.error("Blob analysis error:", e.message);
+            }
+        },
+        
+        /**
+         * Analyze G1 commands and their execution times
+         */
+        async analyzeG1Commands() {
+            try {
+                // Find G1 commands
+                const g1Result = await spoolerApi.queryLines(host, {
+                    filter_dir: "down",
+                    filter_regex: "^G1 "
+                });
+                
+                if (g1Result.lines.length === 0) {
+                    console.log("No G1 commands found");
+                    this.g1Commands = [];
+                    return;
+                }
+                console.log(g1Result);
+                
+                const g1Commands: G1Command[] = [];
+                
+                // Step 2: For each G1 command, find its completion
+                for (const g1Line of g1Result.lines) {
+                    const g1Command: G1Command = {
+                        startTime: g1Line.time,
+                        startLineNum: g1Line.line_num,
+                        command: g1Line.content
+                    };
+                    
+                    // Query for the first "I" line after this G1
+                    const completionResult = await spoolerApi.queryLines(host, {
+                        from_line: g1Line.line_num + 1,
+                        filter_dir: "up",
+                        filter_regex: "^I",
+                    });
+                    
+                    if (completionResult.lines.length > 0) {
+                        const endLine = completionResult.lines[0];
+                        g1Command.endTime = endLine.time;
+                        
+                        // Calculate duration in seconds
+                        const startMs = new Date(g1Line.time).getTime();
+                        const endMs = new Date(endLine.time).getTime();
+                        g1Command.duration = Math.round((endMs - startMs) / 1000);
+                    } else {
+                        // Still executing - calculate duration from start to now
+                        const startMs = new Date(g1Line.time).getTime();
+                        const nowMs = Date.now();
+                        g1Command.duration = Math.round((nowMs - startMs) / 1000);
+                    }
+                    
+                    g1Commands.push(g1Command);
+                }
+                
+                // Sort by start time (newest first)
+                g1Commands.sort((a, b) => 
+                    new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+                );
+                
+                this.g1Commands = g1Commands;
+                console.log("G1 analysis complete:", g1Commands);
+                
+            } catch (e) {
+                console.error("G1 analysis error:", e.message);
+                this.g1Commands = [];
             }
         },
         
