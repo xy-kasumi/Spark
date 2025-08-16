@@ -24,9 +24,9 @@ type writeLineResponse struct {
 }
 
 type queryLinesRequest struct {
-	FromLine    int    `json:"from_line,omitempty"`    // Optional: start from this line number (inclusive), 1-based
-	ToLine      int    `json:"to_line,omitempty"`      // Optional: up to this line number (exclusive), 1-based
-	Tail        int    `json:"tail,omitempty"`         // Optional: get last N lines (overrides from/to)
+	FromLine    *int   `json:"from_line,omitempty"`    // Optional: start from this line number (inclusive), 1-based
+	ToLine      *int   `json:"to_line,omitempty"`      // Optional: up to this line number (exclusive), 1-based
+	Tail        *int   `json:"tail,omitempty"`         // Optional: get last N lines (overrides from/to)
 	FilterDir   string `json:"filter_dir,omitempty"`   // Optional: "up" or "down" direction filter
 	FilterRegex string `json:"filter_regex,omitempty"` // Optional: regex filter (RE2 syntax)
 }
@@ -137,8 +137,8 @@ func main() {
 			return
 		}
 
-		tailExists := req.Tail > 0
-		rangeExists := req.FromLine > 0 || req.ToLine > 0
+		tailExists := req.Tail != nil
+		rangeExists := req.FromLine != nil || req.ToLine != nil
 
 		// Validate range parameters
 		if tailExists && rangeExists {
@@ -147,12 +147,35 @@ func main() {
 			return
 		}
 		if rangeExists {
-			rangeFullySpecified := req.FromLine > 0 && req.ToLine > 0
-			if rangeFullySpecified && req.ToLine < req.FromLine {
+			if *req.FromLine < 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprintf(w, "from_line: must be >= 1")
+				return
+			}
+			if *req.ToLine < 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprintf(w, "to_line: must be >= 1")
+				return
+			}
+
+			rangeFullySpecified := req.FromLine != nil && req.ToLine != nil
+			if rangeFullySpecified && *req.ToLine < *req.FromLine {
 				w.WriteHeader(http.StatusBadRequest)
 				fmt.Fprintf(w, "to_line must be >= from_line")
 				return
 			}
+		}
+		if tailExists && *req.Tail < 1 {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "tail: must be >= 1")
+			return
+		}
+
+		// Validate tail value if provided
+		if tailExists && *req.Tail <= 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "tail: must be positive")
+			return
 		}
 
 		// Validate filter_dir
@@ -182,14 +205,14 @@ func main() {
 
 		// Build scan range
 		if tailExists {
-			opts.Scan = TailScan{N: req.Tail}
+			opts.Scan = TailScan{N: *req.Tail}
 		} else if rangeExists {
 			rangeScan := RangeScan{}
-			if req.FromLine > 0 {
-				rangeScan.FromLine = &req.FromLine
+			if req.FromLine != nil {
+				rangeScan.FromLine = req.FromLine
 			}
-			if req.ToLine > 0 {
-				rangeScan.ToLine = &req.ToLine
+			if req.ToLine != nil {
+				rangeScan.ToLine = req.ToLine
 			}
 			opts.Scan = rangeScan
 		}
