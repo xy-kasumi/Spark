@@ -147,28 +147,12 @@ func main() {
 			return
 		}
 		if rangeExists {
-			if req.FromLine < 1 {
-				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintf(w, "from_line: must be >= 1")
-				return
-			}
-			if req.ToLine < 1 {
-				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintf(w, "to_line: must be >= 1")
-				return
-			}
-
 			rangeFullySpecified := req.FromLine > 0 && req.ToLine > 0
 			if rangeFullySpecified && req.ToLine < req.FromLine {
 				w.WriteHeader(http.StatusBadRequest)
 				fmt.Fprintf(w, "to_line must be >= from_line")
 				return
 			}
-		}
-		if tailExists && req.Tail < 1 {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "tail: must be >= 1")
-			return
 		}
 
 		// Validate filter_dir
