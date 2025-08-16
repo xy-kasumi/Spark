@@ -77,6 +77,12 @@ export class ModuleLayout implements Module {
     aboveWorkSize: number;
     showStockMesh: boolean;
     showTargetMesh: boolean;
+
+    // target configuration
+    initToolLen: number;  // must be larger than actual current tool len to avoid collision
+    targToolLen: number; // target tool length after cutting
+    wireFeedRate: number;
+    pulseCondition: string; // e.g. "M4 P150 Q20 R40"
     
     // Planning module
     modPlanner: ModulePlanner;
@@ -103,6 +109,11 @@ export class ModuleLayout implements Module {
         this.showStockMesh = true;
         this.showTargetMesh = true;
         this.framework.updateVis("stock", [generateStockVis(this.stockDiameter / 2, this.stockLength, this.baseZ)], this.showStockMesh);
+
+        this.initToolLen = 35;
+        this.targToolLen = 10;
+        this.wireFeedRate = 200;
+        this.pulseCondition = "M4 P150 Q20 R40";
 
         this.framework.registerModule(this);
     }
@@ -137,6 +148,12 @@ export class ModuleLayout implements Module {
         gui.add(this, "showTargetMesh").onChange(v => {
             this.framework.setVisVisibility("target", v);
         }).listen();
+
+        // tool cut
+        gui.add(this, "initToolLen", 9, 35, 0.1);
+        gui.add(this, "targToolLen", 9, 35, 0.1);
+        gui.add(this, "wireFeedRate", 10, 1000, 10);
+        gui.add(this, "pulseCondition");
 
         gui.add(this, "copyGcode");
         gui.add(this, "sendGcodeToSim");
@@ -212,23 +229,23 @@ export class ModuleLayout implements Module {
 
         const lines = [];
 
-        const initToolLen = 25; // must be larger than actual current tool len to avoid collision
-        const targToolLen = 23; // target tool length after grinding
         const grinderZEvacBuffer = 15; // buffer for Z evacuation after grinding
 
         lines.push(`; init`);
         lines.push(`G28`);  // home
 
         lines.push(`G54`); // use grinder coordinate system
-        lines.push(`G0 Y0 Z${grinderZEvacBuffer + initToolLen} X5`); // safe position
-        lines.push(`G0 Z${targToolLen}`); // insert tool into grinder
+        lines.push(`G0 Y0 Z${grinderZEvacBuffer + this.initToolLen} X-5`); // safe position
+        lines.push(`G0 Z${this.targToolLen}`); // insert tool into grinder
 
-        lines.push(`M10 R120`); // start wire feed.
-        lines.push(`M4 P100 Q5 R10`); // high for grinding.
-        lines.push(`G1 X-5`); // cut tool end
+        lines.push(`M10 R${this.wireFeedRate}`);
+        lines.push(this.pulseCondition);
+        lines.push(`G1 X5`); // cut tool end
 
-        lines.push(`G0 Z${grinderZEvacBuffer + targToolLen}`); // evaculate
+        lines.push(`G0 Z${grinderZEvacBuffer + this.targToolLen}`); // evaculate
         lines.push(`M11`); // end wire feed
+
+        lines.push(`G53`); // revert to machine coord for next commands
 
 
         lines.push("");
