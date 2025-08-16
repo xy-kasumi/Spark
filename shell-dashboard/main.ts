@@ -7,7 +7,6 @@ interface EdmPollEntry {
     short: number;
     open: number;
     pulse: number;
-    numPulse: number;
 }
 
 /**
@@ -21,14 +20,13 @@ function parseEdmPollEntries(binaryData: Uint8Array): EdmPollEntry[] {
         if (i + 3 < binaryData.length) {
             const r_short = binaryData[i] / 255.0;
             const r_open = binaryData[i + 1] / 255.0;
-            const num_pulse = binaryData[i + 2];
-            // skip reserved byte at i+3
+            const r_pulse = 1 - (r_short + r_open);
+            // skip reserved byte at i+2, i+3
 
             vals.push({
                 short: r_short,
                 open: r_open,
-                pulse: num_pulse > 0 ? (1 - (r_short + r_open)) : 0,
-                numPulse: num_pulse
+                pulse: r_pulse,
             });
         }
     }
@@ -222,7 +220,6 @@ Vue.createApp({
             
             const edmlData = [{
                 state: "blob",
-                numPulses: vals.length,
                 vals: vals
             }];
             console.log(edmlData);
