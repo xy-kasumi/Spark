@@ -147,19 +147,18 @@ func main() {
 			return
 		}
 		if rangeExists {
-			if *req.FromLine < 1 {
+			if req.FromLine != nil && *req.FromLine < 1 {
 				w.WriteHeader(http.StatusBadRequest)
 				fmt.Fprintf(w, "from_line: must be >= 1")
 				return
 			}
-			if *req.ToLine < 1 {
+			if req.ToLine != nil && *req.ToLine < 1 {
 				w.WriteHeader(http.StatusBadRequest)
 				fmt.Fprintf(w, "to_line: must be >= 1")
 				return
 			}
 
-			rangeFullySpecified := req.FromLine != nil && req.ToLine != nil
-			if rangeFullySpecified && *req.ToLine < *req.FromLine {
+			if (req.FromLine != nil && req.ToLine != nil) && *req.ToLine < *req.FromLine {
 				w.WriteHeader(http.StatusBadRequest)
 				fmt.Fprintf(w, "to_line must be >= from_line")
 				return
