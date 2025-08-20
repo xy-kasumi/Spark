@@ -15,8 +15,10 @@ import { computeAABB } from './tracking-voxel.js';
  */
 const convGeomToSurf = (geom: THREE.BufferGeometry): Float32Array => {
     if (geom.index === null) {
+        console.log("convGeomToSurf: converting from non-indexed geometry");
         return geom.getAttribute("position").array;
     } else {
+        console.log("convGeomToSurf: converting from indexed geometry");
         const ix = geom.index.array;
         const pos = geom.getAttribute("position").array;
 
@@ -86,6 +88,9 @@ export class ModuleLayout implements Module {
     
     // Planning module
     modPlanner: ModulePlanner;
+    
+    // WASM module instance
+    wasmModule: any = null;
 
     constructor(framework: ModuleFramework, modPlanner: ModulePlanner) {
         this.framework = framework;
@@ -157,6 +162,7 @@ export class ModuleLayout implements Module {
 
         gui.add(this, "copyGcode");
         gui.add(this, "sendGcodeToSim");
+        gui.add(this, "projectMeshWASM");
 
         this.loadStl(this.model);
     }
@@ -200,6 +206,110 @@ export class ModuleLayout implements Module {
                 console.error('Loading error: ', error);
             }
         );
+    }
+
+    /**
+     * Project mesh using WASM module
+     */
+    async projectMeshWASM() {
+        console.log("Loading WASM module for mesh projection...");
+        
+        try {
+            // Load WASM module if not already loaded
+            if (!this.wasmModule) {
+                // @ts-ignore - WASM module will be generated at build time
+                const MeshProjectModule = (await import('./wasm/mesh_project.js')).default;
+                this.wasmModule = await MeshProjectModule();
+                console.log("WASM module loaded successfully");
+            }
+            
+            const Module = this.wasmModule;
+            
+            // Prepare triangle soup data
+            const numVertices = this.targetSurf.length / 3;
+            const numTriangles = numVertices / 3;
+            console.log(`Processing ${numTriangles} triangles (${numVertices} vertices)`);
+            
+            // Allocate memory for triangle_soup struct
+            const soupPtr = Module._malloc(8); // sizeof(triangle_soup)
+            const verticesPtr = Module._malloc(numVertices * 12); // numVertices * sizeof(vector3)
+            
+            // Copy vertex data to WASM heap
+            Module.HEAPF32.set(this.targetSurf, verticesPtr / 4);
+            
+            // Set triangle_soup struct fields
+            Module.setValue(soupPtr, numVertices, 'i32'); // num_vertices
+            Module.setValue(soupPtr + 4, verticesPtr, 'i32'); // vertices pointer
+            
+            // Create view parameters (identity transform for now)
+            const origin = Module._malloc(12);
+            const viewX = Module._malloc(12);
+            const viewY = Module._malloc(12);
+            const viewZ = Module._malloc(12);
+            
+            Module.HEAPF32.set([0, 0, 0], origin / 4);
+            Module.HEAPF32.set([1, 0, 0], viewX / 4);
+            Module.HEAPF32.set([0, 1, 0], viewY / 4);
+            Module.HEAPF32.set([0, 0, 1], viewZ / 4);
+            
+            // Call project_mesh
+            console.log("Calling project_mesh...");
+            const resultPtr = Module._project_mesh(soupPtr, origin, viewX, viewY, viewZ);
+            
+            if (!resultPtr) {
+                throw new Error("project_mesh returned null");
+            }
+            
+            // Read result contour_soup
+            const numContours = Module.getValue(resultPtr, 'i32');
+            const contoursPtr = Module.getValue(resultPtr + 4, 'i32');
+            
+            console.log(`Result: ${numContours} contour(s)`);
+            
+            // Visualize contours
+            const contourObjects: THREE.Object3D[] = [];
+            
+            for (let i = 0; i < numContours; i++) {
+                const contourPtr = contoursPtr + i * 8; // sizeof(contour)
+                const numVerts = Module.getValue(contourPtr, 'i32');
+                const vertsPtr = Module.getValue(contourPtr + 4, 'i32');
+                
+                console.log(`Contour ${i}: ${numVerts} vertices`);
+                
+                // Create line geometry for contour
+                const points: THREE.Vector3[] = [];
+                for (let v = 0; v < numVerts; v++) {
+                    const x = Module.HEAPF32[vertsPtr / 4 + v * 2];
+                    const y = Module.HEAPF32[vertsPtr / 4 + v * 2 + 1];
+                    // Place contour in 3D space (at z=0 for now)
+                    points.push(new THREE.Vector3(x * 5, y * 5, 0)); // Scale up for visibility
+                }
+                points.push(points[0]); // Close the loop
+                
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
+                const line = new THREE.LineLoop(geometry, material);
+                contourObjects.push(line);
+            }
+            
+            // Update visualization
+            this.framework.updateVis("misc", contourObjects);
+            
+            // Clean up WASM memory
+            Module._free_contour_soup(resultPtr);
+            Module._free(soupPtr);
+            Module._free(verticesPtr);
+            Module._free(origin);
+            Module._free(viewX);
+            Module._free(viewY);
+            Module._free(viewZ);
+            
+            console.log("WASM projection complete");
+            
+        } catch (error) {
+            console.error("WASM projection failed:", error);
+            alert(`WASM projection failed: ${error.message}\nMake sure to run ./wasm/build-wasm.sh first`);
+        }
     }
 
     copyGcode() {
