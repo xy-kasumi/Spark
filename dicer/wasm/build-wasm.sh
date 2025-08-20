@@ -30,13 +30,25 @@ source "$EMSDK_DIR/emsdk_env.sh"
 # Step 3: Create output directory
 mkdir -p "$OUTPUT_DIR"
 
+# Step 3.5: Install CGAL dependencies if needed
+DEPS_DIR="$SCRIPT_DIR/deps"
+if [ ! -d "$DEPS_DIR/CGAL-5.6" ] || [ ! -d "$DEPS_DIR/boost_1_83_0" ]; then
+    echo "Installing CGAL dependencies..."
+    "$SCRIPT_DIR/install-cgal.sh"
+fi
+
 # Step 4: Compile the WASM module
-echo "Compiling entrypoint.cpp to WASM..."
+echo "Compiling entrypoint.cpp to WASM with CGAL..."
 
 emcc "$SCRIPT_DIR/entrypoint.cpp" \
     -o "$OUTPUT_DIR/mesh_project.js" \
     -O2 \
-    -s EXPORTED_FUNCTIONS='["_project_mesh", "_free_contour_soup", "_malloc", "_free"]' \
+    -I"$DEPS_DIR/CGAL-5.6/include" \
+    -I"$DEPS_DIR/boost_1_83_0" \
+    -std=c++17 \
+    -DCGAL_HAS_NO_THREADS \
+    -DCGAL_NDEBUG \
+    -s EXPORTED_FUNCTIONS='["_project_mesh", "_free_edge_soup", "_malloc", "_free"]' \
     -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "getValue", "setValue"]' \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s MODULARIZE=1 \
@@ -45,12 +57,6 @@ emcc "$SCRIPT_DIR/entrypoint.cpp" \
     -s ENVIRONMENT='web' \
     -s SINGLE_FILE=0 \
     --no-entry
-
-# Note: When we add CGAL, we'll need additional flags:
-# -I/path/to/cgal/include \
-# -I/path/to/boost/include \
-# -std=c++17 \
-# -DCGAL_NDEBUG \
 
 echo "Build complete!"
 echo "Output files:"

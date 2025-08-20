@@ -1,3 +1,5 @@
 .claude/settings.local.json
 dicer/dist/
+dicer/wasm/deps/
+dicer/wasm/emsdk/
 shell-dashboard/dist/

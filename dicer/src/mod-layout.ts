@@ -260,43 +260,43 @@ export class ModuleLayout implements Module {
                 throw new Error("project_mesh returned null");
             }
             
-            // Read result contour_soup
-            const numContours = Module.getValue(resultPtr, 'i32');
-            const contoursPtr = Module.getValue(resultPtr + 4, 'i32');
+            // Read result edge_soup
+            const numEdges = Module.getValue(resultPtr, 'i32');
+            const edgesPtr = Module.getValue(resultPtr + 4, 'i32');
             
-            console.log(`Result: ${numContours} contour(s)`);
+            console.log(`Result: ${numEdges} silhouette edge(s)`);
             
-            // Visualize contours
-            const contourObjects: THREE.Object3D[] = [];
+            // Visualize edges
+            const edgeObjects: THREE.Object3D[] = [];
             
-            for (let i = 0; i < numContours; i++) {
-                const contourPtr = contoursPtr + i * 8; // sizeof(contour)
-                const numVerts = Module.getValue(contourPtr, 'i32');
-                const vertsPtr = Module.getValue(contourPtr + 4, 'i32');
+            for (let i = 0; i < numEdges; i++) {
+                const edgePtr = edgesPtr + i * 16; // sizeof(edge_2d) = 4 * sizeof(float)
                 
-                console.log(`Contour ${i}: ${numVerts} vertices`);
+                // Read start point
+                const startX = Module.HEAPF32[edgePtr / 4 + 0];
+                const startY = Module.HEAPF32[edgePtr / 4 + 1];
                 
-                // Create line geometry for contour
-                const points: THREE.Vector3[] = [];
-                for (let v = 0; v < numVerts; v++) {
-                    const x = Module.HEAPF32[vertsPtr / 4 + v * 2];
-                    const y = Module.HEAPF32[vertsPtr / 4 + v * 2 + 1];
-                    // Place contour in 3D space (at z=0 for now)
-                    points.push(new THREE.Vector3(x * 5, y * 5, 0)); // Scale up for visibility
-                }
-                points.push(points[0]); // Close the loop
+                // Read end point  
+                const endX = Module.HEAPF32[edgePtr / 4 + 2];
+                const endY = Module.HEAPF32[edgePtr / 4 + 3];
+                
+                // Create line segment in 3D space (at z=0 for now)
+                const points: THREE.Vector3[] = [
+                    new THREE.Vector3(startX * 5, startY * 5, 0), // Scale up for visibility
+                    new THREE.Vector3(endX * 5, endY * 5, 0)
+                ];
                 
                 const geometry = new THREE.BufferGeometry().setFromPoints(points);
                 const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
-                const line = new THREE.LineLoop(geometry, material);
-                contourObjects.push(line);
+                const line = new THREE.LineSegments(geometry, material);
+                edgeObjects.push(line);
             }
             
             // Update visualization
-            this.framework.updateVis("misc", contourObjects);
+            this.framework.updateVis("misc", edgeObjects);
             
             // Clean up WASM memory
-            Module._free_contour_soup(resultPtr);
+            Module._free_edge_soup(resultPtr);
             Module._free(soupPtr);
             Module._free(verticesPtr);
             Module._free(origin);
