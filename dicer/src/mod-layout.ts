@@ -92,6 +92,11 @@ export class ModuleLayout implements Module {
     
     // WASM module instance
     wasmModule: any = null;
+    
+    // View vector for mesh projection
+    viewVectorX: number = 0;
+    viewVectorY: number = 0;
+    viewVectorZ: number = 1;
 
     constructor(framework: ModuleFramework, modPlanner: ModulePlanner) {
         this.framework = framework;
@@ -163,7 +168,14 @@ export class ModuleLayout implements Module {
 
         gui.add(this, "copyGcode");
         gui.add(this, "sendGcodeToSim");
-        gui.add(this, "projectMeshWASM");
+        
+        // View vector controls
+        const projectionFolder = gui.addFolder("Mesh Projection");
+        projectionFolder.add(this, "viewVectorX", -1, 1, 0.1).name("View X").listen();
+        projectionFolder.add(this, "viewVectorY", -1, 1, 0.1).name("View Y").listen();
+        projectionFolder.add(this, "viewVectorZ", -1, 1, 0.1).name("View Z").listen();
+        projectionFolder.add(this, "randomizeViewVector").name("Randomize");
+        projectionFolder.add(this, "projectMeshWASM").name("Project");
 
         this.loadStl(this.model);
     }
@@ -210,58 +222,70 @@ export class ModuleLayout implements Module {
     }
 
     /**
-     * Project mesh using WASM module
+     * Randomize view vector
      */
-    async projectMeshWASM() {
-        console.log("Loading WASM module for mesh projection...");
+    randomizeViewVector() {
+        // Generate random unit vector
+        const vec = new THREE.Vector3();
+        do {
+            vec.set((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
+        } while (vec.lengthSq() < 0.01);
+        
+        vec.normalize();
+        this.viewVectorX = vec.x;
+        this.viewVectorY = vec.y;
+        this.viewVectorZ = vec.z;
+    }
+
+    /**
+     * Pure WASM wrapper - calls C++ projection function and returns TypeScript objects
+     * @param triangleSoup - Float32Array of vertex data (x,y,z per vertex, 3 vertices per triangle)
+     * @param origin - 3D origin point for projection plane
+     * @param viewX - X axis of projection coordinate system (must be orthonormal)
+     * @param viewY - Y axis of projection coordinate system (must be orthonormal) 
+     * @param viewZ - Z axis of projection coordinate system (viewing direction, must be orthonormal)
+     * @returns Array of 2D edges or throws error string
+     */
+    private async callWasmProjectMesh(
+        triangleSoup: Float32Array, 
+        origin: THREE.Vector3,
+        viewX: THREE.Vector3,
+        viewY: THREE.Vector3,
+        viewZ: THREE.Vector3
+    ): Promise<{start: THREE.Vector2, end: THREE.Vector2}[]> {
+        // Load WASM module if not already loaded
+        if (!this.wasmModule) {
+            // @ts-ignore - WASM module will be generated at build time
+            const MeshProjectModule = (await import('./wasm/mesh_project.js')).default;
+            this.wasmModule = await MeshProjectModule();
+        }
+        
+        const Module = this.wasmModule;
+        const numVertices = triangleSoup.length / 3;
+        
+        // Allocate and populate triangle_soup struct
+        const soupPtr = Module._malloc(8);
+        const verticesPtr = Module._malloc(numVertices * 12);
+        Module.HEAPF32.set(triangleSoup, verticesPtr / 4);
+        Module.setValue(soupPtr, numVertices, 'i32');
+        Module.setValue(soupPtr + 4, verticesPtr, 'i32');
+        
+        // Allocate and populate view parameters
+        const originPtr = Module._malloc(12);
+        const viewXPtr = Module._malloc(12);
+        const viewYPtr = Module._malloc(12);
+        const viewZPtr = Module._malloc(12);
+        Module.HEAPF32.set([origin.x, origin.y, origin.z], originPtr / 4);
+        Module.HEAPF32.set([viewX.x, viewX.y, viewX.z], viewXPtr / 4);
+        Module.HEAPF32.set([viewY.x, viewY.y, viewY.z], viewYPtr / 4);
+        Module.HEAPF32.set([viewZ.x, viewZ.y, viewZ.z], viewZPtr / 4);
         
         try {
-            // Load WASM module if not already loaded
-            if (!this.wasmModule) {
-                // @ts-ignore - WASM module will be generated at build time
-                const MeshProjectModule = (await import('./wasm/mesh_project.js')).default;
-                this.wasmModule = await MeshProjectModule();
-                console.log("WASM module loaded successfully");
-            }
+            // Call WASM function
+            const resultPtr = Module._project_mesh(soupPtr, originPtr, viewXPtr, viewYPtr, viewZPtr);
+            if (!resultPtr) throw new Error("project_mesh returned null");
             
-            const Module = this.wasmModule;
-            
-            // Prepare triangle soup data
-            const numVertices = this.targetSurf.length / 3;
-            const numTriangles = numVertices / 3;
-            console.log(`Processing ${numTriangles} triangles (${numVertices} vertices)`);
-            
-            // Allocate memory for triangle_soup struct
-            const soupPtr = Module._malloc(8); // sizeof(triangle_soup)
-            const verticesPtr = Module._malloc(numVertices * 12); // numVertices * sizeof(vector3)
-            
-            // Copy vertex data to WASM heap
-            Module.HEAPF32.set(this.targetSurf, verticesPtr / 4);
-            
-            // Set triangle_soup struct fields
-            Module.setValue(soupPtr, numVertices, 'i32'); // num_vertices
-            Module.setValue(soupPtr + 4, verticesPtr, 'i32'); // vertices pointer
-            
-            // Create view parameters (identity transform for now)
-            const origin = Module._malloc(12);
-            const viewX = Module._malloc(12);
-            const viewY = Module._malloc(12);
-            const viewZ = Module._malloc(12);
-            
-            Module.HEAPF32.set([0, 0, 0], origin / 4);
-            Module.HEAPF32.set([1, 0, 0], viewX / 4);
-            Module.HEAPF32.set([0, 1, 0], viewY / 4);
-            Module.HEAPF32.set([0, 0, 1], viewZ / 4);
-            
-            // Call project_mesh
-            console.log("Calling project_mesh...");
-            const resultPtr = Module._project_mesh(soupPtr, origin, viewX, viewY, viewZ);
-            
-            if (!resultPtr) {
-                throw new Error("project_mesh returned null");
-            }
-            
-            // Read result edge_soup
+            // Read result
             const numEdges = Module.getValue(resultPtr, 'i32');
             const edgesPtr = Module.getValue(resultPtr + 4, 'i32');
             const errorMsgPtr = Module.getValue(resultPtr + 8, 'i32');
@@ -269,71 +293,101 @@ export class ModuleLayout implements Module {
             // Check for error
             if (errorMsgPtr !== 0) {
                 const errorMsg = Module.UTF8ToString(errorMsgPtr);
-                
-                // Check if error contains coordinate pattern and visualize
-                const coordPattern = /\((-?\d+\.\d+),(-?\d+\.\d+),(-?\d+\.\d+)\)-\((-?\d+\.\d+),(-?\d+\.\d+),(-?\d+\.\d+)\)/;
-                const match = errorMsg.match(coordPattern);
-                
-                if (match) {
-                    const p1 = new THREE.Vector3(parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3]));
-                    const p2 = new THREE.Vector3(parseFloat(match[4]), parseFloat(match[5]), parseFloat(match[6]));
-                    
-                    // Visualize the error edge as red dots
-                    const errorObjects: THREE.Object3D[] = [];
-                    errorObjects.push(visDot(p1, "red"));
-                    errorObjects.push(visDot(p2, "red"));
-                    
-                    this.framework.updateVis("misc", errorObjects);
-                    console.log(`Error edge visualized: ${p1.x.toFixed(3)},${p1.y.toFixed(3)},${p1.z.toFixed(3)} to ${p2.x.toFixed(3)},${p2.y.toFixed(3)},${p2.z.toFixed(3)}`);
-                }
-                
-                throw new Error(`WASM error: ${errorMsg}`);
+                throw new Error(errorMsg);
             }
             
-            console.log(`Result: ${numEdges} silhouette edge(s)`);
-            
-            // Visualize edges
-            const edgeObjects: THREE.Object3D[] = [];
-            
+            // Convert edges to TypeScript objects
+            const edges: {start: THREE.Vector2, end: THREE.Vector2}[] = [];
             for (let i = 0; i < numEdges; i++) {
-                const edgePtr = edgesPtr + i * 16; // sizeof(edge_2d) = 4 * sizeof(float)
-                
-                // Read start point
+                const edgePtr = edgesPtr + i * 16;
                 const startX = Module.HEAPF32[edgePtr / 4 + 0];
                 const startY = Module.HEAPF32[edgePtr / 4 + 1];
-                
-                // Read end point  
                 const endX = Module.HEAPF32[edgePtr / 4 + 2];
                 const endY = Module.HEAPF32[edgePtr / 4 + 3];
-                
-                // Create line segment in 3D space (at z=0 for now)
-                const points: THREE.Vector3[] = [
-                    new THREE.Vector3(startX, startY, 0),
-                    new THREE.Vector3(endX, endY, 0)
-                ];
-                
+                edges.push({
+                    start: new THREE.Vector2(startX, startY),
+                    end: new THREE.Vector2(endX, endY)
+                });
+            }
+            
+            // Clean up result
+            Module._free_edge_soup(resultPtr);
+            return edges;
+            
+        } finally {
+            // Always clean up input memory
+            Module._free(soupPtr);
+            Module._free(verticesPtr);
+            Module._free(originPtr);
+            Module._free(viewXPtr);
+            Module._free(viewYPtr);
+            Module._free(viewZPtr);
+        }
+    }
+
+    /**
+     * High-level mesh projection with visualization and error handling
+     */
+    async projectMeshWASM() {
+        try {
+            // Create and validate view vector
+            const viewVector = new THREE.Vector3(this.viewVectorX, this.viewVectorY, this.viewVectorZ);
+            if (viewVector.length() < 0.001) {
+                throw new Error("View vector too small");
+            }
+            
+            // Generate orthonormal basis from view vector
+            const viewZ = viewVector.clone().normalize();
+            const temp = Math.abs(viewZ.dot(new THREE.Vector3(1, 0, 0))) > 0.9 ? 
+                         new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+            const viewX = temp.clone().sub(viewZ.clone().multiplyScalar(temp.dot(viewZ))).normalize();
+            const viewY = viewZ.clone().cross(viewX);
+            const origin = new THREE.Vector3(0, 0, 0);
+            
+            console.log(`View basis: X(${viewX.x.toFixed(3)}, ${viewX.y.toFixed(3)}, ${viewX.z.toFixed(3)}) ` +
+                       `Y(${viewY.x.toFixed(3)}, ${viewY.y.toFixed(3)}, ${viewY.z.toFixed(3)}) ` +
+                       `Z(${viewZ.x.toFixed(3)}, ${viewZ.y.toFixed(3)}, ${viewZ.z.toFixed(3)})`);
+            
+            // Call pure WASM wrapper
+            const startTime = performance.now();
+            const edges = await this.callWasmProjectMesh(this.targetSurf, origin, viewX, viewY, viewZ);
+            const endTime = performance.now();
+            console.log(`WASM projection: ${this.targetSurf.length / 9} tris, ${(endTime - startTime).toFixed(2)}ms. ${edges.length} silhouette edge(s)`);
+            
+            // Visualize edges on the view plane
+            const edgeObjects: THREE.Object3D[] = [];
+            for (const edge of edges) {
+                // Transform 2D edge coordinates back to 3D using orthonormal basis
+                const start3D = origin.clone()
+                    .add(viewX.clone().multiplyScalar(edge.start.x))
+                    .add(viewY.clone().multiplyScalar(edge.start.y));
+                const end3D = origin.clone()
+                    .add(viewX.clone().multiplyScalar(edge.end.x))
+                    .add(viewY.clone().multiplyScalar(edge.end.y));
+                    
+                const points = [start3D, end3D];
                 const geometry = new THREE.BufferGeometry().setFromPoints(points);
                 const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
                 const line = new THREE.LineSegments(geometry, material);
                 edgeObjects.push(line);
             }
             
-            // Update visualization
             this.framework.updateVis("misc", edgeObjects);
-            
-            // Clean up WASM memory
-            Module._free_edge_soup(resultPtr);
-            Module._free(soupPtr);
-            Module._free(verticesPtr);
-            Module._free(origin);
-            Module._free(viewX);
-            Module._free(viewY);
-            Module._free(viewZ);
-            
-            console.log("WASM projection complete");
-            
         } catch (error) {
             console.error("WASM projection failed:", error);
+            
+            // Handle coordinate pattern errors with visualization
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            const coordPattern = /\((-?\d+\.\d+),(-?\d+\.\d+),(-?\d+\.\d+)\)-\((-?\d+\.\d+),(-?\d+\.\d+),(-?\d+\.\d+)\)/;
+            const match = errorMsg.match(coordPattern);
+            
+            if (match) {
+                const p1 = new THREE.Vector3(parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3]));
+                const p2 = new THREE.Vector3(parseFloat(match[4]), parseFloat(match[5]), parseFloat(match[6]));
+                
+                const errorObjects: THREE.Object3D[] = [visDot(p1, "red"), visDot(p2, "red")];
+                this.framework.updateVis("misc", errorObjects);
+            }
         }
     }
 
