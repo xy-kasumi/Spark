@@ -7,6 +7,7 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { ModuleFramework, Module } from './framework.js';
 import { ModulePlanner } from './mod-planner.js';
 import { computeAABB } from './tracking-voxel.js';
+import { visDot } from './debug.js';
 
 /**
  * Get "triangle soup" representation from a geometry
@@ -263,6 +264,31 @@ export class ModuleLayout implements Module {
             // Read result edge_soup
             const numEdges = Module.getValue(resultPtr, 'i32');
             const edgesPtr = Module.getValue(resultPtr + 4, 'i32');
+            const errorMsgPtr = Module.getValue(resultPtr + 8, 'i32');
+            
+            // Check for error
+            if (errorMsgPtr !== 0) {
+                const errorMsg = Module.UTF8ToString(errorMsgPtr);
+                
+                // Check if error contains coordinate pattern and visualize
+                const coordPattern = /\((-?\d+\.\d+),(-?\d+\.\d+),(-?\d+\.\d+)\)-\((-?\d+\.\d+),(-?\d+\.\d+),(-?\d+\.\d+)\)/;
+                const match = errorMsg.match(coordPattern);
+                
+                if (match) {
+                    const p1 = new THREE.Vector3(parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3]));
+                    const p2 = new THREE.Vector3(parseFloat(match[4]), parseFloat(match[5]), parseFloat(match[6]));
+                    
+                    // Visualize the error edge as red dots
+                    const errorObjects: THREE.Object3D[] = [];
+                    errorObjects.push(visDot(p1, "red"));
+                    errorObjects.push(visDot(p2, "red"));
+                    
+                    this.framework.updateVis("misc", errorObjects);
+                    console.log(`Error edge visualized: ${p1.x.toFixed(3)},${p1.y.toFixed(3)},${p1.z.toFixed(3)} to ${p2.x.toFixed(3)},${p2.y.toFixed(3)},${p2.z.toFixed(3)}`);
+                }
+                
+                throw new Error(`WASM error: ${errorMsg}`);
+            }
             
             console.log(`Result: ${numEdges} silhouette edge(s)`);
             
@@ -282,8 +308,8 @@ export class ModuleLayout implements Module {
                 
                 // Create line segment in 3D space (at z=0 for now)
                 const points: THREE.Vector3[] = [
-                    new THREE.Vector3(startX * 5, startY * 5, 0), // Scale up for visibility
-                    new THREE.Vector3(endX * 5, endY * 5, 0)
+                    new THREE.Vector3(startX, startY, 0),
+                    new THREE.Vector3(endX, endY, 0)
                 ];
                 
                 const geometry = new THREE.BufferGeometry().setFromPoints(points);
@@ -308,7 +334,6 @@ export class ModuleLayout implements Module {
             
         } catch (error) {
             console.error("WASM projection failed:", error);
-            alert(`WASM projection failed: ${error.message}\nMake sure to run ./wasm/build-wasm.sh first`);
         }
     }
 

@@ -2,12 +2,14 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include <vector>
 #include <algorithm>
 #include <cmath>
 
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Surface_mesh.h>
+#include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
 #include <CGAL/Polygon_mesh_processing/compute_normal.h>
 
@@ -50,6 +52,7 @@ typedef struct {
 typedef struct {
     int num_edges;
     edge_2d* edges;
+    char* error_message; // null on success
 } edge_soup;
 
 // Helper to convert vector3 to CGAL Point_3
@@ -75,6 +78,16 @@ static Point_2 project_to_plane(
     return Point_2(x, y);
 }
 
+// Utility function to create error result
+static edge_soup* error_result(const char* msg) {
+    edge_soup* result = (edge_soup*)malloc(sizeof(edge_soup));
+    result->num_edges = 0;
+    result->edges = nullptr;
+    result->error_message = (char*)malloc(strlen(msg) + 1);
+    strcpy(result->error_message, msg);
+    return result;
+}
+
 // Project 3D mesh onto a plane defined by view_dir_z and origin.
 // Returns silhouette edges projected onto the view plane.
 //
@@ -88,10 +101,7 @@ extern "C" edge_soup* project_mesh(
 ) {
     // Validate input
     if (!soup || !soup->vertices || soup->num_vertices <= 0 || soup->num_vertices % 3 != 0) {
-        edge_soup* result = (edge_soup*)malloc(sizeof(edge_soup));
-        result->num_edges = 0;
-        result->edges = nullptr;
-        return result;
+        return error_result("Invalid input data");
     }
     
     // Convert input vectors to CGAL types
@@ -128,16 +138,14 @@ extern "C" edge_soup* project_mesh(
     }
     
     // Build CGAL mesh
+    PMP::merge_duplicate_points_in_polygon_soup(points, polygons);
+
     Mesh mesh;
     PMP::polygon_soup_to_polygon_mesh(points, polygons, mesh);
     
     // Check if mesh is valid
     if (mesh.is_empty() || !mesh.is_valid()) {
-        // Failed to create valid mesh - return empty result
-        edge_soup* result = (edge_soup*)malloc(sizeof(edge_soup));
-        result->num_edges = 0;
-        result->edges = nullptr;
-        return result;
+        return error_result("Invalid mesh created");
     }
     
     // Part B: Find silhouette edges
@@ -147,26 +155,19 @@ extern "C" edge_soup* project_mesh(
         Halfedge_index h1 = mesh.halfedge(e);
         Halfedge_index h2 = mesh.opposite(h1);
         
-        // Check if edge is on boundary (only one adjacent face)
         if (mesh.is_border(h1) || mesh.is_border(h2)) {
-            // Boundary edges are always part of silhouette
             Vertex_index v1 = mesh.source(h1);
             Vertex_index v2 = mesh.target(h1);
+            Point_3 p1 = mesh.point(v1);
+            Point_3 p2 = mesh.point(v2);
             
-            Point_3 p1_3d = mesh.point(v1);
-            Point_3 p2_3d = mesh.point(v2);
+            char error_msg[200];
+            snprintf(error_msg, sizeof(error_msg), 
+                "mesh is broken (edge with single face): (%.3f,%.3f,%.3f)-(%.3f,%.3f,%.3f)", 
+                CGAL::to_double(p1.x()), CGAL::to_double(p1.y()), CGAL::to_double(p1.z()),
+                CGAL::to_double(p2.x()), CGAL::to_double(p2.y()), CGAL::to_double(p2.z()));
             
-            Point_2 p1_2d = project_to_plane(p1_3d, origin_pt, x_axis, y_axis);
-            Point_2 p2_2d = project_to_plane(p2_3d, origin_pt, x_axis, y_axis);
-            
-            edge_2d edge;
-            edge.start.x = CGAL::to_double(p1_2d.x());
-            edge.start.y = CGAL::to_double(p1_2d.y());
-            edge.end.x = CGAL::to_double(p2_2d.x());
-            edge.end.y = CGAL::to_double(p2_2d.y());
-            
-            silhouette_edges.push_back(edge);
-            continue;
+            return error_result(error_msg);
         }
         
         Face_index f1 = mesh.face(h1);
@@ -204,6 +205,7 @@ extern "C" edge_soup* project_mesh(
     // Convert to output format
     edge_soup* result = (edge_soup*)malloc(sizeof(edge_soup));
     result->num_edges = silhouette_edges.size();
+    result->error_message = nullptr; // Success
     
     if (result->num_edges > 0) {
         result->edges = (edge_2d*)malloc(sizeof(edge_2d) * result->num_edges);
@@ -222,5 +224,6 @@ extern "C" void free_edge_soup(edge_soup* soup) {
     if (!soup) return;
     
     free(soup->edges);
+    free(soup->error_message);
     free(soup);
 }
