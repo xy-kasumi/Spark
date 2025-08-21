@@ -110,6 +110,8 @@ export class ModuleLayout implements Module {
             LATTICE: "cube_lattice",
             BENCHY: "benchy_25p",
             BOLT_M3: "M3x10",
+            COLLET: "collet",
+            IDLER: "idler",
             FRACTAL_STEP: "fractal_step",
         };
 
