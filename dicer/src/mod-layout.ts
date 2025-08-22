@@ -347,7 +347,7 @@ export class ModuleLayout implements Module {
      * @returns Triangle soup array
      */
     private generateSphereSoup(radius: number): Float64Array {
-        const geom = new THREE.SphereGeometry(radius, 6, 4);
+        const geom = new THREE.SphereGeometry(radius, 32, 16);
         geom.translate(1, 0, 0);
         // SphereGeometry has tiny seam because of floating point error.
         return this.dedupeSnapInPlace(convGeomToSurf(geom), 1e-4); // 0.1um
@@ -405,10 +405,10 @@ export class ModuleLayout implements Module {
      * @param triangleSoup - Float64Array with vertices (x,y,z per vertex, 3 vertices per triangle)
      * @returns Manifold Mesh object
      */
-    private triangleSoupToManifoldMesh(triangleSoup: Float64Array): Mesh {
+    private triangleSoupToManifoldMesh(triangleSoup: Float64Array): ManifoldModule.Mesh {
         const numTriangles = triangleSoup.length / 9;
         const numVertices = numTriangles * 3;
-        
+
         const vertProperties = new Float32Array(numVertices * 3);
         const triVerts = new Uint32Array(numVertices);
         for (let i = 0; i < numVertices; i++) {
@@ -422,7 +422,7 @@ export class ModuleLayout implements Module {
             vertProperties: vertProperties,
             triVerts: triVerts
         });
-        
+
         mesh.merge();
         return mesh;
     }
@@ -435,7 +435,7 @@ export class ModuleLayout implements Module {
     private manifoldMeshToTriangleSoup(mesh: any): Float64Array {
         const numTriangles = mesh.numTri;
         const result = new Float64Array(numTriangles * 9);
-        
+
         for (let tri = 0; tri < numTriangles; tri++) {
             const verts = mesh.verts(tri);
             for (let v = 0; v < 3; v++) {
@@ -446,7 +446,7 @@ export class ModuleLayout implements Module {
                 result[tri * 9 + v * 3 + 2] = pos[2];
             }
         }
-        
+
         return result;
     }
 
@@ -461,100 +461,28 @@ export class ModuleLayout implements Module {
         meshB: Float64Array
     ): Promise<Float64Array> {
         await this.initManifold();
-        
+
         try {
             // Convert triangle soups to Manifold meshes
             const meshObjA = this.triangleSoupToManifoldMesh(meshA);
             const meshObjB = this.triangleSoupToManifoldMesh(meshB);
-            
+
             // Create Manifolds from meshes
             const manifoldA = new this.manifoldModule.Manifold(meshObjA);
             const manifoldB = new this.manifoldModule.Manifold(meshObjB);
             console.log("manifolds created", manifoldA, manifoldB);
-        
-        // Perform boolean subtraction
-        const result = manifoldA.subtract(manifoldB);
-        
-        // Get result mesh
-        const resultMesh = result.getMesh();
-        
+
+            // Perform boolean subtraction
+            const result = manifoldA.subtract(manifoldB);
+
+            // Get result mesh
+            const resultMesh = result.getMesh();
+
             // Convert back to triangle soup
             return this.manifoldMeshToTriangleSoup(resultMesh);
         } catch (error) {
             console.error("Manifold subtraction error:", error);
             throw error;
-        }
-    }
-
-    /**
-     * Pure WASM wrapper - calls C++ mesh subtraction function (CGAL)
-     * @param meshA - First triangle soup
-     * @param meshB - Second triangle soup to subtract from first
-     * @returns Resulting triangle soup or throws error string
-     */
-    private async callWasmSubtractMesh(
-        meshA: Float32Array,
-        meshB: Float32Array
-    ): Promise<Float32Array> {
-        // Load WASM module if not already loaded
-        if (!this.wasmModule) {
-            // @ts-ignore - WASM module will be generated at build time
-            const MeshProjectModule = (await import('./wasm/mesh_project.js')).default;
-            this.wasmModule = await MeshProjectModule();
-        }
-
-        const Module = this.wasmModule;
-        const numVerticesA = meshA.length / 3;
-        const numVerticesB = meshB.length / 3;
-
-        // Allocate and populate triangle_soup structs
-        // triangle_soup struct is { int num_vertices; vector3* vertices; }
-        // In WASM32: int = 4 bytes, pointer = 4 bytes, total = 8 bytes
-        // Ensure proper alignment
-        const soupPtrA = Module._malloc(16); // Allocate extra for alignment
-        const verticesPtrA = Module._malloc(meshA.length * 4); // meshA.length floats * 4 bytes each
-        Module.HEAPF32.set(meshA, verticesPtrA / 4);
-        Module.HEAP32[soupPtrA / 4] = numVerticesA; // Set num_vertices
-        Module.HEAP32[soupPtrA / 4 + 1] = verticesPtrA; // Set vertices pointer
-
-        const soupPtrB = Module._malloc(16); // Allocate extra for alignment
-        const verticesPtrB = Module._malloc(meshB.length * 4); // meshB.length floats * 4 bytes each
-        Module.HEAPF32.set(meshB, verticesPtrB / 4);
-        Module.HEAP32[soupPtrB / 4] = numVerticesB; // Set num_vertices
-        Module.HEAP32[soupPtrB / 4 + 1] = verticesPtrB; // Set vertices pointer
-
-        try {
-            // Call WASM function
-            const resultPtr = Module._subtract_meshes(soupPtrA, soupPtrB);
-            if (!resultPtr) throw new Error("subtract_meshes returned null");
-
-            // Read result
-            const numVertices = Module.HEAP32[resultPtr / 4];
-            const verticesPtr = Module.HEAP32[resultPtr / 4 + 1];
-            const errorMsgPtr = Module.HEAP32[resultPtr / 4 + 2];
-
-            // Check for error
-            if (errorMsgPtr !== 0) {
-                const errorMsg = Module.UTF8ToString(errorMsgPtr);
-                throw new Error(errorMsg);
-            }
-
-            // Convert result to Float32Array
-            const result = new Float32Array(numVertices * 3);
-            for (let i = 0; i < numVertices * 3; i++) {
-                result[i] = Module.HEAPF32[verticesPtr / 4 + i];
-            }
-
-            // Clean up result
-            Module._free_triangle_soup_result(resultPtr);
-            return result;
-
-        } finally {
-            // Always clean up input memory
-            Module._free(soupPtrA);
-            Module._free(verticesPtrA);
-            Module._free(soupPtrB);
-            Module._free(verticesPtrB);
         }
     }
 
@@ -586,26 +514,6 @@ export class ModuleLayout implements Module {
                 positions[i] = resultSoup[i];
             }
 
-            // Compute normals for each triangle
-            /*
-            for (let i = 0; i < numTris; i++) {
-                const i0 = i * 9;
-                const v0 = new THREE.Vector3(positions[i0], positions[i0 + 1], positions[i0 + 2]);
-                const v1 = new THREE.Vector3(positions[i0 + 3], positions[i0 + 4], positions[i0 + 5]);
-                const v2 = new THREE.Vector3(positions[i0 + 6], positions[i0 + 7], positions[i0 + 8]);
-                
-                const edge1 = v1.clone().sub(v0);
-                const edge2 = v2.clone().sub(v0);
-                const normal = edge1.cross(edge2).normalize();
-                
-                // Set same normal for all 3 vertices of the triangle
-                for (let j = 0; j < 3; j++) {
-                    normals[i0 + j * 3] = normal.x;
-                    normals[i0 + j * 3 + 1] = normal.y;
-                    normals[i0 + j * 3 + 2] = normal.z;
-                }
-            }
-                */
 
             // Create BufferGeometry
             const geometry = new THREE.BufferGeometry();
@@ -619,22 +527,10 @@ export class ModuleLayout implements Module {
                 roughness: 0.8,
                 transparent: true,
                 wireframe: true
-                //opacity: 0.9,
             });
 
             const mesh = new THREE.Mesh(geometry, material);
             this.framework.updateVis("misc", [mesh]);
-
-            // Also show the original cube and sphere as wireframes for reference
-            /*
-            const cubeGeom = new THREE.BoxGeometry(10, 10, 10);
-            const cubeMat = new THREE.MeshBasicMaterial({ color: 0x0000ff, wireframe: true, opacity: 0.3, transparent: true });
-            const cubeMesh = new THREE.Mesh(cubeGeom, cubeMat);
-            
-            const sphereGeom = new THREE.SphereGeometry(this.subtractRadius, 32, 32);
-            const sphereMat = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true, opacity: 0.3, transparent: true });
-            const sphereMesh = new THREE.Mesh(sphereGeom, sphereMat);
-            */
 
             this.framework.updateVis("misc", [mesh]);
 
@@ -701,6 +597,7 @@ export class ModuleLayout implements Module {
                 metalness: 0.1,
                 roughness: 0.8,
                 transparent: true,
+                wireframe: true,
                 opacity: 0.9,
             });
 
