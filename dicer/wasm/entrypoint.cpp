@@ -12,8 +12,8 @@
 #include <CGAL/Polygon_mesh_processing/compute_normal.h>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
 #include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
-#include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/repair_degeneracies.h>
+#include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/boost/graph/convert_nef_polyhedron_to_polygon_mesh.h>
 
@@ -305,7 +305,6 @@ static triangle_soup_result* mesh_to_soup(const Mesh& mesh) {
 
 extern "C" triangle_soup_result* subtract_meshes(const triangle_soup* soup_a,
                                                  const triangle_soup* soup_b) {
-  // Convert triangle soups to CGAL meshes
   Mesh mesh_a;
   if (!soup_to_mesh(soup_a, mesh_a)) {
     return error_soup_result("soup_a is not proper closed mesh");
@@ -315,24 +314,46 @@ extern "C" triangle_soup_result* subtract_meshes(const triangle_soup* soup_a,
     return error_soup_result("soup_b is not proper closed mesh");
   }
 
-  // These just represents surface points, regularization will fill them.
-  Nef_polyhedron nef_a(mesh_a);
-  Nef_polyhedron nef_b(mesh_b);
-  nef_a = nef_a.regularization();
-  nef_b = nef_b.regularization();
+  // --- Robust boolean via PMP corefinement (no Nef) ---
+  // We operate on local copies because corefinement modifies the inputs.
+  Mesh A = mesh_a, B = mesh_b;
 
-  // Execute diff.
-  Nef_polyhedron nef_result = nef_a - nef_b;
-  if (nef_result.is_empty()) {
-    return error_soup_result("result is empty");
+  // Harden meshes for boolean operations
+  // (remove tiny degeneracies, weld borders, ensure outward orientation)
+  PMP::remove_degenerate_faces(A);
+  PMP::remove_degenerate_faces(B);
+  PMP::stitch_borders(A);
+  PMP::stitch_borders(B);
+  PMP::orient_to_bound_a_volume(A);
+  PMP::orient_to_bound_a_volume(B);
+
+  // Sanity checks (closed & no self-intersections expected for robust
+  // corefinement)
+  if (!CGAL::is_closed(A) || !CGAL::is_closed(B)) {
+    return error_soup_result("input meshes must be closed after preprocessing");
+  }
+  if (PMP::does_self_intersect(A) || PMP::does_self_intersect(B)) {
+    return error_soup_result("input meshes self-intersect; aborting boolean");
   }
 
-  // Convert NEF polyhedron back to Surface_mesh
+  // Compute A \ B using corefinement
   Mesh result_mesh;
-  CGAL::convert_nef_polyhedron_to_polygon_mesh(nef_result, result_mesh);
-  if (result_mesh.is_empty()) {
-    return error_soup_result("Failed to convert NEF result to mesh");
+  const bool ok = PMP::corefine_and_compute_difference(A, B, result_mesh);
+  if (!ok || result_mesh.is_empty()) {
+    return error_soup_result(
+        "corefine_and_compute_difference() failed or produced empty result");
   }
+
+  // Optional post-clean (usually not needed, but cheap and safe)
+  PMP::remove_degenerate_faces(result_mesh);
+  PMP::stitch_borders(result_mesh);
+  PMP::orient_to_bound_a_volume(result_mesh);
+
+  if (!CGAL::is_closed(result_mesh)) {
+    return error_soup_result("boolean result is not closed");
+  }
+
+  // Convert back to triangle soup
   return mesh_to_soup(result_mesh);
 }
 
