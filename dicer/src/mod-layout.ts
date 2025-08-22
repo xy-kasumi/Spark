@@ -66,12 +66,12 @@ const generateStockVis = (stockRadius: number = 7.5, stockHeight: number = 15, b
  */
 export class ModuleLayout implements Module {
     framework: ModuleFramework;
-    
+
     // Model data
     models: Record<string, string>;
     model: string;
     targetSurf: Float32Array;
-    
+
     // Stock configuration
     stockDiameter: number;
     stockLength: number;
@@ -86,18 +86,18 @@ export class ModuleLayout implements Module {
     targToolLen: number; // target tool length after cutting
     wireFeedRate: number;
     pulseCondition: string; // e.g. "M4 P150 Q20 R40"
-    
+
     // Planning module
     modPlanner: ModulePlanner;
-    
+
     // WASM module instance
     wasmModule: any = null;
-    
+
     // View vector for mesh projection
     viewVectorX: number = 0;
     viewVectorY: number = 0;
     viewVectorZ: number = 1;
-    
+
     // Subtract sphere radius
     subtractRadius: number = 5;
 
@@ -173,7 +173,7 @@ export class ModuleLayout implements Module {
 
         gui.add(this, "copyGcode");
         gui.add(this, "sendGcodeToSim");
-        
+
         // View vector controls
         const projectionFolder = gui.addFolder("Mesh Projection");
         projectionFolder.add(this, "viewVectorX", -1, 1, 0.1).name("View X").listen();
@@ -181,7 +181,7 @@ export class ModuleLayout implements Module {
         projectionFolder.add(this, "viewVectorZ", -1, 1, 0.1).name("View Z").listen();
         projectionFolder.add(this, "randomizeViewVector").name("Randomize");
         projectionFolder.add(this, "projectMeshWASM").name("Project");
-        
+
         // Subtract button and radius slider
         gui.add(this, "subtractRadius", 1, 15, 0.1).name("Subtract Radius").listen();
         gui.add(this, "subtractMeshWASM").name("Subtract");
@@ -240,7 +240,7 @@ export class ModuleLayout implements Module {
         do {
             vec.set((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
         } while (vec.lengthSq() < 0.01);
-        
+
         vec.normalize();
         this.viewVectorX = vec.x;
         this.viewVectorY = vec.y;
@@ -257,29 +257,29 @@ export class ModuleLayout implements Module {
      * @returns Array of 2D edges or throws error string
      */
     private async callWasmProjectMesh(
-        triangleSoup: Float32Array, 
+        triangleSoup: Float32Array,
         origin: THREE.Vector3,
         viewX: THREE.Vector3,
         viewY: THREE.Vector3,
         viewZ: THREE.Vector3
-    ): Promise<{start: THREE.Vector2, end: THREE.Vector2}[]> {
+    ): Promise<{ start: THREE.Vector2, end: THREE.Vector2 }[]> {
         // Load WASM module if not already loaded
         if (!this.wasmModule) {
             // @ts-ignore - WASM module will be generated at build time
             const MeshProjectModule = (await import('./wasm/mesh_project.js')).default;
             this.wasmModule = await MeshProjectModule();
         }
-        
+
         const Module = this.wasmModule;
         const numVertices = triangleSoup.length / 3;
-        
+
         // Allocate and populate triangle_soup struct
         const soupPtr = Module._malloc(16); // Allocate extra for alignment
         const verticesPtr = Module._malloc(triangleSoup.length * 4); // triangleSoup.length floats * 4 bytes each
         Module.HEAPF32.set(triangleSoup, verticesPtr / 4);
         Module.HEAP32[soupPtr / 4] = numVertices; // Set num_vertices
         Module.HEAP32[soupPtr / 4 + 1] = verticesPtr; // Set vertices pointer
-        
+
         // Allocate and populate view parameters
         const originPtr = Module._malloc(12);
         const viewXPtr = Module._malloc(12);
@@ -289,25 +289,25 @@ export class ModuleLayout implements Module {
         Module.HEAPF32.set([viewX.x, viewX.y, viewX.z], viewXPtr / 4);
         Module.HEAPF32.set([viewY.x, viewY.y, viewY.z], viewYPtr / 4);
         Module.HEAPF32.set([viewZ.x, viewZ.y, viewZ.z], viewZPtr / 4);
-        
+
         try {
             // Call WASM function
             const resultPtr = Module._project_mesh(soupPtr, originPtr, viewXPtr, viewYPtr, viewZPtr);
             if (!resultPtr) throw new Error("project_mesh returned null");
-            
+
             // Read result
             const numEdges = Module.getValue(resultPtr, 'i32');
             const edgesPtr = Module.getValue(resultPtr + 4, 'i32');
             const errorMsgPtr = Module.getValue(resultPtr + 8, 'i32');
-            
+
             // Check for error
             if (errorMsgPtr !== 0) {
                 const errorMsg = Module.UTF8ToString(errorMsgPtr);
                 throw new Error(errorMsg);
             }
-            
+
             // Convert edges to TypeScript objects
-            const edges: {start: THREE.Vector2, end: THREE.Vector2}[] = [];
+            const edges: { start: THREE.Vector2, end: THREE.Vector2 }[] = [];
             for (let i = 0; i < numEdges; i++) {
                 const edgePtr = edgesPtr + i * 16;
                 const startX = Module.HEAPF32[edgePtr / 4 + 0];
@@ -319,11 +319,11 @@ export class ModuleLayout implements Module {
                     end: new THREE.Vector2(endX, endY)
                 });
             }
-            
+
             // Clean up result
             Module._free_edge_soup(resultPtr);
             return edges;
-            
+
         } finally {
             // Always clean up input memory
             Module._free(soupPtr);
@@ -343,9 +343,37 @@ export class ModuleLayout implements Module {
     private generateSphereSoup(radius: number): Float32Array {
         const geom = new THREE.SphereGeometry(radius, 6, 4);
         geom.translate(1, 0, 0);
-        return convGeomToSurf(geom);
+        // SphereGeometry has tiny seam because of floating point error.
+        return this.dedupeSnapInPlace(convGeomToSurf(geom), 1e-4); // 0.1um
     }
-    
+
+    // pos: [x0,y0,z0, x1,y1,z1, ...]
+    // will stich unwanted seams, but will produce degenerate geometries.
+    private dedupeSnapInPlace(pos: Float32Array, epsilon: number): Float32Array {
+        const n = (pos.length / 3) | 0;
+        const eps2 = epsilon * epsilon;
+
+        for (let i = 0; i < n; ++i) {
+            const ix = 3 * i;
+            const xi = pos[ix], yi = pos[ix + 1], zi = pos[ix + 2];
+
+            // すでに見た点のどれかに近ければ、その座標へスナップ
+            for (let j = 0; j < i; ++j) {
+                const jx = 3 * j;
+                const dx = xi - pos[jx];
+                const dy = yi - pos[jx + 1];
+                const dz = zi - pos[jx + 2];
+                if (dx * dx + dy * dy + dz * dz <= eps2) {
+                    pos[ix] = pos[jx];
+                    pos[ix + 1] = pos[jx + 1];
+                    pos[ix + 2] = pos[jx + 2];
+                    break;
+                }
+            }
+        }
+        return pos; // インプレース
+    }
+
     /**
      * Generate cube geometry as triangle soup
      * @param size Cube size (width, height, depth)
@@ -355,7 +383,7 @@ export class ModuleLayout implements Module {
         const geom = new THREE.BoxGeometry(size, size, size);
         return convGeomToSurf(geom);
     }
-    
+
     /**
      * Pure WASM wrapper - calls C++ mesh subtraction function
      * @param meshA - First triangle soup
@@ -372,11 +400,11 @@ export class ModuleLayout implements Module {
             const MeshProjectModule = (await import('./wasm/mesh_project.js')).default;
             this.wasmModule = await MeshProjectModule();
         }
-        
+
         const Module = this.wasmModule;
         const numVerticesA = meshA.length / 3;
         const numVerticesB = meshB.length / 3;
-        
+
         // Allocate and populate triangle_soup structs
         // triangle_soup struct is { int num_vertices; vector3* vertices; }
         // In WASM32: int = 4 bytes, pointer = 4 bytes, total = 8 bytes
@@ -386,39 +414,39 @@ export class ModuleLayout implements Module {
         Module.HEAPF32.set(meshA, verticesPtrA / 4);
         Module.HEAP32[soupPtrA / 4] = numVerticesA; // Set num_vertices
         Module.HEAP32[soupPtrA / 4 + 1] = verticesPtrA; // Set vertices pointer
-        
+
         const soupPtrB = Module._malloc(16); // Allocate extra for alignment
         const verticesPtrB = Module._malloc(meshB.length * 4); // meshB.length floats * 4 bytes each
         Module.HEAPF32.set(meshB, verticesPtrB / 4);
         Module.HEAP32[soupPtrB / 4] = numVerticesB; // Set num_vertices
         Module.HEAP32[soupPtrB / 4 + 1] = verticesPtrB; // Set vertices pointer
-        
+
         try {
             // Call WASM function
             const resultPtr = Module._subtract_meshes(soupPtrA, soupPtrB);
             if (!resultPtr) throw new Error("subtract_meshes returned null");
-            
+
             // Read result
             const numVertices = Module.HEAP32[resultPtr / 4];
             const verticesPtr = Module.HEAP32[resultPtr / 4 + 1];
             const errorMsgPtr = Module.HEAP32[resultPtr / 4 + 2];
-            
+
             // Check for error
             if (errorMsgPtr !== 0) {
                 const errorMsg = Module.UTF8ToString(errorMsgPtr);
                 throw new Error(errorMsg);
             }
-            
+
             // Convert result to Float32Array
             const result = new Float32Array(numVertices * 3);
             for (let i = 0; i < numVertices * 3; i++) {
                 result[i] = Module.HEAPF32[verticesPtr / 4 + i];
             }
-            
+
             // Clean up result
             Module._free_triangle_soup_result(resultPtr);
             return result;
-            
+
         } finally {
             // Always clean up input memory
             Module._free(soupPtrA);
@@ -427,35 +455,35 @@ export class ModuleLayout implements Module {
             Module._free(verticesPtrB);
         }
     }
-    
+
     /**
      * Simple test: Cube minus Sphere
      */
     async testCubeMinusSphere() {
         try {
             console.log(`Testing: Cube (size=10) - Sphere (radius=${this.subtractRadius})`);
-            
+
             // Generate cube and sphere meshes
             const cubeSoup = this.generateCubeSoup(10);
             const sphereSoup = this.generateSphereSoup(this.subtractRadius);
-            
+
             // Perform subtraction (cube - sphere)
             const startTime = performance.now();
             const resultSoup = await this.callWasmSubtractMesh(cubeSoup, sphereSoup);
             const endTime = performance.now();
-            
+
             console.log(`Test subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${resultSoup.length / 9} triangles`);
-            
+
             // Convert result to THREE.js geometry and display
             const numTris = resultSoup.length / 9;
             const positions = new Float32Array(resultSoup.length);
             const normals = new Float32Array(resultSoup.length);
-            
+
             // Copy positions
             for (let i = 0; i < resultSoup.length; i++) {
                 positions[i] = resultSoup[i];
             }
-            
+
             // Compute normals for each triangle
             /*
             for (let i = 0; i < numTris; i++) {
@@ -476,12 +504,12 @@ export class ModuleLayout implements Module {
                 }
             }
                 */
-            
+
             // Create BufferGeometry
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             //geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-            
+
             // Create mesh with a different color for test result
             const material = new THREE.MeshPhysicalMaterial({
                 color: 0x80ff80,  // Light green color for test result
@@ -491,10 +519,10 @@ export class ModuleLayout implements Module {
                 wireframe: true
                 //opacity: 0.9,
             });
-            
+
             const mesh = new THREE.Mesh(geometry, material);
             this.framework.updateVis("misc", [mesh]);
-            
+
             // Also show the original cube and sphere as wireframes for reference
             /*
             const cubeGeom = new THREE.BoxGeometry(10, 10, 10);
@@ -505,9 +533,9 @@ export class ModuleLayout implements Module {
             const sphereMat = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true, opacity: 0.3, transparent: true });
             const sphereMesh = new THREE.Mesh(sphereGeom, sphereMat);
             */
-            
+
             this.framework.updateVis("misc", [mesh]);
-            
+
         } catch (error) {
             console.error("Test cube-sphere subtraction failed:", error);
         }
@@ -519,39 +547,39 @@ export class ModuleLayout implements Module {
     async subtractMeshWASM() {
         try {
             console.log(`Subtracting sphere (radius=${this.subtractRadius}) from target surface...`);
-            
+
             // Generate sphere mesh
             const sphereSoup = this.generateSphereSoup(this.subtractRadius);
-            
+
             // Perform subtraction
             const startTime = performance.now();
             const resultSoup = await this.callWasmSubtractMesh(sphereSoup, this.targetSurf);
             const endTime = performance.now();
-            
+
             console.log(`WASM subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${resultSoup.length / 9} triangles`);
             //return;
-            
+
             // Convert result to THREE.js geometry
             const numTris = resultSoup.length / 9;
             const positions = new Float32Array(resultSoup.length);
             const normals = new Float32Array(resultSoup.length);
-            
+
             // Copy positions
             for (let i = 0; i < resultSoup.length; i++) {
                 positions[i] = resultSoup[i];
             }
-            
+
             // Compute normals for each triangle
             for (let i = 0; i < numTris; i++) {
                 const i0 = i * 9;
                 const v0 = new THREE.Vector3(positions[i0], positions[i0 + 1], positions[i0 + 2]);
                 const v1 = new THREE.Vector3(positions[i0 + 3], positions[i0 + 4], positions[i0 + 5]);
                 const v2 = new THREE.Vector3(positions[i0 + 6], positions[i0 + 7], positions[i0 + 8]);
-                
+
                 const edge1 = v1.clone().sub(v0);
                 const edge2 = v2.clone().sub(v0);
                 const normal = edge1.cross(edge2).normalize();
-                
+
                 // Set same normal for all 3 vertices of the triangle
                 for (let j = 0; j < 3; j++) {
                     normals[i0 + j * 3] = normal.x;
@@ -559,12 +587,12 @@ export class ModuleLayout implements Module {
                     normals[i0 + j * 3 + 2] = normal.z;
                 }
             }
-            
+
             // Create BufferGeometry
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-            
+
             // Create mesh with a different color
             const material = new THREE.MeshPhysicalMaterial({
                 color: 0xff8080,  // Light red color for subtracted result
@@ -573,10 +601,10 @@ export class ModuleLayout implements Module {
                 transparent: true,
                 opacity: 0.9,
             });
-            
+
             const mesh = new THREE.Mesh(geometry, material);
             this.framework.updateVis("misc", [mesh]);
-            
+
         } catch (error) {
             console.error("Mesh subtraction failed:", error);
         }
@@ -592,25 +620,25 @@ export class ModuleLayout implements Module {
             if (viewVector.length() < 0.001) {
                 throw new Error("View vector too small");
             }
-            
+
             // Generate orthonormal basis from view vector
             const viewZ = viewVector.clone().normalize();
-            const temp = Math.abs(viewZ.dot(new THREE.Vector3(1, 0, 0))) > 0.9 ? 
-                         new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+            const temp = Math.abs(viewZ.dot(new THREE.Vector3(1, 0, 0))) > 0.9 ?
+                new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
             const viewX = temp.clone().sub(viewZ.clone().multiplyScalar(temp.dot(viewZ))).normalize();
             const viewY = viewZ.clone().cross(viewX);
             const origin = new THREE.Vector3(0, 0, 0);
-            
+
             console.log(`View basis: X(${viewX.x.toFixed(3)}, ${viewX.y.toFixed(3)}, ${viewX.z.toFixed(3)}) ` +
-                       `Y(${viewY.x.toFixed(3)}, ${viewY.y.toFixed(3)}, ${viewY.z.toFixed(3)}) ` +
-                       `Z(${viewZ.x.toFixed(3)}, ${viewZ.y.toFixed(3)}, ${viewZ.z.toFixed(3)})`);
-            
+                `Y(${viewY.x.toFixed(3)}, ${viewY.y.toFixed(3)}, ${viewY.z.toFixed(3)}) ` +
+                `Z(${viewZ.x.toFixed(3)}, ${viewZ.y.toFixed(3)}, ${viewZ.z.toFixed(3)})`);
+
             // Call pure WASM wrapper
             const startTime = performance.now();
             const edges = await this.callWasmProjectMesh(this.targetSurf, origin, viewX, viewY, viewZ);
             const endTime = performance.now();
             console.log(`WASM projection: ${this.targetSurf.length / 9} tris, ${(endTime - startTime).toFixed(2)}ms. ${edges.length} silhouette edge(s)`);
-            
+
             // Visualize edges on the view plane
             const edgeObjects: THREE.Object3D[] = [];
             for (const edge of edges) {
@@ -621,27 +649,27 @@ export class ModuleLayout implements Module {
                 const end3D = origin.clone()
                     .add(viewX.clone().multiplyScalar(edge.end.x))
                     .add(viewY.clone().multiplyScalar(edge.end.y));
-                    
+
                 const points = [start3D, end3D];
                 const geometry = new THREE.BufferGeometry().setFromPoints(points);
                 const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
                 const line = new THREE.LineSegments(geometry, material);
                 edgeObjects.push(line);
             }
-            
+
             this.framework.updateVis("misc", edgeObjects);
         } catch (error) {
             console.error("WASM projection failed:", error);
-            
+
             // Handle coordinate pattern errors with visualization
             const errorMsg = error instanceof Error ? error.message : String(error);
             const coordPattern = /\((-?\d+\.\d+),(-?\d+\.\d+),(-?\d+\.\d+)\)-\((-?\d+\.\d+),(-?\d+\.\d+),(-?\d+\.\d+)\)/;
             const match = errorMsg.match(coordPattern);
-            
+
             if (match) {
                 const p1 = new THREE.Vector3(parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3]));
                 const p2 = new THREE.Vector3(parseFloat(match[4]), parseFloat(match[5]), parseFloat(match[6]));
-                
+
                 const errorObjects: THREE.Object3D[] = [visDot(p1, "red"), visDot(p2, "red")];
                 this.framework.updateVis("misc", errorObjects);
             }
