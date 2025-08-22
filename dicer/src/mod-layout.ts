@@ -3,28 +3,31 @@
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+import ManifoldModule from '../vendor/manifold/manifold.js';
 
 import { ModuleFramework, Module } from './framework.js';
 import { ModulePlanner } from './mod-planner.js';
 import { computeAABB } from './tracking-voxel.js';
 import { visDot } from './debug.js';
+// import { Manifold } from 'vendor/manifold/manifold-encapsulated-types.js';
 
 /**
  * Get "triangle soup" representation from a geometry
  * @param geom Input geometry
  * @returns Triangle soup array
  */
-const convGeomToSurf = (geom: THREE.BufferGeometry): Float32Array => {
+const convGeomToSurf = (geom: THREE.BufferGeometry): Float64Array => {
     if (geom.index === null) {
         console.log("convGeomToSurf: converting from non-indexed geometry");
-        return geom.getAttribute("position").array;
+        const posArray = geom.getAttribute("position").array;
+        return new Float64Array(posArray);
     } else {
         console.log("convGeomToSurf: converting from indexed geometry");
         const ix = geom.index.array;
         const pos = geom.getAttribute("position").array;
 
         const numTris = ix.length / 3;
-        const buf = new Float32Array(numTris * 9);
+        const buf = new Float64Array(numTris * 9);
         for (let i = 0; i < numTris; i++) {
             for (let v = 0; v < 3; v++) {
                 const vIx = ix[3 * i + v];
@@ -70,7 +73,7 @@ export class ModuleLayout implements Module {
     // Model data
     models: Record<string, string>;
     model: string;
-    targetSurf: Float32Array;
+    targetSurf: Float64Array;
 
     // Stock configuration
     stockDiameter: number;
@@ -92,6 +95,9 @@ export class ModuleLayout implements Module {
 
     // WASM module instance
     wasmModule: any = null;
+
+    // Manifold module instance
+    manifoldModule: any = null;
 
     // View vector for mesh projection
     viewVectorX: number = 0;
@@ -184,8 +190,8 @@ export class ModuleLayout implements Module {
 
         // Subtract button and radius slider
         gui.add(this, "subtractRadius", 1, 15, 0.1).name("Subtract Radius").listen();
-        gui.add(this, "subtractMeshWASM").name("Subtract");
-        gui.add(this, "testCubeMinusSphere").name("Test: Cube - Sphere");
+        gui.add(this, "subtractMeshWASM").name("Subtract (Manifold)");
+        gui.add(this, "testCubeMinusSphere").name("Test: Cube - Sphere (Manifold)");
 
         this.loadStl(this.model);
     }
@@ -257,7 +263,7 @@ export class ModuleLayout implements Module {
      * @returns Array of 2D edges or throws error string
      */
     private async callWasmProjectMesh(
-        triangleSoup: Float32Array,
+        triangleSoup: Float64Array,
         origin: THREE.Vector3,
         viewX: THREE.Vector3,
         viewY: THREE.Vector3,
@@ -340,7 +346,7 @@ export class ModuleLayout implements Module {
      * @param radius Sphere radius
      * @returns Triangle soup array
      */
-    private generateSphereSoup(radius: number): Float32Array {
+    private generateSphereSoup(radius: number): Float64Array {
         const geom = new THREE.SphereGeometry(radius, 6, 4);
         geom.translate(1, 0, 0);
         // SphereGeometry has tiny seam because of floating point error.
@@ -349,7 +355,7 @@ export class ModuleLayout implements Module {
 
     // pos: [x0,y0,z0, x1,y1,z1, ...]
     // will stich unwanted seams, but will produce degenerate geometries.
-    private dedupeSnapInPlace(pos: Float32Array, epsilon: number): Float32Array {
+    private dedupeSnapInPlace(pos: Float64Array, epsilon: number): Float64Array {
         const n = (pos.length / 3) | 0;
         const eps2 = epsilon * epsilon;
 
@@ -379,13 +385,109 @@ export class ModuleLayout implements Module {
      * @param size Cube size (width, height, depth)
      * @returns Triangle soup array
      */
-    private generateCubeSoup(size: number = 10): Float32Array {
+    private generateCubeSoup(size: number = 10): Float64Array {
         const geom = new THREE.BoxGeometry(size, size, size);
         return convGeomToSurf(geom);
     }
 
     /**
-     * Pure WASM wrapper - calls C++ mesh subtraction function
+     * Initialize Manifold module if needed
+     */
+    private async initManifold() {
+        if (!this.manifoldModule) {
+            this.manifoldModule = await ManifoldModule();
+            this.manifoldModule.setup();
+        }
+    }
+
+    /**
+     * Convert triangle soup to Manifold Mesh format
+     * @param triangleSoup - Float64Array with vertices (x,y,z per vertex, 3 vertices per triangle)
+     * @returns Manifold Mesh object
+     */
+    private triangleSoupToManifoldMesh(triangleSoup: Float64Array): Mesh {
+        const numTriangles = triangleSoup.length / 9;
+        const numVertices = numTriangles * 3;
+        
+        const vertProperties = new Float32Array(numVertices * 3);
+        const triVerts = new Uint32Array(numVertices);
+        for (let i = 0; i < numVertices; i++) {
+            vertProperties[i * 3] = Number(triangleSoup[i * 3]);
+            vertProperties[i * 3 + 1] = Number(triangleSoup[i * 3 + 1]);
+            vertProperties[i * 3 + 2] = Number(triangleSoup[i * 3 + 2]);
+            triVerts[i] = i;
+        }
+        const mesh = new this.manifoldModule.Mesh({
+            numProp: 3,
+            vertProperties: vertProperties,
+            triVerts: triVerts
+        });
+        
+        mesh.merge();
+        return mesh;
+    }
+
+    /**
+     * Convert Manifold Mesh back to triangle soup
+     * @param mesh - Manifold Mesh object
+     * @returns Float64Array triangle soup
+     */
+    private manifoldMeshToTriangleSoup(mesh: any): Float64Array {
+        const numTriangles = mesh.numTri;
+        const result = new Float64Array(numTriangles * 9);
+        
+        for (let tri = 0; tri < numTriangles; tri++) {
+            const verts = mesh.verts(tri);
+            for (let v = 0; v < 3; v++) {
+                const vertIdx = verts[v];
+                const pos = mesh.position(vertIdx);
+                result[tri * 9 + v * 3] = pos[0];
+                result[tri * 9 + v * 3 + 1] = pos[1];
+                result[tri * 9 + v * 3 + 2] = pos[2];
+            }
+        }
+        
+        return result;
+    }
+
+    /**
+     * Mesh subtraction using Manifold library
+     * @param meshA - First triangle soup
+     * @param meshB - Second triangle soup to subtract from first
+     * @returns Resulting triangle soup
+     */
+    private async subtractMeshManifold(
+        meshA: Float64Array,
+        meshB: Float64Array
+    ): Promise<Float64Array> {
+        await this.initManifold();
+        
+        try {
+            // Convert triangle soups to Manifold meshes
+            const meshObjA = this.triangleSoupToManifoldMesh(meshA);
+            const meshObjB = this.triangleSoupToManifoldMesh(meshB);
+            
+            // Create Manifolds from meshes
+            const manifoldA = new this.manifoldModule.Manifold(meshObjA);
+            const manifoldB = new this.manifoldModule.Manifold(meshObjB);
+            console.log("manifolds created", manifoldA, manifoldB);
+        
+        // Perform boolean subtraction
+        const result = manifoldA.subtract(manifoldB);
+        
+        // Get result mesh
+        const resultMesh = result.getMesh();
+        
+            // Convert back to triangle soup
+            return this.manifoldMeshToTriangleSoup(resultMesh);
+        } catch (error) {
+            console.error("Manifold subtraction error:", error);
+            throw error;
+        }
+    }
+
+    /**
+     * Pure WASM wrapper - calls C++ mesh subtraction function (CGAL)
      * @param meshA - First triangle soup
      * @param meshB - Second triangle soup to subtract from first
      * @returns Resulting triangle soup or throws error string
@@ -469,10 +571,10 @@ export class ModuleLayout implements Module {
 
             // Perform subtraction (cube - sphere)
             const startTime = performance.now();
-            const resultSoup = await this.callWasmSubtractMesh(cubeSoup, sphereSoup);
+            const resultSoup = await this.subtractMeshManifold(cubeSoup, sphereSoup);
             const endTime = performance.now();
 
-            console.log(`Test subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${resultSoup.length / 9} triangles`);
+            console.log(`Test subtraction (Manifold) completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${resultSoup.length / 9} triangles`);
 
             // Convert result to THREE.js geometry and display
             const numTris = resultSoup.length / 9;
@@ -551,12 +653,12 @@ export class ModuleLayout implements Module {
             // Generate sphere mesh
             const sphereSoup = this.generateSphereSoup(this.subtractRadius);
 
-            // Perform subtraction
+            // Perform subtraction using Manifold
             const startTime = performance.now();
-            const resultSoup = await this.callWasmSubtractMesh(sphereSoup, this.dedupeSnapInPlace(this.targetSurf, 1e-3));
+            const resultSoup = await this.subtractMeshManifold(this.targetSurf, sphereSoup);
             const endTime = performance.now();
 
-            console.log(`WASM subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${resultSoup.length / 9} triangles`);
+            console.log(`Manifold subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${resultSoup.length / 9} triangles`);
             //return;
 
             // Convert result to THREE.js geometry

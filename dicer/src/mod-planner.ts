@@ -945,7 +945,7 @@ export class ModulePlanner implements Module {
      * @param aboveWorkSize Length of stock to be worked "above" baseZ plane. Note below-baseZ work will be still removed to cut off the work.
      * @param stockDiameter Diameter of the stock.
      */
-    initPlan(targetSurf: THREE.BufferGeometry, baseZ: number, aboveWorkSize: number, stockDiameter: number) {
+    initPlan(targetSurf: Float64Array, baseZ: number, aboveWorkSize: number, stockDiameter: number) {
         this.targetSurf = targetSurf;
         this.stockDiameter = stockDiameter;
         this.baseZ = baseZ;

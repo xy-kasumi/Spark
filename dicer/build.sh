@@ -18,9 +18,6 @@ find dist -type d -empty -delete
 echo "Transpiling TypeScript..."
 tsc
 
-# Generate WASM files
-./wasm/build-wasm.sh
-
 # Copy vendor files to dist
 echo "Copying vendor files..."
 cp -r vendor/ dist/vendor/

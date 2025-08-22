@@ -512,7 +512,7 @@ export class TrackingVoxelGrid {
  * @param pts Points array [x0, y0, z0, x1, y1, z1, ...]
  * @returns AABB bounds
  */
-export const computeAABB = (pts: Float32Array): {min: Vector3, max: Vector3} => {
+export const computeAABB = (pts: Float32Array | Float64Array): {min: Vector3, max: Vector3} => {
     const min = new Vector3(Infinity, Infinity, Infinity);
     const max = new Vector3(-Infinity, -Infinity, -Infinity);
     for (let i = 0; i < pts.length; i += 3) {
@@ -529,7 +529,7 @@ export const computeAABB = (pts: Float32Array): {min: Vector3, max: Vector3} => 
  * @param resMm Voxel resolution
  * @returns Initialized voxel grid
  */
-export const initVGForPoints = (pts: Float32Array, resMm: number): VoxelGridCpu => {
+export const initVGForPoints = (pts: Float32Array | Float64Array, resMm: number): VoxelGridCpu => {
     const MARGIN_MM = resMm; // want to keep boundary one voxel clear to avoid any mishaps. resMm should be enough.
     const { min, max } = computeAABB(pts);
     const center = min.clone().add(max).divideScalar(2);
