@@ -60,6 +60,8 @@ emcc "$SCRIPT_DIR/entrypoint.cpp" \
     -s SAFE_HEAP=1 \
     -s STACK_OVERFLOW_CHECK=1 \
     -s DEMANGLE_SUPPORT=1 \
+    -s NO_DISABLE_EXCEPTION_CATCHING=1 \
+    -fexceptions \
     --no-entry
 
 echo "Build complete!"

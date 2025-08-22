@@ -1,10 +1,11 @@
 // All coordinates are right-handed.
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
 #include <vector>
 
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
@@ -92,20 +93,21 @@ static Point_2 project_to_plane(
 }
 */
 // Utility function to create error result
-static edge_soup* error_result(const char* msg) {
-  edge_soup* result = (edge_soup*)malloc(sizeof(edge_soup));
+static edge_soup* error_result(const std::string& msg) {
+  auto* result = static_cast<edge_soup*>(malloc(sizeof(edge_soup)));
   result->num_edges = 0;
   result->edges = nullptr;
-  result->error_message = (char*)malloc(strlen(msg) + 1);
-  strcpy(result->error_message, msg);
+  result->error_message = static_cast<char*>(malloc(msg.size() + 1));
+  strcpy(result->error_message, msg.c_str());
   return result;
 }
 
 // Convert triangle soup to CGAL mesh
-static bool soup_to_mesh(const triangle_soup* soup, Mesh& out_mesh) {
+// "" success, otherwise error message
+static std::string soup_to_mesh(const triangle_soup* soup, Mesh& out_mesh) {
   if (!soup || !soup->vertices || soup->num_vertices <= 0 ||
       soup->num_vertices % 3 != 0) {
-    return false;
+    return "not triangle soup";
   }
 
   std::vector<Point_3> points;
@@ -131,16 +133,29 @@ static bool soup_to_mesh(const triangle_soup* soup, Mesh& out_mesh) {
   }
 
   // Clean up and build mesh
+  //PMP::merge_duplicate_polygons_in_polygon_soup(points, polygons);
+  //PMP::remove_isolated_points_in_polygon_soup(points, polygons);
   PMP::repair_polygon_soup(points, polygons);
   PMP::polygon_soup_to_polygon_mesh(points, polygons, out_mesh);
 
   // clean up mesh
-  PMP::remove_almost_degenerate_faces(out_mesh);
+  //PMP::remove_almost_degenerate_faces(out_mesh);
   PMP::stitch_borders(out_mesh);
   PMP::orient_to_bound_a_volume(out_mesh);
 
-  return !out_mesh.is_empty() && out_mesh.is_valid() &&
-         CGAL::is_closed(out_mesh) && !PMP::does_self_intersect(out_mesh);
+  if (out_mesh.is_empty()) {
+    return "mesh became empty";
+  }
+  if (!out_mesh.is_valid()) {
+    return "mesh is invalid";
+  }
+  if (!CGAL::is_closed(out_mesh)) {
+    return "mesh is not closed";
+  }
+  if (PMP::does_self_intersect(out_mesh)) {
+    return "mesh self-intersects";
+  }
+  return "";  // success
 }
 
 // Project 3D mesh onto a plane defined by view_dir_z and origin.
@@ -250,27 +265,30 @@ extern "C" void free_edge_soup(edge_soup* soup) {
 }
 
 // Helper to create triangle soup result with error
-static triangle_soup_result* error_soup_result(const char* msg) {
-  triangle_soup_result* result =
-      (triangle_soup_result*)malloc(sizeof(triangle_soup_result));
+static triangle_soup_result* error_soup_result(const std::string& msg) {
+  auto* result =
+      static_cast<triangle_soup_result*>(malloc(sizeof(triangle_soup_result)));
   result->num_vertices = 0;
   result->vertices = nullptr;
-  result->error_message = (char*)malloc(strlen(msg) + 1);
-  strcpy(result->error_message, msg);
+  result->error_message = static_cast<char*>(malloc(msg.size() + 1));
+  strcpy(result->error_message, msg.c_str());
   return result;
 }
 
 // Convert CGAL mesh to triangle soup
 static triangle_soup_result* mesh_to_soup(const Mesh& mesh) {
   std::vector<float> vertices;
+  vertices.reserve(mesh.number_of_faces() *
+                   9);  // 3 vertices * 3 coords per face
 
   // Iterate through all faces
-  for (auto f : mesh.faces()) {
+  for (const auto& f : mesh.faces()) {
     auto h = mesh.halfedge(f);
     auto h_start = h;
 
     // Get the three vertices of the triangle
     std::vector<Point_3> triangle_verts;
+    triangle_verts.reserve(3);
     do {
       auto v = mesh.target(h);
       triangle_verts.push_back(mesh.point(v));
@@ -280,22 +298,24 @@ static triangle_soup_result* mesh_to_soup(const Mesh& mesh) {
     // Should always be 3 vertices for a triangle
     if (triangle_verts.size() == 3) {
       for (const auto& pt : triangle_verts) {
-        vertices.push_back(CGAL::to_double(pt.x()));
-        vertices.push_back(CGAL::to_double(pt.y()));
-        vertices.push_back(CGAL::to_double(pt.z()));
+        vertices.push_back(static_cast<float>(CGAL::to_double(pt.x())));
+        vertices.push_back(static_cast<float>(CGAL::to_double(pt.y())));
+        vertices.push_back(static_cast<float>(CGAL::to_double(pt.z())));
       }
     }
   }
 
   // Create result
-  triangle_soup_result* result =
-      (triangle_soup_result*)malloc(sizeof(triangle_soup_result));
+  auto* result =
+      static_cast<triangle_soup_result*>(malloc(sizeof(triangle_soup_result)));
   result->num_vertices = vertices.size() / 3;
   result->error_message = nullptr;
 
-  if (result->num_vertices > 0) {
-    result->vertices = (float*)malloc(sizeof(float) * vertices.size());
-    memcpy(result->vertices, vertices.data(), sizeof(float) * vertices.size());
+  if (!vertices.empty()) {
+    result->vertices =
+        static_cast<float*>(malloc(sizeof(float) * vertices.size()));
+    std::memcpy(result->vertices, vertices.data(),
+                sizeof(float) * vertices.size());
   } else {
     result->vertices = nullptr;
   }
@@ -305,56 +325,68 @@ static triangle_soup_result* mesh_to_soup(const Mesh& mesh) {
 
 extern "C" triangle_soup_result* subtract_meshes(const triangle_soup* soup_a,
                                                  const triangle_soup* soup_b) {
-  Mesh mesh_a;
-  if (!soup_to_mesh(soup_a, mesh_a)) {
-    return error_soup_result("soup_a is not proper closed mesh");
-  }
-  Mesh mesh_b;
-  if (!soup_to_mesh(soup_b, mesh_b)) {
-    return error_soup_result("soup_b is not proper closed mesh");
-  }
+  try {
+    Mesh mesh_a;
+    std::string err = soup_to_mesh(soup_a, mesh_a);
+    if (!err.empty()) {
+      return error_soup_result("mesh_a: " + err);
+    }
+    Mesh mesh_b;
+    err = soup_to_mesh(soup_b, mesh_b);
+    if (!err.empty()) {
+      return error_soup_result("mesh_b: " + err);
+    }
 
-  // --- Robust boolean via PMP corefinement (no Nef) ---
-  // We operate on local copies because corefinement modifies the inputs.
-  Mesh A = mesh_a, B = mesh_b;
+    // --- Robust boolean via PMP corefinement (no Nef) ---
+    // We operate on local copies because corefinement modifies the inputs.
+    Mesh A = mesh_a, B = mesh_b;
 
-  // Harden meshes for boolean operations
-  // (remove tiny degeneracies, weld borders, ensure outward orientation)
-  PMP::remove_degenerate_faces(A);
-  PMP::remove_degenerate_faces(B);
-  PMP::stitch_borders(A);
-  PMP::stitch_borders(B);
-  PMP::orient_to_bound_a_volume(A);
-  PMP::orient_to_bound_a_volume(B);
+    // Harden meshes for boolean operations
+    // (remove tiny degeneracies, weld borders, ensure outward orientation)
+    PMP::remove_degenerate_faces(A);
+    PMP::remove_degenerate_faces(B);
+    PMP::stitch_borders(A);
+    PMP::stitch_borders(B);
+    PMP::orient_to_bound_a_volume(A);
+    PMP::orient_to_bound_a_volume(B);
 
-  // Sanity checks (closed & no self-intersections expected for robust
-  // corefinement)
-  if (!CGAL::is_closed(A) || !CGAL::is_closed(B)) {
-    return error_soup_result("input meshes must be closed after preprocessing");
-  }
-  if (PMP::does_self_intersect(A) || PMP::does_self_intersect(B)) {
-    return error_soup_result("input meshes self-intersect; aborting boolean");
-  }
+    // Sanity checks (closed & no self-intersections expected for robust
+    // corefinement)
+    if (!CGAL::is_closed(A) || !CGAL::is_closed(B)) {
+      return error_soup_result(
+          "input meshes must be closed after preprocessing");
+    }
+    if (PMP::does_self_intersect(A) || PMP::does_self_intersect(B)) {
+      return error_soup_result("input meshes self-intersect; aborting boolean");
+    }
 
-  // Compute A \ B using corefinement
-  Mesh result_mesh;
-  const bool ok = PMP::corefine_and_compute_difference(A, B, result_mesh);
-  if (!ok || result_mesh.is_empty()) {
+    // Compute A \ B using corefinement
+    Mesh result_mesh;
+    const bool ok = PMP::corefine_and_compute_difference(A, B, result_mesh);
+    if (!ok || result_mesh.is_empty()) {
+      return error_soup_result(
+          "corefine_and_compute_difference() failed or produced empty result");
+    }
+
+    // Optional post-clean (usually not needed, but cheap and safe)
+    PMP::remove_degenerate_faces(result_mesh);
+    PMP::stitch_borders(result_mesh);
+    PMP::orient_to_bound_a_volume(result_mesh);
+
+    if (!CGAL::is_closed(result_mesh)) {
+      return error_soup_result("boolean result is not closed");
+    }
+
+    // Convert back to triangle soup
+    return mesh_to_soup(result_mesh);
+  } catch (const std::exception& e) {
+    // Catch any standard exceptions and return as error
+    return error_soup_result(std::string("Exception: ") + e.what());
+  } catch (...) {
+    // Catch any other exceptions
     return error_soup_result(
-        "corefine_and_compute_difference() failed or produced empty result");
+        "Unknown exception caught during mesh subtraction");
   }
-
-  // Optional post-clean (usually not needed, but cheap and safe)
-  PMP::remove_degenerate_faces(result_mesh);
-  PMP::stitch_borders(result_mesh);
-  PMP::orient_to_bound_a_volume(result_mesh);
-
-  if (!CGAL::is_closed(result_mesh)) {
-    return error_soup_result("boolean result is not closed");
-  }
-
-  // Convert back to triangle soup
-  return mesh_to_soup(result_mesh);
 }
 
 // Helper function to free triangle soup result memory

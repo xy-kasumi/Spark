@@ -553,7 +553,7 @@ export class ModuleLayout implements Module {
 
             // Perform subtraction
             const startTime = performance.now();
-            const resultSoup = await this.callWasmSubtractMesh(sphereSoup, this.targetSurf);
+            const resultSoup = await this.callWasmSubtractMesh(sphereSoup, this.dedupeSnapInPlace(this.targetSurf, 1e-3));
             const endTime = performance.now();
 
             console.log(`WASM subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${resultSoup.length / 9} triangles`);
