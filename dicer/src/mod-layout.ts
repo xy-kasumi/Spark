@@ -97,6 +97,9 @@ export class ModuleLayout implements Module {
     viewVectorX: number = 0;
     viewVectorY: number = 0;
     viewVectorZ: number = 1;
+    
+    // Subtract sphere radius
+    subtractRadius: number = 5;
 
     constructor(framework: ModuleFramework, modPlanner: ModulePlanner) {
         this.framework = framework;
@@ -178,6 +181,11 @@ export class ModuleLayout implements Module {
         projectionFolder.add(this, "viewVectorZ", -1, 1, 0.1).name("View Z").listen();
         projectionFolder.add(this, "randomizeViewVector").name("Randomize");
         projectionFolder.add(this, "projectMeshWASM").name("Project");
+        
+        // Subtract button and radius slider
+        gui.add(this, "subtractRadius", 1, 15, 0.1).name("Subtract Radius").listen();
+        gui.add(this, "subtractMeshWASM").name("Subtract");
+        gui.add(this, "testCubeMinusSphere").name("Test: Cube - Sphere");
 
         this.loadStl(this.model);
     }
@@ -266,11 +274,11 @@ export class ModuleLayout implements Module {
         const numVertices = triangleSoup.length / 3;
         
         // Allocate and populate triangle_soup struct
-        const soupPtr = Module._malloc(8);
-        const verticesPtr = Module._malloc(numVertices * 12);
+        const soupPtr = Module._malloc(16); // Allocate extra for alignment
+        const verticesPtr = Module._malloc(triangleSoup.length * 4); // triangleSoup.length floats * 4 bytes each
         Module.HEAPF32.set(triangleSoup, verticesPtr / 4);
-        Module.setValue(soupPtr, numVertices, 'i32');
-        Module.setValue(soupPtr + 4, verticesPtr, 'i32');
+        Module.HEAP32[soupPtr / 4] = numVertices; // Set num_vertices
+        Module.HEAP32[soupPtr / 4 + 1] = verticesPtr; // Set vertices pointer
         
         // Allocate and populate view parameters
         const originPtr = Module._malloc(12);
@@ -324,6 +332,253 @@ export class ModuleLayout implements Module {
             Module._free(viewXPtr);
             Module._free(viewYPtr);
             Module._free(viewZPtr);
+        }
+    }
+
+    /**
+     * Generate sphere geometry as triangle soup
+     * @param radius Sphere radius
+     * @returns Triangle soup array
+     */
+    private generateSphereSoup(radius: number): Float32Array {
+        const geom = new THREE.SphereGeometry(radius, 6, 4);
+        geom.translate(1, 0, 0);
+        return convGeomToSurf(geom);
+    }
+    
+    /**
+     * Generate cube geometry as triangle soup
+     * @param size Cube size (width, height, depth)
+     * @returns Triangle soup array
+     */
+    private generateCubeSoup(size: number = 10): Float32Array {
+        const geom = new THREE.BoxGeometry(size, size, size);
+        return convGeomToSurf(geom);
+    }
+    
+    /**
+     * Pure WASM wrapper - calls C++ mesh subtraction function
+     * @param meshA - First triangle soup
+     * @param meshB - Second triangle soup to subtract from first
+     * @returns Resulting triangle soup or throws error string
+     */
+    private async callWasmSubtractMesh(
+        meshA: Float32Array,
+        meshB: Float32Array
+    ): Promise<Float32Array> {
+        // Load WASM module if not already loaded
+        if (!this.wasmModule) {
+            // @ts-ignore - WASM module will be generated at build time
+            const MeshProjectModule = (await import('./wasm/mesh_project.js')).default;
+            this.wasmModule = await MeshProjectModule();
+        }
+        
+        const Module = this.wasmModule;
+        const numVerticesA = meshA.length / 3;
+        const numVerticesB = meshB.length / 3;
+        
+        // Allocate and populate triangle_soup structs
+        // triangle_soup struct is { int num_vertices; vector3* vertices; }
+        // In WASM32: int = 4 bytes, pointer = 4 bytes, total = 8 bytes
+        // Ensure proper alignment
+        const soupPtrA = Module._malloc(16); // Allocate extra for alignment
+        const verticesPtrA = Module._malloc(meshA.length * 4); // meshA.length floats * 4 bytes each
+        Module.HEAPF32.set(meshA, verticesPtrA / 4);
+        Module.HEAP32[soupPtrA / 4] = numVerticesA; // Set num_vertices
+        Module.HEAP32[soupPtrA / 4 + 1] = verticesPtrA; // Set vertices pointer
+        
+        const soupPtrB = Module._malloc(16); // Allocate extra for alignment
+        const verticesPtrB = Module._malloc(meshB.length * 4); // meshB.length floats * 4 bytes each
+        Module.HEAPF32.set(meshB, verticesPtrB / 4);
+        Module.HEAP32[soupPtrB / 4] = numVerticesB; // Set num_vertices
+        Module.HEAP32[soupPtrB / 4 + 1] = verticesPtrB; // Set vertices pointer
+        
+        try {
+            // Call WASM function
+            const resultPtr = Module._subtract_meshes(soupPtrA, soupPtrB);
+            if (!resultPtr) throw new Error("subtract_meshes returned null");
+            
+            // Read result
+            const numVertices = Module.HEAP32[resultPtr / 4];
+            const verticesPtr = Module.HEAP32[resultPtr / 4 + 1];
+            const errorMsgPtr = Module.HEAP32[resultPtr / 4 + 2];
+            
+            // Check for error
+            if (errorMsgPtr !== 0) {
+                const errorMsg = Module.UTF8ToString(errorMsgPtr);
+                throw new Error(errorMsg);
+            }
+            
+            // Convert result to Float32Array
+            const result = new Float32Array(numVertices * 3);
+            for (let i = 0; i < numVertices * 3; i++) {
+                result[i] = Module.HEAPF32[verticesPtr / 4 + i];
+            }
+            
+            // Clean up result
+            Module._free_triangle_soup_result(resultPtr);
+            return result;
+            
+        } finally {
+            // Always clean up input memory
+            Module._free(soupPtrA);
+            Module._free(verticesPtrA);
+            Module._free(soupPtrB);
+            Module._free(verticesPtrB);
+        }
+    }
+    
+    /**
+     * Simple test: Cube minus Sphere
+     */
+    async testCubeMinusSphere() {
+        try {
+            console.log(`Testing: Cube (size=10) - Sphere (radius=${this.subtractRadius})`);
+            
+            // Generate cube and sphere meshes
+            const cubeSoup = this.generateCubeSoup(10);
+            const sphereSoup = this.generateSphereSoup(this.subtractRadius);
+            
+            // Perform subtraction (cube - sphere)
+            const startTime = performance.now();
+            const resultSoup = await this.callWasmSubtractMesh(cubeSoup, sphereSoup);
+            const endTime = performance.now();
+            
+            console.log(`Test subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${resultSoup.length / 9} triangles`);
+            
+            // Convert result to THREE.js geometry and display
+            const numTris = resultSoup.length / 9;
+            const positions = new Float32Array(resultSoup.length);
+            const normals = new Float32Array(resultSoup.length);
+            
+            // Copy positions
+            for (let i = 0; i < resultSoup.length; i++) {
+                positions[i] = resultSoup[i];
+            }
+            
+            // Compute normals for each triangle
+            /*
+            for (let i = 0; i < numTris; i++) {
+                const i0 = i * 9;
+                const v0 = new THREE.Vector3(positions[i0], positions[i0 + 1], positions[i0 + 2]);
+                const v1 = new THREE.Vector3(positions[i0 + 3], positions[i0 + 4], positions[i0 + 5]);
+                const v2 = new THREE.Vector3(positions[i0 + 6], positions[i0 + 7], positions[i0 + 8]);
+                
+                const edge1 = v1.clone().sub(v0);
+                const edge2 = v2.clone().sub(v0);
+                const normal = edge1.cross(edge2).normalize();
+                
+                // Set same normal for all 3 vertices of the triangle
+                for (let j = 0; j < 3; j++) {
+                    normals[i0 + j * 3] = normal.x;
+                    normals[i0 + j * 3 + 1] = normal.y;
+                    normals[i0 + j * 3 + 2] = normal.z;
+                }
+            }
+                */
+            
+            // Create BufferGeometry
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            //geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+            
+            // Create mesh with a different color for test result
+            const material = new THREE.MeshPhysicalMaterial({
+                color: 0x80ff80,  // Light green color for test result
+                metalness: 0.1,
+                roughness: 0.8,
+                transparent: true,
+                wireframe: true
+                //opacity: 0.9,
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            this.framework.updateVis("misc", [mesh]);
+            
+            // Also show the original cube and sphere as wireframes for reference
+            /*
+            const cubeGeom = new THREE.BoxGeometry(10, 10, 10);
+            const cubeMat = new THREE.MeshBasicMaterial({ color: 0x0000ff, wireframe: true, opacity: 0.3, transparent: true });
+            const cubeMesh = new THREE.Mesh(cubeGeom, cubeMat);
+            
+            const sphereGeom = new THREE.SphereGeometry(this.subtractRadius, 32, 32);
+            const sphereMat = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true, opacity: 0.3, transparent: true });
+            const sphereMesh = new THREE.Mesh(sphereGeom, sphereMat);
+            */
+            
+            this.framework.updateVis("misc", [mesh]);
+            
+        } catch (error) {
+            console.error("Test cube-sphere subtraction failed:", error);
+        }
+    }
+
+    /**
+     * Subtract sphere from target surface and display result
+     */
+    async subtractMeshWASM() {
+        try {
+            console.log(`Subtracting sphere (radius=${this.subtractRadius}) from target surface...`);
+            
+            // Generate sphere mesh
+            const sphereSoup = this.generateSphereSoup(this.subtractRadius);
+            
+            // Perform subtraction
+            const startTime = performance.now();
+            const resultSoup = await this.callWasmSubtractMesh(sphereSoup, this.targetSurf);
+            const endTime = performance.now();
+            
+            console.log(`WASM subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${resultSoup.length / 9} triangles`);
+            //return;
+            
+            // Convert result to THREE.js geometry
+            const numTris = resultSoup.length / 9;
+            const positions = new Float32Array(resultSoup.length);
+            const normals = new Float32Array(resultSoup.length);
+            
+            // Copy positions
+            for (let i = 0; i < resultSoup.length; i++) {
+                positions[i] = resultSoup[i];
+            }
+            
+            // Compute normals for each triangle
+            for (let i = 0; i < numTris; i++) {
+                const i0 = i * 9;
+                const v0 = new THREE.Vector3(positions[i0], positions[i0 + 1], positions[i0 + 2]);
+                const v1 = new THREE.Vector3(positions[i0 + 3], positions[i0 + 4], positions[i0 + 5]);
+                const v2 = new THREE.Vector3(positions[i0 + 6], positions[i0 + 7], positions[i0 + 8]);
+                
+                const edge1 = v1.clone().sub(v0);
+                const edge2 = v2.clone().sub(v0);
+                const normal = edge1.cross(edge2).normalize();
+                
+                // Set same normal for all 3 vertices of the triangle
+                for (let j = 0; j < 3; j++) {
+                    normals[i0 + j * 3] = normal.x;
+                    normals[i0 + j * 3 + 1] = normal.y;
+                    normals[i0 + j * 3 + 2] = normal.z;
+                }
+            }
+            
+            // Create BufferGeometry
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+            
+            // Create mesh with a different color
+            const material = new THREE.MeshPhysicalMaterial({
+                color: 0xff8080,  // Light red color for subtracted result
+                metalness: 0.1,
+                roughness: 0.8,
+                transparent: true,
+                opacity: 0.9,
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            this.framework.updateVis("misc", [mesh]);
+            
+        } catch (error) {
+            console.error("Mesh subtraction failed:", error);
         }
     }
 

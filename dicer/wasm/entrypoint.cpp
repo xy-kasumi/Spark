@@ -12,8 +12,9 @@
 #include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
 #include <CGAL/Polygon_mesh_processing/compute_normal.h>
+#include <CGAL/Polygon_mesh_processing/corefinement.h>
 
-typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
+typedef CGAL::Exact_predicates_exact_constructions_kernel K;
 typedef K::Point_3 Point_3;
 typedef K::Vector_3 Vector_3;
 typedef K::Point_2 Point_2;
@@ -55,6 +56,13 @@ typedef struct {
     char* error_message; // null on success
 } edge_soup;
 
+// Result from mesh operations (contains triangle soup or error)
+typedef struct {
+    int num_vertices;
+    float* vertices;  // flattened vertex data (x,y,z per vertex)
+    char* error_message; // null on success
+} triangle_soup_result;
+
 // Helper to convert vector3 to CGAL Point_3
 static Point_3 to_point3(const vector3& v) {
     return Point_3(v.x, v.y, v.z);
@@ -66,6 +74,7 @@ static Vector_3 to_vector3(const vector3& v) {
 }
 
 // Project 3D point onto 2D plane defined by origin and basis vectors
+/*
 static Point_2 project_to_plane(
     const Point_3& point,
     const Point_3& origin,
@@ -77,7 +86,7 @@ static Point_2 project_to_plane(
     double y = v * y_axis;  // dot product
     return Point_2(x, y);
 }
-
+*/
 // Utility function to create error result
 static edge_soup* error_result(const char* msg) {
     edge_soup* result = (edge_soup*)malloc(sizeof(edge_soup));
@@ -88,38 +97,20 @@ static edge_soup* error_result(const char* msg) {
     return result;
 }
 
-// Project 3D mesh onto a plane defined by view_dir_z and origin.
-// Returns silhouette edges projected onto the view plane.
-//
-// Caller must free the returned data.
-extern "C" edge_soup* project_mesh(
-    const triangle_soup* soup,
-    const vector3* origin,
-    const vector3* view_x,
-    const vector3* view_y,
-    const vector3* view_dir_z
-) {
-    // Validate input
+// Convert triangle soup to CGAL mesh
+static bool soup_to_mesh(const triangle_soup* soup, Mesh& out_mesh) {
     if (!soup || !soup->vertices || soup->num_vertices <= 0 || soup->num_vertices % 3 != 0) {
-        return error_result("Invalid input data");
+        return false;
     }
     
-    // Convert input vectors to CGAL types
-    Point_3 origin_pt = to_point3(*origin);
-    Vector_3 x_axis = to_vector3(*view_x);
-    Vector_3 y_axis = to_vector3(*view_y);
-    Vector_3 view_dir = to_vector3(*view_dir_z);
-    
-    // Part A: Convert triangle soup to CGAL Surface_mesh
     std::vector<Point_3> points;
     std::vector<std::vector<std::size_t>> polygons;
     
-    // Build points and polygons for CGAL
     int num_tris = soup->num_vertices / 3;
     points.reserve(soup->num_vertices);
     polygons.reserve(num_tris);
     
-    // Add all vertices (no deduplication for now)
+    // Add all vertices
     for (int i = 0; i < soup->num_vertices; i++) {
         points.push_back(Point_3(
             soup->vertices[i].x,
@@ -137,15 +128,35 @@ extern "C" edge_soup* project_mesh(
         polygons.push_back(triangle);
     }
     
-    // Build CGAL mesh
-    PMP::merge_duplicate_points_in_polygon_soup(points, polygons);
-
-    Mesh mesh;
-    PMP::polygon_soup_to_polygon_mesh(points, polygons, mesh);
+    // Clean up and build mesh
+    PMP::repair_polygon_soup(points, polygons);
+    PMP::polygon_soup_to_polygon_mesh(points, polygons, out_mesh);
     
-    // Check if mesh is valid
-    if (mesh.is_empty() || !mesh.is_valid()) {
-        return error_result("Invalid mesh created");
+    return !out_mesh.is_empty() && out_mesh.is_valid();
+}
+
+// Project 3D mesh onto a plane defined by view_dir_z and origin.
+// Returns silhouette edges projected onto the view plane.
+//
+// Caller must free the returned data.
+extern "C" edge_soup* project_mesh(
+    const triangle_soup* soup,
+    const vector3* origin,
+    const vector3* view_x,
+    const vector3* view_y,
+    const vector3* view_dir_z
+) {
+    /*
+    // Convert input vectors to CGAL types
+    Point_3 origin_pt = to_point3(*origin);
+    Vector_3 x_axis = to_vector3(*view_x);
+    Vector_3 y_axis = to_vector3(*view_y);
+    Vector_3 view_dir = to_vector3(*view_dir_z);
+    
+    // Convert triangle soup to CGAL mesh
+    Mesh mesh;
+    if (!soup_to_mesh(soup, mesh)) {
+        return error_result("Invalid input data or mesh creation failed");
     }
     
     // Part B: Find silhouette edges
@@ -217,6 +228,8 @@ extern "C" edge_soup* project_mesh(
     }
     
     return result;
+    */
+   return nullptr;
 }
 
 // Helper function to free edge soup memory
@@ -226,4 +239,99 @@ extern "C" void free_edge_soup(edge_soup* soup) {
     free(soup->edges);
     free(soup->error_message);
     free(soup);
+}
+
+// Helper to create triangle soup result with error
+static triangle_soup_result* error_soup_result(const char* msg) {
+    triangle_soup_result* result = (triangle_soup_result*)malloc(sizeof(triangle_soup_result));
+    result->num_vertices = 0;
+    result->vertices = nullptr;
+    result->error_message = (char*)malloc(strlen(msg) + 1);
+    strcpy(result->error_message, msg);
+    return result;
+}
+
+// Convert CGAL mesh to triangle soup
+static triangle_soup_result* mesh_to_soup(const Mesh& mesh) {
+    std::vector<float> vertices;
+    
+    // Iterate through all faces
+    for (auto f : mesh.faces()) {
+        auto h = mesh.halfedge(f);
+        auto h_start = h;
+        
+        // Get the three vertices of the triangle
+        std::vector<Point_3> triangle_verts;
+        do {
+            auto v = mesh.target(h);
+            triangle_verts.push_back(mesh.point(v));
+            h = mesh.next(h);
+        } while (h != h_start && triangle_verts.size() < 3);
+        
+        // Should always be 3 vertices for a triangle
+        if (triangle_verts.size() == 3) {
+            for (const auto& pt : triangle_verts) {
+                vertices.push_back(CGAL::to_double(pt.x()));
+                vertices.push_back(CGAL::to_double(pt.y()));
+                vertices.push_back(CGAL::to_double(pt.z()));
+            }
+        }
+    }
+    
+    // Create result
+    triangle_soup_result* result = (triangle_soup_result*)malloc(sizeof(triangle_soup_result));
+    result->num_vertices = vertices.size() / 3;
+    result->error_message = nullptr;
+    
+    if (result->num_vertices > 0) {
+        result->vertices = (float*)malloc(sizeof(float) * vertices.size());
+        memcpy(result->vertices, vertices.data(), sizeof(float) * vertices.size());
+    } else {
+        result->vertices = nullptr;
+    }
+    
+    return result;
+}
+
+// Subtract mesh B from mesh A using CGAL's corefine_and_compute_difference
+// Returns the resulting mesh as triangle soup
+extern "C" triangle_soup_result* subtract_meshes(
+    const triangle_soup* soup_a,
+    const triangle_soup* soup_b
+) {
+    // Convert triangle soups to CGAL meshes
+    Mesh mesh_a;
+    if (!soup_to_mesh(soup_a, mesh_a)) {
+        return error_soup_result("Invalid input mesh A or failed to create mesh");
+    }
+    
+    Mesh mesh_b;
+    if (!soup_to_mesh(soup_b, mesh_b)) {
+        return error_soup_result("Invalid input mesh B or failed to create mesh");
+    }
+    
+    // Perform the mesh subtraction (A - B)
+    
+    Mesh result_mesh;
+    bool success = PMP::corefine_and_compute_difference(mesh_a, mesh_b, result_mesh); // difference
+    
+    if (!success) {
+        return error_soup_result("Mesh subtraction failed - meshes may not properly intersect");
+    }
+    
+    if (result_mesh.is_empty()) {
+        return error_soup_result("Result mesh is empty - complete subtraction");
+    }
+    
+    // Convert result to triangle soup
+    return mesh_to_soup(result_mesh);
+}
+
+// Helper function to free triangle soup result memory
+extern "C" void free_triangle_soup_result(triangle_soup_result* result) {
+    if (!result) return;
+    
+    free(result->vertices);
+    free(result->error_message);
+    free(result);
 }

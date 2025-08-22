@@ -48,7 +48,7 @@ emcc "$SCRIPT_DIR/entrypoint.cpp" \
     -std=c++17 \
     -DCGAL_HAS_NO_THREADS \
     -DCGAL_NDEBUG \
-    -s EXPORTED_FUNCTIONS='["_project_mesh", "_free_edge_soup", "_malloc", "_free"]' \
+    -s EXPORTED_FUNCTIONS='["_project_mesh", "_free_edge_soup", "_subtract_meshes", "_free_triangle_soup_result", "_malloc", "_free"]' \
     -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "getValue", "setValue", "UTF8ToString"]' \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s MODULARIZE=1 \
@@ -56,6 +56,10 @@ emcc "$SCRIPT_DIR/entrypoint.cpp" \
     -s EXPORT_ES6=1 \
     -s ENVIRONMENT='web' \
     -s SINGLE_FILE=0 \
+    -s ASSERTIONS=2 \
+    -s SAFE_HEAP=1 \
+    -s STACK_OVERFLOW_CHECK=1 \
+    -s DEMANGLE_SUPPORT=1 \
     --no-entry
 
 echo "Build complete!"
