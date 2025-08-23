@@ -1,6 +1,29 @@
 #!/bin/bash
 
+# Parse command line arguments
+BUILD_WASM=false
+for arg in "$@"
+do
+    if [ "$arg" = "--all" ]; then
+        BUILD_WASM=true
+    fi
+done
+
 echo "Building dicer..."
+
+# Build WASM module if --all flag is present
+if [ "$BUILD_WASM" = true ]; then
+    echo "Building WASM module..."
+    if [ -f "./wasm/build-wasm.sh" ]; then
+        (cd wasm && ./build-wasm.sh)
+        if [ $? -ne 0 ]; then
+            echo "WASM build failed. Aborting build."
+            exit 1
+        fi
+    else
+        echo "Warning: wasm/build-wasm.sh not found, skipping WASM build"
+    fi
+fi
 
 # Validate TypeScript first (without emitting files)
 echo "Validating TypeScript..."
