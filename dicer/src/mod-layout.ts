@@ -3,13 +3,11 @@
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
-import ManifoldModule from '../vendor/manifold/manifold.js';
 
 import { ModuleFramework, Module } from './framework.js';
 import { ModulePlanner } from './mod-planner.js';
 import { computeAABB } from './tracking-voxel.js';
 import { visDot } from './debug.js';
-// import { Manifold } from 'vendor/manifold/manifold-encapsulated-types.js';
 
 /**
  * Get "triangle soup" representation from a geometry
@@ -95,9 +93,6 @@ export class ModuleLayout implements Module {
 
     // WASM module instance
     wasmModule: any = null;
-
-    // Manifold module instance
-    manifoldModule: any = null;
 
     // View vector for mesh projection
     viewVectorX: number = 0;
@@ -391,98 +386,83 @@ export class ModuleLayout implements Module {
     }
 
     /**
-     * Initialize Manifold module if needed
-     */
-    private async initManifold() {
-        if (!this.manifoldModule) {
-            this.manifoldModule = await ManifoldModule();
-            this.manifoldModule.setup();
-        }
-    }
-
-    /**
-     * Convert triangle soup to Manifold Mesh format
-     * @param triangleSoup - Float64Array with vertices (x,y,z per vertex, 3 vertices per triangle)
-     * @returns Manifold Mesh object
-     */
-    private triangleSoupToManifoldMesh(triangleSoup: Float64Array): ManifoldModule.Mesh {
-        const numTriangles = triangleSoup.length / 9;
-        const numVertices = numTriangles * 3;
-
-        const vertProperties = new Float32Array(numVertices * 3);
-        const triVerts = new Uint32Array(numVertices);
-        for (let i = 0; i < numVertices; i++) {
-            vertProperties[i * 3] = Number(triangleSoup[i * 3]);
-            vertProperties[i * 3 + 1] = Number(triangleSoup[i * 3 + 1]);
-            vertProperties[i * 3 + 2] = Number(triangleSoup[i * 3 + 2]);
-            triVerts[i] = i;
-        }
-        const mesh = new this.manifoldModule.Mesh({
-            numProp: 3,
-            vertProperties: vertProperties,
-            triVerts: triVerts
-        });
-
-        mesh.merge();
-        return mesh;
-    }
-
-    /**
-     * Convert Manifold Mesh back to triangle soup
-     * @param mesh - Manifold Mesh object
-     * @returns Float64Array triangle soup
-     */
-    private manifoldMeshToTriangleSoup(mesh: any): Float64Array {
-        const numTriangles = mesh.numTri;
-        const result = new Float64Array(numTriangles * 9);
-
-        for (let tri = 0; tri < numTriangles; tri++) {
-            const verts = mesh.verts(tri);
-            for (let v = 0; v < 3; v++) {
-                const vertIdx = verts[v];
-                const pos = mesh.position(vertIdx);
-                result[tri * 9 + v * 3] = pos[0];
-                result[tri * 9 + v * 3 + 1] = pos[1];
-                result[tri * 9 + v * 3 + 2] = pos[2];
-            }
-        }
-
-        return result;
-    }
-
-    /**
-     * Mesh subtraction using Manifold library
-     * @param meshA - First triangle soup
+     * Call WASM Manifold subtraction function
+     * @param meshA - First triangle soup  
      * @param meshB - Second triangle soup to subtract from first
      * @returns Resulting triangle soup
      */
-    private async subtractMeshManifold(
+    private async callWasmManifoldSubtract(
         meshA: Float64Array,
         meshB: Float64Array
     ): Promise<Float64Array> {
-        await this.initManifold();
+        // Load WASM module if not already loaded
+        if (!this.wasmModule) {
+            // @ts-ignore - WASM module will be generated at build time
+            const MeshProjectModule = (await import('./wasm/mesh_project.js')).default;
+            this.wasmModule = await MeshProjectModule();
+        }
 
+        const Module = this.wasmModule;
+        
+        // Allocate triangle_soup structs for both inputs
+        const soupAPtr = Module._malloc(8); // num_vertices (int) + vertices pointer
+        const soupBPtr = Module._malloc(8);
+        
+        // Allocate vertex data for mesh A
+        const numVertsA = meshA.length / 3;
+        const verticesAPtr = Module._malloc(numVertsA * 12); // 3 floats * 4 bytes per vertex
+        for (let i = 0; i < numVertsA; i++) {
+            Module.HEAPF32[(verticesAPtr / 4) + i * 3] = meshA[i * 3];
+            Module.HEAPF32[(verticesAPtr / 4) + i * 3 + 1] = meshA[i * 3 + 1];
+            Module.HEAPF32[(verticesAPtr / 4) + i * 3 + 2] = meshA[i * 3 + 2];
+        }
+        Module.HEAP32[soupAPtr / 4] = numVertsA;
+        Module.HEAP32[(soupAPtr / 4) + 1] = verticesAPtr;
+        
+        // Allocate vertex data for mesh B
+        const numVertsB = meshB.length / 3;
+        const verticesBPtr = Module._malloc(numVertsB * 12);
+        for (let i = 0; i < numVertsB; i++) {
+            Module.HEAPF32[(verticesBPtr / 4) + i * 3] = meshB[i * 3];
+            Module.HEAPF32[(verticesBPtr / 4) + i * 3 + 1] = meshB[i * 3 + 1];
+            Module.HEAPF32[(verticesBPtr / 4) + i * 3 + 2] = meshB[i * 3 + 2];
+        }
+        Module.HEAP32[soupBPtr / 4] = numVertsB;
+        Module.HEAP32[(soupBPtr / 4) + 1] = verticesBPtr;
+        
         try {
-            // Convert triangle soups to Manifold meshes
-            const meshObjA = this.triangleSoupToManifoldMesh(meshA);
-            const meshObjB = this.triangleSoupToManifoldMesh(meshB);
-
-            // Create Manifolds from meshes
-            const manifoldA = new this.manifoldModule.Manifold(meshObjA);
-            const manifoldB = new this.manifoldModule.Manifold(meshObjB);
-            console.log("manifolds created", manifoldA, manifoldB);
-
-            // Perform boolean subtraction
-            const result = manifoldA.subtract(manifoldB);
-
-            // Get result mesh
-            const resultMesh = result.getMesh();
-
-            // Convert back to triangle soup
-            return this.manifoldMeshToTriangleSoup(resultMesh);
-        } catch (error) {
-            console.error("Manifold subtraction error:", error);
-            throw error;
+            // Call WASM Manifold subtraction function
+            const resultPtr = Module._manifold_subtract_meshes(soupAPtr, soupBPtr);
+            if (!resultPtr) throw new Error("manifold_subtract_meshes returned null");
+            
+            // Read result
+            const numResultVerts = Module.getValue(resultPtr, 'i32');
+            const resultVerticesPtr = Module.getValue(resultPtr + 4, 'i32');
+            const errorMsgPtr = Module.getValue(resultPtr + 8, 'i32');
+            
+            // Check for error
+            if (errorMsgPtr !== 0) {
+                const errorMsg = Module.UTF8ToString(errorMsgPtr);
+                throw new Error(errorMsg);
+            }
+            
+            // Copy result vertices
+            const result = new Float64Array(numResultVerts * 3);
+            for (let i = 0; i < numResultVerts * 3; i++) {
+                result[i] = Module.HEAPF32[(resultVerticesPtr / 4) + i];
+            }
+            
+            // Clean up result
+            Module._free_triangle_soup_result(resultPtr);
+            
+            return result;
+            
+        } finally {
+            // Always clean up input memory
+            Module._free(soupAPtr);
+            Module._free(soupBPtr);
+            Module._free(verticesAPtr);
+            Module._free(verticesBPtr);
         }
     }
 
@@ -497,12 +477,12 @@ export class ModuleLayout implements Module {
             const cubeSoup = this.generateCubeSoup(10);
             const sphereSoup = this.generateSphereSoup(this.subtractRadius);
 
-            // Perform subtraction (cube - sphere)
+            // Perform subtraction (cube - sphere) using C++ Manifold
             const startTime = performance.now();
-            const resultSoup = await this.subtractMeshManifold(cubeSoup, sphereSoup);
+            const resultSoup = await this.callWasmManifoldSubtract(cubeSoup, sphereSoup);
             const endTime = performance.now();
 
-            console.log(`Test subtraction (Manifold) completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${resultSoup.length / 9} triangles`);
+            console.log(`Test subtraction (C++ Manifold) completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${resultSoup.length / 9} triangles`);
 
             // Convert result to THREE.js geometry and display
             const numTris = resultSoup.length / 9;
@@ -549,12 +529,12 @@ export class ModuleLayout implements Module {
             // Generate sphere mesh
             const sphereSoup = this.generateSphereSoup(this.subtractRadius);
 
-            // Perform subtraction using Manifold
+            // Perform subtraction using C++ Manifold via WASM
             const startTime = performance.now();
-            const resultSoup = await this.subtractMeshManifold(this.targetSurf, sphereSoup);
+            const resultSoup = await this.callWasmManifoldSubtract(this.targetSurf, sphereSoup);
             const endTime = performance.now();
 
-            console.log(`Manifold subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${resultSoup.length / 9} triangles`);
+            console.log(`C++ Manifold subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${resultSoup.length / 9} triangles`);
             //return;
 
             // Convert result to THREE.js geometry

@@ -18,6 +18,10 @@
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/boost/graph/convert_nef_polyhedron_to_polygon_mesh.h>
 
+// Manifold includes for boolean operations
+#include "manifold.h"
+#include "glm/glm.hpp"
+
 typedef CGAL::Exact_predicates_exact_constructions_kernel K;
 typedef K::Point_3 Point_3;
 typedef K::Vector_3 Vector_3;
@@ -397,4 +401,119 @@ extern "C" void free_triangle_soup_result(triangle_soup_result* result) {
   free(result->vertices);
   free(result->error_message);
   free(result);
+}
+
+// Convert triangle soup to Manifold MeshGL and merge duplicates
+static manifold::MeshGL soup_to_manifold_meshgl(const triangle_soup* soup) {
+  manifold::MeshGL meshgl;
+  
+  if (!soup || !soup->vertices || soup->num_vertices <= 0 || soup->num_vertices % 3 != 0) {
+    return meshgl;
+  }
+
+  const int num_tris = soup->num_vertices / 3;
+  const int total_verts = soup->num_vertices;
+  
+  // Prepare vertex properties (x, y, z for each vertex)
+  meshgl.numProp = 3;
+  meshgl.vertProperties.reserve(total_verts * 3);
+  
+  for (int i = 0; i < total_verts; i++) {
+    meshgl.vertProperties.push_back(soup->vertices[i].x);
+    meshgl.vertProperties.push_back(soup->vertices[i].y);
+    meshgl.vertProperties.push_back(soup->vertices[i].z);
+  }
+  
+  // Prepare triangle indices (direct mapping for now)
+  meshgl.triVerts.reserve(num_tris * 3);
+  
+  for (int t = 0; t < num_tris; t++) {
+    meshgl.triVerts.push_back(t * 3);
+    meshgl.triVerts.push_back(t * 3 + 1);
+    meshgl.triVerts.push_back(t * 3 + 2);
+  }
+  
+  // Merge duplicate vertices - this is critical for valid manifold creation
+  meshgl.Merge();
+  
+  return meshgl;
+}
+
+// Convert Manifold MeshGL back to triangle soup result
+static triangle_soup_result* manifold_meshgl_to_soup(const manifold::MeshGL& meshgl) {
+  auto* result = static_cast<triangle_soup_result*>(malloc(sizeof(triangle_soup_result)));
+  
+  const size_t num_tris = meshgl.triVerts.size() / 3;
+  const size_t num_verts = num_tris * 3;
+  
+  result->num_vertices = num_verts;
+  result->error_message = nullptr;
+  
+  if (num_verts > 0) {
+    result->vertices = static_cast<float*>(malloc(sizeof(float) * num_verts * 3));
+    
+    size_t idx = 0;
+    for (size_t t = 0; t < num_tris; t++) {
+      for (int v = 0; v < 3; v++) {
+        uint32_t vertIdx = meshgl.triVerts[t * 3 + v];
+        // Extract position from vertProperties (first 3 properties are x,y,z)
+        result->vertices[idx++] = meshgl.vertProperties[vertIdx * meshgl.numProp];
+        result->vertices[idx++] = meshgl.vertProperties[vertIdx * meshgl.numProp + 1];
+        result->vertices[idx++] = meshgl.vertProperties[vertIdx * meshgl.numProp + 2];
+      }
+    }
+  } else {
+    result->vertices = nullptr;
+  }
+  
+  return result;
+}
+
+// Perform boolean subtraction using Manifold: A - B
+extern "C" triangle_soup_result* manifold_subtract_meshes(const triangle_soup* soup_a, const triangle_soup* soup_b) {
+  try {
+    // Convert soups to Manifold MeshGL with vertex merging
+    manifold::MeshGL meshgl_a = soup_to_manifold_meshgl(soup_a);
+    if (meshgl_a.vertProperties.empty()) {
+      return error_soup_result("mesh_a: invalid triangle soup");
+    }
+    
+    manifold::MeshGL meshgl_b = soup_to_manifold_meshgl(soup_b);
+    if (meshgl_b.vertProperties.empty()) {
+      return error_soup_result("mesh_b: invalid triangle soup");
+    }
+    
+    // Create Manifolds from MeshGL
+    manifold::Manifold manifold_a(meshgl_a);
+    if (manifold_a.Status() != manifold::Manifold::Error::NoError) {
+      return error_soup_result("mesh_a: failed to create valid manifold - " + std::to_string(static_cast<int>(manifold_a.Status())));
+    }
+    
+    manifold::Manifold manifold_b(meshgl_b);
+    if (manifold_b.Status() != manifold::Manifold::Error::NoError) {
+      return error_soup_result("mesh_b: failed to create valid manifold - " + std::to_string(static_cast<int>(manifold_b.Status())));
+    }
+    
+    // Perform boolean subtraction
+    manifold::Manifold result = manifold_a - manifold_b;
+    
+    if (result.Status() != manifold::Manifold::Error::NoError) {
+      return error_soup_result("Boolean subtraction failed - " + std::to_string(static_cast<int>(result.Status())));
+    }
+    
+    if (result.IsEmpty()) {
+      return error_soup_result("Boolean subtraction produced empty result");
+    }
+    
+    // Get result as MeshGL
+    manifold::MeshGL result_meshgl = result.GetMeshGL();
+    
+    // Convert back to triangle soup
+    return manifold_meshgl_to_soup(result_meshgl);
+    
+  } catch (const std::exception& e) {
+    return error_soup_result(std::string("Exception: ") + e.what());
+  } catch (...) {
+    return error_soup_result("Unknown exception during Manifold mesh subtraction");
+  }
 }

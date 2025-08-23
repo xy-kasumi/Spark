@@ -30,25 +30,61 @@ source "$EMSDK_DIR/emsdk_env.sh"
 # Step 3: Create output directory
 mkdir -p "$OUTPUT_DIR"
 
-# Step 3.5: Install CGAL dependencies if needed
+# Step 3.5: Install dependencies if needed
 DEPS_DIR="$SCRIPT_DIR/deps"
 if [ ! -d "$DEPS_DIR/CGAL-5.6" ] || [ ! -d "$DEPS_DIR/boost_1_83_0" ]; then
     echo "Installing CGAL dependencies..."
     "$SCRIPT_DIR/install-cgal.sh"
 fi
 
+# Step 3.6: Install and build Manifold if needed
+if [ ! -d "$DEPS_DIR/manifold" ]; then
+    echo "Installing Manifold..."
+    "$SCRIPT_DIR/install-manifold.sh"
+fi
+
+MANIFOLD_BUILD_DIR="$DEPS_DIR/manifold/build_wasm"
+if [ ! -f "$MANIFOLD_BUILD_DIR/src/manifold/libmanifold.a" ]; then
+    echo "Building Manifold library..."
+    mkdir -p "$MANIFOLD_BUILD_DIR"
+    cd "$MANIFOLD_BUILD_DIR"
+    emcmake cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DMANIFOLD_PYBIND=OFF \
+        -DMANIFOLD_CBIND=OFF \
+        -DMANIFOLD_BUILD_TEST=OFF \
+        -DMANIFOLD_PAR=NONE \
+        -DBUILD_SHARED_LIBS=OFF
+    emmake make -j4
+    cd "$SCRIPT_DIR"
+fi
+
 # Step 4: Compile the WASM module
-echo "Compiling entrypoint.cpp to WASM with CGAL..."
+echo "Compiling entrypoint.cpp to WASM with CGAL and Manifold..."
 
 emcc "$SCRIPT_DIR/entrypoint.cpp" \
     -o "$OUTPUT_DIR/mesh_project.js" \
     -O2 \
     -I"$DEPS_DIR/CGAL-5.6/include" \
     -I"$DEPS_DIR/boost_1_83_0" \
+    -I"$DEPS_DIR/manifold/src/manifold/include" \
+    -I"$DEPS_DIR/manifold/src/utilities/include" \
+    -I"$DEPS_DIR/manifold/src/cross_section/include" \
+    -I"$DEPS_DIR/manifold/src/polygon/include" \
+    -I"$DEPS_DIR/manifold/build_wasm/_deps/glm-src" \
+    -I"$DEPS_DIR/manifold/build_wasm/_deps/thrust-src" \
+    -I"$DEPS_DIR/manifold/build_wasm/_deps/thrust-src/thrust/cmake" \
+    -L"$MANIFOLD_BUILD_DIR/src/manifold" \
+    -L"$MANIFOLD_BUILD_DIR/src/polygon" \
+    -L"$MANIFOLD_BUILD_DIR/_deps/clipper2-build" \
+    -lmanifold \
+    -lpolygon \
+    -lClipper2 \
     -std=c++17 \
     -DCGAL_HAS_NO_THREADS \
     -DCGAL_NDEBUG \
-    -s EXPORTED_FUNCTIONS='["_project_mesh", "_free_edge_soup", "_subtract_meshes", "_free_triangle_soup_result", "_malloc", "_free"]' \
+    -DTHRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_CPP \
+    -s EXPORTED_FUNCTIONS='["_project_mesh", "_free_edge_soup", "_subtract_meshes", "_manifold_subtract_meshes", "_free_triangle_soup_result", "_malloc", "_free"]' \
     -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "getValue", "setValue", "UTF8ToString"]' \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s MODULARIZE=1 \

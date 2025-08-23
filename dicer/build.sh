@@ -9,10 +9,10 @@ if ! tsc --noEmit; then
     exit 1
 fi
 
-# Clean dist directory (preserve specific HTML files for hot-reload)
+# Clean dist directory (preserve specific HTML files and wasm directory for hot-reload)
 mkdir -p dist
-find dist -type f ! -name "index.html" ! -name "test.html" -delete
-find dist -type d -empty -delete
+find dist -type f ! -name "index.html" ! -name "test.html" ! -path "dist/wasm/*" -delete
+find dist -type d -empty ! -path "dist/wasm" -delete
 
 # Transpile source files
 echo "Transpiling TypeScript..."
