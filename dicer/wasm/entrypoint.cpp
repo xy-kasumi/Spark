@@ -20,7 +20,9 @@
 
 // Manifold includes for boolean operations
 #include "manifold.h"
+#include "cross_section.h"
 #include "glm/glm.hpp"
+#include "glm/gtc/matrix_transform.hpp"
 
 typedef CGAL::Exact_predicates_exact_constructions_kernel K;
 typedef K::Point_3 Point_3;
@@ -96,6 +98,9 @@ static Point_2 project_to_plane(
     return Point_2(x, y);
 }
 */
+// Forward declaration
+static manifold::MeshGL soup_to_manifold_meshgl(const triangle_soup* soup);
+
 // Utility function to create error result
 static edge_soup* error_result(const std::string& msg) {
   auto* result = static_cast<edge_soup*>(malloc(sizeof(edge_soup)));
@@ -171,91 +176,78 @@ extern "C" edge_soup* project_mesh(const triangle_soup* soup,
                                    const vector3* view_x,
                                    const vector3* view_y,
                                    const vector3* view_dir_z) {
-  /*
-  // Convert input vectors to CGAL types
-  Point_3 origin_pt = to_point3(*origin);
-  Vector_3 x_axis = to_vector3(*view_x);
-  Vector_3 y_axis = to_vector3(*view_y);
-  Vector_3 view_dir = to_vector3(*view_dir_z);
-
-  // Convert triangle soup to CGAL mesh
-  Mesh mesh;
-  if (!soup_to_mesh(soup, mesh)) {
-      return error_result("Invalid input data or mesh creation failed");
-  }
-
-  // Part B: Find silhouette edges
-  std::vector<edge_2d> silhouette_edges;
-
-  for (auto e : mesh.edges()) {
-      Halfedge_index h1 = mesh.halfedge(e);
-      Halfedge_index h2 = mesh.opposite(h1);
-
-      if (mesh.is_border(h1) || mesh.is_border(h2)) {
-          Vertex_index v1 = mesh.source(h1);
-          Vertex_index v2 = mesh.target(h1);
-          Point_3 p1 = mesh.point(v1);
-          Point_3 p2 = mesh.point(v2);
-
-          char error_msg[200];
-          snprintf(error_msg, sizeof(error_msg),
-              "mesh is broken (edge with single face):
-  (%.3f,%.3f,%.3f)-(%.3f,%.3f,%.3f)", CGAL::to_double(p1.x()),
-  CGAL::to_double(p1.y()), CGAL::to_double(p1.z()), CGAL::to_double(p2.x()),
-  CGAL::to_double(p2.y()), CGAL::to_double(p2.z()));
-
-          return error_result(error_msg);
+  try {
+    // Convert triangle soup to Manifold
+    manifold::MeshGL meshgl = soup_to_manifold_meshgl(soup);
+    if (meshgl.vertProperties.empty()) {
+      return error_result("Invalid triangle soup");
+    }
+    
+    manifold::Manifold mesh(meshgl);
+    if (mesh.Status() != manifold::Manifold::Error::NoError) {
+      return error_result("Failed to create valid manifold - " + 
+                         std::to_string(static_cast<int>(mesh.Status())));
+    }
+    
+    // Build transformation matrix to align view_dir_z with Z axis
+    // The projection plane will be the XY plane after transformation
+    glm::vec3 orig(origin->x, origin->y, origin->z);
+    glm::vec3 vx(view_x->x, view_x->y, view_x->z);
+    glm::vec3 vy(view_y->x, view_y->y, view_y->z);
+    glm::vec3 vz(view_dir_z->x, view_dir_z->y, view_dir_z->z);
+    
+    // Create transformation matrix: columns are the new basis vectors
+    // This transforms from world space to view space
+    glm::mat4x3 transform(
+      vx.x, vy.x, vz.x,  // First column (maps to X)
+      vx.y, vy.y, vz.y,  // Second column (maps to Y)  
+      vx.z, vy.z, vz.z,  // Third column (maps to Z)
+      -glm::dot(vx, orig), -glm::dot(vy, orig), -glm::dot(vz, orig)  // Translation
+    );
+    
+    // Apply transformation to the manifold
+    manifold::Manifold transformed = mesh.Transform(transform);
+    
+    // Project onto XY plane (Z=0) to get 2D cross-section
+    manifold::CrossSection projection = transformed.Project();
+    
+    // Convert to polygons
+    manifold::Polygons polygons = projection.ToPolygons();
+    
+    // Extract edges from polygons
+    std::vector<edge_2d> edges;
+    for (const auto& polygon : polygons) {
+      size_t n = polygon.size();
+      for (size_t i = 0; i < n; i++) {
+        size_t j = (i + 1) % n;
+        edge_2d edge;
+        edge.start.x = static_cast<float>(polygon[i].x);
+        edge.start.y = static_cast<float>(polygon[i].y);
+        edge.end.x = static_cast<float>(polygon[j].x);
+        edge.end.y = static_cast<float>(polygon[j].y);
+        edges.push_back(edge);
       }
-
-      Face_index f1 = mesh.face(h1);
-      Face_index f2 = mesh.face(h2);
-
-      // Compute face normals
-      Vector_3 n1 = PMP::compute_face_normal(f1, mesh);
-      Vector_3 n2 = PMP::compute_face_normal(f2, mesh);
-
-      // Check if faces have different visibility
-      double dot1 = n1 * view_dir;
-      double dot2 = n2 * view_dir;
-
-      // If one face is front-facing and other is back-facing/orthogonal, it's a
-  silhouette edge if ((dot1 > 0 && dot2 <= 0) || (dot1 <= 0 && dot2 > 0)) {
-          Vertex_index v1 = mesh.source(h1);
-          Vertex_index v2 = mesh.target(h1);
-
-          Point_3 p1_3d = mesh.point(v1);
-          Point_3 p2_3d = mesh.point(v2);
-
-          Point_2 p1_2d = project_to_plane(p1_3d, origin_pt, x_axis, y_axis);
-          Point_2 p2_2d = project_to_plane(p2_3d, origin_pt, x_axis, y_axis);
-
-          edge_2d edge;
-          edge.start.x = CGAL::to_double(p1_2d.x());
-          edge.start.y = CGAL::to_double(p1_2d.y());
-          edge.end.x = CGAL::to_double(p2_2d.x());
-          edge.end.y = CGAL::to_double(p2_2d.y());
-
-          silhouette_edges.push_back(edge);
-      }
-  }
-
-  // Convert to output format
-  edge_soup* result = (edge_soup*)malloc(sizeof(edge_soup));
-  result->num_edges = silhouette_edges.size();
-  result->error_message = nullptr; // Success
-
-  if (result->num_edges > 0) {
-      result->edges = (edge_2d*)malloc(sizeof(edge_2d) * result->num_edges);
-      for (size_t i = 0; i < silhouette_edges.size(); i++) {
-          result->edges[i] = silhouette_edges[i];
-      }
-  } else {
+    }
+    
+    // Create result
+    auto* result = static_cast<edge_soup*>(malloc(sizeof(edge_soup)));
+    result->num_edges = edges.size();
+    result->error_message = nullptr;
+    
+    if (!edges.empty()) {
+      result->edges = static_cast<edge_2d*>(malloc(sizeof(edge_2d) * edges.size()));
+      std::memcpy(result->edges, edges.data(), sizeof(edge_2d) * edges.size());
+    } else {
       result->edges = nullptr;
+    }
+    
+    return result;
+    
+  } catch (const std::exception& e) {
+    return error_result(std::string("Exception: ") + e.what());
+  } catch (...) {
+    return error_result("Unknown exception during mesh projection");
   }
-
-  return result;
-  */
-  return nullptr;
 }
 
 // Helper function to free edge soup memory
