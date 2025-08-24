@@ -8,34 +8,10 @@
 #include <string>
 #include <vector>
 
-#include <CGAL/Exact_predicates_exact_constructions_kernel.h>
-#include <CGAL/Nef_polyhedron_3.h>
-#include <CGAL/Polygon_mesh_processing/compute_normal.h>
-#include <CGAL/Polygon_mesh_processing/corefinement.h>
-#include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
-#include <CGAL/Polygon_mesh_processing/repair_degeneracies.h>
-#include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
-#include <CGAL/Surface_mesh.h>
-#include <CGAL/boost/graph/convert_nef_polyhedron_to_polygon_mesh.h>
-
-// Manifold includes for boolean operations
-#include "manifold.h"
 #include "cross_section.h"
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
-
-typedef CGAL::Exact_predicates_exact_constructions_kernel K;
-typedef K::Point_3 Point_3;
-typedef K::Vector_3 Vector_3;
-typedef K::Point_2 Point_2;
-typedef CGAL::Surface_mesh<Point_3> Mesh;
-typedef CGAL::Nef_polyhedron_3<K> Nef_polyhedron;
-typedef Mesh::Face_index Face_index;
-typedef Mesh::Vertex_index Vertex_index;
-typedef Mesh::Edge_index Edge_index;
-typedef Mesh::Halfedge_index Halfedge_index;
-
-namespace PMP = CGAL::Polygon_mesh_processing;
+#include "manifold.h"
 
 typedef struct {
   float x;
@@ -74,30 +50,6 @@ typedef struct {
   char* error_message;  // null on success
 } triangle_soup_result;
 
-// Helper to convert vector3 to CGAL Point_3
-static Point_3 to_point3(const vector3& v) {
-  return Point_3(v.x, v.y, v.z);
-}
-
-// Helper to convert vector3 to CGAL Vector_3
-static Vector_3 to_vector3(const vector3& v) {
-  return Vector_3(v.x, v.y, v.z);
-}
-
-// Project 3D point onto 2D plane defined by origin and basis vectors
-/*
-static Point_2 project_to_plane(
-    const Point_3& point,
-    const Point_3& origin,
-    const Vector_3& x_axis,
-    const Vector_3& y_axis
-) {
-    Vector_3 v = point - origin;
-    double x = v * x_axis;  // dot product
-    double y = v * y_axis;  // dot product
-    return Point_2(x, y);
-}
-*/
 // Forward declaration
 static manifold::MeshGL soup_to_manifold_meshgl(const triangle_soup* soup);
 
@@ -109,62 +61,6 @@ static edge_soup* error_result(const std::string& msg) {
   result->error_message = static_cast<char*>(malloc(msg.size() + 1));
   strcpy(result->error_message, msg.c_str());
   return result;
-}
-
-// Convert triangle soup to CGAL mesh
-// "" success, otherwise error message
-static std::string soup_to_mesh(const triangle_soup* soup, Mesh& out_mesh) {
-  if (!soup || !soup->vertices || soup->num_vertices <= 0 ||
-      soup->num_vertices % 3 != 0) {
-    return "not triangle soup";
-  }
-
-  std::vector<Point_3> points;
-  std::vector<std::vector<std::size_t>> polygons;
-
-  int num_tris = soup->num_vertices / 3;
-  points.reserve(soup->num_vertices);
-  polygons.reserve(num_tris);
-
-  // Add all vertices
-  for (int i = 0; i < soup->num_vertices; i++) {
-    points.push_back(
-        Point_3(soup->vertices[i].x, soup->vertices[i].y, soup->vertices[i].z));
-  }
-
-  // Create triangles
-  for (int t = 0; t < num_tris; t++) {
-    std::vector<std::size_t> triangle;
-    triangle.push_back(t * 3 + 0);
-    triangle.push_back(t * 3 + 1);
-    triangle.push_back(t * 3 + 2);
-    polygons.push_back(triangle);
-  }
-
-  // Clean up and build mesh
-  //PMP::merge_duplicate_polygons_in_polygon_soup(points, polygons);
-  //PMP::remove_isolated_points_in_polygon_soup(points, polygons);
-  PMP::repair_polygon_soup(points, polygons);
-  PMP::polygon_soup_to_polygon_mesh(points, polygons, out_mesh);
-
-  // clean up mesh
-  //PMP::remove_almost_degenerate_faces(out_mesh);
-  PMP::stitch_borders(out_mesh);
-  PMP::orient_to_bound_a_volume(out_mesh);
-
-  if (out_mesh.is_empty()) {
-    return "mesh became empty";
-  }
-  if (!out_mesh.is_valid()) {
-    return "mesh is invalid";
-  }
-  if (!CGAL::is_closed(out_mesh)) {
-    return "mesh is not closed";
-  }
-  if (PMP::does_self_intersect(out_mesh)) {
-    return "mesh self-intersects";
-  }
-  return "";  // success
 }
 
 // Project 3D mesh onto a plane defined by view_dir_z and origin.
@@ -182,38 +78,38 @@ extern "C" edge_soup* project_mesh(const triangle_soup* soup,
     if (meshgl.vertProperties.empty()) {
       return error_result("Invalid triangle soup");
     }
-    
+
     manifold::Manifold mesh(meshgl);
     if (mesh.Status() != manifold::Manifold::Error::NoError) {
-      return error_result("Failed to create valid manifold - " + 
-                         std::to_string(static_cast<int>(mesh.Status())));
+      return error_result("Failed to create valid manifold - " +
+                          std::to_string(static_cast<int>(mesh.Status())));
     }
-    
+
     // Build transformation matrix to align view_dir_z with Z axis
     // The projection plane will be the XY plane after transformation
     glm::vec3 orig(origin->x, origin->y, origin->z);
     glm::vec3 vx(view_x->x, view_x->y, view_x->z);
     glm::vec3 vy(view_y->x, view_y->y, view_y->z);
     glm::vec3 vz(view_dir_z->x, view_dir_z->y, view_dir_z->z);
-    
+
     // Create transformation matrix: columns are the new basis vectors
     // This transforms from world space to view space
-    glm::mat4x3 transform(
-      vx.x, vy.x, vz.x,  // First column (maps to X)
-      vx.y, vy.y, vz.y,  // Second column (maps to Y)  
-      vx.z, vy.z, vz.z,  // Third column (maps to Z)
-      -glm::dot(vx, orig), -glm::dot(vy, orig), -glm::dot(vz, orig)  // Translation
+    glm::mat4x3 transform(vx.x, vy.x, vz.x,  // First column (maps to X)
+                          vx.y, vy.y, vz.y,  // Second column (maps to Y)
+                          vx.z, vy.z, vz.z,  // Third column (maps to Z)
+                          -glm::dot(vx, orig), -glm::dot(vy, orig),
+                          -glm::dot(vz, orig)  // Translation
     );
-    
+
     // Apply transformation to the manifold
     manifold::Manifold transformed = mesh.Transform(transform);
-    
+
     // Project onto XY plane (Z=0) to get 2D cross-section
     manifold::CrossSection projection = transformed.Project();
-    
+
     // Convert to polygons
     manifold::Polygons polygons = projection.ToPolygons();
-    
+
     // Extract edges from polygons
     std::vector<edge_2d> edges;
     for (const auto& polygon : polygons) {
@@ -228,21 +124,22 @@ extern "C" edge_soup* project_mesh(const triangle_soup* soup,
         edges.push_back(edge);
       }
     }
-    
+
     // Create result
     auto* result = static_cast<edge_soup*>(malloc(sizeof(edge_soup)));
     result->num_edges = edges.size();
     result->error_message = nullptr;
-    
+
     if (!edges.empty()) {
-      result->edges = static_cast<edge_2d*>(malloc(sizeof(edge_2d) * edges.size()));
+      result->edges =
+          static_cast<edge_2d*>(malloc(sizeof(edge_2d) * edges.size()));
       std::memcpy(result->edges, edges.data(), sizeof(edge_2d) * edges.size());
     } else {
       result->edges = nullptr;
     }
-    
+
     return result;
-    
+
   } catch (const std::exception& e) {
     return error_result(std::string("Exception: ") + e.what());
   } catch (...) {
@@ -271,120 +168,6 @@ static triangle_soup_result* error_soup_result(const std::string& msg) {
   return result;
 }
 
-// Convert CGAL mesh to triangle soup
-static triangle_soup_result* mesh_to_soup(const Mesh& mesh) {
-  std::vector<float> vertices;
-  vertices.reserve(mesh.number_of_faces() *
-                   9);  // 3 vertices * 3 coords per face
-
-  // Iterate through all faces
-  for (const auto& f : mesh.faces()) {
-    auto h = mesh.halfedge(f);
-    auto h_start = h;
-
-    // Get the three vertices of the triangle
-    std::vector<Point_3> triangle_verts;
-    triangle_verts.reserve(3);
-    do {
-      auto v = mesh.target(h);
-      triangle_verts.push_back(mesh.point(v));
-      h = mesh.next(h);
-    } while (h != h_start && triangle_verts.size() < 3);
-
-    // Should always be 3 vertices for a triangle
-    if (triangle_verts.size() == 3) {
-      for (const auto& pt : triangle_verts) {
-        vertices.push_back(static_cast<float>(CGAL::to_double(pt.x())));
-        vertices.push_back(static_cast<float>(CGAL::to_double(pt.y())));
-        vertices.push_back(static_cast<float>(CGAL::to_double(pt.z())));
-      }
-    }
-  }
-
-  // Create result
-  auto* result =
-      static_cast<triangle_soup_result*>(malloc(sizeof(triangle_soup_result)));
-  result->num_vertices = vertices.size() / 3;
-  result->error_message = nullptr;
-
-  if (!vertices.empty()) {
-    result->vertices =
-        static_cast<float*>(malloc(sizeof(float) * vertices.size()));
-    std::memcpy(result->vertices, vertices.data(),
-                sizeof(float) * vertices.size());
-  } else {
-    result->vertices = nullptr;
-  }
-
-  return result;
-}
-
-extern "C" triangle_soup_result* subtract_meshes(const triangle_soup* soup_a,
-                                                 const triangle_soup* soup_b) {
-  try {
-    Mesh mesh_a;
-    std::string err = soup_to_mesh(soup_a, mesh_a);
-    if (!err.empty()) {
-      return error_soup_result("mesh_a: " + err);
-    }
-    Mesh mesh_b;
-    err = soup_to_mesh(soup_b, mesh_b);
-    if (!err.empty()) {
-      return error_soup_result("mesh_b: " + err);
-    }
-
-    // --- Robust boolean via PMP corefinement (no Nef) ---
-    // We operate on local copies because corefinement modifies the inputs.
-    Mesh A = mesh_a, B = mesh_b;
-
-    // Harden meshes for boolean operations
-    // (remove tiny degeneracies, weld borders, ensure outward orientation)
-    PMP::remove_degenerate_faces(A);
-    PMP::remove_degenerate_faces(B);
-    PMP::stitch_borders(A);
-    PMP::stitch_borders(B);
-    PMP::orient_to_bound_a_volume(A);
-    PMP::orient_to_bound_a_volume(B);
-
-    // Sanity checks (closed & no self-intersections expected for robust
-    // corefinement)
-    if (!CGAL::is_closed(A) || !CGAL::is_closed(B)) {
-      return error_soup_result(
-          "input meshes must be closed after preprocessing");
-    }
-    if (PMP::does_self_intersect(A) || PMP::does_self_intersect(B)) {
-      return error_soup_result("input meshes self-intersect; aborting boolean");
-    }
-
-    // Compute A \ B using corefinement
-    Mesh result_mesh;
-    const bool ok = PMP::corefine_and_compute_difference(A, B, result_mesh);
-    if (!ok || result_mesh.is_empty()) {
-      return error_soup_result(
-          "corefine_and_compute_difference() failed or produced empty result");
-    }
-
-    // Optional post-clean (usually not needed, but cheap and safe)
-    PMP::remove_degenerate_faces(result_mesh);
-    PMP::stitch_borders(result_mesh);
-    PMP::orient_to_bound_a_volume(result_mesh);
-
-    if (!CGAL::is_closed(result_mesh)) {
-      return error_soup_result("boolean result is not closed");
-    }
-
-    // Convert back to triangle soup
-    return mesh_to_soup(result_mesh);
-  } catch (const std::exception& e) {
-    // Catch any standard exceptions and return as error
-    return error_soup_result(std::string("Exception: ") + e.what());
-  } catch (...) {
-    // Catch any other exceptions
-    return error_soup_result(
-        "Unknown exception caught during mesh subtraction");
-  }
-}
-
 // Helper function to free triangle soup result memory
 extern "C" void free_triangle_soup_result(triangle_soup_result* result) {
   if (!result)
@@ -398,114 +181,130 @@ extern "C" void free_triangle_soup_result(triangle_soup_result* result) {
 // Convert triangle soup to Manifold MeshGL and merge duplicates
 static manifold::MeshGL soup_to_manifold_meshgl(const triangle_soup* soup) {
   manifold::MeshGL meshgl;
-  
-  if (!soup || !soup->vertices || soup->num_vertices <= 0 || soup->num_vertices % 3 != 0) {
+
+  if (!soup || !soup->vertices || soup->num_vertices <= 0 ||
+      soup->num_vertices % 3 != 0) {
     return meshgl;
   }
 
   const int num_tris = soup->num_vertices / 3;
   const int total_verts = soup->num_vertices;
-  
+
   // Prepare vertex properties (x, y, z for each vertex)
   meshgl.numProp = 3;
   meshgl.vertProperties.reserve(total_verts * 3);
-  
+
   for (int i = 0; i < total_verts; i++) {
     meshgl.vertProperties.push_back(soup->vertices[i].x);
     meshgl.vertProperties.push_back(soup->vertices[i].y);
     meshgl.vertProperties.push_back(soup->vertices[i].z);
   }
-  
+
   // Prepare triangle indices (direct mapping for now)
   meshgl.triVerts.reserve(num_tris * 3);
-  
+
   for (int t = 0; t < num_tris; t++) {
     meshgl.triVerts.push_back(t * 3);
     meshgl.triVerts.push_back(t * 3 + 1);
     meshgl.triVerts.push_back(t * 3 + 2);
   }
-  
+
   // Merge duplicate vertices - this is critical for valid manifold creation
   meshgl.Merge();
-  
+
   return meshgl;
 }
 
 // Convert Manifold MeshGL back to triangle soup result
-static triangle_soup_result* manifold_meshgl_to_soup(const manifold::MeshGL& meshgl) {
-  auto* result = static_cast<triangle_soup_result*>(malloc(sizeof(triangle_soup_result)));
-  
+static triangle_soup_result* manifold_meshgl_to_soup(
+    const manifold::MeshGL& meshgl) {
+  auto* result =
+      static_cast<triangle_soup_result*>(malloc(sizeof(triangle_soup_result)));
+
   const size_t num_tris = meshgl.triVerts.size() / 3;
   const size_t num_verts = num_tris * 3;
-  
+
   result->num_vertices = num_verts;
   result->error_message = nullptr;
-  
+
   if (num_verts > 0) {
-    result->vertices = static_cast<float*>(malloc(sizeof(float) * num_verts * 3));
-    
+    result->vertices =
+        static_cast<float*>(malloc(sizeof(float) * num_verts * 3));
+
     size_t idx = 0;
     for (size_t t = 0; t < num_tris; t++) {
       for (int v = 0; v < 3; v++) {
         uint32_t vertIdx = meshgl.triVerts[t * 3 + v];
         // Extract position from vertProperties (first 3 properties are x,y,z)
-        result->vertices[idx++] = meshgl.vertProperties[vertIdx * meshgl.numProp];
-        result->vertices[idx++] = meshgl.vertProperties[vertIdx * meshgl.numProp + 1];
-        result->vertices[idx++] = meshgl.vertProperties[vertIdx * meshgl.numProp + 2];
+        result->vertices[idx++] =
+            meshgl.vertProperties[vertIdx * meshgl.numProp];
+        result->vertices[idx++] =
+            meshgl.vertProperties[vertIdx * meshgl.numProp + 1];
+        result->vertices[idx++] =
+            meshgl.vertProperties[vertIdx * meshgl.numProp + 2];
       }
     }
   } else {
     result->vertices = nullptr;
   }
-  
+
   return result;
 }
 
 // Perform boolean subtraction using Manifold: A - B
-extern "C" triangle_soup_result* manifold_subtract_meshes(const triangle_soup* soup_a, const triangle_soup* soup_b) {
+extern "C" triangle_soup_result* manifold_subtract_meshes(
+    const triangle_soup* soup_a,
+    const triangle_soup* soup_b) {
   try {
     // Convert soups to Manifold MeshGL with vertex merging
     manifold::MeshGL meshgl_a = soup_to_manifold_meshgl(soup_a);
     if (meshgl_a.vertProperties.empty()) {
       return error_soup_result("mesh_a: invalid triangle soup");
     }
-    
+
     manifold::MeshGL meshgl_b = soup_to_manifold_meshgl(soup_b);
     if (meshgl_b.vertProperties.empty()) {
       return error_soup_result("mesh_b: invalid triangle soup");
     }
-    
+
     // Create Manifolds from MeshGL
     manifold::Manifold manifold_a(meshgl_a);
     if (manifold_a.Status() != manifold::Manifold::Error::NoError) {
-      return error_soup_result("mesh_a: failed to create valid manifold - " + std::to_string(static_cast<int>(manifold_a.Status())));
+      return error_soup_result(
+          "mesh_a: failed to create valid manifold - " +
+          std::to_string(static_cast<int>(manifold_a.Status())));
     }
-    
+
     manifold::Manifold manifold_b(meshgl_b);
     if (manifold_b.Status() != manifold::Manifold::Error::NoError) {
-      return error_soup_result("mesh_b: failed to create valid manifold - " + std::to_string(static_cast<int>(manifold_b.Status())));
+      return error_soup_result(
+          "mesh_b: failed to create valid manifold - " +
+          std::to_string(static_cast<int>(manifold_b.Status())));
     }
-    
+
     // Perform boolean subtraction
     manifold::Manifold result = manifold_a - manifold_b;
-    
+
     if (result.Status() != manifold::Manifold::Error::NoError) {
-      return error_soup_result("Boolean subtraction failed - " + std::to_string(static_cast<int>(result.Status())));
+      return error_soup_result(
+          "Boolean subtraction failed - " +
+          std::to_string(static_cast<int>(result.Status())));
     }
-    
+
     if (result.IsEmpty()) {
       return error_soup_result("Boolean subtraction produced empty result");
     }
-    
+
     // Get result as MeshGL
     manifold::MeshGL result_meshgl = result.GetMeshGL();
-    
+
     // Convert back to triangle soup
     return manifold_meshgl_to_soup(result_meshgl);
-    
+
   } catch (const std::exception& e) {
     return error_soup_result(std::string("Exception: ") + e.what());
   } catch (...) {
-    return error_soup_result("Unknown exception during Manifold mesh subtraction");
+    return error_soup_result(
+        "Unknown exception during Manifold mesh subtraction");
   }
 }

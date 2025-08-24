@@ -30,14 +30,8 @@ source "$EMSDK_DIR/emsdk_env.sh"
 # Step 3: Create output directory
 mkdir -p "$OUTPUT_DIR"
 
-# Step 3.5: Install dependencies if needed
+# Step 3.5: Install and build Manifold if needed
 DEPS_DIR="$SCRIPT_DIR/deps"
-if [ ! -d "$DEPS_DIR/CGAL-5.6" ] || [ ! -d "$DEPS_DIR/boost_1_83_0" ]; then
-    echo "Installing CGAL dependencies..."
-    "$SCRIPT_DIR/install-cgal.sh"
-fi
-
-# Step 3.6: Install and build Manifold if needed
 if [ ! -d "$DEPS_DIR/manifold" ]; then
     echo "Installing Manifold..."
     "$SCRIPT_DIR/install-manifold.sh"
@@ -60,13 +54,11 @@ if [ ! -f "$MANIFOLD_BUILD_DIR/src/manifold/libmanifold.a" ]; then
 fi
 
 # Step 4: Compile the WASM module
-echo "Compiling entrypoint.cpp to WASM with CGAL and Manifold..."
+echo "Compiling entrypoint.cpp to WASM with Manifold..."
 
 emcc "$SCRIPT_DIR/entrypoint.cpp" \
     -o "$OUTPUT_DIR/mesh_project.js" \
     -O2 \
-    -I"$DEPS_DIR/CGAL-5.6/include" \
-    -I"$DEPS_DIR/boost_1_83_0" \
     -I"$DEPS_DIR/manifold/src/manifold/include" \
     -I"$DEPS_DIR/manifold/src/utilities/include" \
     -I"$DEPS_DIR/manifold/src/cross_section/include" \
@@ -81,10 +73,8 @@ emcc "$SCRIPT_DIR/entrypoint.cpp" \
     -lpolygon \
     -lClipper2 \
     -std=c++17 \
-    -DCGAL_HAS_NO_THREADS \
-    -DCGAL_NDEBUG \
     -DTHRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_CPP \
-    -s EXPORTED_FUNCTIONS='["_project_mesh", "_free_edge_soup", "_subtract_meshes", "_manifold_subtract_meshes", "_free_triangle_soup_result", "_malloc", "_free"]' \
+    -s EXPORTED_FUNCTIONS='["_project_mesh", "_free_edge_soup", "_manifold_subtract_meshes", "_free_triangle_soup_result", "_malloc", "_free"]' \
     -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "getValue", "setValue", "UTF8ToString"]' \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s MODULARIZE=1 \
