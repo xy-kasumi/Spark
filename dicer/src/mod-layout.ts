@@ -267,8 +267,8 @@ export class ModuleLayout implements Module {
         // Load WASM module if not already loaded
         if (!this.wasmModule) {
             // @ts-ignore - WASM module will be generated at build time
-            const MeshProjectModule = (await import('./wasm/mesh_project.js')).default;
-            this.wasmModule = await MeshProjectModule();
+            const WasmGeomModule = (await import('./wasm/wasm_geom.js')).default;
+            this.wasmModule = await WasmGeomModule();
         }
 
         const Module = this.wasmModule;
@@ -398,8 +398,8 @@ export class ModuleLayout implements Module {
         // Load WASM module if not already loaded
         if (!this.wasmModule) {
             // @ts-ignore - WASM module will be generated at build time
-            const MeshProjectModule = (await import('./wasm/mesh_project.js')).default;
-            this.wasmModule = await MeshProjectModule();
+            const WasmGeomModule = (await import('./wasm/wasm_geom.js')).default;
+            this.wasmModule = await WasmGeomModule();
         }
 
         const Module = this.wasmModule;

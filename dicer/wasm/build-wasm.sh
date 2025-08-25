@@ -57,7 +57,7 @@ fi
 echo "Compiling entrypoint.cpp to WASM with Manifold..."
 
 emcc "$SCRIPT_DIR/entrypoint.cpp" \
-    -o "$OUTPUT_DIR/mesh_project.js" \
+    -o "$OUTPUT_DIR/wasm_geom.js" \
     -O2 \
     -I"$DEPS_DIR/manifold/src/manifold/include" \
     -I"$DEPS_DIR/manifold/src/utilities/include" \
@@ -78,7 +78,7 @@ emcc "$SCRIPT_DIR/entrypoint.cpp" \
     -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "getValue", "setValue", "UTF8ToString"]' \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s MODULARIZE=1 \
-    -s EXPORT_NAME='MeshProjectModule' \
+    -s EXPORT_NAME='WasmGeomModule' \
     -s EXPORT_ES6=1 \
     -s ENVIRONMENT='web' \
     -s SINGLE_FILE=0 \
@@ -92,5 +92,5 @@ emcc "$SCRIPT_DIR/entrypoint.cpp" \
 
 echo "Build complete!"
 echo "Output files:"
-echo "  - $OUTPUT_DIR/mesh_project.js"
-echo "  - $OUTPUT_DIR/mesh_project.wasm"
+echo "  - $OUTPUT_DIR/wasm_geom.js"
+echo "  - $OUTPUT_DIR/wasm_geom.wasm"
