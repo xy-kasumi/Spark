@@ -9,6 +9,8 @@ import { ModulePlanner } from './mod-planner.js';
 import { ModuleLayout } from './mod-layout.js';
 
 (async () => {
+    console.log("window.crossOriginIsolated", window.crossOriginIsolated);
+    
     await loadFont();
     const framework = new ModuleFramework();
     
