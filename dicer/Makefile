@@ -1,21 +1,19 @@
 SHELL = /bin/bash
 DIST_DIR = dist
-WASM_DIR = wasm
-VENDOR_DIR = vendor
-ASSETS_DIR = assets
 
 # Find all TypeScript source files
 TS_SOURCES = $(shell find src -name "*.ts")
 TS_STAMP = $(DIST_DIR)/.ts-compiled
 
 # HTML files to copy
-HTML_FILES = index.html test.html
+HTML_SOURCES = index.html test.html
+HTML_TARGETS = $(addprefix $(DIST_DIR)/,$(HTML_SOURCES))
 
 .PHONY: all
 all: build
 
 .PHONY: build
-build: $(DIST_DIR)/wasm/wasm_geom.js typecheck $(TS_STAMP) $(DIST_DIR)/vendor $(DIST_DIR)/assets $(DIST_DIR)/html-files
+build: typecheck $(DIST_DIR)/wasm/wasm_geom.js $(TS_STAMP) $(DIST_DIR)/vendor $(DIST_DIR)/assets $(HTML_TARGETS)
 	@echo "Build complete! Output in $(DIST_DIR)/"
 	@echo "To serve, e.g.: cd $(DIST_DIR) && python3 -m http.server 8000"
 
@@ -26,28 +24,28 @@ typecheck:
 
 $(DIST_DIR)/wasm/wasm_geom.js:
 	@echo "Building WASM module..."
-	$(MAKE) -C $(WASM_DIR)
+	$(MAKE) -C wasm
 
-$(TS_STAMP): $(TS_SOURCES) | $(DIST_DIR)
+$(TS_STAMP): $(TS_SOURCES)
 	@echo "Transpiling TypeScript..."
-	tsc
-	touch $@
-
-$(DIST_DIR)/vendor: $(VENDOR_DIR) | $(DIST_DIR)
-	@echo "Copying vendor files..."
-	cp -r $(VENDOR_DIR) $(DIST_DIR)/
-
-$(DIST_DIR)/assets: $(ASSETS_DIR) | $(DIST_DIR)
-	@echo "Copying assets..."
-	cp -r $(ASSETS_DIR) $(DIST_DIR)/
-
-$(DIST_DIR)/html-files: $(HTML_FILES) | $(DIST_DIR)
-	@echo "Copying HTML files..."
-	cp $(HTML_FILES) $(DIST_DIR)/
-	touch $@
-
-$(DIST_DIR):
 	mkdir -p $(DIST_DIR)
+	tsc
+	touch $(TS_STAMP)
+
+$(DIST_DIR)/vendor: vendor
+	@echo "Copying vendor files..."
+	mkdir -p $(DIST_DIR)
+	cp -r vendor $(DIST_DIR)/
+
+$(DIST_DIR)/assets: assets
+	@echo "Copying assets..."
+	mkdir -p $(DIST_DIR)
+	cp -r assets $(DIST_DIR)/
+
+$(DIST_DIR)/%.html: %.html
+	@echo "Copying $<..."
+	mkdir -p $(DIST_DIR)
+	cp $< $@
 
 .PHONY: clean
 clean:
@@ -57,4 +55,4 @@ clean:
 .PHONY: clean-all
 clean-all: clean
 	@echo "Removing WASM dependencies..."
-	$(MAKE) -C $(WASM_DIR) clean-all
+	$(MAKE) -C wasm clean-all
