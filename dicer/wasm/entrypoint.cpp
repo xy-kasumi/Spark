@@ -11,6 +11,13 @@
 #include "manifold/cross_section.h"
 #include "manifold/manifold.h"
 
+// External JavaScript functions provided by TypeScript
+extern "C" {
+  void wasmLog(const char* msg);
+  void wasmBeginPerf(const char* tag);
+  void wasmEndPerf(const char* tag);
+}
+
 typedef struct {
   float x;
   float y;
@@ -71,6 +78,7 @@ extern "C" contours_result* project_mesh(const triangle_soup* soup,
                                          const vector3* view_y,
                                          const vector3* view_dir_z) {
   try {
+    wasmBeginPerf("mesh conversion");
     // Convert triangle soup to Manifold
     manifold::MeshGL meshgl = soup_to_manifold_meshgl(soup);
     if (meshgl.vertProperties.empty()) {
@@ -82,6 +90,7 @@ extern "C" contours_result* project_mesh(const triangle_soup* soup,
       return error_result("Failed to create valid manifold - " +
                           std::to_string(static_cast<int>(mesh.Status())));
     }
+    wasmEndPerf("mesh conversion");
 
     //mesh.SetTolerance(1e-3); // 1um
 
@@ -139,9 +148,7 @@ extern "C" contours_result* project_mesh(const triangle_soup* soup,
     } else {
       result->contours = nullptr;
     }
-
     return result;
-
   } catch (const std::exception& e) {
     return error_result(std::string("Exception: ") + e.what());
   } catch (...) {
@@ -291,23 +298,17 @@ extern "C" triangle_soup_result* manifold_subtract_meshes(
 
     // Perform boolean subtraction
     manifold::Manifold result = manifold_a - manifold_b;
-
     if (result.Status() != manifold::Manifold::Error::NoError) {
       return error_soup_result(
           "Boolean subtraction failed - " +
           std::to_string(static_cast<int>(result.Status())));
     }
-
     if (result.IsEmpty()) {
       return error_soup_result("Boolean subtraction produced empty result");
     }
 
-    // Get result as MeshGL
     manifold::MeshGL result_meshgl = result.GetMeshGL();
-
-    // Convert back to triangle soup
     return manifold_meshgl_to_soup(result_meshgl);
-
   } catch (const std::exception& e) {
     return error_soup_result(std::string("Exception: ") + e.what());
   } catch (...) {

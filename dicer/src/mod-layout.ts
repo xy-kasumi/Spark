@@ -94,6 +94,30 @@ export class ModuleLayout implements Module {
     // WASM module instance
     wasmModule: any = null;
 
+    // Performance tracking map for C++ side
+    private static perfMap = new Map<string, number>();
+
+    // Static functions exposed to C++ WASM
+    static wasmLog(msg: string) {
+        console.log(msg);
+    }
+
+    static wasmBeginPerf(tag: string) {
+        ModuleLayout.perfMap.set(tag, performance.now());
+    }
+
+    static wasmEndPerf(tag: string) {
+        const startTime = ModuleLayout.perfMap.get(tag);
+        if (startTime !== undefined) {
+            const endTime = performance.now();
+            const duration = endTime - startTime;
+            console.log(`[${tag}] ${duration.toFixed(2)}ms`);
+            ModuleLayout.perfMap.delete(tag);
+        } else {
+            console.warn(`[${tag}] No matching beginPerf found`);
+        }
+    }
+
     // View vector for mesh projection
     viewVectorX: number = 0;
     viewVectorY: number = 0;
@@ -268,7 +292,26 @@ export class ModuleLayout implements Module {
         if (!this.wasmModule) {
             // @ts-ignore - WASM module will be generated at build time
             const WasmGeomModule = (await import('./wasm/wasm_geom.js')).default;
-            this.wasmModule = await WasmGeomModule();
+            
+            let moduleInstance: any = null;
+            this.wasmModule = await WasmGeomModule({
+                // Provide TypeScript functions to C++ side via env
+                env: {
+                    wasmLog: function(msgPtr: number) {
+                        const msg = moduleInstance.UTF8ToString(msgPtr);
+                        ModuleLayout.wasmLog(msg);
+                    },
+                    wasmBeginPerf: function(tagPtr: number) {
+                        const tag = moduleInstance.UTF8ToString(tagPtr);
+                        ModuleLayout.wasmBeginPerf(tag);
+                    },
+                    wasmEndPerf: function(tagPtr: number) {
+                        const tag = moduleInstance.UTF8ToString(tagPtr);
+                        ModuleLayout.wasmEndPerf(tag);
+                    }
+                }
+            });
+            moduleInstance = this.wasmModule;
         }
 
         const Module = this.wasmModule;
@@ -402,7 +445,26 @@ export class ModuleLayout implements Module {
         if (!this.wasmModule) {
             // @ts-ignore - WASM module will be generated at build time
             const WasmGeomModule = (await import('./wasm/wasm_geom.js')).default;
-            this.wasmModule = await WasmGeomModule();
+            
+            let moduleInstance: any = null;
+            this.wasmModule = await WasmGeomModule({
+                // Provide TypeScript functions to C++ side via env
+                env: {
+                    wasmLog: function(msgPtr: number) {
+                        const msg = moduleInstance.UTF8ToString(msgPtr);
+                        ModuleLayout.wasmLog(msg);
+                    },
+                    wasmBeginPerf: function(tagPtr: number) {
+                        const tag = moduleInstance.UTF8ToString(tagPtr);
+                        ModuleLayout.wasmBeginPerf(tag);
+                    },
+                    wasmEndPerf: function(tagPtr: number) {
+                        const tag = moduleInstance.UTF8ToString(tagPtr);
+                        ModuleLayout.wasmEndPerf(tag);
+                    }
+                }
+            });
+            moduleInstance = this.wasmModule;
         }
 
         const Module = this.wasmModule;
