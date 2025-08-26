@@ -22,7 +22,7 @@ typecheck:
 	@echo "Validating TypeScript..."
 	tsc --noEmit
 
-$(DIST_DIR)/wasm/wasm_geom.js:
+$(DIST_DIR)/wasm/wasm_geom.js: wasm/entrypoint.cpp
 	@echo "Building WASM module..."
 	$(MAKE) -C wasm
 

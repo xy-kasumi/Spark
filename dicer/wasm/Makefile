@@ -7,28 +7,23 @@ DEPS_DIR = $(SCRIPT_DIR)/deps
 MANIFOLD_DIR = $(DEPS_DIR)/manifold
 MANIFOLD_BUILD_DIR = $(MANIFOLD_DIR)/build_wasm
 EMSDK_VERSION = 3.1.51
-MANIFOLD_VERSION = v2.5.1
+MANIFOLD_VERSION = v3.2.1
 
 .PHONY: all
 all: $(OUTPUT_DIR)/wasm_geom.js
 
-$(OUTPUT_DIR)/wasm_geom.js: $(SCRIPT_DIR)/entrypoint.cpp $(MANIFOLD_BUILD_DIR)/src/manifold/libmanifold.a | $(OUTPUT_DIR)
-	@echo "=== Compiling entrypoint.cpp to WASM with Manifold ==="
-	@. $(EMSDK_DIR)/emsdk_env.sh && emcc $(SCRIPT_DIR)/entrypoint.cpp \
+$(OUTPUT_DIR)/wasm_geom.js: $(SCRIPT_DIR)/entrypoint.cpp $(MANIFOLD_BUILD_DIR)/src/libmanifold.a | $(OUTPUT_DIR)
+	@echo "=== Compiling WASM ==="
+	@EMSDK_QUIET=1 source $(EMSDK_DIR)/emsdk_env.sh && emcc $(SCRIPT_DIR)/entrypoint.cpp \
 		-o $(OUTPUT_DIR)/wasm_geom.js \
 		-O2 \
-		-I$(MANIFOLD_DIR)/src/manifold/include \
-		-I$(MANIFOLD_DIR)/src/utilities/include \
-		-I$(MANIFOLD_DIR)/src/cross_section/include \
-		-I$(MANIFOLD_DIR)/src/polygon/include \
+		-I$(MANIFOLD_DIR)/include \
 		-I$(MANIFOLD_BUILD_DIR)/_deps/glm-src \
 		-I$(MANIFOLD_BUILD_DIR)/_deps/thrust-src \
 		-I$(MANIFOLD_BUILD_DIR)/_deps/thrust-src/thrust/cmake \
-		-L$(MANIFOLD_BUILD_DIR)/src/manifold \
-		-L$(MANIFOLD_BUILD_DIR)/src/polygon \
+		-L$(MANIFOLD_BUILD_DIR)/src \
 		-L$(MANIFOLD_BUILD_DIR)/_deps/clipper2-build \
 		-lmanifold \
-		-lpolygon \
 		-lClipper2 \
 		-std=c++17 \
 		-DTHRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_CPP \
@@ -52,22 +47,24 @@ $(OUTPUT_DIR)/wasm_geom.js: $(SCRIPT_DIR)/entrypoint.cpp $(MANIFOLD_BUILD_DIR)/s
 	@echo "  - $(OUTPUT_DIR)/wasm_geom.js"
 	@echo "  - $(OUTPUT_DIR)/wasm_geom.wasm"
 
-$(MANIFOLD_BUILD_DIR)/src/manifold/libmanifold.a: $(MANIFOLD_DIR) | $(EMSDK_DIR)
+$(MANIFOLD_BUILD_DIR)/src/libmanifold.a: | $(MANIFOLD_DIR) $(EMSDK_DIR)
 	@echo "=== Building Manifold library ==="
 	@mkdir -p $(MANIFOLD_BUILD_DIR)
 	@cd $(MANIFOLD_BUILD_DIR) && \
-		. $(EMSDK_DIR)/emsdk_env.sh && \
+		EMSDK_QUIET=1 source $(EMSDK_DIR)/emsdk_env.sh && \
 		emcmake cmake .. \
 			-DCMAKE_BUILD_TYPE=Release \
+			-DMANIFOLD_PAR=OFF \
+			-DMANIFOLD_CROSS_SECTION=ON	\
+			-DMANIFOLD_JSBIND=ON \
 			-DMANIFOLD_PYBIND=OFF \
 			-DMANIFOLD_CBIND=OFF \
-			-DMANIFOLD_BUILD_TEST=OFF \
-			-DMANIFOLD_PAR=NONE \
+			-DMANIFOLD_TEST=OFF \
 			-DBUILD_SHARED_LIBS=OFF && \
-		emmake make -j4
+		emmake make -j8
 
 $(MANIFOLD_DIR): | $(DEPS_DIR)
-	@echo "=== Installing Manifold C++ Library ==="
+	@echo "=== Downloading Manifold Library ==="
 	@echo "Cloning Manifold repository..."
 	@cd $(DEPS_DIR) && git clone --depth 1 --branch $(MANIFOLD_VERSION) https://github.com/elalish/manifold.git
 

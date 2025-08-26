@@ -8,10 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "cross_section.h"
-#include "glm/glm.hpp"
-#include "glm/gtc/matrix_transform.hpp"
-#include "manifold.h"
+#include "manifold/cross_section.h"
+#include "manifold/manifold.h"
 
 typedef struct {
   float x;
@@ -85,20 +83,22 @@ extern "C" contours_result* project_mesh(const triangle_soup* soup,
                           std::to_string(static_cast<int>(mesh.Status())));
     }
 
+    //mesh.SetTolerance(1e-3); // 1um
+
     // Build transformation matrix to align view_dir_z with Z axis
     // The projection plane will be the XY plane after transformation
-    glm::vec3 orig(origin->x, origin->y, origin->z);
-    glm::vec3 vx(view_x->x, view_x->y, view_x->z);
-    glm::vec3 vy(view_y->x, view_y->y, view_y->z);
-    glm::vec3 vz(view_dir_z->x, view_dir_z->y, view_dir_z->z);
+    manifold::vec3 orig(origin->x, origin->y, origin->z);
+    manifold::vec3 vx(view_x->x, view_x->y, view_x->z);
+    manifold::vec3 vy(view_y->x, view_y->y, view_y->z);
+    manifold::vec3 vz(view_dir_z->x, view_dir_z->y, view_dir_z->z);
 
     // Create transformation matrix: columns are the new basis vectors
-    // This transforms from world space to view space
-    glm::mat4x3 transform(vx.x, vy.x, vz.x,  // First column (maps to X)
-                          vx.y, vy.y, vz.y,  // Second column (maps to Y)
-                          vx.z, vy.z, vz.z,  // Third column (maps to Z)
-                          -glm::dot(vx, orig), -glm::dot(vy, orig),
-                          -glm::dot(vz, orig)  // Translation
+    // This transforms from world space to view space (column-major order)
+    manifold::mat3x4 transform(
+        manifold::vec3(vx.x, vy.x, vz.x),  // First column (X basis)
+        manifold::vec3(vx.y, vy.y, vz.y),  // Second column (Y basis)  
+        manifold::vec3(vx.z, vy.z, vz.z),  // Third column (Z basis)
+        manifold::vec3(-linalg::dot(vx, orig), -linalg::dot(vy, orig), -linalg::dot(vz, orig))  // Fourth column (translation)
     );
 
     // Apply transformation to the manifold
