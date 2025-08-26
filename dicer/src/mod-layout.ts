@@ -255,7 +255,7 @@ export class ModuleLayout implements Module {
      * @param viewX - X axis of projection coordinate system (must be orthonormal)
      * @param viewY - Y axis of projection coordinate system (must be orthonormal) 
      * @param viewZ - Z axis of projection coordinate system (viewing direction, must be orthonormal)
-     * @returns Array of 2D edges or throws error string
+     * @returns Array of contours (each contour is an array of 2D points) or throws error string
      */
     private async callWasmProjectMesh(
         triangleSoup: Float64Array,
@@ -263,7 +263,7 @@ export class ModuleLayout implements Module {
         viewX: THREE.Vector3,
         viewY: THREE.Vector3,
         viewZ: THREE.Vector3
-    ): Promise<{ start: THREE.Vector2, end: THREE.Vector2 }[]> {
+    ): Promise<THREE.Vector2[][]> {
         // Load WASM module if not already loaded
         if (!this.wasmModule) {
             // @ts-ignore - WASM module will be generated at build time
@@ -297,8 +297,8 @@ export class ModuleLayout implements Module {
             if (!resultPtr) throw new Error("project_mesh returned null");
 
             // Read result
-            const numEdges = Module.getValue(resultPtr, 'i32');
-            const edgesPtr = Module.getValue(resultPtr + 4, 'i32');
+            const numContours = Module.getValue(resultPtr, 'i32');
+            const contoursPtr = Module.getValue(resultPtr + 4, 'i32');
             const errorMsgPtr = Module.getValue(resultPtr + 8, 'i32');
 
             // Check for error
@@ -307,23 +307,26 @@ export class ModuleLayout implements Module {
                 throw new Error(errorMsg);
             }
 
-            // Convert edges to TypeScript objects
-            const edges: { start: THREE.Vector2, end: THREE.Vector2 }[] = [];
-            for (let i = 0; i < numEdges; i++) {
-                const edgePtr = edgesPtr + i * 16;
-                const startX = Module.HEAPF32[edgePtr / 4 + 0];
-                const startY = Module.HEAPF32[edgePtr / 4 + 1];
-                const endX = Module.HEAPF32[edgePtr / 4 + 2];
-                const endY = Module.HEAPF32[edgePtr / 4 + 3];
-                edges.push({
-                    start: new THREE.Vector2(startX, startY),
-                    end: new THREE.Vector2(endX, endY)
-                });
+            // Convert contours to TypeScript objects
+            const contours: THREE.Vector2[][] = [];
+            for (let i = 0; i < numContours; i++) {
+                const contourPtr = contoursPtr + i * 8; // Each contour_2d is 8 bytes (int + pointer)
+                const numPoints = Module.getValue(contourPtr, 'i32');
+                const pointsPtr = Module.getValue(contourPtr + 4, 'i32');
+                
+                const contour: THREE.Vector2[] = [];
+                for (let j = 0; j < numPoints; j++) {
+                    const pointPtr = pointsPtr + j * 8; // Each vector2 is 8 bytes (2 floats)
+                    const x = Module.HEAPF32[pointPtr / 4];
+                    const y = Module.HEAPF32[pointPtr / 4 + 1];
+                    contour.push(new THREE.Vector2(x, y));
+                }
+                contours.push(contour);
             }
 
             // Clean up result
-            Module._free_edge_soup(resultPtr);
-            return edges;
+            Module._free_contours(resultPtr);
+            return contours;
 
         } finally {
             // Always clean up input memory
@@ -614,29 +617,29 @@ export class ModuleLayout implements Module {
 
             // Call pure WASM wrapper
             const startTime = performance.now();
-            const edges = await this.callWasmProjectMesh(this.targetSurf, origin, viewX, viewY, viewZ);
+            const contours = await this.callWasmProjectMesh(this.targetSurf, origin, viewX, viewY, viewZ);
             const endTime = performance.now();
-            console.log(`WASM projection: ${this.targetSurf.length / 9} tris, ${(endTime - startTime).toFixed(2)}ms. ${edges.length} silhouette edge(s)`);
+            console.log(`WASM projection: ${this.targetSurf.length / 9} tris, ${(endTime - startTime).toFixed(2)}ms. ${contours.length} contour(s)`);
 
-            // Visualize edges on the view plane
-            const edgeObjects: THREE.Object3D[] = [];
-            for (const edge of edges) {
-                // Transform 2D edge coordinates back to 3D using orthonormal basis
-                const start3D = origin.clone()
-                    .add(viewX.clone().multiplyScalar(edge.start.x))
-                    .add(viewY.clone().multiplyScalar(edge.start.y));
-                const end3D = origin.clone()
-                    .add(viewX.clone().multiplyScalar(edge.end.x))
-                    .add(viewY.clone().multiplyScalar(edge.end.y));
+            // Visualize contours on the view plane using LineLoop
+            const contourObjects: THREE.Object3D[] = [];
+            for (const contour of contours) {
+                // Transform 2D contour points back to 3D using orthonormal basis
+                const points3D: THREE.Vector3[] = [];
+                for (const point2D of contour) {
+                    const point3D = origin.clone()
+                        .add(viewX.clone().multiplyScalar(point2D.x))
+                        .add(viewY.clone().multiplyScalar(point2D.y));
+                    points3D.push(point3D);
+                }
 
-                const points = [start3D, end3D];
-                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const geometry = new THREE.BufferGeometry().setFromPoints(points3D);
                 const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
-                const line = new THREE.LineSegments(geometry, material);
-                edgeObjects.push(line);
+                const lineLoop = new THREE.LineLoop(geometry, material);
+                contourObjects.push(lineLoop);
             }
 
-            this.framework.updateVis("misc", edgeObjects);
+            this.framework.updateVis("misc", contourObjects);
         } catch (error) {
             console.error("WASM projection failed:", error);
 

@@ -32,7 +32,7 @@ $(OUTPUT_DIR)/wasm_geom.js: $(SCRIPT_DIR)/entrypoint.cpp $(MANIFOLD_BUILD_DIR)/s
 		-lClipper2 \
 		-std=c++17 \
 		-DTHRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_CPP \
-		-s EXPORTED_FUNCTIONS='["_project_mesh", "_free_edge_soup", "_manifold_subtract_meshes", "_free_triangle_soup_result", "_malloc", "_free"]' \
+		-s EXPORTED_FUNCTIONS='["_project_mesh", "_free_contours", "_manifold_subtract_meshes", "_free_triangle_soup_result", "_malloc", "_free"]' \
 		-s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "getValue", "setValue", "UTF8ToString"]' \
 		-s ALLOW_MEMORY_GROWTH=1 \
 		-s MODULARIZE=1 \

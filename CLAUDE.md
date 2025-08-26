@@ -7,4 +7,4 @@
 - In TypeScript, use inline export rather than export list, unless you're re-exporting something imported from other modules.
 
 ## Dicer-Specific Guidance
-- In dicer, don't use npm or npx; they're unavailable. Use `./build.sh` and `./typecheck.sh` (which internally uses raw tsc).
+- In dicer, don't use npm or npx; they're unavailable. Use `make` and `make typecheck` (it internally uses raw tsc).

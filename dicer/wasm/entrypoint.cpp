@@ -30,18 +30,18 @@ typedef struct {
   vector3* vertices;
 } triangle_soup;
 
-// A single 2D line segment
+// A single contour (closed loop of 2D points)
 typedef struct {
-  vector2 start;
-  vector2 end;
-} edge_2d;
+  int num_points;
+  vector2* points;
+} contour_2d;
 
-// Collection of 2D edges (edge soup)
+// Collection of 2D contours
 typedef struct {
-  int num_edges;
-  edge_2d* edges;
+  int num_contours;
+  contour_2d* contours;
   char* error_message;  // null on success
-} edge_soup;
+} contours_result;
 
 // Result from mesh operations (contains triangle soup or error)
 typedef struct {
@@ -54,24 +54,24 @@ typedef struct {
 static manifold::MeshGL soup_to_manifold_meshgl(const triangle_soup* soup);
 
 // Utility function to create error result
-static edge_soup* error_result(const std::string& msg) {
-  auto* result = static_cast<edge_soup*>(malloc(sizeof(edge_soup)));
-  result->num_edges = 0;
-  result->edges = nullptr;
+static contours_result* error_result(const std::string& msg) {
+  auto* result = static_cast<contours_result*>(malloc(sizeof(contours_result)));
+  result->num_contours = 0;
+  result->contours = nullptr;
   result->error_message = static_cast<char*>(malloc(msg.size() + 1));
   strcpy(result->error_message, msg.c_str());
   return result;
 }
 
 // Project 3D mesh onto a plane defined by view_dir_z and origin.
-// Returns silhouette edges projected onto the view plane.
+// Returns contours projected onto the view plane.
 //
 // Caller must free the returned data.
-extern "C" edge_soup* project_mesh(const triangle_soup* soup,
-                                   const vector3* origin,
-                                   const vector3* view_x,
-                                   const vector3* view_y,
-                                   const vector3* view_dir_z) {
+extern "C" contours_result* project_mesh(const triangle_soup* soup,
+                                         const vector3* origin,
+                                         const vector3* view_x,
+                                         const vector3* view_y,
+                                         const vector3* view_dir_z) {
   try {
     // Convert triangle soup to Manifold
     manifold::MeshGL meshgl = soup_to_manifold_meshgl(soup);
@@ -107,35 +107,37 @@ extern "C" edge_soup* project_mesh(const triangle_soup* soup,
     // Project onto XY plane (Z=0) to get 2D cross-section
     manifold::CrossSection projection = transformed.Project();
 
+    // Offset the projection by 1.5 units with square join type
+    projection = projection.Offset(1.5, manifold::CrossSection::JoinType::Square);
+
     // Convert to polygons
     manifold::Polygons polygons = projection.ToPolygons();
 
-    // Extract edges from polygons
-    std::vector<edge_2d> edges;
-    for (const auto& polygon : polygons) {
-      size_t n = polygon.size();
-      for (size_t i = 0; i < n; i++) {
-        size_t j = (i + 1) % n;
-        edge_2d edge;
-        edge.start.x = static_cast<float>(polygon[i].x);
-        edge.start.y = static_cast<float>(polygon[i].y);
-        edge.end.x = static_cast<float>(polygon[j].x);
-        edge.end.y = static_cast<float>(polygon[j].y);
-        edges.push_back(edge);
-      }
-    }
-
     // Create result
-    auto* result = static_cast<edge_soup*>(malloc(sizeof(edge_soup)));
-    result->num_edges = edges.size();
+    auto* result = static_cast<contours_result*>(malloc(sizeof(contours_result)));
+    result->num_contours = polygons.size();
     result->error_message = nullptr;
 
-    if (!edges.empty()) {
-      result->edges =
-          static_cast<edge_2d*>(malloc(sizeof(edge_2d) * edges.size()));
-      std::memcpy(result->edges, edges.data(), sizeof(edge_2d) * edges.size());
+    if (!polygons.empty()) {
+      result->contours = static_cast<contour_2d*>(malloc(sizeof(contour_2d) * polygons.size()));
+      
+      // Convert each polygon to a contour
+      for (size_t i = 0; i < polygons.size(); i++) {
+        const auto& polygon = polygons[i];
+        result->contours[i].num_points = polygon.size();
+        
+        if (polygon.size() > 0) {
+          result->contours[i].points = static_cast<vector2*>(malloc(sizeof(vector2) * polygon.size()));
+          for (size_t j = 0; j < polygon.size(); j++) {
+            result->contours[i].points[j].x = static_cast<float>(polygon[j].x);
+            result->contours[i].points[j].y = static_cast<float>(polygon[j].y);
+          }
+        } else {
+          result->contours[i].points = nullptr;
+        }
+      }
     } else {
-      result->edges = nullptr;
+      result->contours = nullptr;
     }
 
     return result;
@@ -147,14 +149,19 @@ extern "C" edge_soup* project_mesh(const triangle_soup* soup,
   }
 }
 
-// Helper function to free edge soup memory
-extern "C" void free_edge_soup(edge_soup* soup) {
-  if (!soup)
+// Helper function to free contours memory
+extern "C" void free_contours(contours_result* result) {
+  if (!result)
     return;
 
-  free(soup->edges);
-  free(soup->error_message);
-  free(soup);
+  if (result->contours) {
+    for (int i = 0; i < result->num_contours; i++) {
+      free(result->contours[i].points);
+    }
+    free(result->contours);
+  }
+  free(result->error_message);
+  free(result);
 }
 
 // Helper to create triangle soup result with error
