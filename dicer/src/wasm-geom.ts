@@ -109,7 +109,7 @@ export class WasmGeom {
         const viewZPtr = this.allocVector3(viewZ);
         
         try {
-            const resultPtr = Module._project_manifold(handle, originPtr, viewXPtr, viewYPtr, viewZPtr);
+            const resultPtr = Module._project_manifold(handle, originPtr, viewXPtr, viewYPtr, viewZPtr, 1.5, true);
             if (!resultPtr) throw new Error("project_manifold failed - check console for details");
             
             const numContours = Module.getValue(resultPtr, 'i32');

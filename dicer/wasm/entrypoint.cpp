@@ -111,6 +111,65 @@ static manifold::MeshGL soup_to_manifold_meshgl(const triangle_soup* soup) {
 }
 
 
+// Convert Manifold Polygons to contours struct
+static contours* polygons_to_contours(const manifold::Polygons& polygons) {
+  auto* result = static_cast<contours*>(malloc(sizeof(contours)));
+  result->num_contours = polygons.size();
+  
+  if (polygons.empty()) {
+    result->contours = nullptr;
+    return result;
+  }
+  
+  result->contours = static_cast<contour_2d*>(malloc(sizeof(contour_2d) * polygons.size()));
+  
+  for (size_t i = 0; i < polygons.size(); i++) {
+    const auto& polygon = polygons[i];
+    result->contours[i].num_points = polygon.size();
+
+    if (polygon.size() > 0) {
+      result->contours[i].points = static_cast<vector2*>(malloc(sizeof(vector2) * polygon.size()));
+      for (size_t j = 0; j < polygon.size(); j++) {
+        result->contours[i].points[j].x = static_cast<float>(polygon[j].x);
+        result->contours[i].points[j].y = static_cast<float>(polygon[j].y);
+      }
+    } else {
+      result->contours[i].points = nullptr;
+    }
+  }
+  
+  return result;
+}
+
+// Extract outermost cross section.
+static manifold::CrossSection extract_outermost(const manifold::CrossSection cs) {
+  auto parts = cs.Decompose();
+  wasmLog("#parts:" + std::to_string(parts.size()));
+  std::vector<manifold::CrossSection> parts_outer;
+
+  for (auto& part : parts) {
+    auto polys = part.ToPolygons();
+    int num_contours = polys.size();
+    if (num_contours == 1) {
+      // if num_contours == 1 (no holes), the one is also the outermost.
+      parts_outer.push_back(part);
+    } else {
+      // find contour with max area (holes (CW contour) will have 0 area)
+      double max_a = -1;
+      size_t max_i = 0;
+      for (size_t i = 0; i < polys.size(); i++) {
+        double a = manifold::CrossSection(polys[i]).Area();
+        if (a > max_a) {
+          max_a = a;
+          max_i = i;
+        }
+      }
+      parts_outer.push_back(manifold::CrossSection(polys[max_i]));
+    }
+  }
+  return manifold::CrossSection::Compose(parts_outer);
+}
+
 // Project 3D manifold onto a plane defined by view_dir_z and origin.
 // Returns contours projected onto the view plane.
 //
@@ -119,15 +178,15 @@ extern "C" contours* project_manifold(const manifold::Manifold* manifold_ptr,
                                       const vector3* origin,
                                       const vector3* view_x,
                                       const vector3* view_y,
-                                      const vector3* view_dir_z) {
+                                      const vector3* view_dir_z,
+                                      double offset,
+                                    bool only_outermost) {
   if (!manifold_ptr) {
-    wasmLog("Null manifold pointer");
+    wasmLog("null manifold_ptr");
     return nullptr;
   }
 
   const manifold::Manifold& mesh = *manifold_ptr;
-
-  // mesh.SetTolerance(1e-3); // 1um
 
   // Build transformation matrix to align view_dir_z with Z axis
   // The projection plane will be the XY plane after transformation
@@ -152,40 +211,11 @@ extern "C" contours* project_manifold(const manifold::Manifold* manifold_ptr,
   // Project onto XY plane (Z=0) to get 2D cross-section
   manifold::CrossSection projection = transformed.Project();
 
-  // Offset the projection by 1.5 units with square join type
-  projection = projection.Offset(1.5, manifold::CrossSection::JoinType::Square);
-
-  // Convert to polygons
-  manifold::Polygons polygons = projection.ToPolygons();
-
-  // Create result
-  auto* result = static_cast<contours*>(malloc(sizeof(contours)));
-  result->num_contours = polygons.size();
-
-  if (!polygons.empty()) {
-    result->contours =
-        static_cast<contour_2d*>(malloc(sizeof(contour_2d) * polygons.size()));
-
-    // Convert each polygon to a contour
-    for (size_t i = 0; i < polygons.size(); i++) {
-      const auto& polygon = polygons[i];
-      result->contours[i].num_points = polygon.size();
-
-      if (polygon.size() > 0) {
-        result->contours[i].points =
-            static_cast<vector2*>(malloc(sizeof(vector2) * polygon.size()));
-        for (size_t j = 0; j < polygon.size(); j++) {
-          result->contours[i].points[j].x = static_cast<float>(polygon[j].x);
-          result->contours[i].points[j].y = static_cast<float>(polygon[j].y);
-        }
-      } else {
-        result->contours[i].points = nullptr;
-      }
-    }
-  } else {
-    result->contours = nullptr;
+  projection = projection.Offset(offset, manifold::CrossSection::JoinType::Square);
+  if (only_outermost) {
+    projection = extract_outermost(projection);
   }
-  return result;
+  return polygons_to_contours(projection.ToPolygons());
 }
 
 // Perform boolean subtraction using Manifold: A - B, returns new Manifold
@@ -193,7 +223,7 @@ extern "C" manifold::Manifold* subtract_manifolds(
     const manifold::Manifold* manifold_a,
     const manifold::Manifold* manifold_b) {
   if (!manifold_a || !manifold_b) {
-    wasmLog("Null manifold pointer in subtraction");
+    wasmLog("null manifold_a or manifold_b");
     return nullptr;
   }
 
