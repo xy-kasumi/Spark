@@ -187,6 +187,33 @@ export class WasmGeom {
     }
 
     /**
+     * Extrude CrossSection to create a Manifold
+     */
+    extrude(
+        handle: CrossSectionHandle,
+        coordX: THREE.Vector3,
+        coordY: THREE.Vector3,
+        coordZ: THREE.Vector3,
+        origin: THREE.Vector3,
+        length: number
+    ): ManifoldHandle | null {
+        const coordXPtr = this.allocVector3(coordX);
+        const coordYPtr = this.allocVector3(coordY);
+        const coordZPtr = this.allocVector3(coordZ);
+        const originPtr = this.allocVector3(origin);
+
+        try {
+            const resultPtr = this.module._extrude(handle, coordXPtr, coordYPtr, coordZPtr, originPtr, length);
+            return resultPtr ? resultPtr as ManifoldHandle : null;
+        } finally {
+            this.module._free(coordXPtr);
+            this.module._free(coordYPtr);
+            this.module._free(coordZPtr);
+            this.module._free(originPtr);
+        }
+    }
+
+    /**
      * Project manifold to 2D contours using ManifoldHandle
      */
     projectMesh(

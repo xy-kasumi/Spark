@@ -253,6 +253,54 @@ void destroy_crosssection(manifold::CrossSection* cs_ptr) {
   delete cs_ptr;
 }
 
+// Extrude CrossSection to create a Manifold
+// Extrudes the crosssection (given in XY coords) towards Z+ by length from
+// origin Returns new Manifold. Caller must free with destroy_manifold.
+EMSCRIPTEN_KEEPALIVE
+manifold::Manifold* extrude(const manifold::CrossSection* cs_ptr,
+                            const vector3* coord_x,
+                            const vector3* coord_y,
+                            const vector3* coord_z,
+                            const vector3* origin,
+                            double length) {
+  assert(cs_ptr != nullptr);
+  assert(coord_x != nullptr);
+  assert(coord_y != nullptr);
+  assert(coord_z != nullptr);
+  assert(origin != nullptr);
+
+  // Convert CrossSection to polygons and extrude along Z+ direction
+  manifold::Polygons polygons = cs_ptr->ToPolygons();
+  manifold::Manifold extruded = manifold::Manifold::Extrude(polygons, length);
+
+  // Build transformation matrix to position and orient the extruded manifold
+  // The coordinate system vectors define the new basis
+  manifold::vec3 orig(origin->x, origin->y, origin->z);
+  manifold::vec3 vx(coord_x->x, coord_x->y, coord_x->z);
+  manifold::vec3 vy(coord_y->x, coord_y->y, coord_y->z);
+  manifold::vec3 vz(coord_z->x, coord_z->y, coord_z->z);
+
+  // Create transformation matrix: columns are the new basis vectors
+  // This transforms from local coordinate system to world space
+  manifold::mat3x4 transform(
+      manifold::vec3(vx.x, vx.y, vx.z),  // First column (X basis)
+      manifold::vec3(vy.x, vy.y, vy.z),  // Second column (Y basis)
+      manifold::vec3(vz.x, vz.y, vz.z),  // Third column (Z basis)
+      orig                               // Fourth column (translation)
+  );
+
+  // Apply transformation to position the extruded manifold
+  manifold::Manifold result = extruded.Transform(transform);
+
+  if (result.Status() != manifold::Manifold::Error::NoError) {
+    wasmLog("extrude: resulted in failed status " +
+            std::to_string(static_cast<int>(result.Status())));
+    return nullptr;
+  }
+
+  return new manifold::Manifold(result);
+}
+
 // Perform boolean subtraction using Manifold: A - B, returns new Manifold
 EMSCRIPTEN_KEEPALIVE
 manifold::Manifold* subtract_manifolds(const manifold::Manifold* manifold_a,

@@ -1160,6 +1160,11 @@ export class ModulePlanner implements Module {
      * High-level mesh projection with visualization and error handling
      */
     async projectMesh() {
+        const simStockLength = this.stockCutWidth + this.simWorkBuffer + this.aboveWorkSize;
+        const stockGeom = generateStockGeom(this.stockDiameter / 2, simStockLength);
+        translateGeom(stockGeom, new THREE.Vector3(0, 0, -(this.stockCutWidth + this.simWorkBuffer)));
+        this.stockManifold = this.wasmGeom.createManifold(stockGeom);
+
         try {
             // Create and validate view vector
             const viewVector = new THREE.Vector3(this.viewVectorX, this.viewVectorY, this.viewVectorZ);
@@ -1181,16 +1186,38 @@ export class ModulePlanner implements Module {
 
             const startTime = performance.now();
             let numContours = 3;
+            let crosssections = [];
             let contours = [];
             let contour0 = this.wasmGeom.projectManifold(this.targetManifold, origin, viewX, viewY, viewZ);
             contour0 = this.wasmGeom.outermostCrossSection(contour0);
             for (let i = 0; i < numContours; i++) {
                 const offset = 1.5 * (i + 1);
-                const newContours = this.wasmGeom.crossSectionToContours(this.wasmGeom.offsetCrossSection(contour0, offset));
-                contours = contours.concat(newContours);
+                const csec = this.wasmGeom.offsetCrossSection(contour0, offset);
+                crosssections.push(csec);
+                contours = contours.concat(this.wasmGeom.crossSectionToContours(csec));
             }
             const endTime = performance.now();
             console.log(`projection took ${(endTime - startTime).toFixed(2)}ms`);
+
+            let extruded = this.wasmGeom.extrude(crosssections[0], viewX, viewY, viewZ, new THREE.Vector3(), 25);
+            extruded = this.wasmGeom.intersectMesh(this.stockManifold, extruded);
+            
+
+            const extrudedGeom = this.wasmGeom.manifoldToGeometry(extruded);
+
+            // Create mesh with a different color
+            const material = new THREE.MeshPhysicalMaterial({
+                color: 0xff8080,  // Light red color for subtracted result
+                metalness: 0.1,
+                roughness: 0.8,
+                transparent: true,
+                wireframe: true,
+                opacity: 0.9,
+            });
+
+            const mesh = new THREE.Mesh(extrudedGeom, material);
+            this.framework.updateVis("extruded", [mesh]);
+
 
             // Visualize contours on the view plane using LineLoop
             const contourObjects: THREE.Object3D[] = [];
