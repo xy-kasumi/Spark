@@ -75,21 +75,19 @@ export class WasmGeom {
         try {
             const numVerts = Module.getValue(resultPtr, 'i32');
             const verticesPtr = Module.getValue(resultPtr + 4, 'i32');
-            const errorPtr = Module.getValue(resultPtr + 8, 'i32');
-            
-            if (errorPtr !== 0) {
-                const error = Module.UTF8ToString(errorPtr);
-                throw new Error(error);
-            }
             
             const result = new Float64Array(numVerts * 3);
-            for (let i = 0; i < numVerts * 3; i++) {
-                result[i] = Module.HEAPF32[(verticesPtr / 4) + i];
+            for (let i = 0; i < numVerts; i++) {
+                // Each vertex is a vector3 (3 floats)
+                const vertexPtr = verticesPtr + i * 12; // 12 bytes per vector3
+                result[i * 3] = Module.HEAPF32[vertexPtr / 4];       // x
+                result[i * 3 + 1] = Module.HEAPF32[vertexPtr / 4 + 1]; // y
+                result[i * 3 + 2] = Module.HEAPF32[vertexPtr / 4 + 2]; // z
             }
             
             return fromTriSoup(result);
         } finally {
-            Module._free_triangle_soup_result(resultPtr);
+            Module._free_triangle_soup(resultPtr);
         }
     }
     
@@ -112,7 +110,7 @@ export class WasmGeom {
         
         try {
             const resultPtr = Module._project_manifold(handle, originPtr, viewXPtr, viewYPtr, viewZPtr);
-            if (!resultPtr) throw new Error("project_manifold returned null");
+            if (!resultPtr) throw new Error("project_manifold failed - check console for details");
             
             const numContours = Module.getValue(resultPtr, 'i32');
             const contoursPtr = Module.getValue(resultPtr + 4, 'i32');

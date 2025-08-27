@@ -14,6 +14,7 @@
 #include "manifold/cross_section.h"
 #include "manifold/manifold.h"
 
+// clang-format off
 EM_JS(void, wasmLog, (const char* msg), {
   console.log("WASM:", UTF8ToString(msg));
 })
@@ -70,143 +71,7 @@ typedef struct {
 typedef struct {
   int num_contours;
   contour_2d* contours;
-  char* error_message;  // null on success
-} contours_result;
-
-// Result from mesh operations (contains triangle soup or error)
-typedef struct {
-  int num_vertices;
-  float* vertices;      // flattened vertex data (x,y,z per vertex)
-  char* error_message;  // null on success
-} triangle_soup_result;
-
-// Forward declaration
-static manifold::MeshGL soup_to_manifold_meshgl(const triangle_soup* soup);
-
-
-// Project 3D manifold onto a plane defined by view_dir_z and origin.
-// Returns contours projected onto the view plane.
-//
-// Caller must free the returned data.
-extern "C" contours_result* project_manifold(const manifold::Manifold* manifold_ptr,
-                                             const vector3* origin,
-                                             const vector3* view_x,
-                                             const vector3* view_y,
-                                             const vector3* view_dir_z) {
-  try {
-    if (!manifold_ptr) {
-      wasmLog("Null manifold pointer");
-      return nullptr;
-    }
-    
-    const manifold::Manifold& mesh = *manifold_ptr;
-
-    // mesh.SetTolerance(1e-3); // 1um
-
-    // Build transformation matrix to align view_dir_z with Z axis
-    // The projection plane will be the XY plane after transformation
-    manifold::vec3 orig(origin->x, origin->y, origin->z);
-    manifold::vec3 vx(view_x->x, view_x->y, view_x->z);
-    manifold::vec3 vy(view_y->x, view_y->y, view_y->z);
-    manifold::vec3 vz(view_dir_z->x, view_dir_z->y, view_dir_z->z);
-
-    // Create transformation matrix: columns are the new basis vectors
-    // This transforms from world space to view space (column-major order)
-    manifold::mat3x4 transform(
-        manifold::vec3(vx.x, vy.x, vz.x),  // First column (X basis)
-        manifold::vec3(vx.y, vy.y, vz.y),  // Second column (Y basis)
-        manifold::vec3(vx.z, vy.z, vz.z),  // Third column (Z basis)
-        manifold::vec3(-linalg::dot(vx, orig), -linalg::dot(vy, orig),
-                       -linalg::dot(vz, orig))  // Fourth column (translation)
-    );
-
-    // Apply transformation to the manifold
-    manifold::Manifold transformed = mesh.Transform(transform);
-
-    // Project onto XY plane (Z=0) to get 2D cross-section
-    manifold::CrossSection projection = transformed.Project();
-
-    // Offset the projection by 1.5 units with square join type
-    projection =
-        projection.Offset(1.5, manifold::CrossSection::JoinType::Square);
-
-    // Convert to polygons
-    manifold::Polygons polygons = projection.ToPolygons();
-
-    // Create result
-    auto* result =
-        static_cast<contours_result*>(malloc(sizeof(contours_result)));
-    result->num_contours = polygons.size();
-    result->error_message = nullptr;
-
-    if (!polygons.empty()) {
-      result->contours = static_cast<contour_2d*>(
-          malloc(sizeof(contour_2d) * polygons.size()));
-
-      // Convert each polygon to a contour
-      for (size_t i = 0; i < polygons.size(); i++) {
-        const auto& polygon = polygons[i];
-        result->contours[i].num_points = polygon.size();
-
-        if (polygon.size() > 0) {
-          result->contours[i].points =
-              static_cast<vector2*>(malloc(sizeof(vector2) * polygon.size()));
-          for (size_t j = 0; j < polygon.size(); j++) {
-            result->contours[i].points[j].x = static_cast<float>(polygon[j].x);
-            result->contours[i].points[j].y = static_cast<float>(polygon[j].y);
-          }
-        } else {
-          result->contours[i].points = nullptr;
-        }
-      }
-    } else {
-      result->contours = nullptr;
-    }
-    return result;
-  } catch (const std::exception& e) {
-    wasmLog(std::string("Exception: ") + e.what());
-    return nullptr;
-  } catch (...) {
-    wasmLog("Unknown exception during mesh projection");
-    return nullptr;
-  }
-}
-
-// Helper function to free contours memory
-extern "C" void free_contours(contours_result* result) {
-  if (!result)
-    return;
-
-  if (result->contours) {
-    for (int i = 0; i < result->num_contours; i++) {
-      free(result->contours[i].points);
-    }
-    free(result->contours);
-  }
-  free(result->error_message);
-  free(result);
-}
-
-// Helper to create triangle soup result with error
-static triangle_soup_result* error_soup_result(const std::string& msg) {
-  auto* result =
-      static_cast<triangle_soup_result*>(malloc(sizeof(triangle_soup_result)));
-  result->num_vertices = 0;
-  result->vertices = nullptr;
-  result->error_message = static_cast<char*>(malloc(msg.size() + 1));
-  strcpy(result->error_message, msg.c_str());
-  return result;
-}
-
-// Helper function to free triangle soup result memory
-extern "C" void free_triangle_soup_result(triangle_soup_result* result) {
-  if (!result)
-    return;
-
-  free(result->vertices);
-  free(result->error_message);
-  free(result);
-}
+} contours;
 
 // Convert triangle soup to Manifold MeshGL and merge duplicates
 static manifold::MeshGL soup_to_manifold_meshgl(const triangle_soup* soup) {
@@ -245,33 +110,158 @@ static manifold::MeshGL soup_to_manifold_meshgl(const triangle_soup* soup) {
   return meshgl;
 }
 
-// Convert Manifold MeshGL back to triangle soup result
-static triangle_soup_result* manifold_meshgl_to_soup(
-    const manifold::MeshGL& meshgl) {
-  auto* result =
-      static_cast<triangle_soup_result*>(malloc(sizeof(triangle_soup_result)));
 
+// Project 3D manifold onto a plane defined by view_dir_z and origin.
+// Returns contours projected onto the view plane.
+//
+// Caller must free the returned data.
+extern "C" contours* project_manifold(const manifold::Manifold* manifold_ptr,
+                                      const vector3* origin,
+                                      const vector3* view_x,
+                                      const vector3* view_y,
+                                      const vector3* view_dir_z) {
+  if (!manifold_ptr) {
+    wasmLog("Null manifold pointer");
+    return nullptr;
+  }
+
+  const manifold::Manifold& mesh = *manifold_ptr;
+
+  // mesh.SetTolerance(1e-3); // 1um
+
+  // Build transformation matrix to align view_dir_z with Z axis
+  // The projection plane will be the XY plane after transformation
+  manifold::vec3 orig(origin->x, origin->y, origin->z);
+  manifold::vec3 vx(view_x->x, view_x->y, view_x->z);
+  manifold::vec3 vy(view_y->x, view_y->y, view_y->z);
+  manifold::vec3 vz(view_dir_z->x, view_dir_z->y, view_dir_z->z);
+
+  // Create transformation matrix: columns are the new basis vectors
+  // This transforms from world space to view space (column-major order)
+  manifold::mat3x4 transform(
+      manifold::vec3(vx.x, vy.x, vz.x),  // First column (X basis)
+      manifold::vec3(vx.y, vy.y, vz.y),  // Second column (Y basis)
+      manifold::vec3(vx.z, vy.z, vz.z),  // Third column (Z basis)
+      manifold::vec3(-linalg::dot(vx, orig), -linalg::dot(vy, orig),
+                     -linalg::dot(vz, orig))  // Fourth column (translation)
+  );
+
+  // Apply transformation to the manifold
+  manifold::Manifold transformed = mesh.Transform(transform);
+
+  // Project onto XY plane (Z=0) to get 2D cross-section
+  manifold::CrossSection projection = transformed.Project();
+
+  // Offset the projection by 1.5 units with square join type
+  projection = projection.Offset(1.5, manifold::CrossSection::JoinType::Square);
+
+  // Convert to polygons
+  manifold::Polygons polygons = projection.ToPolygons();
+
+  // Create result
+  auto* result = static_cast<contours*>(malloc(sizeof(contours)));
+  result->num_contours = polygons.size();
+
+  if (!polygons.empty()) {
+    result->contours =
+        static_cast<contour_2d*>(malloc(sizeof(contour_2d) * polygons.size()));
+
+    // Convert each polygon to a contour
+    for (size_t i = 0; i < polygons.size(); i++) {
+      const auto& polygon = polygons[i];
+      result->contours[i].num_points = polygon.size();
+
+      if (polygon.size() > 0) {
+        result->contours[i].points =
+            static_cast<vector2*>(malloc(sizeof(vector2) * polygon.size()));
+        for (size_t j = 0; j < polygon.size(); j++) {
+          result->contours[i].points[j].x = static_cast<float>(polygon[j].x);
+          result->contours[i].points[j].y = static_cast<float>(polygon[j].y);
+        }
+      } else {
+        result->contours[i].points = nullptr;
+      }
+    }
+  } else {
+    result->contours = nullptr;
+  }
+  return result;
+}
+
+// Perform boolean subtraction using Manifold: A - B, returns new Manifold
+extern "C" manifold::Manifold* subtract_manifolds(
+    const manifold::Manifold* manifold_a,
+    const manifold::Manifold* manifold_b) {
+  if (!manifold_a || !manifold_b) {
+    wasmLog("Null manifold pointer in subtraction");
+    return nullptr;
+  }
+
+  // Perform boolean subtraction
+  auto* result = new manifold::Manifold(*manifold_a - *manifold_b);
+  if (result->Status() != manifold::Manifold::Error::NoError) {
+    wasmLog("Boolean subtraction failed - status " +
+            std::to_string(static_cast<int>(result->Status())));
+    delete result;
+    return nullptr;
+  }
+  if (result->IsEmpty()) {
+    wasmLog("Boolean subtraction produced empty result");
+    delete result;
+    return nullptr;
+  }
+
+  return result;
+}
+
+// Returns Manifold instance if succesful, otherwise nullptr.
+// Must be destroyed by caller w/ destroy_manifold.
+extern "C" manifold::Manifold* create_manifold_from_trisoup(
+    const triangle_soup* soup) {
+  manifold::MeshGL meshgl = soup_to_manifold_meshgl(soup);
+  auto* manifold = new manifold::Manifold(meshgl);
+
+  if (manifold->Status() != manifold::Manifold::Error::NoError) {
+    wasmLog("Failed to create manifold");
+    delete manifold;
+    return nullptr;
+  }
+
+  return manifold;
+}
+
+extern "C" void destroy_manifold(manifold::Manifold* manifold_ptr) {
+  delete manifold_ptr;
+}
+
+// Convert Manifold to triangle soup
+extern "C" triangle_soup* manifold_to_trisoup(
+    const manifold::Manifold* manifold_ptr) {
+  if (!manifold_ptr) {
+    wasmLog("Null manifold pointer");
+    return nullptr;
+  }
+
+  manifold::MeshGL meshgl = manifold_ptr->GetMeshGL();
+  
   const size_t num_tris = meshgl.triVerts.size() / 3;
   const size_t num_verts = num_tris * 3;
 
+  auto* result = static_cast<triangle_soup*>(malloc(sizeof(triangle_soup)));
   result->num_vertices = num_verts;
-  result->error_message = nullptr;
 
   if (num_verts > 0) {
-    result->vertices =
-        static_cast<float*>(malloc(sizeof(float) * num_verts * 3));
+    result->vertices = static_cast<vector3*>(malloc(sizeof(vector3) * num_verts));
 
     size_t idx = 0;
     for (size_t t = 0; t < num_tris; t++) {
       for (int v = 0; v < 3; v++) {
         uint32_t vertIdx = meshgl.triVerts[t * 3 + v];
         // Extract position from vertProperties (first 3 properties are x,y,z)
-        result->vertices[idx++] =
-            meshgl.vertProperties[vertIdx * meshgl.numProp];
-        result->vertices[idx++] =
-            meshgl.vertProperties[vertIdx * meshgl.numProp + 1];
-        result->vertices[idx++] =
-            meshgl.vertProperties[vertIdx * meshgl.numProp + 2];
+        result->vertices[idx].x = meshgl.vertProperties[vertIdx * meshgl.numProp];
+        result->vertices[idx].y = meshgl.vertProperties[vertIdx * meshgl.numProp + 1];
+        result->vertices[idx].z = meshgl.vertProperties[vertIdx * meshgl.numProp + 2];
+        idx++;
       }
     }
   } else {
@@ -281,75 +271,25 @@ static triangle_soup_result* manifold_meshgl_to_soup(
   return result;
 }
 
-// Perform boolean subtraction using Manifold: A - B, returns new Manifold
-extern "C" manifold::Manifold* subtract_manifolds(
-    const manifold::Manifold* manifold_a,
-    const manifold::Manifold* manifold_b) {
-  try {
-    if (!manifold_a || !manifold_b) {
-      wasmLog("Null manifold pointer in subtraction");
-      return nullptr;
-    }
-
-    // Perform boolean subtraction
-    auto* result = new manifold::Manifold(*manifold_a - *manifold_b);
-    if (result->Status() != manifold::Manifold::Error::NoError) {
-      wasmLog("Boolean subtraction failed - status " + 
-              std::to_string(static_cast<int>(result->Status())));
-      delete result;
-      return nullptr;
-    }
-    if (result->IsEmpty()) {
-      wasmLog("Boolean subtraction produced empty result");
-      delete result;
-      return nullptr;
-    }
-
-    return result;
-  } catch (const std::exception& e) {
-    wasmLog(std::string("Exception: ") + e.what());
-    return nullptr;
-  } catch (...) {
-    wasmLog("Unknown exception during Manifold mesh subtraction");
-    return nullptr;
-  }
-}
-
-
-// Returns Manifold instance if succesful, otherwise nullptr.
-// Must be destroyed by caller w/ destroy_manifold.
-extern "C" manifold::Manifold* create_manifold_from_trisoup(const triangle_soup* soup) {
-  manifold::MeshGL meshgl = soup_to_manifold_meshgl(soup);
-  auto* manifold = new manifold::Manifold(meshgl);
-  
-  if (manifold->Status() != manifold::Manifold::Error::NoError) {
-    wasmLog("Failed to create manifold");
-    delete manifold;
-    return nullptr;
+extern "C" void free_triangle_soup(triangle_soup* result) {
+  if (!result) {
+    return;
   }
   
-  return manifold;
+  free(result->vertices);
+  free(result);
 }
 
-extern "C" void destroy_manifold(manifold::Manifold* manifold_ptr) {
-  delete manifold_ptr;
-}
-
-// Convert Manifold to triangle soup result
-extern "C" triangle_soup_result* manifold_to_trisoup(const manifold::Manifold* manifold_ptr) {
-  try {
-    if (!manifold_ptr) {
-      wasmLog("Null manifold pointer");
-      return nullptr;
-    }
-    
-    manifold::MeshGL meshgl = manifold_ptr->GetMeshGL();
-    return manifold_meshgl_to_soup(meshgl);
-  } catch (const std::exception& e) {
-    wasmLog(std::string("Exception in manifold_to_trisoup: ") + e.what());
-    return nullptr;
-  } catch (...) {
-    wasmLog("Unknown exception in manifold_to_trisoup");
-    return nullptr;
+extern "C" void free_contours(contours* result) {
+  if (!result) {
+    return;
   }
+
+  if (result->contours) {
+    for (int i = 0; i < result->num_contours; i++) {
+      free(result->contours[i].points);
+    }
+    free(result->contours);
+  }
+  free(result);
 }

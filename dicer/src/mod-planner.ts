@@ -1116,12 +1116,12 @@ export class ModulePlanner implements Module {
                 const startTime = performance.now();
                 const resultManifold = this.wasmGeom.subtractMeshFromHandles(this.targetManifold, sphereManifold);
                 const endTime = performance.now();
-                
+
                 if (!resultManifold) {
                     console.error("Subtraction failed");
                     return;
                 }
-                
+
                 try {
                     // Convert result to geometry
                     const geometry = this.wasmGeom.manifoldToGeometry(resultManifold);
@@ -1129,7 +1129,7 @@ export class ModulePlanner implements Module {
                         console.error("Failed to convert result to geometry");
                         return;
                     }
-                    
+
                     const numTris = geometry.getAttribute('position').count / 3;
                     console.log(`C++ Manifold subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${numTris} triangles`);
 
