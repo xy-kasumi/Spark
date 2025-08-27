@@ -16,7 +16,11 @@
 
 EM_JS(void, wasmLog, (const char* msg), {
   console.log("WASM:", UTF8ToString(msg));
-});
+})
+
+static void wasmLog(const std::string& msg) {
+  wasmLog(msg.c_str());
+}
 
 EM_JS(void, wasmBeginPerf, (const char* tag), {
   if (!Module.perfMap) {
@@ -24,7 +28,7 @@ EM_JS(void, wasmBeginPerf, (const char* tag), {
   }
   const tagJs = UTF8ToString(tag);
   Module.perfMap.set(tagJs, performance.now());
-});
+})
 
 EM_JS(void, wasmEndPerf, (const char* tag), {
   const tEnd = performance.now();
@@ -37,7 +41,7 @@ EM_JS(void, wasmEndPerf, (const char* tag), {
     console.log(`${UTF8ToString(tag)}: ${t}ms`);
     Module.perfMap.delete(tagJs);
   }
-});
+})
 
 typedef struct {
   float x;
@@ -79,39 +83,23 @@ typedef struct {
 // Forward declaration
 static manifold::MeshGL soup_to_manifold_meshgl(const triangle_soup* soup);
 
-// Utility function to create error result
-static contours_result* error_result(const std::string& msg) {
-  auto* result = static_cast<contours_result*>(malloc(sizeof(contours_result)));
-  result->num_contours = 0;
-  result->contours = nullptr;
-  result->error_message = static_cast<char*>(malloc(msg.size() + 1));
-  strcpy(result->error_message, msg.c_str());
-  return result;
-}
 
-// Project 3D mesh onto a plane defined by view_dir_z and origin.
+// Project 3D manifold onto a plane defined by view_dir_z and origin.
 // Returns contours projected onto the view plane.
 //
 // Caller must free the returned data.
-extern "C" contours_result* project_mesh(const triangle_soup* soup,
-                                         const vector3* origin,
-                                         const vector3* view_x,
-                                         const vector3* view_y,
-                                         const vector3* view_dir_z) {
+extern "C" contours_result* project_manifold(const manifold::Manifold* manifold_ptr,
+                                             const vector3* origin,
+                                             const vector3* view_x,
+                                             const vector3* view_y,
+                                             const vector3* view_dir_z) {
   try {
-    wasmBeginPerf("mesh conversion");
-    // Convert triangle soup to Manifold
-    manifold::MeshGL meshgl = soup_to_manifold_meshgl(soup);
-    if (meshgl.vertProperties.empty()) {
-      return error_result("Invalid triangle soup");
+    if (!manifold_ptr) {
+      wasmLog("Null manifold pointer");
+      return nullptr;
     }
-
-    manifold::Manifold mesh(meshgl);
-    if (mesh.Status() != manifold::Manifold::Error::NoError) {
-      return error_result("Failed to create valid manifold - " +
-                          std::to_string(static_cast<int>(mesh.Status())));
-    }
-    wasmEndPerf("mesh conversion");
+    
+    const manifold::Manifold& mesh = *manifold_ptr;
 
     // mesh.SetTolerance(1e-3); // 1um
 
@@ -176,9 +164,11 @@ extern "C" contours_result* project_mesh(const triangle_soup* soup,
     }
     return result;
   } catch (const std::exception& e) {
-    return error_result(std::string("Exception: ") + e.what());
+    wasmLog(std::string("Exception: ") + e.what());
+    return nullptr;
   } catch (...) {
-    return error_result("Unknown exception during mesh projection");
+    wasmLog("Unknown exception during mesh projection");
+    return nullptr;
   }
 }
 
@@ -291,54 +281,75 @@ static triangle_soup_result* manifold_meshgl_to_soup(
   return result;
 }
 
-// Perform boolean subtraction using Manifold: A - B
-extern "C" triangle_soup_result* manifold_subtract_meshes(
-    const triangle_soup* soup_a,
-    const triangle_soup* soup_b) {
+// Perform boolean subtraction using Manifold: A - B, returns new Manifold
+extern "C" manifold::Manifold* subtract_manifolds(
+    const manifold::Manifold* manifold_a,
+    const manifold::Manifold* manifold_b) {
   try {
-    // Convert soups to Manifold MeshGL with vertex merging
-    manifold::MeshGL meshgl_a = soup_to_manifold_meshgl(soup_a);
-    if (meshgl_a.vertProperties.empty()) {
-      return error_soup_result("mesh_a: invalid triangle soup");
-    }
-
-    manifold::MeshGL meshgl_b = soup_to_manifold_meshgl(soup_b);
-    if (meshgl_b.vertProperties.empty()) {
-      return error_soup_result("mesh_b: invalid triangle soup");
-    }
-
-    // Create Manifolds from MeshGL
-    manifold::Manifold manifold_a(meshgl_a);
-    if (manifold_a.Status() != manifold::Manifold::Error::NoError) {
-      return error_soup_result(
-          "mesh_a: failed to create valid manifold - " +
-          std::to_string(static_cast<int>(manifold_a.Status())));
-    }
-
-    manifold::Manifold manifold_b(meshgl_b);
-    if (manifold_b.Status() != manifold::Manifold::Error::NoError) {
-      return error_soup_result(
-          "mesh_b: failed to create valid manifold - " +
-          std::to_string(static_cast<int>(manifold_b.Status())));
+    if (!manifold_a || !manifold_b) {
+      wasmLog("Null manifold pointer in subtraction");
+      return nullptr;
     }
 
     // Perform boolean subtraction
-    manifold::Manifold result = manifold_a - manifold_b;
-    if (result.Status() != manifold::Manifold::Error::NoError) {
-      return error_soup_result(
-          "Boolean subtraction failed - " +
-          std::to_string(static_cast<int>(result.Status())));
+    auto* result = new manifold::Manifold(*manifold_a - *manifold_b);
+    if (result->Status() != manifold::Manifold::Error::NoError) {
+      wasmLog("Boolean subtraction failed - status " + 
+              std::to_string(static_cast<int>(result->Status())));
+      delete result;
+      return nullptr;
     }
-    if (result.IsEmpty()) {
-      return error_soup_result("Boolean subtraction produced empty result");
+    if (result->IsEmpty()) {
+      wasmLog("Boolean subtraction produced empty result");
+      delete result;
+      return nullptr;
     }
 
-    manifold::MeshGL result_meshgl = result.GetMeshGL();
-    return manifold_meshgl_to_soup(result_meshgl);
+    return result;
   } catch (const std::exception& e) {
-    return error_soup_result(std::string("Exception: ") + e.what());
+    wasmLog(std::string("Exception: ") + e.what());
+    return nullptr;
   } catch (...) {
-    return error_soup_result(
-        "Unknown exception during Manifold mesh subtraction");
+    wasmLog("Unknown exception during Manifold mesh subtraction");
+    return nullptr;
+  }
+}
+
+
+// Returns Manifold instance if succesful, otherwise nullptr.
+// Must be destroyed by caller w/ destroy_manifold.
+extern "C" manifold::Manifold* create_manifold_from_trisoup(const triangle_soup* soup) {
+  manifold::MeshGL meshgl = soup_to_manifold_meshgl(soup);
+  auto* manifold = new manifold::Manifold(meshgl);
+  
+  if (manifold->Status() != manifold::Manifold::Error::NoError) {
+    wasmLog("Failed to create manifold");
+    delete manifold;
+    return nullptr;
+  }
+  
+  return manifold;
+}
+
+extern "C" void destroy_manifold(manifold::Manifold* manifold_ptr) {
+  delete manifold_ptr;
+}
+
+// Convert Manifold to triangle soup result
+extern "C" triangle_soup_result* manifold_to_trisoup(const manifold::Manifold* manifold_ptr) {
+  try {
+    if (!manifold_ptr) {
+      wasmLog("Null manifold pointer");
+      return nullptr;
+    }
+    
+    manifold::MeshGL meshgl = manifold_ptr->GetMeshGL();
+    return manifold_meshgl_to_soup(meshgl);
+  } catch (const std::exception& e) {
+    wasmLog(std::string("Exception in manifold_to_trisoup: ") + e.what());
+    return nullptr;
+  } catch (...) {
+    wasmLog("Unknown exception in manifold_to_trisoup");
+    return nullptr;
   }
 }

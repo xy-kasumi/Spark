@@ -2,11 +2,156 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import * as THREE from 'three';
 
+/**
+ * Opaque handle to a Manifold instance. Must be destroyed via WasmGeom.destroyManifold().
+ * Always non-nullptr.
+ */
+export type ManifoldHandle = number & { __brand: 'ManifoldHandle' };
+
 export class WasmGeom {
     module: any; // imported WASM module
 
     constructor(module: any) {
         this.module = module;
+    }
+
+    /**
+     * Allocate and populate a Vector3 in WASM memory
+     * @returns Pointer to allocated memory (must be freed)
+     */
+    private allocVector3(vec: THREE.Vector3): number {
+        const ptr = this.module._malloc(12);
+        this.module.HEAPF32.set([vec.x, vec.y, vec.z], ptr / 4);
+        return ptr;
+    }
+
+    /**
+     * Create a Manifold handle from a geometry
+     * @param geometry - Input geometry to convert to manifold
+     * @returns ManifoldHandle or null if creation failed
+     */
+    createManifold(geometry: THREE.BufferGeometry): ManifoldHandle | null {
+        const Module = this.module;
+        const triSoup = toTriSoup(geometry);
+        const numVertices = triSoup.length / 3;
+        
+        // Allocate triangle_soup struct
+        const soupPtr = Module._malloc(8);
+        const verticesPtr = Module._malloc(numVertices * 12); // 3 floats * 4 bytes per vertex
+        
+        // Fill vertex data
+        for (let i = 0; i < numVertices; i++) {
+            Module.HEAPF32[(verticesPtr / 4) + i * 3] = triSoup[i * 3];
+            Module.HEAPF32[(verticesPtr / 4) + i * 3 + 1] = triSoup[i * 3 + 1];
+            Module.HEAPF32[(verticesPtr / 4) + i * 3 + 2] = triSoup[i * 3 + 2];
+        }
+        Module.HEAP32[soupPtr / 4] = numVertices;
+        Module.HEAP32[(soupPtr / 4) + 1] = verticesPtr;
+        
+        try {
+            const manifoldPtr = Module._create_manifold_from_trisoup(soupPtr);
+            if (manifoldPtr === 0) {
+                return null;
+            }
+            return manifoldPtr as ManifoldHandle;
+        } finally {
+            Module._free(soupPtr);
+            Module._free(verticesPtr);
+        }
+    }
+
+    destroyManifold(handle: ManifoldHandle) {
+        this.module._destroy_manifold(handle);
+    }
+    
+    /**
+     * Convert ManifoldHandle to BufferGeometry
+     */
+    manifoldToGeometry(handle: ManifoldHandle): THREE.BufferGeometry | null {
+        const Module = this.module;
+        const resultPtr = Module._manifold_to_trisoup(handle);
+        if (!resultPtr) return null;
+        
+        try {
+            const numVerts = Module.getValue(resultPtr, 'i32');
+            const verticesPtr = Module.getValue(resultPtr + 4, 'i32');
+            const errorPtr = Module.getValue(resultPtr + 8, 'i32');
+            
+            if (errorPtr !== 0) {
+                const error = Module.UTF8ToString(errorPtr);
+                throw new Error(error);
+            }
+            
+            const result = new Float64Array(numVerts * 3);
+            for (let i = 0; i < numVerts * 3; i++) {
+                result[i] = Module.HEAPF32[(verticesPtr / 4) + i];
+            }
+            
+            return fromTriSoup(result);
+        } finally {
+            Module._free_triangle_soup_result(resultPtr);
+        }
+    }
+    
+    /**
+     * Project manifold to 2D contours using ManifoldHandle
+     */
+    projectMeshFromHandle(
+        handle: ManifoldHandle,
+        origin: THREE.Vector3,
+        viewX: THREE.Vector3,
+        viewY: THREE.Vector3,
+        viewZ: THREE.Vector3
+    ): THREE.Vector2[][] {
+        const Module = this.module;
+        
+        const originPtr = this.allocVector3(origin);
+        const viewXPtr = this.allocVector3(viewX);
+        const viewYPtr = this.allocVector3(viewY);
+        const viewZPtr = this.allocVector3(viewZ);
+        
+        try {
+            const resultPtr = Module._project_manifold(handle, originPtr, viewXPtr, viewYPtr, viewZPtr);
+            if (!resultPtr) throw new Error("project_manifold returned null");
+            
+            const numContours = Module.getValue(resultPtr, 'i32');
+            const contoursPtr = Module.getValue(resultPtr + 4, 'i32');
+            
+            const contours: THREE.Vector2[][] = [];
+            for (let i = 0; i < numContours; i++) {
+                const contourPtr = contoursPtr + i * 8;
+                const numPoints = Module.getValue(contourPtr, 'i32');
+                const pointsPtr = Module.getValue(contourPtr + 4, 'i32');
+                
+                const contour: THREE.Vector2[] = [];
+                for (let j = 0; j < numPoints; j++) {
+                    const pointPtr = pointsPtr + j * 8;
+                    const x = Module.HEAPF32[pointPtr / 4];
+                    const y = Module.HEAPF32[pointPtr / 4 + 1];
+                    contour.push(new THREE.Vector2(x, y));
+                }
+                contours.push(contour);
+            }
+            
+            Module._free_contours(resultPtr);
+            return contours;
+        } finally {
+            Module._free(originPtr);
+            Module._free(viewXPtr);
+            Module._free(viewYPtr);
+            Module._free(viewZPtr);
+        }
+    }
+    
+    /**
+     * Subtract manifolds using handles, returns new ManifoldHandle
+     */
+    subtractMeshFromHandles(
+        handleA: ManifoldHandle,
+        handleB: ManifoldHandle
+    ): ManifoldHandle | null {
+        const resultPtr = this.module._subtract_manifolds(handleA, handleB);
+        return resultPtr ? resultPtr as ManifoldHandle : null;
     }
 
     /**
@@ -25,73 +170,13 @@ export class WasmGeom {
         viewY: THREE.Vector3,
         viewZ: THREE.Vector3
     ): THREE.Vector2[][] {
-        const triangleSoup = toTriSoup(geometry);
-
-        const Module = this.module;
-        const numVertices = triangleSoup.length / 3;
-
-        // Allocate and populate triangle_soup struct
-        const soupPtr = Module._malloc(16); // Allocate extra for alignment
-        const verticesPtr = Module._malloc(triangleSoup.length * 4); // triangleSoup.length floats * 4 bytes each
-        Module.HEAPF32.set(triangleSoup, verticesPtr / 4);
-        Module.HEAP32[soupPtr / 4] = numVertices; // Set num_vertices
-        Module.HEAP32[soupPtr / 4 + 1] = verticesPtr; // Set vertices pointer
-
-        // Allocate and populate view parameters
-        const originPtr = Module._malloc(12);
-        const viewXPtr = Module._malloc(12);
-        const viewYPtr = Module._malloc(12);
-        const viewZPtr = Module._malloc(12);
-        Module.HEAPF32.set([origin.x, origin.y, origin.z], originPtr / 4);
-        Module.HEAPF32.set([viewX.x, viewX.y, viewX.z], viewXPtr / 4);
-        Module.HEAPF32.set([viewY.x, viewY.y, viewY.z], viewYPtr / 4);
-        Module.HEAPF32.set([viewZ.x, viewZ.y, viewZ.z], viewZPtr / 4);
-
+        const handle = this.createManifold(geometry);
+        if (!handle) throw new Error("Failed to create manifold");
+        
         try {
-            // Call WASM function
-            const resultPtr = Module._project_mesh(soupPtr, originPtr, viewXPtr, viewYPtr, viewZPtr);
-            if (!resultPtr) throw new Error("project_mesh returned null");
-
-            // Read result
-            const numContours = Module.getValue(resultPtr, 'i32');
-            const contoursPtr = Module.getValue(resultPtr + 4, 'i32');
-            const errorMsgPtr = Module.getValue(resultPtr + 8, 'i32');
-
-            // Check for error
-            if (errorMsgPtr !== 0) {
-                const errorMsg = Module.UTF8ToString(errorMsgPtr);
-                throw new Error(errorMsg);
-            }
-
-            // Convert contours to TypeScript objects
-            const contours: THREE.Vector2[][] = [];
-            for (let i = 0; i < numContours; i++) {
-                const contourPtr = contoursPtr + i * 8; // Each contour_2d is 8 bytes (int + pointer)
-                const numPoints = Module.getValue(contourPtr, 'i32');
-                const pointsPtr = Module.getValue(contourPtr + 4, 'i32');
-
-                const contour: THREE.Vector2[] = [];
-                for (let j = 0; j < numPoints; j++) {
-                    const pointPtr = pointsPtr + j * 8; // Each vector2 is 8 bytes (2 floats)
-                    const x = Module.HEAPF32[pointPtr / 4];
-                    const y = Module.HEAPF32[pointPtr / 4 + 1];
-                    contour.push(new THREE.Vector2(x, y));
-                }
-                contours.push(contour);
-            }
-
-            // Clean up result
-            Module._free_contours(resultPtr);
-            return contours;
-
+            return this.projectMeshFromHandle(handle, origin, viewX, viewY, viewZ);
         } finally {
-            // Always clean up input memory
-            Module._free(soupPtr);
-            Module._free(verticesPtr);
-            Module._free(originPtr);
-            Module._free(viewXPtr);
-            Module._free(viewYPtr);
-            Module._free(viewZPtr);
+            this.destroyManifold(handle);
         }
     }
 
@@ -105,68 +190,29 @@ export class WasmGeom {
         geometryA: THREE.BufferGeometry,
         geometryB: THREE.BufferGeometry
     ): THREE.BufferGeometry {
-        const Module = this.module;
-        const meshA = toTriSoup(geometryA);
-        const meshB = toTriSoup(geometryB);
-
-        // Allocate triangle_soup structs for both inputs
-        const soupAPtr = Module._malloc(8); // num_vertices (int) + vertices pointer
-        const soupBPtr = Module._malloc(8);
-
-        // Allocate vertex data for mesh A
-        const numVertsA = meshA.length / 3;
-        const verticesAPtr = Module._malloc(numVertsA * 12); // 3 floats * 4 bytes per vertex
-        for (let i = 0; i < numVertsA; i++) {
-            Module.HEAPF32[(verticesAPtr / 4) + i * 3] = meshA[i * 3];
-            Module.HEAPF32[(verticesAPtr / 4) + i * 3 + 1] = meshA[i * 3 + 1];
-            Module.HEAPF32[(verticesAPtr / 4) + i * 3 + 2] = meshA[i * 3 + 2];
+        const handleA = this.createManifold(geometryA);
+        const handleB = this.createManifold(geometryB);
+        
+        if (!handleA || !handleB) {
+            if (handleA) this.destroyManifold(handleA);
+            if (handleB) this.destroyManifold(handleB);
+            throw new Error("Failed to create manifolds");
         }
-        Module.HEAP32[soupAPtr / 4] = numVertsA;
-        Module.HEAP32[(soupAPtr / 4) + 1] = verticesAPtr;
-
-        // Allocate vertex data for mesh B
-        const numVertsB = meshB.length / 3;
-        const verticesBPtr = Module._malloc(numVertsB * 12);
-        for (let i = 0; i < numVertsB; i++) {
-            Module.HEAPF32[(verticesBPtr / 4) + i * 3] = meshB[i * 3];
-            Module.HEAPF32[(verticesBPtr / 4) + i * 3 + 1] = meshB[i * 3 + 1];
-            Module.HEAPF32[(verticesBPtr / 4) + i * 3 + 2] = meshB[i * 3 + 2];
-        }
-        Module.HEAP32[soupBPtr / 4] = numVertsB;
-        Module.HEAP32[(soupBPtr / 4) + 1] = verticesBPtr;
-
+        
         try {
-            // Call WASM Manifold subtraction function
-            const resultPtr = Module._manifold_subtract_meshes(soupAPtr, soupBPtr);
-            if (!resultPtr) throw new Error("manifold_subtract_meshes returned null");
-
-            // Read result
-            const numResultVerts = Module.getValue(resultPtr, 'i32');
-            const resultVerticesPtr = Module.getValue(resultPtr + 4, 'i32');
-            const errorMsgPtr = Module.getValue(resultPtr + 8, 'i32');
-
-            // Check for error
-            if (errorMsgPtr !== 0) {
-                const errorMsg = Module.UTF8ToString(errorMsgPtr);
-                throw new Error(errorMsg);
+            const resultHandle = this.subtractMeshFromHandles(handleA, handleB);
+            if (!resultHandle) throw new Error("Subtraction failed");
+            
+            try {
+                const result = this.manifoldToGeometry(resultHandle);
+                if (!result) throw new Error("Failed to convert result to geometry");
+                return result;
+            } finally {
+                this.destroyManifold(resultHandle);
             }
-
-            // Copy result vertices
-            const result = new Float64Array(numResultVerts * 3);
-            for (let i = 0; i < numResultVerts * 3; i++) {
-                result[i] = Module.HEAPF32[(resultVerticesPtr / 4) + i];
-            }
-
-            // Clean up result
-            Module._free_triangle_soup_result(resultPtr);
-
-            return fromTriSoup(result);
         } finally {
-            // Always clean up input memory
-            Module._free(soupAPtr);
-            Module._free(soupBPtr);
-            Module._free(verticesAPtr);
-            Module._free(verticesBPtr);
+            this.destroyManifold(handleA);
+            this.destroyManifold(handleB);
         }
     }
 }

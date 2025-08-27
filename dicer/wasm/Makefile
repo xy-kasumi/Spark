@@ -36,7 +36,7 @@ $(OUTPUT_DIR)/wasm_geom.wasm $(OUTPUT_DIR)/wasm_geom.js: $(SCRIPT_DIR)/entrypoin
 		-lClipper2 \
 		-std=c++17 \
 		-O3 \
-		-s EXPORTED_FUNCTIONS='["_project_mesh", "_free_contours", "_manifold_subtract_meshes", "_free_triangle_soup_result", "_malloc", "_free"]' \
+		-s EXPORTED_FUNCTIONS='["_project_manifold", "_free_contours", "_subtract_manifolds", "_create_manifold_from_trisoup", "_destroy_manifold", "_manifold_to_trisoup", "_free_triangle_soup_result", "_malloc", "_free"]' \
 		-s ALLOW_MEMORY_GROWTH=1 \
 		-s NO_FILESYSTEM=1 \
 		-fwasm-exceptions \

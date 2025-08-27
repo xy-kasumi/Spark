@@ -10,9 +10,7 @@ import { ModuleFramework, Module } from './framework.js';
 import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, GpuKernels, Shape } from './gpu-geom.js';
 //import { VoxelGridCpu } from './cpu-geom.js';
 //import { TrackingVoxelGrid, initVGForPoints } from './tracking-voxel.js';
-import { initWasmGeom, WasmGeom, toTriSoup } from './wasm-geom.js';
-
-
+import { WasmGeom, toTriSoup, ManifoldHandle } from './wasm-geom.js';
 
 /**
  * Apply translation to geometry in-place
@@ -832,7 +830,9 @@ export class ModulePlanner implements Module {
     baseZ: number;
     aboveWorkSize: number;
     gen: AsyncGenerator<"break" | undefined, void, unknown>;
-    stockSurf: Float32Array;
+
+    targetManifold: ManifoldHandle;
+    stockManifold: ManifoldHandle;
 
     // View vector for mesh projection
     viewVectorX: number = 0;
@@ -842,13 +842,14 @@ export class ModulePlanner implements Module {
     // Subtract sphere radius
     subtractRadius: number = 5;
 
-    wasmGeom: WasmGeom | null;
+    wasmGeom: WasmGeom;
 
     /**
      * @param framework - ModuleFramework instance for visualization management
      */
-    constructor(framework: ModuleFramework) {
+    constructor(framework: ModuleFramework, wasmGeom: WasmGeom) {
         this.framework = framework;
+        this.wasmGeom = wasmGeom;
 
         this.machineConfig = sparkWg1Config; // in future, there will be multiple options.
 
@@ -879,20 +880,6 @@ export class ModulePlanner implements Module {
         this.toolLength = this.machineConfig.toolNaturalLength;
         this.showPlanPath = true;
         this.highlightSweep = 2;
-
-        if (!navigator.gpu) {
-            throw new Error('WebGPU not supported');
-        }
-        (async () => {
-            //const adapter = await navigator.gpu.requestAdapter();
-            //this.kernels = new GpuKernels(await adapter.requestDevice());
-            //            initCreateDeviationVis(this.kernels);
-        })();
-
-        initWasmGeom().then(wg => {
-            this.wasmGeom = wg;
-            console.log("WASM Geom module initialized");
-        });
 
         this.framework.registerModule(this);
     }
@@ -940,7 +927,6 @@ export class ModulePlanner implements Module {
         // Subtract button and radius slider
         gui.add(this, "subtractRadius", 1, 15, 0.1).name("Subtract Radius").listen();
         gui.add(this, "subtractMeshWASM").name("Subtract (Manifold)");
-        gui.add(this, "testCubeMinusSphere").name("Test: Cube - Sphere (Manifold)");
 
     }
 
@@ -977,8 +963,12 @@ export class ModulePlanner implements Module {
      * @param aboveWorkSize Length of stock to be worked "above" baseZ plane. Note below-baseZ work will be still removed to cut off the work.
      * @param stockDiameter Diameter of the stock.
      */
-    initPlan(targetSurf: Float64Array, baseZ: number, aboveWorkSize: number, stockDiameter: number) {
-        this.targetSurf = targetSurf;
+    initPlan(targetSurf: Float64Array, targetGeom: THREE.BufferGeometry, baseZ: number, aboveWorkSize: number, stockDiameter: number) {
+        this.targetSurf = targetSurf; // TODO: want to deprecate
+        if (this.targetManifold) {
+            this.wasmGeom.destroyManifold(this.targetManifold);
+        }
+        this.targetManifold = this.wasmGeom.createManifold(targetGeom);
         this.stockDiameter = stockDiameter;
         this.baseZ = baseZ;
         this.aboveWorkSize = aboveWorkSize;
@@ -1033,7 +1023,8 @@ export class ModulePlanner implements Module {
         const simStockLength = this.stockCutWidth + this.simWorkBuffer + this.aboveWorkSize;
         const stockGeom = generateStockGeom(this.stockDiameter / 2, simStockLength);
         translateGeom(stockGeom, new THREE.Vector3(0, 0, -(this.stockCutWidth + this.simWorkBuffer)));
-        this.stockSurf = convGeomToSurf(stockGeom);
+        //const stockSurf = convGeomToSurf(stockGeom);
+        this.stockManifold = this.wasmGeom.createManifold(stockGeom);
         /*
         const workVg = initVGForPoints(this.stockSurf, this.resMm);
         const targVg = workVg.clone();
@@ -1094,7 +1085,6 @@ export class ModulePlanner implements Module {
         console.log(`possible sweep exhausted after ${dt / 1e3}sec (${dt / this.numSweeps}ms/sweep)`);
     }
 
-
     /**
      * Generate sphere geometry
      * @param radius Sphere radius
@@ -1107,92 +1097,60 @@ export class ModulePlanner implements Module {
     }
 
     /**
-     * Generate cube geometry
-     * @param size Cube size (width, height, depth)
-     * @returns Cube geometry
-     */
-    private generateCubeGeometry(size: number = 10): THREE.BufferGeometry {
-        const geom = new THREE.BoxGeometry(size, size, size);
-        return geom;
-    }
-
-    /**
-     * Simple test: Cube minus Sphere
-     */
-    async testCubeMinusSphere() {
-        try {
-            console.log(`Testing: Cube (size=10) - Sphere (radius=${this.subtractRadius})`);
-
-            // Generate cube and sphere meshes
-            const cubeGeometry = this.generateCubeGeometry(10);
-            const sphereGeometry = this.generateSphereGeometry(this.subtractRadius);
-
-            // Perform subtraction (cube - sphere) using C++ Manifold
-            const startTime = performance.now();
-            const geometry = this.wasmGeom.subtractMesh(cubeGeometry, sphereGeometry);
-            const endTime = performance.now();
-
-            const numTris = geometry.getAttribute('position').count / 3;
-            console.log(`Test subtraction (C++ Manifold) completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${numTris} triangles`);
-
-            // Create mesh with a different color for test result
-            const material = new THREE.MeshPhysicalMaterial({
-                color: 0x80ff80,  // Light green color for test result
-                metalness: 0.1,
-                roughness: 0.8,
-                transparent: true,
-                wireframe: true
-            });
-
-            const mesh = new THREE.Mesh(geometry, material);
-            this.framework.updateVis("misc", [mesh]);
-
-            this.framework.updateVis("misc", [mesh]);
-
-        } catch (error) {
-            console.error("Test cube-sphere subtraction failed:", error);
-        }
-    }
-
-    /**
      * Subtract sphere from target surface and display result
      */
     async subtractMeshWASM() {
         try {
             console.log(`Subtracting sphere (radius=${this.subtractRadius}) from target surface...`);
 
-            // Generate sphere mesh
+            // Generate sphere mesh and create its manifold
             const sphereGeometry = this.generateSphereGeometry(this.subtractRadius);
-
-            // Create geometry from targetSurf
-            const targetGeometry = new THREE.BufferGeometry();
-            const targetPositions = new Float32Array(this.targetSurf.length);
-            for (let i = 0; i < this.targetSurf.length; i++) {
-                targetPositions[i] = this.targetSurf[i];
+            const sphereManifold = this.wasmGeom.createManifold(sphereGeometry);
+            if (!sphereManifold) {
+                console.error("Failed to create sphere manifold");
+                return;
             }
-            targetGeometry.setAttribute('position', new THREE.BufferAttribute(targetPositions, 3));
 
-            // Perform subtraction using C++ Manifold via WASM
-            const startTime = performance.now();
-            const geometry = this.wasmGeom.subtractMesh(targetGeometry, sphereGeometry);
-            const endTime = performance.now();
+            try {
+                // Perform subtraction using manifold handles
+                const startTime = performance.now();
+                const resultManifold = this.wasmGeom.subtractMeshFromHandles(this.targetManifold, sphereManifold);
+                const endTime = performance.now();
+                
+                if (!resultManifold) {
+                    console.error("Subtraction failed");
+                    return;
+                }
+                
+                try {
+                    // Convert result to geometry
+                    const geometry = this.wasmGeom.manifoldToGeometry(resultManifold);
+                    if (!geometry) {
+                        console.error("Failed to convert result to geometry");
+                        return;
+                    }
+                    
+                    const numTris = geometry.getAttribute('position').count / 3;
+                    console.log(`C++ Manifold subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${numTris} triangles`);
 
-            const numTris = geometry.getAttribute('position').count / 3;
-            console.log(`C++ Manifold subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${numTris} triangles`);
+                    // Create mesh with a different color
+                    const material = new THREE.MeshPhysicalMaterial({
+                        color: 0xff8080,  // Light red color for subtracted result
+                        metalness: 0.1,
+                        roughness: 0.8,
+                        transparent: true,
+                        wireframe: true,
+                        opacity: 0.9,
+                    });
 
-            // Create mesh with a different color
-            const material = new THREE.MeshPhysicalMaterial({
-                color: 0xff8080,  // Light red color for subtracted result
-                metalness: 0.1,
-                roughness: 0.8,
-                transparent: true,
-                wireframe: true,
-                opacity: 0.9,
-            });
-
-            const mesh = new THREE.Mesh(geometry, material);
-            this.framework.updateVis("misc", [mesh]);
-
+                    const mesh = new THREE.Mesh(geometry, material);
+                    this.framework.updateVis("misc", [mesh]);
+                } finally {
+                    this.wasmGeom.destroyManifold(resultManifold);
+                }
+            } finally {
+                this.wasmGeom.destroyManifold(sphereManifold);
+            }
         } catch (error) {
             console.error("Mesh subtraction failed:", error);
         }
@@ -1221,19 +1179,10 @@ export class ModulePlanner implements Module {
                 `Y(${viewY.x.toFixed(3)}, ${viewY.y.toFixed(3)}, ${viewY.z.toFixed(3)}) ` +
                 `Z(${viewZ.x.toFixed(3)}, ${viewZ.y.toFixed(3)}, ${viewZ.z.toFixed(3)})`);
 
-            // Call pure WASM wrapper
             const startTime = performance.now();
-            // Create geometry from targetSurf
-            const targetGeometry = new THREE.BufferGeometry();
-            const targetPositions = new Float32Array(this.targetSurf.length);
-            for (let i = 0; i < this.targetSurf.length; i++) {
-                targetPositions[i] = this.targetSurf[i];
-            }
-            targetGeometry.setAttribute('position', new THREE.BufferAttribute(targetPositions, 3));
-
-            const contours = this.wasmGeom.projectMesh(targetGeometry, origin, viewX, viewY, viewZ);
+            const contours = this.wasmGeom.projectMeshFromHandle(this.targetManifold, origin, viewX, viewY, viewZ);
             const endTime = performance.now();
-            console.log(`WASM projection: ${this.targetSurf.length / 9} tris, ${(endTime - startTime).toFixed(2)}ms. ${contours.length} contour(s)`);
+            console.log(`projection took ${(endTime - startTime).toFixed(2)}ms. ${contours.length} contour(s)`);
 
             // Visualize contours on the view plane using LineLoop
             const contourObjects: THREE.Object3D[] = [];

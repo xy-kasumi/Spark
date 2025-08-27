@@ -7,13 +7,15 @@ import { loadFont } from './debug.js';
 import { ModuleFramework } from './framework.js';
 import { ModulePlanner } from './mod-planner.js';
 import { ModuleLayout } from './mod-layout.js';
+import { initWasmGeom } from './wasm-geom.js';
 
 (async () => {
     console.log("window.crossOriginIsolated", window.crossOriginIsolated);
     
     await loadFont();
     const framework = new ModuleFramework();
-    
-    const modulePlanner = new ModulePlanner(framework);
+
+    const wasmGeom = await initWasmGeom();
+    const modulePlanner = new ModulePlanner(framework, wasmGeom);
     const moduleLayout = new ModuleLayout(framework, modulePlanner);
 })();

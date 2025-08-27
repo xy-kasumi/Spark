@@ -45,6 +45,7 @@ export class ModuleLayout implements Module {
     models: Record<string, string>;
     model: string;
     targetSurf: Float64Array;
+    targetGeom: THREE.BufferGeometry;
 
     // Stock configuration
     stockDiameter: number;
@@ -114,12 +115,12 @@ export class ModuleLayout implements Module {
         });
         gui.add(this, "stockDiameter", 1, 30, 0.1).onChange(_ => {
             this.#updateStockVis();
-            this.modPlanner.initPlan(this.targetSurf, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+            this.modPlanner.initPlan(this.targetSurf, this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
         });
         gui.add(this, "stockLength", 1, 30, 0.1).onChange(_ => {
             this.baseZ = this.stockLength - this.aboveWorkSize;
             this.#updateStockVis();
-            this.modPlanner.initPlan(this.targetSurf, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+            this.modPlanner.initPlan(this.targetSurf, this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
         });
         gui.add(this, "showStockMesh").onChange(v => {
             this.framework.setVisVisibility("stock", v);
@@ -155,13 +156,14 @@ export class ModuleLayout implements Module {
                     geometry.translate(-1, 0, 2);
                 }
 
+                this.targetGeom = geometry;
                 this.targetSurf = toTriSoup(geometry);
                 const aabb = computeAABB(this.targetSurf);
                 // assuming aabb.min.z == 0.
                 this.aboveWorkSize = aabb.max.z + this.stockTopBuffer;
                 this.baseZ = this.stockLength - this.aboveWorkSize;
                 this.#updateStockVis();
-                this.modPlanner.initPlan(this.targetSurf, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+                this.modPlanner.initPlan(this.targetSurf, this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
 
                 const material = new THREE.MeshPhysicalMaterial({
                     color: 0xb2ffc8,
