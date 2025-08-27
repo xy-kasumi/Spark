@@ -85,6 +85,10 @@ install-manifold: $(MANIFOLD_DIR)
 .PHONY: build-manifold
 build-manifold: $(MANIFOLD_BUILD_DIR)/src/manifold/libmanifold.a
 
+.PHONY: format
+format:
+	clang-format -i -style=Chromium $(SCRIPT_DIR)/*.cpp
+
 .PHONY: clean
 clean:
 	rm -rf $(OUTPUT_DIR)

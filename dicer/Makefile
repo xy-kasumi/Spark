@@ -19,8 +19,11 @@ build: typecheck $(DIST_DIR)/wasm/wasm_geom.js $(TS_STAMP) $(DIST_DIR)/vendor $(
 
 .PHONY: typecheck
 typecheck:
-	@echo "Validating TypeScript..."
 	tsc --noEmit
+
+.PHONY: format
+format:
+	$(MAKE) -C wasm format
 
 $(DIST_DIR)/wasm/wasm_geom.js: wasm/entrypoint.cpp
 	@echo "Building WASM module..."

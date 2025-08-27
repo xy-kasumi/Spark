@@ -8,3 +8,5 @@
 
 ## Dicer-Specific Guidance
 - In dicer, don't use npm or npx; they're unavailable. Use `make` and `make typecheck` (it internally uses raw tsc).
+- After making changes, 1. call `make` to verify build passes, 2. call `make format` to auto-format the code.
+- For C++ code under wasm/, we use Chromium formatting.
