@@ -6,10 +6,13 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
 import { debug, visDot, visQuad } from './debug.js';
 import { ModuleFramework, Module } from './framework.js';
-import { diceSurf } from './mesh.js';
+//import { diceSurf } from './mesh.js';
 import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, GpuKernels, Shape } from './gpu-geom.js';
-import { VoxelGridCpu } from './cpu-geom.js';
-import { TrackingVoxelGrid, initVGForPoints } from './tracking-voxel.js';
+//import { VoxelGridCpu } from './cpu-geom.js';
+//import { TrackingVoxelGrid, initVGForPoints } from './tracking-voxel.js';
+import { initWasmGeom, WasmGeom, toTriSoup } from './wasm-geom.js';
+
+
 
 /**
  * Apply translation to geometry in-place
@@ -72,101 +75,101 @@ const generateStockGeom = (stockRadius: number = 7.5, stockHeight: number = 15):
  * Create occupancy voxel grid visualization.
  * @param vg Voxel grid to visualize (u32: 255:full, 128:partial, 0:empty)
  */
-const createOccupancyVis = (vg: VoxelGridCpu): THREE.Object3D => {
-    if (vg.type !== "u32") {
-        throw `Invalid vg type for occupancy: ${vg.type}`;
-    }
+// const createOccupancyVis = (vg: VoxelGridCpu): THREE.Object3D => {
+//     if (vg.type !== "u32") {
+//         throw `Invalid vg type for occupancy: ${vg.type}`;
+//     }
 
-    const t0 = performance.now();
-    const cubeSize = vg.res * 1.0;
-    const cubeGeom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+//     const t0 = performance.now();
+//     const cubeSize = vg.res * 1.0;
+//     const cubeGeom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
 
-    const meshContainer = new THREE.Object3D();
-    meshContainer.position.copy(vg.ofs);
-    const axesHelper = new THREE.AxesHelper();
-    axesHelper.scale.set(vg.res * vg.numX, vg.res * vg.numY, vg.res * vg.numZ);
+//     const meshContainer = new THREE.Object3D();
+//     meshContainer.position.copy(vg.ofs);
+//     const axesHelper = new THREE.AxesHelper();
+//     axesHelper.scale.set(vg.res * vg.numX, vg.res * vg.numY, vg.res * vg.numZ);
 
-    const meshFull = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), vg.countIf(val => val === 255));
-    const meshPartial = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial({ transparent: true, opacity: 0.25 }), vg.countIf(val => val === 128));
+//     const meshFull = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), vg.countIf(val => val === 255));
+//     const meshPartial = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial({ transparent: true, opacity: 0.25 }), vg.countIf(val => val === 128));
 
-    let instanceIxFull = 0;
-    let instanceIxPartial = 0;
-    for (let iz = 0; iz < vg.numZ; iz++) {
-        for (let iy = 0; iy < vg.numY; iy++) {
-            for (let ix = 0; ix < vg.numX; ix++) {
-                const v = vg.get(ix, iy, iz);
-                if (v === 0) {
-                    continue;
-                }
+//     let instanceIxFull = 0;
+//     let instanceIxPartial = 0;
+//     for (let iz = 0; iz < vg.numZ; iz++) {
+//         for (let iy = 0; iy < vg.numY; iy++) {
+//             for (let ix = 0; ix < vg.numX; ix++) {
+//                 const v = vg.get(ix, iy, iz);
+//                 if (v === 0) {
+//                     continue;
+//                 }
 
-                // whatever different color gradient
-                meshFull.setColorAt(instanceIxFull, new THREE.Color(ix * 0.01 + 0.5, iy * 0.01 + 0.5, iz * 0.01 + 0.5));
+//                 // whatever different color gradient
+//                 meshFull.setColorAt(instanceIxFull, new THREE.Color(ix * 0.01 + 0.5, iy * 0.01 + 0.5, iz * 0.01 + 0.5));
 
-                const mtx = new THREE.Matrix4();
-                mtx.compose(
-                    new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res),
-                    new THREE.Quaternion(),
-                    new THREE.Vector3(1, 1, 1).multiplyScalar(v === 255 ? 1.0 : 0.8));
+//                 const mtx = new THREE.Matrix4();
+//                 mtx.compose(
+//                     new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res),
+//                     new THREE.Quaternion(),
+//                     new THREE.Vector3(1, 1, 1).multiplyScalar(v === 255 ? 1.0 : 0.8));
 
-                if (v === 255) {
-                    meshFull.setMatrixAt(instanceIxFull, mtx);
-                    instanceIxFull++;
-                } else {
-                    meshPartial.setMatrixAt(instanceIxPartial, mtx);
-                    instanceIxPartial++;
-                }
-            }
-        }
-    }
+//                 if (v === 255) {
+//                     meshFull.setMatrixAt(instanceIxFull, mtx);
+//                     instanceIxFull++;
+//                 } else {
+//                     meshPartial.setMatrixAt(instanceIxPartial, mtx);
+//                     instanceIxPartial++;
+//                 }
+//             }
+//         }
+//     }
 
-    meshContainer.add(meshFull);
-    meshContainer.add(meshPartial);
-    meshFull.add(axesHelper);
+//     meshContainer.add(meshFull);
+//     meshContainer.add(meshPartial);
+//     meshFull.add(axesHelper);
 
-    console.log(`  createOccupancyVis took ${performance.now() - t0}ms`);
-    return meshContainer;
-};
+//     console.log(`  createOccupancyVis took ${performance.now() - t0}ms`);
+//     return meshContainer;
+// };
 
-const initCreateDeviationVis = (kernels) => {
-    // input: deviation (>=0: dev, -1: empty)
-    // output: mask (1: visible, 0: hidden)
-    // TODO: This uses lots of "hidden" impl detail of map. maybe better to move to voxel.js?
-    kernels.registerMapFn("visible_dev_mask", "f32", "u32", `
-        if (vi < 0) {
-            vo = 0;
-        } else if (any(index3 == vec3u(0)) || any(index3 + 1 == nums)) {
-            vo = 1; // boundary voxel is visible regardless of neighbors.
-        } else {
-            let ofs = array<vec3i, 6>(
-                vec3i(1, 0, 0),
-                vec3i(-1, 0, 0),
-                vec3i(0, 1, 0),
-                vec3i(0, -1, 0),
-                vec3i(0, 0, 1),
-                vec3i(0, 0, -1),
-            );
-            var has_empty_neighbor = false;
-            for (var i = 0u; i < 6u; i++) {
-                let nix3 = vec3u(vec3i(index3) + ofs[i]);
-                let nv = vs_in[compose_ix(nix3)];
-                if (nv < 0) {
-                    has_empty_neighbor = true;
-                    break;
-                }
-            }
-            // this voxel is visible through empty neighbor.
-            vo = select(0u, 1u, has_empty_neighbor);
-        }
-    `);
+// const initCreateDeviationVis = (kernels) => {
+//     // input: deviation (>=0: dev, -1: empty)
+//     // output: mask (1: visible, 0: hidden)
+//     // TODO: This uses lots of "hidden" impl detail of map. maybe better to move to voxel.js?
+//     kernels.registerMapFn("visible_dev_mask", "f32", "u32", `
+//         if (vi < 0) {
+//             vo = 0;
+//         } else if (any(index3 == vec3u(0)) || any(index3 + 1 == nums)) {
+//             vo = 1; // boundary voxel is visible regardless of neighbors.
+//         } else {
+//             let ofs = array<vec3i, 6>(
+//                 vec3i(1, 0, 0),
+//                 vec3i(-1, 0, 0),
+//                 vec3i(0, 1, 0),
+//                 vec3i(0, -1, 0),
+//                 vec3i(0, 0, 1),
+//                 vec3i(0, 0, -1),
+//             );
+//             var has_empty_neighbor = false;
+//             for (var i = 0u; i < 6u; i++) {
+//                 let nix3 = vec3u(vec3i(index3) + ofs[i]);
+//                 let nv = vs_in[compose_ix(nix3)];
+//                 if (nv < 0) {
+//                     has_empty_neighbor = true;
+//                     break;
+//                 }
+//             }
+//             // this voxel is visible through empty neighbor.
+//             vo = select(0u, 1u, has_empty_neighbor);
+//         }
+//     `);
 
-    kernels.registerMapFn("cv_dev_data", "f32", "vec4f", `
-        vo = vec4f(p, vi);
-    `);
+//     kernels.registerMapFn("cv_dev_data", "f32", "vec4f", `
+//         vo = vec4f(p, vi);
+//     `);
 
-    kernels.registerMapFn("max_dev_mask", "f32", "u32", `
-        vo = select(0u, 1u, vi >= max_dev);
-    `, { max_dev: "f32" });
-};
+//     kernels.registerMapFn("max_dev_mask", "f32", "u32", `
+//         vo = select(0u, 1u, vi >= max_dev);
+//     `, { max_dev: "f32" });
+// };
 
 /**
  * Get max deviation from voxel grid.
@@ -175,9 +178,9 @@ const initCreateDeviationVis = (kernels) => {
  * @returns Maximum deviation
  * @async
  */
-const getMaxDeviation = async (kernels: GpuKernels, vg: VoxelGridGpu) => {
-    return (await kernels.reduce("max", vg)) as number;
-};
+// const getMaxDeviation = async (kernels: GpuKernels, vg: VoxelGridGpu) => {
+//     return (await kernels.reduce("max", vg)) as number;
+// };
 
 /**
  * Create deviation voxel grid visualization. (blue: 0 deviation, red: maxDev deviation)
@@ -186,57 +189,57 @@ const getMaxDeviation = async (kernels: GpuKernels, vg: VoxelGridGpu) => {
  * @param maxDev Maximum deviation to visualize.
  * @async
  */
-const createDeviationVis = async (kernels: GpuKernels, vg: VoxelGridGpu, maxDev: number = 3): Promise<THREE.Object3D> => {
-    if (vg.type !== "f32") {
-        throw `Invalid vg type for deviation: ${vg.type}`;
-    }
+// const createDeviationVis = async (kernels: GpuKernels, vg: VoxelGridGpu, maxDev: number = 3): Promise<THREE.Object3D> => {
+//     if (vg.type !== "f32") {
+//         throw `Invalid vg type for deviation: ${vg.type}`;
+//     }
 
-    const t0 = performance.now();
+//     const t0 = performance.now();
 
-    const cubeSize = vg.res * 1.0;
-    const cubeGeom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+//     const cubeSize = vg.res * 1.0;
+//     const cubeGeom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
 
-    const resultVis = new THREE.Object3D();
-    const axesHelper = new THREE.AxesHelper();
-    axesHelper.scale.set(vg.res * vg.numX, vg.res * vg.numY, vg.res * vg.numZ);
-    axesHelper.position.copy(vg.ofs);
+//     const resultVis = new THREE.Object3D();
+//     const axesHelper = new THREE.AxesHelper();
+//     axesHelper.scale.set(vg.res * vg.numX, vg.res * vg.numY, vg.res * vg.numZ);
+//     axesHelper.position.copy(vg.ofs);
 
-    // Extract visible voxels.
-    const maskVg = kernels.createLike(vg, "u32");
-    const dataVg = kernels.createLike(vg, "vec4f");
-    kernels.map("visible_dev_mask", vg, maskVg);
-    kernels.map("cv_dev_data", vg, dataVg);
-    const numVisible = (await kernels.reduce("sum", maskVg)) as number;
-    const packedResultBuf = kernels.createBuffer(16 * numVisible);
-    kernels.packRaw(maskVg, dataVg, packedResultBuf);
-    const packedResultBufCpu = new ArrayBuffer(16 * numVisible);
-    await kernels.copyBuffer(packedResultBuf, packedResultBufCpu);
-    packedResultBuf.destroy();
-    kernels.destroy(maskVg);
-    kernels.destroy(dataVg);
+//     // Extract visible voxels.
+//     const maskVg = kernels.createLike(vg, "u32");
+//     const dataVg = kernels.createLike(vg, "vec4f");
+//     kernels.map("visible_dev_mask", vg, maskVg);
+//     kernels.map("cv_dev_data", vg, dataVg);
+//     const numVisible = (await kernels.reduce("sum", maskVg)) as number;
+//     const packedResultBuf = kernels.createBuffer(16 * numVisible);
+//     kernels.packRaw(maskVg, dataVg, packedResultBuf);
+//     const packedResultBufCpu = new ArrayBuffer(16 * numVisible);
+//     await kernels.copyBuffer(packedResultBuf, packedResultBufCpu);
+//     packedResultBuf.destroy();
+//     kernels.destroy(maskVg);
+//     kernels.destroy(dataVg);
 
-    // Transform them into InstancedMesh.
-    const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), numVisible);
-    const resultArr = new Float32Array(packedResultBufCpu); // px, py, pz, dev
-    const mtx = new THREE.Matrix4();
-    const col = new THREE.Color();
-    for (let i = 0; i < numVisible; i++) {
-        // set position
-        mtx.makeTranslation(resultArr[i * 4 + 0], resultArr[i * 4 + 1], resultArr[i * 4 + 2]);
-        mesh.setMatrixAt(i, mtx);
+//     // Transform them into InstancedMesh.
+//     const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), numVisible);
+//     const resultArr = new Float32Array(packedResultBufCpu); // px, py, pz, dev
+//     const mtx = new THREE.Matrix4();
+//     const col = new THREE.Color();
+//     for (let i = 0; i < numVisible; i++) {
+//         // set position
+//         mtx.makeTranslation(resultArr[i * 4 + 0], resultArr[i * 4 + 1], resultArr[i * 4 + 2]);
+//         mesh.setMatrixAt(i, mtx);
 
-        // set color, from blue(dev=0) to red(dev=maxDev).
-        const dev = resultArr[i * 4 + 3];
-        const t = Math.min(1, dev / maxDev);
-        mesh.setColorAt(i, col.setRGB(0.2 + t * 0.8, 0.2, 0.2 + (1 - t) * 0.8));
-    }
+//         // set color, from blue(dev=0) to red(dev=maxDev).
+//         const dev = resultArr[i * 4 + 3];
+//         const t = Math.min(1, dev / maxDev);
+//         mesh.setColorAt(i, col.setRGB(0.2 + t * 0.8, 0.2, 0.2 + (1 - t) * 0.8));
+//     }
 
-    resultVis.add(mesh);
-    resultVis.add(axesHelper);
+//     resultVis.add(mesh);
+//     resultVis.add(axesHelper);
 
-    console.log(`  createDeviationVis took ${performance.now() - t0}ms`);
-    return resultVis;
-};
+//     console.log(`  createDeviationVis took ${performance.now() - t0}ms`);
+//     return resultVis;
+// };
 
 /**
  * Visualize "max deviation" in voxel grid.
@@ -822,7 +825,7 @@ export class ModulePlanner implements Module {
     showPlanPath: boolean;
     highlightSweep: number;
     kernels: GpuKernels;
-    trvg: TrackingVoxelGrid;
+    //    trvg: TrackingVoxelGrid;
     planPath: PathSegment[];
     highlightGui: any;
     genSweeps: "continue" | "awaiting" | "none";
@@ -830,6 +833,16 @@ export class ModulePlanner implements Module {
     aboveWorkSize: number;
     gen: AsyncGenerator<"break" | undefined, void, unknown>;
     stockSurf: Float32Array;
+
+    // View vector for mesh projection
+    viewVectorX: number = 0;
+    viewVectorY: number = 0;
+    viewVectorZ: number = 1;
+
+    // Subtract sphere radius
+    subtractRadius: number = 5;
+
+    wasmGeom: WasmGeom | null;
 
     /**
      * @param framework - ModuleFramework instance for visualization management
@@ -871,10 +884,15 @@ export class ModulePlanner implements Module {
             throw new Error('WebGPU not supported');
         }
         (async () => {
-            const adapter = await navigator.gpu.requestAdapter();
-            this.kernels = new GpuKernels(await adapter.requestDevice());
-            initCreateDeviationVis(this.kernels);
+            //const adapter = await navigator.gpu.requestAdapter();
+            //this.kernels = new GpuKernels(await adapter.requestDevice());
+            //            initCreateDeviationVis(this.kernels);
         })();
+
+        initWasmGeom().then(wg => {
+            this.wasmGeom = wg;
+            console.log("WASM Geom module initialized");
+        });
 
         this.framework.registerModule(this);
     }
@@ -910,6 +928,20 @@ export class ModulePlanner implements Module {
             }
             this.framework.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath);
         }).listen();
+
+        // wasm-geom testers
+        const projectionFolder = gui.addFolder("Mesh Projection");
+        projectionFolder.add(this, "viewVectorX", -1, 1, 0.1).name("View X").listen();
+        projectionFolder.add(this, "viewVectorY", -1, 1, 0.1).name("View Y").listen();
+        projectionFolder.add(this, "viewVectorZ", -1, 1, 0.1).name("View Z").listen();
+        projectionFolder.add(this, "randomizeViewVector").name("Randomize");
+        projectionFolder.add(this, "projectMeshWASM").name("Project");
+
+        // Subtract button and radius slider
+        gui.add(this, "subtractRadius", 1, 15, 0.1).name("Subtract Radius").listen();
+        gui.add(this, "subtractMeshWASM").name("Subtract (Manifold)");
+        gui.add(this, "testCubeMinusSphere").name("Test: Cube - Sphere (Manifold)");
+
     }
 
     animateHook() {
@@ -1002,6 +1034,7 @@ export class ModulePlanner implements Module {
         const stockGeom = generateStockGeom(this.stockDiameter / 2, simStockLength);
         translateGeom(stockGeom, new THREE.Vector3(0, 0, -(this.stockCutWidth + this.simWorkBuffer)));
         this.stockSurf = convGeomToSurf(stockGeom);
+        /*
         const workVg = initVGForPoints(this.stockSurf, this.resMm);
         const targVg = workVg.clone();
         const tst = performance.now();
@@ -1011,16 +1044,19 @@ export class ModulePlanner implements Module {
         diceSurf(this.targetSurf, targVg);
         console.log(`diceSurf took ${performance.now() - ttg}ms`);
         console.log(`stock: ${workVg.volume()} mm^3 (${workVg.countIf(v => v > 0).toLocaleString("en-US")} voxels) / target: ${targVg.volume()} mm^3 (${targVg.countIf(v => v > 0).toLocaleString("en-US")} voxels)`);
+        */
 
-        this.trvg = new TrackingVoxelGrid(this.kernels);
+        //this.trvg = new TrackingVoxelGrid(this.kernels);
+        /*
         await this.trvg.setFromWorkAndTarget(workVg, targVg);
         await this.trvg.setProtectedWorkBelowZ(-this.stockCutWidth);
+        */
 
         this.planPath = [];
-        const workDev = this.trvg.extractWorkWithDeviation();
-        this.framework.updateVis("work-vg", [await createDeviationVis(this.kernels, workDev)], this.showWork);
-        this.kernels.destroy(workDev);
-        this.framework.updateVis("targ-vg", [createOccupancyVis(await this.trvg.extractTarget())], this.showTarget);
+        //const workDev = this.trvg.extractWorkWithDeviation();
+        //this.framework.updateVis("work-vg", [await createDeviationVis(this.kernels, workDev)], this.showWork);
+        //this.kernels.destroy(workDev);
+        //this.framework.updateVis("targ-vg", [createOccupancyVis(await this.trvg.extractTarget())], this.showTarget);
         this.framework.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
 
 
@@ -1045,542 +1081,210 @@ export class ModulePlanner implements Module {
          * @async
          */
         const tryCommitSweep = async (sweep: Sweep) => {
-            const t0 = performance.now();
-            try {
-                const volRemoved = await this.trvg.commitRemoval(
-                    sweep.partialPath.getMinRemoveShapes(),
-                    sweep.partialPath.getMaxRemoveShapes(),
-                    sweep.ignoreOvercutErrors ?? false
-                );
-                if (volRemoved === 0) {
-                    console.log("commit rejected, because work not removed");
-                    return false;
-                } else {
-                    console.log(`commit sweep-${this.numSweeps} success`);
-                    // commit success
-                    this.removedVol += volRemoved;
-                    this.remainingVol = await this.trvg.getRemainingWorkVol();
-                    this.planPath.push(...sweep.partialPath.getPath());
-                    this.toolIx = sweep.partialPath.getToolIx();
-                    this.toolLength = sweep.partialPath.getToolLength();
-                    this.numSweeps++;
-                    this.highlightGui.max(this.numSweeps - 1); // ugly...
-                    this.highlightSweep = this.numSweeps - 1;
-                    this.showingSweep++;
-
-                    // update visualizations
-                    const workDeviation = this.trvg.extractWorkWithDeviation(true);
-                    this.deviation = (await getMaxDeviation(this.kernels, workDeviation)) as number;
-                    this.framework.updateVis("work-vg", [await createDeviationVis(this.kernels, workDeviation, this.deviation)], this.showWork);
-                    this.framework.updateVis("work-max-dev", [await createMaxDeviationVis(this.kernels, workDeviation, this.deviation)]);
-                    this.kernels.destroy(workDeviation);
-
-                    this.framework.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath);
-                    const lastPt = this.planPath[this.planPath.length - 1];
-                    this.updateVisTransforms(lastPt.tipPosW, lastPt.tipNormalW, this.toolLength);
-
-                    return true;
-                }
-            } finally {
-                console.log(`tryCommitSweep: took ${performance.now() - t0}ms`);
-            }
+            console.log("old tryCommitSweep", sweep);
         };
 
         // rough removals
-        for (const normal of candidateNormals) {
-            let offset = (await this.trvg.queryWorkRange(normal)).max;
-            console.log("Checking planar sweep viability", offset);
-
-            // TODO: better termination condition
-            while (offset > -50) {
-                const sweep = await this.genPlanarSweep(normal, offset, this.machineConfig.toolNaturalDiameter, feedDepth);
-                if (!sweep) {
-                    break;
-                }
-                offset -= feedDepth;
-                if (await tryCommitSweep(sweep)) {
-                    yield;
-                }
-            }
-
-            if (this.numSweeps >= 10) {
-                const dtSec = (performance.now() - t0) / 1e3;
-                console.log(`measurement milestone reached after ${dtSec}sec tot, ${dtSec / this.numSweeps}sec/sweep`);
-                // return;
-            }
-        }
+        // TODO: implement!!!
 
         yield "break";
-
-        // rough drills
-        for (const normal of candidateNormals) {
-            const sweep = await this.genDrillSweep(normal, this.machineConfig.toolNaturalDiameter / 2);
-            if (sweep) {
-                if (await tryCommitSweep(sweep)) {
-                    yield;
-                }
-            }
-        }
-
-        // part off
-        const sweep = await this.genPartOffSweep();
-        if (await tryCommitSweep(sweep)) {
-            yield;
-        }
 
         // not done, but out of choices
         const dt = performance.now() - t0;
         console.log(`possible sweep exhausted after ${dt / 1e3}sec (${dt / this.numSweeps}ms/sweep)`);
     }
 
+
     /**
-     * Generate "planar sweep", directly below given plane.
-     * Planer sweep only uses horizontal cuts.
-     * 
-     * @param normal Normal vector, in work coords. = tip normal
-     * @param offset Offset from the plane. offset * normal forms the plane.
-     * @param toolDiameter Tool diameter to use for this sweep.
-     * @param feedDepth cut depth to use for this sweep.
-     * @returns null if impossible
+     * Generate sphere geometry
+     * @param radius Sphere radius
+     * @returns Sphere geometry
      */
-    async genPlanarSweep(normal: THREE.Vector3, offset: number, toolDiameter: number, feedDepth: number): Promise<Sweep | null> {
-        console.log(`genPlanarSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), offset: ${offset}, toolDiameter: ${toolDiameter}`);
-        let t0True = performance.now();
-        let t0 = performance.now();
-        const normalRange = await this.trvg.queryWorkRange(normal);
-        if (normalRange.max < offset) {
-            throw "contradicting offset for genPlanarSweep";
-        }
-        const minToolLength = (normalRange.max - offset) + feedDepth;
-        if (minToolLength > this.machineConfig.toolNaturalLength) {
-            return null;
-        }
-        const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, minToolLength, this.toolIx, this.toolLength, this.machineConfig);
-
-        const rot = createRotationWithZ(normal);
-        const feedDir = new THREE.Vector3(1, 0, 0).transformDirection(rot);
-        const rowDir = new THREE.Vector3(0, 1, 0).transformDirection(rot);
-        const feedRange = await this.trvg.queryWorkRange(feedDir);
-        const rowRange = await this.trvg.queryWorkRange(rowDir);
-        console.log(`  queryWorkRange took ${performance.now() - t0}ms`);
-
-        const maxHeight = normalRange.max - normalRange.min;
-
-        const feedWidth = toolDiameter - this.resMm; // create little overlap, to remove undercut artifact caused by conservative minGeom computation.
-        const segmentLength = 1;
-        const discreteToolRadius = Math.ceil(toolDiameter / segmentLength / 2 - 0.5); // spans segments [-r, r].
-
-        const margin = toolDiameter;
-        const scanOrigin = offsetPoint(new THREE.Vector3(), [normal, offset], [feedDir, feedRange.min - margin], [rowDir, rowRange.min - margin]);
-        const numRows = Math.ceil((rowRange.max - rowRange.min + 2 * margin) / feedWidth);
-        const numSegs = Math.ceil((feedRange.max - feedRange.min + 2 * margin) / segmentLength);
-
-        if (debug.log) {
-            debug.vlog(visDot(scanOrigin, "black"));
-            debug.vlog(visQuad(
-                scanOrigin,
-                rowDir.clone().multiplyScalar(feedWidth * numRows),
-                feedDir.clone().multiplyScalar(segmentLength * numSegs),
-                "gray"));
-        }
-
-        const segCenterBot = (ixRow, ixSeg) => {
-            return offsetPoint(scanOrigin, [rowDir, feedWidth * ixRow], [feedDir, segmentLength * ixSeg], [normal, -feedDepth]);
-        };
-
-        await this.kernels.device.queue.onSubmittedWorkDone();
-        t0 = performance.now();
-
-        // rows : [row]
-        // row : [segment]
-        // segment : {
-        //   segCenterBot: Vector3
-        //   state: "blocked" | "work" | "empty" // blocked = contains non-cuttable bits, work = cuttable & has non-zero work, empty = accessible and no work
-        // }
-        const rows = new Array(numRows);
-        const queries = [] as {shape: Shape, query: "blocked" | "has_work"}[];
-        for (let ixRow = 0; ixRow < numRows; ixRow++) {
-            rows[ixRow] = new Array(numSegs);
-            for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
-                const segShapeAndAbove = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, maxHeight], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
-                const segShape = createBoxShapeFrom(segCenterBot(ixRow, ixSeg), ["origin", normal, feedDepth], ["center", feedDir, segmentLength], ["center", rowDir, toolDiameter]);
-                // Maybe should check any-non work for above, instead of blocked?
-                // even if above region is cuttable, it will alter tool state unexpectedly.
-                // Current logic only works correctly if scan pattern is same for different offset.
-                const qixBlocked = queries.length;
-                queries.push({ shape: segShapeAndAbove, query: "blocked" });
-                const qixHasWork = queries.length;
-                queries.push({ shape: segShape, query: "has_work" });
-                rows[ixRow][ixSeg] = { qixBlocked, qixHasWork };
-            }
-        }
-        const queryResults = await this.trvg.parallelQuery(queries);
-        for (let ixRow = 0; ixRow < numRows; ixRow++) {
-            for (let ixSeg = 0; ixSeg < numSegs; ixSeg++) {
-                const { qixBlocked, qixHasWork } = rows[ixRow][ixSeg];
-                const isBlocked = queryResults[qixBlocked];
-                const hasWork = queryResults[qixHasWork];
-                const state = isBlocked ? "blocked" : (hasWork ? "work" : "empty");
-                rows[ixRow][ixSeg] = state;
-
-                if (debug.log) {
-                    let color;
-                    if (state === "blocked") {
-                        color = hasWork ? "orange" : "red";
-                    } else if (state === "work") {
-                        color = "green";
-                    } else {
-                        color = "gray";
-                    }
-                    debug.vlog(visDot(segCenterBot(ixRow, ixSeg), color));
-                }
-            }
-        }
-        console.log(`  shape queries took ${performance.now() - t0}ms`);
-
-        // From segemnts, create "scans".
-        // Scan will end at scanEndBot = apBot + scanDir * scanLen. half-cylinder of toolDiameter will extrude from scanEndBot at max.
-        const scans = []; // {apBot, scanDir, scanLen}
-        for (let ixRow = 0; ixRow < rows.length; ixRow++) {
-            const row = rows[ixRow];
-            const safeGet = (ix) => {
-                if (ix < 0 || ix >= row.length) {
-                    return "empty";
-                }
-                return row[ix];
-            };
-            const isAccessOk = (ix) => {
-                if (ix < 0 || ix >= row.length) {
-                    return false;
-                }
-                for (let dix = -discreteToolRadius; dix <= discreteToolRadius; dix++) {
-                    if (safeGet(ix + dix) !== "empty") {
-                        return false;
-                    }
-                }
-                return true;
-            };
-            const isBlockedAround = (ix) => {
-                for (let dix = -discreteToolRadius; dix <= discreteToolRadius; dix++) {
-                    if (safeGet(ix + dix) === "blocked") {
-                        return true;
-                    }
-                }
-                return false;
-            };
-            const findMax = (arr, fn) => {
-                let val = fn(arr[0]);
-                let ix = 0;
-                for (let i = 1; i < arr.length; i++) {
-                    const v = fn(arr[i]);
-                    if (v > val) {
-                        val = v;
-                        ix = i;
-                    }
-                }
-                return arr[ix];
-            };
-
-            const scanCandidates = [];
-            for (let ixBegin = 0; ixBegin < row.length; ixBegin++) {
-                if (!isAccessOk(ixBegin)) {
-                    continue;
-                }
-
-                // gather all valid right-scans.
-                for (let len = 2; ; len++) {
-                    const ixEnd = ixBegin + len;
-                    if (ixEnd >= row.length || isBlockedAround(ixEnd)) {
-                        break;
-                    }
-
-                    const workIxs = [];
-                    for (let i = ixBegin + 1; i < ixEnd; i++) {
-                        if (row[i] === "work") {
-                            workIxs.push(i);
-                        }
-                    }
-                    scanCandidates.push({ dir: "+", ixBegin, len, workIxs: new Set(workIxs) });
-                }
-
-                // gather all valid left-scans.
-                for (let len = 2; ; len++) {
-                    const ixEnd = ixBegin - len;
-                    if (ixEnd < 0 || isBlockedAround(ixEnd)) {
-                        break;
-                    }
-
-                    const workIxs = [];
-                    for (let i = ixBegin - 1; i > ixEnd; i--) {
-                        if (row[i] === "work") {
-                            workIxs.push(i);
-                        }
-                    }
-                    scanCandidates.push({ dir: "-", ixBegin, len, workIxs: new Set(workIxs) });
-                }
-            }
-
-            if (scanCandidates.length === 0) {
-                continue;
-            }
-
-            // Greedy-pick valid scans that maximizes workIx coverage but minimize total len.
-            let unsatWorkIxs = new Set();
-            for (let ix = 0; ix < row.length; ix++) {
-                if (row[ix] === "work") {
-                    unsatWorkIxs.add(ix);
-                }
-            }
-
-            const BIGGER_THAN_ANY_LEN = 1000;
-            const rowScans = [];
-            while (unsatWorkIxs.size > 0) {
-                const bestScan = findMax(scanCandidates, scan => {
-                    const gain = scan.workIxs.intersection(unsatWorkIxs).size;
-                    const score = gain * BIGGER_THAN_ANY_LEN - scan.len;
-                    return score;
-                });
-                if (bestScan.workIxs.intersection(unsatWorkIxs).size === 0) {
-                    break; // best scan adds nothing
-                }
-                unsatWorkIxs = unsatWorkIxs.difference(bestScan.workIxs);
-                rowScans.push(bestScan);
-            }
-
-            for (const rs of rowScans) {
-                scans.push({
-                    apBot: segCenterBot(ixRow, rs.ixBegin),
-                    scanDir: rs.dir === "+" ? feedDir : feedDir.clone().negate(),
-                    scanLen: rs.len * segmentLength,
-                    workSegNum: rs.workIxs.size,
-                });
-            }
-        }
-
-        // Execute scans one by one.
-        const feedDepthWithExtra = feedDepth + this.resMm * 2; // treat a bit of extra is weared to remove any weird effect, both in real machine and min-cut simulation.
-        const evacuateOffset = normal.clone().multiplyScalar(3);
-
-        let remainingToolArea = 1; // keep remaining bit of tool for next scan.
-        for (const scan of scans) {
-            const endBot = offsetPoint(scan.apBot, [scan.scanDir, scan.scanLen]);
-
-            // When tool rotation=0 and pushed forward, following things happen in order:
-            // 1. Front semi-circle area is consumed first (mostly). During this time, cut diameter is exactly toolDiameter.
-            //      - "mostly": sometimes, even when front semi-circle is available, side of the tool start to erode.
-            // 2. Back semi-circle area is consumed. Cut diameter gradually decreases to 0.
-            // to cut the rectangular work area, we at least need to keep 0.5 (hemi-circle) of tool, when reaching scan end point.
-            const needToKeep = 0.6; // 0.5 is theoretical min. extra will be buffers.
-            const scanWorkArea = scan.workSegNum * segmentLength * toolDiameter;
-            const toolArea = Math.PI * (toolDiameter / 2) ** 2;
-            let areaConsumption = scanWorkArea * this.ewrMax / toolArea + needToKeep;
-            const numScans = Math.ceil(areaConsumption);
-
-            // This is most basic path.
-            // In reality, we don't need to go back to beginning nor go to end every time.
-            // We can also continue using weared tool in next scan w/o refresh.
-            for (let i = 0; i < numScans; i++) {
-                // Ensure scan is done with full tool.
-                if (remainingToolArea < 1) {
-                    sweepPath.discardToolTip(feedDepthWithExtra);
-                    remainingToolArea = 1;
-                }
-
-                sweepPath.nonRemove("move-in", scan.apBot.clone().add(evacuateOffset));
-                sweepPath.nonRemove("move-in", scan.apBot);
-                sweepPath.removeHorizontal(endBot, 0, toolDiameter, 0); // minDia=0, because we don't know min-cut during repeated scan.
-                sweepPath.nonRemove("move-out", endBot.clone().add(evacuateOffset));
-
-                if (areaConsumption > 1) {
-                    remainingToolArea--;
-                    areaConsumption--;
-                } else {
-                    remainingToolArea -= areaConsumption;
-                    areaConsumption = 0;
-                }
-            }
-            if (areaConsumption > 0) {
-                throw "numScan computation bug";
-            }
-            // after enough number of scans, we know min-cut covers rectangular region.
-            sweepPath.addMinRemoveShape(createBoxShapeFrom(scan.apBot, ["origin", normal, feedDepthWithExtra], ["origin", scan.scanDir, scan.scanLen], ["center", rowDir, toolDiameter]));
-        }
-        // clean tool to prestine state to satisfy sweep composability.
-        if (remainingToolArea < 0) {
-            sweepPath.discardToolTip(feedDepthWithExtra);
-        }
-
-        console.log(`genPlanarSweep: took ${performance.now() - t0True}ms`);
-        if (sweepPath.getPath().length === 0) {
-            return null;
-        }
-        return {
-            partialPath: sweepPath,
-            ignoreOvercutErrors: false,
-        };
+    private generateSphereGeometry(radius: number): THREE.BufferGeometry {
+        const geom = new THREE.SphereGeometry(radius, 32, 16);
+        geom.translate(1, 0, 0);
+        return geom;
     }
 
     /**
-     * Generate "drill sweep", axis=normal. Single drill sweep is single hole.
-     * 
-     * @param normal Normal vector, in work coords. = tip normal
-     * @param toolDiameter Tool diameter to use for this sweep.
-     * @returns null if impossible
+     * Generate cube geometry
+     * @param size Cube size (width, height, depth)
+     * @returns Cube geometry
      */
-    async genDrillSweep(normal: THREE.Vector3, toolDiameter: number): Promise<Sweep | null> {
-        console.log(`genDrillSweep: normal: (${normal.x}, ${normal.y}, ${normal.z}), toolDiameter: ${toolDiameter}`);
-        const t0 = performance.now();
-
-        const normalRange = await this.trvg.queryWorkRange(normal);
-        const depthDelta = toolDiameter;
-        const maxDepth = normalRange.max - normalRange.min;
-        const holeDiameter = toolDiameter * 1.1;
-
-        const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, 0, this.toolIx, this.toolLength, this.machineConfig);
-
-        const rot = createRotationWithZ(normal);
-        const scanDir0 = new THREE.Vector3(1, 0, 0).transformDirection(rot);
-        const scanDir1 = new THREE.Vector3(0, 1, 0).transformDirection(rot);
-        const scanRange0 = await this.trvg.queryWorkRange(scanDir0);
-        const scanRange1 = await this.trvg.queryWorkRange(scanDir1);
-
-        const scanRes = toolDiameter * 0.5;
-        // +depthDelta: ensure initial position is unoccupied
-        const scanOrigin = offsetPoint(new THREE.Vector3(), [scanDir0, scanRange0.min], [scanDir1, scanRange1.min], [normal, normalRange.max + depthDelta]);
-        const numScan0 = Math.ceil((scanRange0.max - scanRange0.min) / scanRes);
-        const numScan1 = Math.ceil((scanRange1.max - scanRange1.min) / scanRes);
-        const numScanDepth = Math.ceil(maxDepth / depthDelta);
-
-        // grid query for drilling
-        // if ok, just drill it with helical downwards path.
-        const drillHoleQs = [];
-        const queries = [] as {shape: Shape, query: "blocked" | "has_work"}[];
-        for (let ixScan0 = 0; ixScan0 < numScan0; ixScan0++) {
-            for (let ixScan1 = 0; ixScan1 < numScan1; ixScan1++) {
-                const scanPt = offsetPoint(scanOrigin, [scanDir0, scanRes * ixScan0], [scanDir1, scanRes * ixScan1]);
-                const qixsBlocked = [];
-                const qixsHasWork = [];
-                for (let ixScanDepth = 0; ixScanDepth < numScanDepth; ixScanDepth++) {
-                    // holeTopDepth = -depthDelta * ixScanDepth
-                    const holeBot = offsetPoint(scanPt, [normal, -depthDelta * (1 + ixScanDepth)]);
-                    const holeShape = createCylinderShape(holeBot, normal, holeDiameter / 2, depthDelta);
-
-                    const qixBlocked = queries.length;
-                    queries.push({ shape: holeShape, query: "blocked" });
-                    const qixHasWork = queries.length;
-                    queries.push({ shape: holeShape, query: "has_work" });
-
-                    qixsBlocked.push(qixBlocked);
-                    qixsHasWork.push(qixHasWork);
-                }
-                drillHoleQs.push({ scanPt, qixsBlocked, qixsHasWork });
-            }
-        }
-        console.log(`  genDrillSweep: #holeCandidates=${drillHoleQs.length}, #queries=${queries.length}`);
-        const queryResults = await this.trvg.parallelQuery(queries);
-
-        const drillHoles = [];
-        for (const hole of drillHoleQs) {
-            // Find begin depth.
-            let currDepthIx = 0;
-            let depthBegin = null;
-            while (currDepthIx < numScanDepth) {
-                const blocked = queryResults[hole.qixsBlocked[currDepthIx]];
-                const hasWork = queryResults[hole.qixsHasWork[currDepthIx]];
-
-                if (blocked) {
-                    break; // this location was no good (no work before being blocked)
-                }
-                if (hasWork) {
-                    depthBegin = depthDelta * currDepthIx; // good begin depth = holeTop
-                    break;
-                }
-                currDepthIx++;
-            }
-            if (depthBegin === null) {
-                if (debug.log) {
-                    debug.vlog(visDot(hole.scanPt, "gray"));
-                }
-                continue;
-            }
-
-            // Find end depth.
-            currDepthIx++;
-            let depthEnd = depthDelta * numScanDepth;
-            while (currDepthIx < numScanDepth) {
-                const blocked = queryResults[hole.qixsBlocked[currDepthIx]];
-                const hasWork = queryResults[hole.qixsHasWork[currDepthIx]];
-                // TODO: this can stop too early (when holes span multiple separate layers).
-                if (blocked || !hasWork) {
-                    depthEnd = depthDelta * currDepthIx; // end = holeTop
-                    break;
-                }
-                currDepthIx++;
-            }
-
-            const holeTop = offsetPoint(hole.scanPt, [normal, -depthBegin]);
-            const holeBot = offsetPoint(hole.scanPt, [normal, -depthEnd]);
-            if (debug.log) {
-                debug.vlog(visDot(holeTop, "red"));
-                debug.vlog(visDot(holeBot, "blue"));
-            }
-            drillHoles.push({
-                holeBot,
-                holeTop,
-            });
-        }
-        if (drillHoles.length === 0) {
-            console.log(`genDrillSweep: took ${performance.now() - t0}ms`);
-            return null;
-        }
-
-        // TODO: pick best hole (= removes most work)
-
-        // Generate paths
-        const evacuateOffset = normal.clone().multiplyScalar(3);
-
-        drillHoles.forEach(hole => {
-            sweepPath.nonRemove("move-in", hole.holeTop.clone().add(evacuateOffset));
-            // TODO: helical path
-            // TODO: wear handling
-            // TODO: proper min-cut
-            sweepPath.removeVertical(hole.holeBot, 0, toolDiameter, toolDiameter);
-            sweepPath.nonRemove("move-out", hole.holeTop.clone().add(evacuateOffset));
-        });
-
-        console.log(`genDrillSweep: took ${performance.now() - t0}ms`);
-        return {
-            partialPath: sweepPath,
-            ignoreOvercutErrors: false,
-        };
-    };
+    private generateCubeGeometry(size: number = 10): THREE.BufferGeometry {
+        const geom = new THREE.BoxGeometry(size, size, size);
+        return geom;
+    }
 
     /**
-     * Generate "part off" sweep.
+     * Simple test: Cube minus Sphere
      */
-    async genPartOffSweep(): Promise<Sweep> {
-        // TODO: use rectangular tool for efficiency.
-        // for now, just use circular tool because impl is simpler.
-        const normal = new THREE.Vector3(1, 0, 0);
-        const cutDir = new THREE.Vector3(0, 1, 0);
+    async testCubeMinusSphere() {
+        try {
+            console.log(`Testing: Cube (size=10) - Sphere (radius=${this.subtractRadius})`);
 
-        const ctRange = await this.trvg.queryWorkRange(cutDir);
-        const nrRange = await this.trvg.queryWorkRange(normal);
-        const cutOffset = new THREE.Vector3(0, 0, -this.stockCutWidth * 0.5); // center of cut path
+            // Generate cube and sphere meshes
+            const cubeGeometry = this.generateCubeGeometry(10);
+            const sphereGeometry = this.generateSphereGeometry(this.subtractRadius);
 
-        const minToolLength = nrRange.max - nrRange.min;
-        console.log(`minToolLength: ${minToolLength}`);
-        const sweepPath = new PartialPath(this.numSweeps, `sweep-${this.numSweeps}`, normal, minToolLength, this.toolIx, this.toolLength, this.machineConfig);
+            // Perform subtraction (cube - sphere) using C++ Manifold
+            const startTime = performance.now();
+            const geometry = this.wasmGeom.subtractMesh(cubeGeometry, sphereGeometry);
+            const endTime = performance.now();
 
-        const ptBeginBot = offsetPoint(cutOffset, [cutDir, ctRange.min], [normal, nrRange.min]);
-        const ptEndBot = offsetPoint(cutOffset, [cutDir, ctRange.max], [normal, nrRange.min]);
+            const numTris = geometry.getAttribute('position').count / 3;
+            console.log(`Test subtraction (C++ Manifold) completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${numTris} triangles`);
 
-        sweepPath.nonRemove("move-in", ptBeginBot);
-        sweepPath.removeHorizontal(ptEndBot, 123, this.stockCutWidth, this.stockCutWidth);
+            // Create mesh with a different color for test result
+            const material = new THREE.MeshPhysicalMaterial({
+                color: 0x80ff80,  // Light green color for test result
+                metalness: 0.1,
+                roughness: 0.8,
+                transparent: true,
+                wireframe: true
+            });
 
-        return {
-            partialPath: sweepPath,
-            ignoreOvercutErrors: true,
-        };
+            const mesh = new THREE.Mesh(geometry, material);
+            this.framework.updateVis("misc", [mesh]);
+
+            this.framework.updateVis("misc", [mesh]);
+
+        } catch (error) {
+            console.error("Test cube-sphere subtraction failed:", error);
+        }
+    }
+
+    /**
+     * Subtract sphere from target surface and display result
+     */
+    async subtractMeshWASM() {
+        try {
+            console.log(`Subtracting sphere (radius=${this.subtractRadius}) from target surface...`);
+
+            // Generate sphere mesh
+            const sphereGeometry = this.generateSphereGeometry(this.subtractRadius);
+
+            // Create geometry from targetSurf
+            const targetGeometry = new THREE.BufferGeometry();
+            const targetPositions = new Float32Array(this.targetSurf.length);
+            for (let i = 0; i < this.targetSurf.length; i++) {
+                targetPositions[i] = this.targetSurf[i];
+            }
+            targetGeometry.setAttribute('position', new THREE.BufferAttribute(targetPositions, 3));
+
+            // Perform subtraction using C++ Manifold via WASM
+            const startTime = performance.now();
+            const geometry = this.wasmGeom.subtractMesh(targetGeometry, sphereGeometry);
+            const endTime = performance.now();
+
+            const numTris = geometry.getAttribute('position').count / 3;
+            console.log(`C++ Manifold subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${numTris} triangles`);
+
+            // Create mesh with a different color
+            const material = new THREE.MeshPhysicalMaterial({
+                color: 0xff8080,  // Light red color for subtracted result
+                metalness: 0.1,
+                roughness: 0.8,
+                transparent: true,
+                wireframe: true,
+                opacity: 0.9,
+            });
+
+            const mesh = new THREE.Mesh(geometry, material);
+            this.framework.updateVis("misc", [mesh]);
+
+        } catch (error) {
+            console.error("Mesh subtraction failed:", error);
+        }
+    }
+
+    /**
+     * High-level mesh projection with visualization and error handling
+     */
+    async projectMeshWASM() {
+        try {
+            // Create and validate view vector
+            const viewVector = new THREE.Vector3(this.viewVectorX, this.viewVectorY, this.viewVectorZ);
+            if (viewVector.length() < 0.001) {
+                throw new Error("View vector too small");
+            }
+
+            // Generate orthonormal basis from view vector
+            const viewZ = viewVector.clone().normalize();
+            const temp = Math.abs(viewZ.dot(new THREE.Vector3(1, 0, 0))) > 0.9 ?
+                new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+            const viewX = temp.clone().sub(viewZ.clone().multiplyScalar(temp.dot(viewZ))).normalize();
+            const viewY = viewZ.clone().cross(viewX);
+            const origin = new THREE.Vector3(0, 0, 0);
+
+            console.log(`View basis: X(${viewX.x.toFixed(3)}, ${viewX.y.toFixed(3)}, ${viewX.z.toFixed(3)}) ` +
+                `Y(${viewY.x.toFixed(3)}, ${viewY.y.toFixed(3)}, ${viewY.z.toFixed(3)}) ` +
+                `Z(${viewZ.x.toFixed(3)}, ${viewZ.y.toFixed(3)}, ${viewZ.z.toFixed(3)})`);
+
+            // Call pure WASM wrapper
+            const startTime = performance.now();
+            // Create geometry from targetSurf
+            const targetGeometry = new THREE.BufferGeometry();
+            const targetPositions = new Float32Array(this.targetSurf.length);
+            for (let i = 0; i < this.targetSurf.length; i++) {
+                targetPositions[i] = this.targetSurf[i];
+            }
+            targetGeometry.setAttribute('position', new THREE.BufferAttribute(targetPositions, 3));
+
+            const contours = this.wasmGeom.projectMesh(targetGeometry, origin, viewX, viewY, viewZ);
+            const endTime = performance.now();
+            console.log(`WASM projection: ${this.targetSurf.length / 9} tris, ${(endTime - startTime).toFixed(2)}ms. ${contours.length} contour(s)`);
+
+            // Visualize contours on the view plane using LineLoop
+            const contourObjects: THREE.Object3D[] = [];
+            for (const contour of contours) {
+                // Transform 2D contour points back to 3D using orthonormal basis
+                const points3D: THREE.Vector3[] = [];
+                for (const point2D of contour) {
+                    const point3D = origin.clone()
+                        .add(viewX.clone().multiplyScalar(point2D.x))
+                        .add(viewY.clone().multiplyScalar(point2D.y));
+                    points3D.push(point3D);
+                }
+
+                const geometry = new THREE.BufferGeometry().setFromPoints(points3D);
+                const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
+                const lineLoop = new THREE.LineLoop(geometry, material);
+                contourObjects.push(lineLoop);
+            }
+
+            this.framework.updateVis("misc", contourObjects);
+        } catch (error) {
+            console.error("WASM projection failed:", error);
+
+            // Handle coordinate pattern errors with visualization
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            const coordPattern = /\((-?\d+\.\d+),(-?\d+\.\d+),(-?\d+\.\d+)\)-\((-?\d+\.\d+),(-?\d+\.\d+),(-?\d+\.\d+)\)/;
+            const match = errorMsg.match(coordPattern);
+
+            if (match) {
+                const p1 = new THREE.Vector3(parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3]));
+                const p2 = new THREE.Vector3(parseFloat(match[4]), parseFloat(match[5]), parseFloat(match[6]));
+
+                const errorObjects: THREE.Object3D[] = [visDot(p1, "red"), visDot(p2, "red")];
+                this.framework.updateVis("misc", errorObjects);
+            }
+        }
+    }
+
+    /**
+     * Randomize view vector
+     */
+    randomizeViewVector() {
+        // Generate random unit vector
+        const vec = new THREE.Vector3();
+        do {
+            vec.set((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
+        } while (vec.lengthSq() < 0.01);
+
+        vec.normalize();
+        this.viewVectorX = vec.x;
+        this.viewVectorY = vec.y;
+        this.viewVectorZ = vec.z;
     }
 }
