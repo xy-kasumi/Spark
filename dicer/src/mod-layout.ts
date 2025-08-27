@@ -8,7 +8,7 @@ import { ModuleFramework, Module } from './framework.js';
 import { ModulePlanner } from './mod-planner.js';
 import { computeAABB } from './tracking-voxel.js';
 import { visDot } from './debug.js';
-import { callWasmProjectMesh, callWasmManifoldSubtract, toTriSoup } from './wasm-geom.js';
+import { initWasmGeom, WasmGeom, toTriSoup } from './wasm-geom.js';
 
 
 /**
@@ -72,6 +72,8 @@ export class ModuleLayout implements Module {
     // Subtract sphere radius
     subtractRadius: number = 5;
 
+    wasmGeom: WasmGeom | null;
+
     constructor(framework: ModuleFramework, modPlanner: ModulePlanner) {
         this.framework = framework;
         this.modPlanner = modPlanner;
@@ -103,6 +105,11 @@ export class ModuleLayout implements Module {
         this.pulseCondition = "M4 P150 Q20 R40";
 
         this.framework.registerModule(this);
+
+        initWasmGeom().then(wg => {
+            this.wasmGeom = wg;
+            console.log("WASM Geom module initialized");
+        });
     }
 
     #updateStockVis() {
@@ -253,7 +260,7 @@ export class ModuleLayout implements Module {
 
             // Perform subtraction (cube - sphere) using C++ Manifold
             const startTime = performance.now();
-            const geometry = await callWasmManifoldSubtract(cubeGeometry, sphereGeometry);
+            const geometry = this.wasmGeom.subtractMesh(cubeGeometry, sphereGeometry);
             const endTime = performance.now();
 
             const numTris = geometry.getAttribute('position').count / 3;
@@ -298,7 +305,7 @@ export class ModuleLayout implements Module {
 
             // Perform subtraction using C++ Manifold via WASM
             const startTime = performance.now();
-            const geometry = await callWasmManifoldSubtract(targetGeometry, sphereGeometry);
+            const geometry = this.wasmGeom.subtractMesh(targetGeometry, sphereGeometry);
             const endTime = performance.now();
 
             const numTris = geometry.getAttribute('position').count / 3;
@@ -355,7 +362,7 @@ export class ModuleLayout implements Module {
             }
             targetGeometry.setAttribute('position', new THREE.BufferAttribute(targetPositions, 3));
 
-            const contours = await callWasmProjectMesh(targetGeometry, origin, viewX, viewY, viewZ);
+            const contours = this.wasmGeom.projectMesh(targetGeometry, origin, viewX, viewY, viewZ);
             const endTime = performance.now();
             console.log(`WASM projection: ${this.targetSurf.length / 9} tris, ${(endTime - startTime).toFixed(2)}ms. ${contours.length} contour(s)`);
 

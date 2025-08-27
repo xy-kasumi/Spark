@@ -8,15 +8,24 @@ MANIFOLD_DIR = $(DEPS_DIR)/manifold
 MANIFOLD_BUILD_DIR = $(MANIFOLD_DIR)/build_wasm
 EMSDK_VERSION = 3.1.51
 MANIFOLD_VERSION = v3.2.1
+WASM_DEBUG_FLAGS = \
+	-s ASSERTIONS=2 \
+	-s SAFE_HEAP=1 \
+	-s STACK_OVERFLOW_CHECK=1
 
 .PHONY: all
-all: $(OUTPUT_DIR)/wasm_geom.js
+all: $(OUTPUT_DIR)/wasm_geom.wasm $(OUTPUT_DIR)/wasm_geom.js
 
-$(OUTPUT_DIR)/wasm_geom.js: $(SCRIPT_DIR)/entrypoint.cpp $(MANIFOLD_BUILD_DIR)/src/libmanifold.a | $(OUTPUT_DIR)
+$(OUTPUT_DIR)/wasm_geom.wasm $(OUTPUT_DIR)/wasm_geom.js: $(SCRIPT_DIR)/entrypoint.cpp $(MANIFOLD_BUILD_DIR)/src/libmanifold.a | $(OUTPUT_DIR)
 	@echo "=== Compiling WASM ==="
-	@EMSDK_QUIET=1 source $(EMSDK_DIR)/emsdk_env.sh && emcc $(SCRIPT_DIR)/entrypoint.cpp \
+	EMSDK_QUIET=1 source $(EMSDK_DIR)/emsdk_env.sh && emcc $(SCRIPT_DIR)/entrypoint.cpp \
+		--no-entry \
+		-s ENVIRONMENT=web \
+		-s MODULARIZE=1 \
+		-s EXPORT_NAME=WasmGeomModule \
+		-s EXPORT_ES6=1 \
+		-s EXPORTED_RUNTIME_METHODS='["getValue", "setValue", "UTF8ToString"]' \
 		-o $(OUTPUT_DIR)/wasm_geom.js \
-		-O2 \
 		-I$(MANIFOLD_DIR)/include \
 		-I$(MANIFOLD_BUILD_DIR)/_deps/glm-src \
 		-I$(MANIFOLD_BUILD_DIR)/_deps/thrust-src \
@@ -26,31 +35,17 @@ $(OUTPUT_DIR)/wasm_geom.js: $(SCRIPT_DIR)/entrypoint.cpp $(MANIFOLD_BUILD_DIR)/s
 		-lmanifold \
 		-lClipper2 \
 		-std=c++17 \
-		-DTHRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_CPP \
+		-O3 \
 		-s EXPORTED_FUNCTIONS='["_project_mesh", "_free_contours", "_manifold_subtract_meshes", "_free_triangle_soup_result", "_malloc", "_free"]' \
-		-s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "getValue", "setValue", "UTF8ToString"]' \
 		-s ALLOW_MEMORY_GROWTH=1 \
-		-s MODULARIZE=1 \
-		-s EXPORT_NAME='WasmGeomModule' \
-		-s EXPORT_ES6=1 \
-		-s ENVIRONMENT='web' \
-		-s SINGLE_FILE=0 \
-		-s ASSERTIONS=2 \
-		-s SAFE_HEAP=1 \
-		-s STACK_OVERFLOW_CHECK=1 \
-		-s DEMANGLE_SUPPORT=1 \
-		-s NO_DISABLE_EXCEPTION_CATCHING=1 \
-		-fexceptions \
-		--no-entry
-	@echo "Build complete!"
-	@echo "Output files:"
-	@echo "  - $(OUTPUT_DIR)/wasm_geom.js"
-	@echo "  - $(OUTPUT_DIR)/wasm_geom.wasm"
+		-s NO_FILESYSTEM=1 \
+		-fwasm-exceptions \
+		$(WASM_DEBUG_FLAGS)
 
 $(MANIFOLD_BUILD_DIR)/src/libmanifold.a: | $(MANIFOLD_DIR) $(EMSDK_DIR)
 	@echo "=== Building Manifold library ==="
-	@mkdir -p $(MANIFOLD_BUILD_DIR)
-	@cd $(MANIFOLD_BUILD_DIR) && \
+	mkdir -p $(MANIFOLD_BUILD_DIR)
+	cd $(MANIFOLD_BUILD_DIR) && \
 		EMSDK_QUIET=1 source $(EMSDK_DIR)/emsdk_env.sh && \
 		emcmake cmake .. \
 			-DCMAKE_BUILD_TYPE=Release \
@@ -66,20 +61,20 @@ $(MANIFOLD_BUILD_DIR)/src/libmanifold.a: | $(MANIFOLD_DIR) $(EMSDK_DIR)
 $(MANIFOLD_DIR): | $(DEPS_DIR)
 	@echo "=== Downloading Manifold Library ==="
 	@echo "Cloning Manifold repository..."
-	@cd $(DEPS_DIR) && git clone --depth 1 --branch $(MANIFOLD_VERSION) https://github.com/elalish/manifold.git
+	cd $(DEPS_DIR) && git clone --depth 1 --branch $(MANIFOLD_VERSION) https://github.com/elalish/manifold.git
 
 $(EMSDK_DIR):
 	@echo "=== Downloading Emscripten SDK ==="
 	@git clone https://github.com/emscripten-core/emsdk.git $(EMSDK_DIR)
-	@cd $(EMSDK_DIR) && \
+	cd $(EMSDK_DIR) && \
 		./emsdk install $(EMSDK_VERSION) && \
 		./emsdk activate $(EMSDK_VERSION)
 
 $(OUTPUT_DIR):
-	@mkdir -p $(OUTPUT_DIR)
+	mkdir -p $(OUTPUT_DIR)
 
 $(DEPS_DIR):
-	@mkdir -p $(DEPS_DIR)
+	mkdir -p $(DEPS_DIR)
 
 .PHONY: install-emsdk
 install-emsdk: $(EMSDK_DIR)

@@ -1,4 +1,7 @@
+// SPDX-FileCopyrightText: 2025 夕月霞
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // All coordinates are right-handed.
+#include <emscripten.h>
 
 #include <algorithm>
 #include <cmath>
@@ -11,12 +14,30 @@
 #include "manifold/cross_section.h"
 #include "manifold/manifold.h"
 
-// External JavaScript functions provided by TypeScript
-extern "C" {
-  void wasmLog(const char* msg);
-  void wasmBeginPerf(const char* tag);
-  void wasmEndPerf(const char* tag);
-}
+EM_JS(void, wasmLog, (const char* msg), {
+  console.log("WASM:", UTF8ToString(msg));
+});
+
+EM_JS(void, wasmBeginPerf, (const char* tag), {
+  if (!Module.perfMap) {
+    Module.perfMap = new Map();
+  }
+  const tagJs = UTF8ToString(tag);
+  Module.perfMap.set(tagJs, performance.now());
+});
+
+EM_JS(void, wasmEndPerf, (const char* tag), {
+  const tEnd = performance.now();
+  const tagJs = UTF8ToString(tag);
+  const tBegin = Module.perfMap && Module.perfMap.get(tagJs);
+  if (tBegin === undefined) {
+    console.warn("wasmEndPerf: no matching wasmBeginPerf for " + tagJs);
+  } else {
+    const t = tEnd - tBegin;
+    console.log(`${UTF8ToString(tag)}: ${t}ms`);
+    Module.perfMap.delete(tagJs);
+  }
+});
 
 typedef struct {
   float x;
@@ -92,7 +113,7 @@ extern "C" contours_result* project_mesh(const triangle_soup* soup,
     }
     wasmEndPerf("mesh conversion");
 
-    //mesh.SetTolerance(1e-3); // 1um
+    // mesh.SetTolerance(1e-3); // 1um
 
     // Build transformation matrix to align view_dir_z with Z axis
     // The projection plane will be the XY plane after transformation
@@ -105,9 +126,10 @@ extern "C" contours_result* project_mesh(const triangle_soup* soup,
     // This transforms from world space to view space (column-major order)
     manifold::mat3x4 transform(
         manifold::vec3(vx.x, vy.x, vz.x),  // First column (X basis)
-        manifold::vec3(vx.y, vy.y, vz.y),  // Second column (Y basis)  
+        manifold::vec3(vx.y, vy.y, vz.y),  // Second column (Y basis)
         manifold::vec3(vx.z, vy.z, vz.z),  // Third column (Z basis)
-        manifold::vec3(-linalg::dot(vx, orig), -linalg::dot(vy, orig), -linalg::dot(vz, orig))  // Fourth column (translation)
+        manifold::vec3(-linalg::dot(vx, orig), -linalg::dot(vy, orig),
+                       -linalg::dot(vz, orig))  // Fourth column (translation)
     );
 
     // Apply transformation to the manifold
@@ -117,26 +139,30 @@ extern "C" contours_result* project_mesh(const triangle_soup* soup,
     manifold::CrossSection projection = transformed.Project();
 
     // Offset the projection by 1.5 units with square join type
-    projection = projection.Offset(1.5, manifold::CrossSection::JoinType::Square);
+    projection =
+        projection.Offset(1.5, manifold::CrossSection::JoinType::Square);
 
     // Convert to polygons
     manifold::Polygons polygons = projection.ToPolygons();
 
     // Create result
-    auto* result = static_cast<contours_result*>(malloc(sizeof(contours_result)));
+    auto* result =
+        static_cast<contours_result*>(malloc(sizeof(contours_result)));
     result->num_contours = polygons.size();
     result->error_message = nullptr;
 
     if (!polygons.empty()) {
-      result->contours = static_cast<contour_2d*>(malloc(sizeof(contour_2d) * polygons.size()));
-      
+      result->contours = static_cast<contour_2d*>(
+          malloc(sizeof(contour_2d) * polygons.size()));
+
       // Convert each polygon to a contour
       for (size_t i = 0; i < polygons.size(); i++) {
         const auto& polygon = polygons[i];
         result->contours[i].num_points = polygon.size();
-        
+
         if (polygon.size() > 0) {
-          result->contours[i].points = static_cast<vector2*>(malloc(sizeof(vector2) * polygon.size()));
+          result->contours[i].points =
+              static_cast<vector2*>(malloc(sizeof(vector2) * polygon.size()));
           for (size_t j = 0; j < polygon.size(); j++) {
             result->contours[i].points[j].x = static_cast<float>(polygon[j].x);
             result->contours[i].points[j].y = static_cast<float>(polygon[j].y);
