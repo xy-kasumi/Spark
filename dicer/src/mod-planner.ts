@@ -1114,7 +1114,7 @@ export class ModulePlanner implements Module {
             try {
                 // Perform subtraction using manifold handles
                 const startTime = performance.now();
-                const resultManifold = this.wasmGeom.subtractMeshFromHandles(this.targetManifold, sphereManifold);
+                const resultManifold = this.wasmGeom.subtractMesh(this.targetManifold, sphereManifold);
                 const endTime = performance.now();
 
                 if (!resultManifold) {
@@ -1180,7 +1180,7 @@ export class ModulePlanner implements Module {
                 `Z(${viewZ.x.toFixed(3)}, ${viewZ.y.toFixed(3)}, ${viewZ.z.toFixed(3)})`);
 
             const startTime = performance.now();
-            const contours = this.wasmGeom.projectMeshFromHandle(this.targetManifold, origin, viewX, viewY, viewZ);
+            const contours = this.wasmGeom.projectMesh(this.targetManifold, origin, viewX, viewY, viewZ);
             const endTime = performance.now();
             console.log(`projection took ${(endTime - startTime).toFixed(2)}ms. ${contours.length} contour(s)`);
 

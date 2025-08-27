@@ -26,6 +26,35 @@ export class WasmGeom {
     }
 
     /**
+     * Read contours data from WASM memory
+     * @param resultPtr Pointer to contours struct
+     * @returns Array of contours (each contour is an array of 2D points)
+     */
+    private readContours(resultPtr: number): THREE.Vector2[][] {
+        const Module = this.module;
+        const numContours = Module.getValue(resultPtr, 'i32');
+        const contoursPtr = Module.getValue(resultPtr + 4, 'i32');
+
+        const contours: THREE.Vector2[][] = [];
+        for (let i = 0; i < numContours; i++) {
+            const contourPtr = contoursPtr + i * 8;
+            const numPoints = Module.getValue(contourPtr, 'i32');
+            const pointsPtr = Module.getValue(contourPtr + 4, 'i32');
+
+            const contour: THREE.Vector2[] = [];
+            for (let j = 0; j < numPoints; j++) {
+                const pointPtr = pointsPtr + j * 8;
+                const x = Module.HEAPF32[pointPtr / 4];
+                const y = Module.HEAPF32[pointPtr / 4 + 1];
+                contour.push(new THREE.Vector2(x, y));
+            }
+            contours.push(contour);
+        }
+
+        return contours;
+    }
+
+    /**
      * Create a Manifold handle from a geometry
      * @param geometry - Input geometry to convert to manifold
      * @returns ManifoldHandle or null if creation failed
@@ -34,11 +63,11 @@ export class WasmGeom {
         const Module = this.module;
         const triSoup = toTriSoup(geometry);
         const numVertices = triSoup.length / 3;
-        
+
         // Allocate triangle_soup struct
         const soupPtr = Module._malloc(8);
         const verticesPtr = Module._malloc(numVertices * 12); // 3 floats * 4 bytes per vertex
-        
+
         // Fill vertex data
         for (let i = 0; i < numVertices; i++) {
             Module.HEAPF32[(verticesPtr / 4) + i * 3] = triSoup[i * 3];
@@ -47,7 +76,7 @@ export class WasmGeom {
         }
         Module.HEAP32[soupPtr / 4] = numVertices;
         Module.HEAP32[(soupPtr / 4) + 1] = verticesPtr;
-        
+
         try {
             const manifoldPtr = Module._create_manifold_from_trisoup(soupPtr);
             if (manifoldPtr === 0) {
@@ -63,7 +92,7 @@ export class WasmGeom {
     destroyManifold(handle: ManifoldHandle) {
         this.module._destroy_manifold(handle);
     }
-    
+
     /**
      * Convert ManifoldHandle to BufferGeometry
      */
@@ -71,11 +100,11 @@ export class WasmGeom {
         const Module = this.module;
         const resultPtr = Module._manifold_to_trisoup(handle);
         if (!resultPtr) return null;
-        
+
         try {
             const numVerts = Module.getValue(resultPtr, 'i32');
             const verticesPtr = Module.getValue(resultPtr + 4, 'i32');
-            
+
             const result = new Float64Array(numVerts * 3);
             for (let i = 0; i < numVerts; i++) {
                 // Each vertex is a vector3 (3 floats)
@@ -84,134 +113,54 @@ export class WasmGeom {
                 result[i * 3 + 1] = Module.HEAPF32[vertexPtr / 4 + 1]; // y
                 result[i * 3 + 2] = Module.HEAPF32[vertexPtr / 4 + 2]; // z
             }
-            
+
             return fromTriSoup(result);
         } finally {
             Module._free_triangle_soup(resultPtr);
         }
     }
-    
+
     /**
      * Project manifold to 2D contours using ManifoldHandle
      */
-    projectMeshFromHandle(
+    projectMesh(
         handle: ManifoldHandle,
         origin: THREE.Vector3,
         viewX: THREE.Vector3,
         viewY: THREE.Vector3,
         viewZ: THREE.Vector3
     ): THREE.Vector2[][] {
-        const Module = this.module;
-        
         const originPtr = this.allocVector3(origin);
         const viewXPtr = this.allocVector3(viewX);
         const viewYPtr = this.allocVector3(viewY);
         const viewZPtr = this.allocVector3(viewZ);
-        
+
         try {
-            const resultPtr = Module._project_manifold(handle, originPtr, viewXPtr, viewYPtr, viewZPtr, 1.5, true);
-            if (!resultPtr) throw new Error("project_manifold failed - check console for details");
-            
-            const numContours = Module.getValue(resultPtr, 'i32');
-            const contoursPtr = Module.getValue(resultPtr + 4, 'i32');
-            
-            const contours: THREE.Vector2[][] = [];
-            for (let i = 0; i < numContours; i++) {
-                const contourPtr = contoursPtr + i * 8;
-                const numPoints = Module.getValue(contourPtr, 'i32');
-                const pointsPtr = Module.getValue(contourPtr + 4, 'i32');
-                
-                const contour: THREE.Vector2[] = [];
-                for (let j = 0; j < numPoints; j++) {
-                    const pointPtr = pointsPtr + j * 8;
-                    const x = Module.HEAPF32[pointPtr / 4];
-                    const y = Module.HEAPF32[pointPtr / 4 + 1];
-                    contour.push(new THREE.Vector2(x, y));
-                }
-                contours.push(contour);
+            const resultPtr = this.module._project_manifold(handle, originPtr, viewXPtr, viewYPtr, viewZPtr, 1.5, true);
+            if (!resultPtr) {
+                throw new Error("project_manifold failed");
             }
-            
-            Module._free_contours(resultPtr);
+
+            const contours = this.readContours(resultPtr);
+            this.module._free_contours(resultPtr);
             return contours;
         } finally {
-            Module._free(originPtr);
-            Module._free(viewXPtr);
-            Module._free(viewYPtr);
-            Module._free(viewZPtr);
+            this.module._free(originPtr);
+            this.module._free(viewXPtr);
+            this.module._free(viewYPtr);
+            this.module._free(viewZPtr);
         }
     }
-    
+
     /**
      * Subtract manifolds using handles, returns new ManifoldHandle
      */
-    subtractMeshFromHandles(
+    subtractMesh(
         handleA: ManifoldHandle,
         handleB: ManifoldHandle
     ): ManifoldHandle | null {
         const resultPtr = this.module._subtract_manifolds(handleA, handleB);
         return resultPtr ? resultPtr as ManifoldHandle : null;
-    }
-
-    /**
-     * Project mesh geometry to 2D contours using WASM
-     * @param geometry - Input geometry to project
-     * @param origin - 3D origin point for projection plane
-     * @param viewX - X axis of projection coordinate system (must be orthonormal)
-     * @param viewY - Y axis of projection coordinate system (must be orthonormal)
-     * @param viewZ - Z axis of projection coordinate system (viewing direction, must be orthonormal)
-     * @returns Array of contours (each contour is an array of 2D points)
-     */
-    projectMesh(
-        geometry: THREE.BufferGeometry,
-        origin: THREE.Vector3,
-        viewX: THREE.Vector3,
-        viewY: THREE.Vector3,
-        viewZ: THREE.Vector3
-    ): THREE.Vector2[][] {
-        const handle = this.createManifold(geometry);
-        if (!handle) throw new Error("Failed to create manifold");
-        
-        try {
-            return this.projectMeshFromHandle(handle, origin, viewX, viewY, viewZ);
-        } finally {
-            this.destroyManifold(handle);
-        }
-    }
-
-    /**
-     * Subtract one mesh from another using WASM Manifold
-     * @param geometryA - First geometry (minuend)
-     * @param geometryB - Second geometry to subtract from first (subtrahend)
-     * @returns Resulting geometry (A - B)
-     */
-    subtractMesh(
-        geometryA: THREE.BufferGeometry,
-        geometryB: THREE.BufferGeometry
-    ): THREE.BufferGeometry {
-        const handleA = this.createManifold(geometryA);
-        const handleB = this.createManifold(geometryB);
-        
-        if (!handleA || !handleB) {
-            if (handleA) this.destroyManifold(handleA);
-            if (handleB) this.destroyManifold(handleB);
-            throw new Error("Failed to create manifolds");
-        }
-        
-        try {
-            const resultHandle = this.subtractMeshFromHandles(handleA, handleB);
-            if (!resultHandle) throw new Error("Subtraction failed");
-            
-            try {
-                const result = this.manifoldToGeometry(resultHandle);
-                if (!result) throw new Error("Failed to convert result to geometry");
-                return result;
-            } finally {
-                this.destroyManifold(resultHandle);
-            }
-        } finally {
-            this.destroyManifold(handleA);
-            this.destroyManifold(handleB);
-        }
     }
 }
 
