@@ -145,7 +145,7 @@ static contours* polygons_to_contours(const manifold::Polygons& polygons) {
 
 // Extract outermost cross section.
 static manifold::CrossSection extract_outermost(
-    const manifold::CrossSection cs) {
+    const manifold::CrossSection& cs) {
   auto parts = cs.Decompose();
   std::vector<manifold::CrossSection> parts_outer;
   for (auto& part : parts) {
@@ -176,17 +176,14 @@ static manifold::CrossSection extract_outermost(
 extern "C" {
 
 // Project 3D manifold onto a plane defined by view_dir_z and origin.
-// Returns contours projected onto the view plane.
-//
-// Caller must free the returned data.
+// Returns CrossSection projected onto the view plane.
+// Caller must free the returned data with destroy_crosssection.
 EMSCRIPTEN_KEEPALIVE
-contours* project_manifold(const manifold::Manifold* manifold_ptr,
-                           const vector3* origin,
-                           const vector3* view_x,
-                           const vector3* view_y,
-                           const vector3* view_dir_z,
-                           double offset,
-                           bool only_outermost) {
+manifold::CrossSection* project_manifold(const manifold::Manifold* manifold_ptr,
+                                         const vector3* origin,
+                                         const vector3* view_x,
+                                         const vector3* view_y,
+                                         const vector3* view_dir_z) {
   assert(manifold_ptr != nullptr);
 
   const manifold::Manifold& mesh = *manifold_ptr;
@@ -214,12 +211,46 @@ contours* project_manifold(const manifold::Manifold* manifold_ptr,
   // Project onto XY plane (Z=0) to get 2D cross-section
   manifold::CrossSection projection = transformed.Project();
 
-  projection =
-      projection.Offset(offset, manifold::CrossSection::JoinType::Square);
-  if (only_outermost) {
-    projection = extract_outermost(projection);
-  }
-  return polygons_to_contours(projection.ToPolygons());
+  return new manifold::CrossSection(projection);
+}
+
+// Apply offset to a CrossSection.
+// Returns new CrossSection. Caller must free with destroy_crosssection.
+EMSCRIPTEN_KEEPALIVE
+manifold::CrossSection* offset_crosssection(
+    const manifold::CrossSection* cs_ptr,
+    double offset) {
+  assert(cs_ptr != nullptr);
+
+  manifold::CrossSection result =
+      cs_ptr->Offset(offset, manifold::CrossSection::JoinType::Square);
+  return new manifold::CrossSection(result);
+}
+
+// Extract outermost contours from a CrossSection.
+// Returns new CrossSection. Caller must free with destroy_crosssection.
+EMSCRIPTEN_KEEPALIVE
+manifold::CrossSection* outermost_crosssection(
+    const manifold::CrossSection* cs_ptr) {
+  assert(cs_ptr != nullptr);
+
+  manifold::CrossSection result = extract_outermost(*cs_ptr);
+  return new manifold::CrossSection(result);
+}
+
+// Convert CrossSection to contours.
+// Returns contours. Caller must free with free_contours.
+EMSCRIPTEN_KEEPALIVE
+contours* crosssection_to_contours(const manifold::CrossSection* cs_ptr) {
+  assert(cs_ptr != nullptr);
+
+  return polygons_to_contours(cs_ptr->ToPolygons());
+}
+
+// Destroy a CrossSection instance
+EMSCRIPTEN_KEEPALIVE
+void destroy_crosssection(manifold::CrossSection* cs_ptr) {
+  delete cs_ptr;
 }
 
 // Perform boolean subtraction using Manifold: A - B, returns new Manifold
@@ -355,6 +386,6 @@ void free_contours(contours* result) {
     }
     free(result->contours);
   }
-  free(result);
 }
-}
+
+}  // extern "C"

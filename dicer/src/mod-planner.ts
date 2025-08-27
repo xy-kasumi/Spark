@@ -922,11 +922,11 @@ export class ModulePlanner implements Module {
         projectionFolder.add(this, "viewVectorY", -1, 1, 0.1).name("View Y").listen();
         projectionFolder.add(this, "viewVectorZ", -1, 1, 0.1).name("View Z").listen();
         projectionFolder.add(this, "randomizeViewVector").name("Randomize");
-        projectionFolder.add(this, "projectMeshWASM").name("Project");
+        projectionFolder.add(this, "projectMesh").name("Project");
 
         // Subtract button and radius slider
         gui.add(this, "subtractRadius", 1, 15, 0.1).name("Subtract Radius").listen();
-        gui.add(this, "subtractMeshWASM").name("Subtract (Manifold)");
+        gui.add(this, "subtractMesh").name("Subtract");
 
     }
 
@@ -1099,7 +1099,7 @@ export class ModulePlanner implements Module {
     /**
      * Subtract sphere from target surface and display result
      */
-    async subtractMeshWASM() {
+    async subtractMesh() {
         try {
             console.log(`Subtracting sphere (radius=${this.subtractRadius}) from target surface...`);
 
@@ -1159,7 +1159,7 @@ export class ModulePlanner implements Module {
     /**
      * High-level mesh projection with visualization and error handling
      */
-    async projectMeshWASM() {
+    async projectMesh() {
         try {
             // Create and validate view vector
             const viewVector = new THREE.Vector3(this.viewVectorX, this.viewVectorY, this.viewVectorZ);
@@ -1182,13 +1182,15 @@ export class ModulePlanner implements Module {
             const startTime = performance.now();
             let numContours = 3;
             let contours = [];
+            let contour0 = this.wasmGeom.projectManifold(this.targetManifold, origin, viewX, viewY, viewZ);
+            contour0 = this.wasmGeom.outermostCrossSection(contour0);
             for (let i = 0; i < numContours; i++) {
                 const offset = 1.5 * (i + 1);
-                const newContours = this.wasmGeom.projectMesh(this.targetManifold, origin, viewX, viewY, viewZ, offset);
+                const newContours = this.wasmGeom.crossSectionToContours(this.wasmGeom.offsetCrossSection(contour0, offset));
                 contours = contours.concat(newContours);
             }
             const endTime = performance.now();
-            console.log(`projection took ${(endTime - startTime).toFixed(2)}ms. ${contours.length} contour(s)`);
+            console.log(`projection took ${(endTime - startTime).toFixed(2)}ms`);
 
             // Visualize contours on the view plane using LineLoop
             const contourObjects: THREE.Object3D[] = [];
@@ -1210,7 +1212,7 @@ export class ModulePlanner implements Module {
 
             this.framework.updateVis("misc", contourObjects);
         } catch (error) {
-            console.error("WASM projection failed:", error);
+            console.error("projection failed:", error);
 
             // Handle coordinate pattern errors with visualization
             const errorMsg = error instanceof Error ? error.message : String(error);

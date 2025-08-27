@@ -8,6 +8,12 @@ import * as THREE from 'three';
  */
 export type ManifoldHandle = number & { __brand: 'ManifoldHandle' };
 
+/**
+ * Opaque handle to a CrossSection instance. Must be destroyed via WasmGeom.destroyCrossSection().
+ * Always non-nullptr.
+ */
+export type CrossSectionHandle = number & { __brand: 'CrossSectionHandle' };
+
 export class WasmGeom {
     module: any; // imported WASM module
 
@@ -93,6 +99,10 @@ export class WasmGeom {
         this.module._destroy_manifold(handle);
     }
 
+    destroyCrossSection(handle: CrossSectionHandle) {
+        this.module._destroy_crosssection(handle);
+    }
+
     /**
      * Convert ManifoldHandle to BufferGeometry
      */
@@ -121,6 +131,62 @@ export class WasmGeom {
     }
 
     /**
+     * Project manifold to CrossSection
+     */
+    projectManifold(
+        handle: ManifoldHandle,
+        origin: THREE.Vector3,
+        viewX: THREE.Vector3,
+        viewY: THREE.Vector3,
+        viewZ: THREE.Vector3
+    ): CrossSectionHandle | null {
+        const originPtr = this.allocVector3(origin);
+        const viewXPtr = this.allocVector3(viewX);
+        const viewYPtr = this.allocVector3(viewY);
+        const viewZPtr = this.allocVector3(viewZ);
+
+        try {
+            const resultPtr = this.module._project_manifold(handle, originPtr, viewXPtr, viewYPtr, viewZPtr);
+            return resultPtr ? resultPtr as CrossSectionHandle : null;
+        } finally {
+            this.module._free(originPtr);
+            this.module._free(viewXPtr);
+            this.module._free(viewYPtr);
+            this.module._free(viewZPtr);
+        }
+    }
+
+    /**
+     * Apply offset to a CrossSection
+     */
+    offsetCrossSection(handle: CrossSectionHandle, offset: number): CrossSectionHandle | null {
+        const resultPtr = this.module._offset_crosssection(handle, offset);
+        return resultPtr ? resultPtr as CrossSectionHandle : null;
+    }
+
+    /**
+     * Extract outermost contours from a CrossSection
+     */
+    outermostCrossSection(handle: CrossSectionHandle): CrossSectionHandle | null {
+        const resultPtr = this.module._outermost_crosssection(handle);
+        return resultPtr ? resultPtr as CrossSectionHandle : null;
+    }
+
+    /**
+     * Convert CrossSection to contours
+     */
+    crossSectionToContours(handle: CrossSectionHandle): THREE.Vector2[][] {
+        const resultPtr = this.module._crosssection_to_contours(handle);
+        if (!resultPtr) {
+            throw new Error("crosssection_to_contours failed");
+        }
+
+        const contours = this.readContours(resultPtr);
+        this.module._free_contours(resultPtr);
+        return contours;
+    }
+
+    /**
      * Project manifold to 2D contours using ManifoldHandle
      */
     projectMesh(
@@ -132,25 +198,34 @@ export class WasmGeom {
         offset: number = 1.5,
         onlyOutermost: boolean = true
     ): THREE.Vector2[][] {
-        const originPtr = this.allocVector3(origin);
-        const viewXPtr = this.allocVector3(viewX);
-        const viewYPtr = this.allocVector3(viewY);
-        const viewZPtr = this.allocVector3(viewZ);
+        const crossSection = this.projectManifold(handle, origin, viewX, viewY, viewZ);
+        if (!crossSection) {
+            throw new Error("project_manifold failed");
+        }
 
+        let currentCS = crossSection;
         try {
-            const resultPtr = this.module._project_manifold(handle, originPtr, viewXPtr, viewYPtr, viewZPtr, offset, onlyOutermost);
-            if (!resultPtr) {
-                throw new Error("project_manifold failed");
+            if (offset !== 0) {
+                const offsetCS = this.offsetCrossSection(currentCS, offset);
+                if (!offsetCS) {
+                    throw new Error("offset_crosssection failed");
+                }
+                this.destroyCrossSection(currentCS);
+                currentCS = offsetCS;
             }
 
-            const contours = this.readContours(resultPtr);
-            this.module._free_contours(resultPtr);
-            return contours;
+            if (onlyOutermost) {
+                const outermostCS = this.outermostCrossSection(currentCS);
+                if (!outermostCS) {
+                    throw new Error("outermost_crosssection failed");
+                }
+                this.destroyCrossSection(currentCS);
+                currentCS = outermostCS;
+            }
+
+            return this.crossSectionToContours(currentCS);
         } finally {
-            this.module._free(originPtr);
-            this.module._free(viewXPtr);
-            this.module._free(viewYPtr);
-            this.module._free(viewZPtr);
+            this.destroyCrossSection(currentCS);
         }
     }
 
