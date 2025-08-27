@@ -1180,7 +1180,13 @@ export class ModulePlanner implements Module {
                 `Z(${viewZ.x.toFixed(3)}, ${viewZ.y.toFixed(3)}, ${viewZ.z.toFixed(3)})`);
 
             const startTime = performance.now();
-            const contours = this.wasmGeom.projectMesh(this.targetManifold, origin, viewX, viewY, viewZ);
+            let numContours = 3;
+            let contours = [];
+            for (let i = 0; i < numContours; i++) {
+                const offset = 1.5 * (i + 1);
+                const newContours = this.wasmGeom.projectMesh(this.targetManifold, origin, viewX, viewY, viewZ, offset);
+                contours = contours.concat(newContours);
+            }
             const endTime = performance.now();
             console.log(`projection took ${(endTime - startTime).toFixed(2)}ms. ${contours.length} contour(s)`);
 

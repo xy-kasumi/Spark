@@ -4,6 +4,7 @@
 #include <emscripten.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -110,25 +111,26 @@ static manifold::MeshGL soup_to_manifold_meshgl(const triangle_soup* soup) {
   return meshgl;
 }
 
-
 // Convert Manifold Polygons to contours struct
 static contours* polygons_to_contours(const manifold::Polygons& polygons) {
   auto* result = static_cast<contours*>(malloc(sizeof(contours)));
   result->num_contours = polygons.size();
-  
+
   if (polygons.empty()) {
     result->contours = nullptr;
     return result;
   }
-  
-  result->contours = static_cast<contour_2d*>(malloc(sizeof(contour_2d) * polygons.size()));
-  
+
+  result->contours =
+      static_cast<contour_2d*>(malloc(sizeof(contour_2d) * polygons.size()));
+
   for (size_t i = 0; i < polygons.size(); i++) {
     const auto& polygon = polygons[i];
     result->contours[i].num_points = polygon.size();
 
     if (polygon.size() > 0) {
-      result->contours[i].points = static_cast<vector2*>(malloc(sizeof(vector2) * polygon.size()));
+      result->contours[i].points =
+          static_cast<vector2*>(malloc(sizeof(vector2) * polygon.size()));
       for (size_t j = 0; j < polygon.size(); j++) {
         result->contours[i].points[j].x = static_cast<float>(polygon[j].x);
         result->contours[i].points[j].y = static_cast<float>(polygon[j].y);
@@ -137,19 +139,19 @@ static contours* polygons_to_contours(const manifold::Polygons& polygons) {
       result->contours[i].points = nullptr;
     }
   }
-  
+
   return result;
 }
 
 // Extract outermost cross section.
-static manifold::CrossSection extract_outermost(const manifold::CrossSection cs) {
+static manifold::CrossSection extract_outermost(
+    const manifold::CrossSection cs) {
   auto parts = cs.Decompose();
-  wasmLog("#parts:" + std::to_string(parts.size()));
   std::vector<manifold::CrossSection> parts_outer;
-
   for (auto& part : parts) {
     auto polys = part.ToPolygons();
     int num_contours = polys.size();
+    assert(num_contours > 0);
     if (num_contours == 1) {
       // if num_contours == 1 (no holes), the one is also the outermost.
       parts_outer.push_back(part);
@@ -170,21 +172,22 @@ static manifold::CrossSection extract_outermost(const manifold::CrossSection cs)
   return manifold::CrossSection::Compose(parts_outer);
 }
 
+// Exported functions
+extern "C" {
+
 // Project 3D manifold onto a plane defined by view_dir_z and origin.
 // Returns contours projected onto the view plane.
 //
 // Caller must free the returned data.
-extern "C" contours* project_manifold(const manifold::Manifold* manifold_ptr,
-                                      const vector3* origin,
-                                      const vector3* view_x,
-                                      const vector3* view_y,
-                                      const vector3* view_dir_z,
-                                      double offset,
-                                    bool only_outermost) {
-  if (!manifold_ptr) {
-    wasmLog("null manifold_ptr");
-    return nullptr;
-  }
+EMSCRIPTEN_KEEPALIVE
+contours* project_manifold(const manifold::Manifold* manifold_ptr,
+                           const vector3* origin,
+                           const vector3* view_x,
+                           const vector3* view_y,
+                           const vector3* view_dir_z,
+                           double offset,
+                           bool only_outermost) {
+  assert(manifold_ptr != nullptr);
 
   const manifold::Manifold& mesh = *manifold_ptr;
 
@@ -211,7 +214,8 @@ extern "C" contours* project_manifold(const manifold::Manifold* manifold_ptr,
   // Project onto XY plane (Z=0) to get 2D cross-section
   manifold::CrossSection projection = transformed.Project();
 
-  projection = projection.Offset(offset, manifold::CrossSection::JoinType::Square);
+  projection =
+      projection.Offset(offset, manifold::CrossSection::JoinType::Square);
   if (only_outermost) {
     projection = extract_outermost(projection);
   }
@@ -219,22 +223,22 @@ extern "C" contours* project_manifold(const manifold::Manifold* manifold_ptr,
 }
 
 // Perform boolean subtraction using Manifold: A - B, returns new Manifold
-extern "C" manifold::Manifold* subtract_manifolds(
-    const manifold::Manifold* manifold_a,
-    const manifold::Manifold* manifold_b) {
-  if (!manifold_a || !manifold_b) {
-    wasmLog("null manifold_a or manifold_b");
-    return nullptr;
-  }
+EMSCRIPTEN_KEEPALIVE
+manifold::Manifold* subtract_manifolds(const manifold::Manifold* manifold_a,
+                                       const manifold::Manifold* manifold_b) {
+  assert(manifold_a != nullptr);
+  assert(manifold_b != nullptr);
 
   // Perform boolean subtraction
   auto* result = new manifold::Manifold(*manifold_a - *manifold_b);
   if (result->Status() != manifold::Manifold::Error::NoError) {
-    wasmLog("Boolean subtraction failed - status " +
+    wasmLog("subtract_manifolds: resulted in failed status " +
             std::to_string(static_cast<int>(result->Status())));
     delete result;
     return nullptr;
   }
+
+  // TODO: is this check necessary?
   if (result->IsEmpty()) {
     wasmLog("Boolean subtraction produced empty result");
     delete result;
@@ -244,10 +248,36 @@ extern "C" manifold::Manifold* subtract_manifolds(
   return result;
 }
 
+// Perform boolean intersection using Manifold: A ∩ B, returns new Manifold
+EMSCRIPTEN_KEEPALIVE
+manifold::Manifold* intersect_manifolds(const manifold::Manifold* manifold_a,
+                                        const manifold::Manifold* manifold_b) {
+  assert(manifold_a != nullptr);
+  assert(manifold_b != nullptr);
+
+  // Perform boolean intersection
+  auto* result = new manifold::Manifold(*manifold_a ^ *manifold_b);
+  if (result->Status() != manifold::Manifold::Error::NoError) {
+    wasmLog("intersect_manifolds: resulted in failed status " +
+            std::to_string(static_cast<int>(result->Status())));
+    delete result;
+    return nullptr;
+  }
+
+  // TODO: is this check necessary?
+  if (result->IsEmpty()) {
+    wasmLog("Boolean intersection produced empty result");
+    delete result;
+    return nullptr;
+  }
+
+  return result;
+}
+
 // Returns Manifold instance if succesful, otherwise nullptr.
 // Must be destroyed by caller w/ destroy_manifold.
-extern "C" manifold::Manifold* create_manifold_from_trisoup(
-    const triangle_soup* soup) {
+EMSCRIPTEN_KEEPALIVE
+manifold::Manifold* create_manifold_from_trisoup(const triangle_soup* soup) {
   manifold::MeshGL meshgl = soup_to_manifold_meshgl(soup);
   auto* manifold = new manifold::Manifold(meshgl);
 
@@ -260,20 +290,18 @@ extern "C" manifold::Manifold* create_manifold_from_trisoup(
   return manifold;
 }
 
-extern "C" void destroy_manifold(manifold::Manifold* manifold_ptr) {
+EMSCRIPTEN_KEEPALIVE
+void destroy_manifold(manifold::Manifold* manifold_ptr) {
   delete manifold_ptr;
 }
 
 // Convert Manifold to triangle soup
-extern "C" triangle_soup* manifold_to_trisoup(
-    const manifold::Manifold* manifold_ptr) {
-  if (!manifold_ptr) {
-    wasmLog("Null manifold pointer");
-    return nullptr;
-  }
+EMSCRIPTEN_KEEPALIVE
+triangle_soup* manifold_to_trisoup(const manifold::Manifold* manifold_ptr) {
+  assert(manifold_ptr != nullptr);
 
   manifold::MeshGL meshgl = manifold_ptr->GetMeshGL();
-  
+
   const size_t num_tris = meshgl.triVerts.size() / 3;
   const size_t num_verts = num_tris * 3;
 
@@ -281,16 +309,20 @@ extern "C" triangle_soup* manifold_to_trisoup(
   result->num_vertices = num_verts;
 
   if (num_verts > 0) {
-    result->vertices = static_cast<vector3*>(malloc(sizeof(vector3) * num_verts));
+    result->vertices =
+        static_cast<vector3*>(malloc(sizeof(vector3) * num_verts));
 
     size_t idx = 0;
     for (size_t t = 0; t < num_tris; t++) {
       for (int v = 0; v < 3; v++) {
         uint32_t vertIdx = meshgl.triVerts[t * 3 + v];
         // Extract position from vertProperties (first 3 properties are x,y,z)
-        result->vertices[idx].x = meshgl.vertProperties[vertIdx * meshgl.numProp];
-        result->vertices[idx].y = meshgl.vertProperties[vertIdx * meshgl.numProp + 1];
-        result->vertices[idx].z = meshgl.vertProperties[vertIdx * meshgl.numProp + 2];
+        result->vertices[idx].x =
+            meshgl.vertProperties[vertIdx * meshgl.numProp];
+        result->vertices[idx].y =
+            meshgl.vertProperties[vertIdx * meshgl.numProp + 1];
+        result->vertices[idx].z =
+            meshgl.vertProperties[vertIdx * meshgl.numProp + 2];
         idx++;
       }
     }
@@ -301,17 +333,19 @@ extern "C" triangle_soup* manifold_to_trisoup(
   return result;
 }
 
-extern "C" void free_triangle_soup(triangle_soup* result) {
-  if (!result) {
+EMSCRIPTEN_KEEPALIVE
+void free_triangle_soup(triangle_soup* result) {
+  if (result == nullptr) {
     return;
   }
-  
+
   free(result->vertices);
   free(result);
 }
 
-extern "C" void free_contours(contours* result) {
-  if (!result) {
+EMSCRIPTEN_KEEPALIVE
+void free_contours(contours* result) {
+  if (result == nullptr) {
     return;
   }
 
@@ -322,4 +356,5 @@ extern "C" void free_contours(contours* result) {
     free(result->contours);
   }
   free(result);
+}
 }

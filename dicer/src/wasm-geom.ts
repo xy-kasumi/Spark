@@ -128,7 +128,9 @@ export class WasmGeom {
         origin: THREE.Vector3,
         viewX: THREE.Vector3,
         viewY: THREE.Vector3,
-        viewZ: THREE.Vector3
+        viewZ: THREE.Vector3,
+        offset: number = 1.5,
+        onlyOutermost: boolean = true
     ): THREE.Vector2[][] {
         const originPtr = this.allocVector3(origin);
         const viewXPtr = this.allocVector3(viewX);
@@ -136,7 +138,7 @@ export class WasmGeom {
         const viewZPtr = this.allocVector3(viewZ);
 
         try {
-            const resultPtr = this.module._project_manifold(handle, originPtr, viewXPtr, viewYPtr, viewZPtr, 1.5, true);
+            const resultPtr = this.module._project_manifold(handle, originPtr, viewXPtr, viewYPtr, viewZPtr, offset, onlyOutermost);
             if (!resultPtr) {
                 throw new Error("project_manifold failed");
             }
@@ -160,6 +162,17 @@ export class WasmGeom {
         handleB: ManifoldHandle
     ): ManifoldHandle | null {
         const resultPtr = this.module._subtract_manifolds(handleA, handleB);
+        return resultPtr ? resultPtr as ManifoldHandle : null;
+    }
+
+    /**
+     * Intersect manifolds using handles, returns new ManifoldHandle
+     */
+    intersectMesh(
+        handleA: ManifoldHandle,
+        handleB: ManifoldHandle
+    ): ManifoldHandle | null {
+        const resultPtr = this.module._intersect_manifolds(handleA, handleB);
         return resultPtr ? resultPtr as ManifoldHandle : null;
     }
 }
