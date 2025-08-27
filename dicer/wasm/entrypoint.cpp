@@ -18,10 +18,6 @@ EM_JS(void, wasmLog, (const char* msg), {
   console.log("WASM:", UTF8ToString(msg));
 })
 
-static void wasmLog(const std::string& msg) {
-  wasmLog(msg.c_str());
-}
-
 EM_JS(void, wasmBeginPerf, (const char* tag), {
   if (!Module.perfMap) {
     Module.perfMap = new Map();
@@ -35,13 +31,17 @@ EM_JS(void, wasmEndPerf, (const char* tag), {
   const tagJs = UTF8ToString(tag);
   const tBegin = Module.perfMap && Module.perfMap.get(tagJs);
   if (tBegin === undefined) {
-    console.warn("wasmEndPerf: no matching wasmBeginPerf for " + tagJs);
+    console.warn(`${tagJs}: missing wasmBeginPerf`);
   } else {
-    const t = tEnd - tBegin;
-    console.log(`${UTF8ToString(tag)}: ${t}ms`);
+    console.log(`${tagJs}: ${tEnd - tBegin}ms`);
     Module.perfMap.delete(tagJs);
   }
 })
+// clang-format on
+
+static void wasmLog(const std::string& msg) {
+  wasmLog(msg.c_str());
+}
 
 typedef struct {
   float x;
