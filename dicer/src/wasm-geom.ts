@@ -301,6 +301,13 @@ export class WasmGeom {
         const resultPtr = this.module._intersect_manifolds(handleA, handleB);
         return resultPtr ? resultPtr as ManifoldHandle : null;
     }
+
+    /**
+     * Calculate the volume of a Manifold
+     */
+    volumeManifold(handle: ManifoldHandle): number {
+        return this.module._volume_manifold(handle);
+    }
 }
 
 export async function initWasmGeom(): Promise<WasmGeom> {

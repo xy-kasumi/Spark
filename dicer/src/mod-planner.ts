@@ -1185,25 +1185,31 @@ export class ModulePlanner implements Module {
                 `Z(${viewZ.x.toFixed(3)}, ${viewZ.y.toFixed(3)}, ${viewZ.z.toFixed(3)})`);
 
             const startTime = performance.now();
-            let numContours = 3;
-            let crosssections = [];
+            let offsets = [4.5, 3, 1.5];
             let contours = [];
             let contour0 = this.wasmGeom.projectManifold(this.targetManifold, origin, viewX, viewY, viewZ);
             contour0 = this.wasmGeom.outermostCrossSection(contour0);
-            for (let i = 0; i < numContours; i++) {
-                const offset = 1.5 * (i + 1);
-                const csec = this.wasmGeom.offsetCrossSection(contour0, offset);
-                crosssections.push(csec);
-                contours = contours.concat(this.wasmGeom.crossSectionToContours(csec));
+            for (const offset of offsets) {
+                const toolCenterContour = this.wasmGeom.offsetCrossSection(contour0, offset);
+                contours = [...contours, this.wasmGeom.crossSectionToContours(toolCenterContour)];
+
+                const innerContour = this.wasmGeom.offsetCrossSectionCircle(toolCenterContour, -1.5, 16);
+                const cutCS = this.wasmGeom.createSquareCrossSection(100); // big enough to contain both work and target.
+                const removeCS = this.wasmGeom.subtractCrossSection(cutCS, innerContour);
+
+                const removeMani = this.wasmGeom.extrude(removeCS, viewX, viewY, viewZ, new THREE.Vector3(), 25); // TODO: proper origin
+                const actualRemovedMani = this.wasmGeom.intersectMesh(this.stockManifold, removeMani);
+                console.log("removed volume", this.wasmGeom.volumeManifold(actualRemovedMani));
+                this.stockManifold = this.wasmGeom.subtractMesh(this.stockManifold, removeMani); // update
             }
             const endTime = performance.now();
-            console.log(`projection took ${(endTime - startTime).toFixed(2)}ms`);
+            console.log(`cut took ${(endTime - startTime).toFixed(2)}ms`);
 
-            let extruded = this.wasmGeom.extrude(crosssections[0], viewX, viewY, viewZ, new THREE.Vector3(), 25);
-            extruded = this.wasmGeom.intersectMesh(this.stockManifold, extruded);
+            //let extruded = this.wasmGeom.extrude(crosssections[0], viewX, viewY, viewZ, new THREE.Vector3(), 25);
+            //extruded = this.wasmGeom.intersectMesh(this.stockManifold, extruded);
             
 
-            const extrudedGeom = this.wasmGeom.manifoldToGeometry(extruded);
+            const extrudedGeom = this.wasmGeom.manifoldToGeometry(this.stockManifold);
 
             // Create mesh with a different color
             const material = new THREE.MeshPhysicalMaterial({

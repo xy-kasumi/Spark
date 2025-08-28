@@ -344,11 +344,13 @@ manifold::Manifold* intersect_manifolds(const manifold::Manifold* manifold_a,
   }
 
   // TODO: is this check necessary?
+  /*
   if (result->IsEmpty()) {
     wasmLog("Boolean intersection produced empty result");
     delete result;
     return nullptr;
   }
+    */
 
   return result;
 }
@@ -470,6 +472,14 @@ manifold::CrossSection* create_square_crosssection(double size) {
   manifold::vec2 dimensions(size, size);
   manifold::CrossSection result = manifold::CrossSection::Square(dimensions, true);
   return new manifold::CrossSection(result);
+}
+
+// Calculate the volume of a Manifold.
+// Returns the volume as a double.
+EMSCRIPTEN_KEEPALIVE
+double volume_manifold(const manifold::Manifold* manifold_ptr) {
+  assert(manifold_ptr != nullptr);
+  return manifold_ptr->Volume();
 }
 
 }  // extern "C"
