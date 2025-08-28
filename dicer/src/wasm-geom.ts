@@ -311,8 +311,13 @@ export class WasmGeom {
 }
 
 export async function initWasmGeom(): Promise<WasmGeom> {
+    // Check if debug mode is requested via URL query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const isDebugMode = urlParams.get('wasm') === 'debug';
+    
     // @ts-ignore - WASM module will be generated at build time
-    const WasmGeomModule = (await import('./wasm/wasm_geom.js')).default;
+    const modulePath = isDebugMode ? './wasm/wasm_geom_debug.js' : './wasm/wasm_geom.js';
+    const WasmGeomModule = (await import(modulePath)).default;
 
     let moduleInstance: any = null;
     moduleInstance = await WasmGeomModule({

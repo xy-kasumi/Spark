@@ -8,39 +8,49 @@ MANIFOLD_DIR = $(DEPS_DIR)/manifold
 MANIFOLD_BUILD_DIR = $(MANIFOLD_DIR)/build_wasm
 EMSDK_VERSION = 3.1.51
 MANIFOLD_VERSION = v3.2.1
+
+# Common flags for compiling wasm_geom
+WASM_COMMON_FLAGS = \
+	--no-entry \
+	-s ENVIRONMENT=web \
+	-s MODULARIZE=1 \
+	-s EXPORT_NAME=WasmGeomModule \
+	-s EXPORT_ES6=1 \
+	-s EXPORTED_RUNTIME_METHODS='["getValue", "setValue", "UTF8ToString"]' \
+	-I$(MANIFOLD_DIR)/include \
+	-I$(MANIFOLD_BUILD_DIR)/_deps/glm-src \
+	-I$(MANIFOLD_BUILD_DIR)/_deps/thrust-src \
+	-I$(MANIFOLD_BUILD_DIR)/_deps/thrust-src/thrust/cmake \
+	-L$(MANIFOLD_BUILD_DIR)/src \
+	-L$(MANIFOLD_BUILD_DIR)/_deps/clipper2-build \
+	-lmanifold \
+	-lClipper2 \
+	-std=c++17 \
+	-O3 \
+	-s EXPORTED_FUNCTIONS='["_malloc", "_free"]' \
+	-s ALLOW_MEMORY_GROWTH=1 \
+	-s NO_FILESYSTEM=1 \
+	-fwasm-exceptions
+
+# Slows the code roughly 5x, but checks memory safety
 WASM_DEBUG_FLAGS = \
 	-s ASSERTIONS=2 \
 	-s SAFE_HEAP=1 \
 	-s STACK_OVERFLOW_CHECK=1
 
 .PHONY: all
-all: $(OUTPUT_DIR)/wasm_geom.wasm $(OUTPUT_DIR)/wasm_geom.js
+all: $(OUTPUT_DIR)/wasm_geom.wasm $(OUTPUT_DIR)/wasm_geom.js $(OUTPUT_DIR)/wasm_geom_debug.wasm $(OUTPUT_DIR)/wasm_geom_debug.js
 
 $(OUTPUT_DIR)/wasm_geom.wasm $(OUTPUT_DIR)/wasm_geom.js: $(SCRIPT_DIR)/entrypoint.cpp $(MANIFOLD_BUILD_DIR)/src/libmanifold.a | $(OUTPUT_DIR)
 	@echo "=== Compiling WASM ==="
-	EMSDK_QUIET=1 source $(EMSDK_DIR)/emsdk_env.sh && emcc $(SCRIPT_DIR)/entrypoint.cpp \
-		--no-entry \
-		-s ENVIRONMENT=web \
-		-s MODULARIZE=1 \
-		-s EXPORT_NAME=WasmGeomModule \
-		-s EXPORT_ES6=1 \
-		-s EXPORTED_RUNTIME_METHODS='["getValue", "setValue", "UTF8ToString"]' \
-		-o $(OUTPUT_DIR)/wasm_geom.js \
-		-I$(MANIFOLD_DIR)/include \
-		-I$(MANIFOLD_BUILD_DIR)/_deps/glm-src \
-		-I$(MANIFOLD_BUILD_DIR)/_deps/thrust-src \
-		-I$(MANIFOLD_BUILD_DIR)/_deps/thrust-src/thrust/cmake \
-		-L$(MANIFOLD_BUILD_DIR)/src \
-		-L$(MANIFOLD_BUILD_DIR)/_deps/clipper2-build \
-		-lmanifold \
-		-lClipper2 \
-		-std=c++17 \
-		-O3 \
-		-s EXPORTED_FUNCTIONS='["_malloc", "_free"]' \
-		-s ALLOW_MEMORY_GROWTH=1 \
-		-s NO_FILESYSTEM=1 \
-		-fwasm-exceptions \
-		$(WASM_DEBUG_FLAGS)
+	EMSDK_QUIET=1 source $(EMSDK_DIR)/emsdk_env.sh && emcc $(SCRIPT_DIR)/entrypoint.cpp -o $(OUTPUT_DIR)/wasm_geom.js \
+		$(WASM_COMMON_FLAGS)
+
+$(OUTPUT_DIR)/wasm_geom_debug.wasm $(OUTPUT_DIR)/wasm_geom_debug.js: $(SCRIPT_DIR)/entrypoint.cpp $(MANIFOLD_BUILD_DIR)/src/libmanifold.a | $(OUTPUT_DIR)
+	@echo "=== Compiling WASM (debug) ==="
+	EMSDK_QUIET=1 source $(EMSDK_DIR)/emsdk_env.sh && emcc $(SCRIPT_DIR)/entrypoint.cpp -o $(OUTPUT_DIR)/wasm_geom_debug.js \
+		$(WASM_COMMON_FLAGS) \
+	    $(WASM_DEBUG_FLAGS)
 
 $(MANIFOLD_BUILD_DIR)/src/libmanifold.a: | $(MANIFOLD_DIR) $(EMSDK_DIR)
 	@echo "=== Building Manifold library ==="
