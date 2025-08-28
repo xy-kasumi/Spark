@@ -82,6 +82,7 @@ export class ModuleLayout implements Module {
             FRACTAL_STEP: "fractal_step",
             BEARING_INNER: "bearing_inner",
             BEARING_OUTER: "bearing_outer",
+            SPRING_CONTACT: "spring_contact",
         };
 
         this.model = this.models.GT2_PULLEY;
