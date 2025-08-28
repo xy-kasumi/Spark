@@ -45,6 +45,7 @@ export class ModuleLayout implements Module {
     models: Record<string, string>;
     model: string;
     targetSurf: Float64Array;
+    origTargGeom: THREE.BufferGeometry;
     targetGeom: THREE.BufferGeometry;
 
     // Stock configuration
@@ -73,7 +74,6 @@ export class ModuleLayout implements Module {
         this.models = {
             GT2_PULLEY: "GT2_pulley",
             HELICAL_GEAR: "helical_gear",
-            HELICAL_GEAR_STANDING: "helical_gear_standing",
             LATTICE: "cube_lattice",
             BENCHY: "benchy_25p",
             BOLT_M3: "M3x10",
@@ -113,6 +113,9 @@ export class ModuleLayout implements Module {
             this.framework.updateVis("misc", []);
             this.loadStl(model);
         });
+        gui.add(this, "rotX90").name("Rotate 90° around X");
+        gui.add(this, "rotY90").name("Rotate 90° around Y");
+
         gui.add(this, "stockDiameter", 1, 30, 0.1).onChange(_ => {
             this.#updateStockVis();
             this.modPlanner.initPlan(this.targetSurf, this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
@@ -149,38 +152,55 @@ export class ModuleLayout implements Module {
         const loader = new STLLoader();
         loader.load(
             `../assets/models/${fname}.stl`,
-            (geometry) => {
-                // hack to align geometry
-                // TODO: Remove this when we have part orientation setup in GUI.
-                if (fname === this.models.FRACTAL_STEP) {
-                    geometry.translate(-1, 0, 2);
-                }
-
+            (geometry: THREE.BufferGeometry) => {
                 this.targetGeom = geometry;
-                this.targetSurf = toTriSoup(geometry);
-                const aabb = computeAABB(this.targetSurf);
-                // assuming aabb.min.z == 0.
-                this.aboveWorkSize = aabb.max.z + this.stockTopBuffer;
-                this.baseZ = this.stockLength - this.aboveWorkSize;
-                this.#updateStockVis();
-                this.modPlanner.initPlan(this.targetSurf, this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
-
-                const material = new THREE.MeshPhysicalMaterial({
-                    color: 0xb2ffc8,
-                    metalness: 0.1,
-                    roughness: 0.8,
-                    transparent: true,
-                    opacity: 0.8,
-                });
-                this.framework.updateVis("target", [new THREE.Mesh(geometry, material)]);
+                this.recomputeTarget();
             },
             (progress) => {
-                console.log('Loading progress: ', progress);
+                console.log('Model loading progress: ', progress);
             },
             (error) => {
-                console.error('Loading error: ', error);
+                console.error('Model loading error: ', error);
             }
         );
+    }
+
+    rotX90() {
+        this.targetGeom.rotateX(Math.PI / 2);
+        this.recomputeTarget();
+    }
+
+    rotY90() {
+        this.targetGeom.rotateY(Math.PI / 2);
+        this.recomputeTarget();
+    }
+
+    private recomputeTarget() {
+        const aabb = computeAABB(toTriSoup(this.targetGeom));
+        const height = aabb.max.z - aabb.min.z;
+        const center = aabb.min.clone().add(aabb.max).multiplyScalar(0.5);
+
+        console.log("Model AABB", aabb);
+        // shift so that:
+        // XY: center of AABB will be set to X=Y=0.
+        // Z: bottom surface matches Z=0 plane.
+        this.targetGeom.translate(-center.x, -center.y, -aabb.min.z);
+
+        this.targetSurf = toTriSoup(this.targetGeom);
+
+        this.aboveWorkSize = height + this.stockTopBuffer;
+        this.baseZ = this.stockLength - this.aboveWorkSize;
+        this.#updateStockVis();
+        this.modPlanner.initPlan(this.targetSurf, this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+
+        const material = new THREE.MeshPhysicalMaterial({
+            color: 0xb2ffc8,
+            metalness: 0.1,
+            roughness: 0.8,
+            transparent: true,
+            opacity: 0.8,
+        });
+        this.framework.updateVis("target", [new THREE.Mesh(this.targetGeom, material)]);
     }
 
     copyGcode() {
