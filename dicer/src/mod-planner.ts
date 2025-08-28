@@ -839,9 +839,6 @@ export class ModulePlanner implements Module {
     viewVectorY: number = 0;
     viewVectorZ: number = 1;
 
-    // Subtract sphere radius
-    subtractRadius: number = 5;
-
     wasmGeom: WasmGeom;
 
     /**
@@ -923,11 +920,6 @@ export class ModulePlanner implements Module {
         projectionFolder.add(this, "viewVectorZ", -1, 1, 0.1).name("View Z").listen();
         projectionFolder.add(this, "randomizeViewVector").name("Randomize");
         projectionFolder.add(this, "projectMesh").name("Project");
-
-        // Subtract button and radius slider
-        gui.add(this, "subtractRadius", 1, 15, 0.1).name("Subtract Radius").listen();
-        gui.add(this, "subtractMesh").name("Subtract");
-
     }
 
     animateHook() {
@@ -1097,66 +1089,6 @@ export class ModulePlanner implements Module {
     }
 
     /**
-     * Subtract sphere from target surface and display result
-     */
-    async subtractMesh() {
-        try {
-            console.log(`Subtracting sphere (radius=${this.subtractRadius}) from target surface...`);
-
-            // Generate sphere mesh and create its manifold
-            const sphereGeometry = this.generateSphereGeometry(this.subtractRadius);
-            const sphereManifold = this.wasmGeom.createManifold(sphereGeometry);
-            if (!sphereManifold) {
-                console.error("Failed to create sphere manifold");
-                return;
-            }
-
-            try {
-                // Perform subtraction using manifold handles
-                const startTime = performance.now();
-                const resultManifold = this.wasmGeom.subtractMesh(this.targetManifold, sphereManifold);
-                const endTime = performance.now();
-
-                if (!resultManifold) {
-                    console.error("Subtraction failed");
-                    return;
-                }
-
-                try {
-                    // Convert result to geometry
-                    const geometry = this.wasmGeom.manifoldToGeometry(resultManifold);
-                    if (!geometry) {
-                        console.error("Failed to convert result to geometry");
-                        return;
-                    }
-
-                    const numTris = geometry.getAttribute('position').count / 3;
-                    console.log(`C++ Manifold subtraction completed in ${(endTime - startTime).toFixed(2)}ms. Result has ${numTris} triangles`);
-
-                    // Create mesh with a different color
-                    const material = new THREE.MeshPhysicalMaterial({
-                        color: 0xff8080,  // Light red color for subtracted result
-                        metalness: 0.1,
-                        roughness: 0.8,
-                        transparent: true,
-                        wireframe: true,
-                        opacity: 0.9,
-                    });
-
-                    const mesh = new THREE.Mesh(geometry, material);
-                    this.framework.updateVis("misc", [mesh]);
-                } finally {
-                    this.wasmGeom.destroyManifold(resultManifold);
-                }
-            } finally {
-                this.wasmGeom.destroyManifold(sphereManifold);
-            }
-        } catch (error) {
-            console.error("Mesh subtraction failed:", error);
-        }
-    }
-
-    /**
      * High-level mesh projection with visualization and error handling
      */
     async projectMesh() {
@@ -1165,12 +1097,24 @@ export class ModulePlanner implements Module {
         translateGeom(stockGeom, new THREE.Vector3(0, 0, -(this.stockCutWidth + this.simWorkBuffer)));
         this.stockManifold = this.wasmGeom.createManifold(stockGeom);
 
-        try {
+        const viewVectors = [
+            new THREE.Vector3(0, 0, 1),
+            // crosses
+            new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0),
+            // diagonals
+            new THREE.Vector3(1, 1, 0).normalize(), new THREE.Vector3(1, -1, 0).normalize(),
+        ];
+
+        for (const viewVector of viewVectors) {
+
+
             // Create and validate view vector
-            const viewVector = new THREE.Vector3(this.viewVectorX, this.viewVectorY, this.viewVectorZ);
+            //const viewVector = new THREE.Vector3(this.viewVectorX, this.viewVectorY, this.viewVectorZ);
+            /*
             if (viewVector.length() < 0.001) {
                 throw new Error("View vector too small");
             }
+                */
 
             // Generate orthonormal basis from view vector
             const viewZ = viewVector.clone().normalize();
@@ -1184,8 +1128,9 @@ export class ModulePlanner implements Module {
                 `Y(${viewY.x.toFixed(3)}, ${viewY.y.toFixed(3)}, ${viewY.z.toFixed(3)}) ` +
                 `Z(${viewZ.x.toFixed(3)}, ${viewZ.y.toFixed(3)}, ${viewZ.z.toFixed(3)})`);
 
+            const toolRadius = 0.15; // 1.5;
             const startTime = performance.now();
-            let offsets = [4.5, 3, 1.5];
+            let offsets = [toolRadius * 3, toolRadius * 2, toolRadius * 1];
             let contours = [];
             let contour0 = this.wasmGeom.projectManifold(this.targetManifold, origin, viewX, viewY, viewZ);
             contour0 = this.wasmGeom.outermostCrossSection(contour0);
@@ -1193,11 +1138,10 @@ export class ModulePlanner implements Module {
                 const toolCenterContour = this.wasmGeom.offsetCrossSection(contour0, offset);
                 contours = [...contours, this.wasmGeom.crossSectionToContours(toolCenterContour)];
 
-                const innerContour = this.wasmGeom.offsetCrossSectionCircle(toolCenterContour, -1.5, 16);
+                const innerContour = this.wasmGeom.offsetCrossSectionCircle(toolCenterContour, -toolRadius, 16);
                 const cutCS = this.wasmGeom.createSquareCrossSection(100); // big enough to contain both work and target.
                 const removeCS = this.wasmGeom.subtractCrossSection(cutCS, innerContour);
-
-                const removeMani = this.wasmGeom.extrude(removeCS, viewX, viewY, viewZ, new THREE.Vector3(), 25); // TODO: proper origin
+                const removeMani = this.wasmGeom.extrude(removeCS, viewX, viewY, viewZ, viewZ.clone().multiplyScalar(-50), 100); // 100mm should be big enough
                 const actualRemovedMani = this.wasmGeom.intersectMesh(this.stockManifold, removeMani);
                 console.log("removed volume", this.wasmGeom.volumeManifold(actualRemovedMani));
                 this.stockManifold = this.wasmGeom.subtractMesh(this.stockManifold, removeMani); // update
@@ -1205,24 +1149,34 @@ export class ModulePlanner implements Module {
             const endTime = performance.now();
             console.log(`cut took ${(endTime - startTime).toFixed(2)}ms`);
 
-            //let extruded = this.wasmGeom.extrude(crosssections[0], viewX, viewY, viewZ, new THREE.Vector3(), 25);
-            //extruded = this.wasmGeom.intersectMesh(this.stockManifold, extruded);
-            
 
-            const extrudedGeom = this.wasmGeom.manifoldToGeometry(this.stockManifold);
+            // visualize stock manifold
+            {
+                const material = new THREE.MeshPhysicalMaterial({
+                    color: "green",
+                    metalness: 0.1,
+                    roughness: 0.8,
+                    transparent: true,
+                    wireframe: true,
+                    opacity: 0.9,
+                });
+                const mesh = new THREE.Mesh(this.wasmGeom.manifoldToGeometry(this.stockManifold), material);
+                this.framework.updateVis("extruded", [mesh]);
+            }
 
-            // Create mesh with a different color
-            const material = new THREE.MeshPhysicalMaterial({
-                color: 0xff8080,  // Light red color for subtracted result
-                metalness: 0.1,
-                roughness: 0.8,
-                transparent: true,
-                wireframe: true,
-                opacity: 0.9,
-            });
-
-            const mesh = new THREE.Mesh(extrudedGeom, material);
-            this.framework.updateVis("extruded", [mesh]);
+            // visualize remaining
+            if (false) {
+                const material = new THREE.MeshPhysicalMaterial({
+                    color: "red",
+                    metalness: 0.1,
+                    roughness: 0.8,
+                    transparent: true,
+                    wireframe: true,
+                    opacity: 0.9,
+                });
+                const mesh = new THREE.Mesh(this.wasmGeom.manifoldToGeometry(this.wasmGeom.subtractMesh(this.stockManifold, this.targetManifold)), material);
+                this.framework.updateVis("remaining", [mesh]);
+            }
 
 
             // Visualize contours on the view plane using LineLoop
@@ -1244,21 +1198,6 @@ export class ModulePlanner implements Module {
             }
 
             this.framework.updateVis("misc", contourObjects);
-        } catch (error) {
-            console.error("projection failed:", error);
-
-            // Handle coordinate pattern errors with visualization
-            const errorMsg = error instanceof Error ? error.message : String(error);
-            const coordPattern = /\((-?\d+\.\d+),(-?\d+\.\d+),(-?\d+\.\d+)\)-\((-?\d+\.\d+),(-?\d+\.\d+),(-?\d+\.\d+)\)/;
-            const match = errorMsg.match(coordPattern);
-
-            if (match) {
-                const p1 = new THREE.Vector3(parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3]));
-                const p2 = new THREE.Vector3(parseFloat(match[4]), parseFloat(match[5]), parseFloat(match[6]));
-
-                const errorObjects: THREE.Object3D[] = [visDot(p1, "red"), visDot(p2, "red")];
-                this.framework.updateVis("misc", errorObjects);
-            }
         }
     }
 
