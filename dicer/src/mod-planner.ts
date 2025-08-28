@@ -811,7 +811,6 @@ export class ModulePlanner implements Module {
     stockCutWidth: number;
     simWorkBuffer: number;
     showWork: boolean;
-    showTarget: boolean;
     targetSurf: any;
     numSweeps: number;
     showingSweep: number;
@@ -865,7 +864,6 @@ export class ModulePlanner implements Module {
         this.simWorkBuffer = 1.0; // extended bottom side of the work by this amount.
 
         this.showWork = true;
-        this.showTarget = false;
         this.targetSurf = null;
 
         this.numSweeps = 0;
@@ -897,11 +895,8 @@ export class ModulePlanner implements Module {
         gui.add(this, "remainingVol").name("Remaining Vol (㎣)").decimals(9).disable().listen();
         gui.add(this, "deviation").name("Deviation (mm)").decimals(3).disable().listen();
         gui.add(this, "toolIx").disable().listen();
-        gui.add(this, "showTarget")
-            .onChange(_ => this.framework.setVisVisibility("targ-vg", this.showTarget))
-            .listen();
         gui.add(this, "showWork")
-            .onChange(_ => this.framework.setVisVisibility("work-vg", this.showWork))
+            .onChange(_ => this.framework.setVisVisibility("work", this.showWork))
             .listen();
         gui.add(this, "showPlanPath")
             .onChange(_ => this.framework.setVisVisibility("plan-path-vg", this.showPlanPath))
@@ -1156,12 +1151,12 @@ export class ModulePlanner implements Module {
                     color: "green",
                     metalness: 0.1,
                     roughness: 0.8,
-                    transparent: true,
-                    wireframe: true,
-                    opacity: 0.9,
+                    //transparent: true,
+                    //wireframe: true,
+                    //opacity: 0.9,
                 });
                 const mesh = new THREE.Mesh(this.wasmGeom.manifoldToGeometry(this.stockManifold), material);
-                this.framework.updateVis("extruded", [mesh]);
+                this.framework.updateVis("work", [mesh]);
             }
 
             // visualize remaining
