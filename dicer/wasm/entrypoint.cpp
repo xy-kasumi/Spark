@@ -436,4 +436,40 @@ void free_contours(contours* result) {
   }
 }
 
+// Apply circular offset to a CrossSection with specified segment count.
+// Returns new CrossSection. Caller must free with destroy_crosssection.
+EMSCRIPTEN_KEEPALIVE
+manifold::CrossSection* offset_crosssection_circle(
+    const manifold::CrossSection* cs_ptr,
+    double offset,
+    int circular_segs) {
+  assert(cs_ptr != nullptr);
+
+  manifold::CrossSection result =
+      cs_ptr->Offset(offset, manifold::CrossSection::JoinType::Round, 2.0, circular_segs);
+  return new manifold::CrossSection(result);
+}
+
+// Subtract one CrossSection from another.
+// Returns new CrossSection. Caller must free with destroy_crosssection.
+EMSCRIPTEN_KEEPALIVE
+manifold::CrossSection* subtract_crosssection(
+    const manifold::CrossSection* cs_a,
+    const manifold::CrossSection* cs_b) {
+  assert(cs_a != nullptr);
+  assert(cs_b != nullptr);
+
+  manifold::CrossSection result = *cs_a - *cs_b;
+  return new manifold::CrossSection(result);
+}
+
+// Create a square CrossSection with given size, centered at origin.
+// Returns new CrossSection. Caller must free with destroy_crosssection.
+EMSCRIPTEN_KEEPALIVE
+manifold::CrossSection* create_square_crosssection(double size) {
+  manifold::vec2 dimensions(size, size);
+  manifold::CrossSection result = manifold::CrossSection::Square(dimensions, true);
+  return new manifold::CrossSection(result);
+}
+
 }  // extern "C"

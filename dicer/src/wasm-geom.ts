@@ -165,6 +165,30 @@ export class WasmGeom {
     }
 
     /**
+     * Apply circular offset to a CrossSection with specified segment count
+     */
+    offsetCrossSectionCircle(handle: CrossSectionHandle, offset: number, circularSegs: number): CrossSectionHandle | null {
+        const resultPtr = this.module._offset_crosssection_circle(handle, offset, circularSegs);
+        return resultPtr ? resultPtr as CrossSectionHandle : null;
+    }
+
+    /**
+     * Subtract one CrossSection from another
+     */
+    subtractCrossSection(csA: CrossSectionHandle, csB: CrossSectionHandle): CrossSectionHandle | null {
+        const resultPtr = this.module._subtract_crosssection(csA, csB);
+        return resultPtr ? resultPtr as CrossSectionHandle : null;
+    }
+
+    /**
+     * Create a square CrossSection with given size, centered at origin
+     */
+    createSquareCrossSection(size: number): CrossSectionHandle | null {
+        const resultPtr = this.module._create_square_crosssection(size);
+        return resultPtr ? resultPtr as CrossSectionHandle : null;
+    }
+
+    /**
      * Extract outermost contours from a CrossSection
      */
     outermostCrossSection(handle: CrossSectionHandle): CrossSectionHandle | null {
