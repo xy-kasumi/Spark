@@ -80,6 +80,8 @@ export class ModuleLayout implements Module {
             COLLET: "collet",
             IDLER: "idler",
             FRACTAL_STEP: "fractal_step",
+            BEARING_INNER: "bearing_inner",
+            BEARING_OUTER: "bearing_outer",
         };
 
         this.model = this.models.GT2_PULLEY;
