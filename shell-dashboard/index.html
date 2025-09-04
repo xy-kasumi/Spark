@@ -27,6 +27,9 @@
             <button class="pure-button" @click="send" :disabled="commands.length === 0 || !assumeInitialized">{{ executeButtonText }}</button>
             <button class="pure-button" @click="cancel">Cancel</button>
             <button class="pure-button" @click="analyzeLog">Analyze Log</button>
+            <label class="pure-checkbox">
+                <input type="checkbox" v-model="keepOnExec"> keep on exec
+            </label>
 
             <h1>Recent G1</h1>
             <div v-if="g1Commands.length === 0">
