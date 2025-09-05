@@ -139,6 +139,7 @@ Vue.createApp({
             assumeInitialized: true, // true if we think init commands were executed or enqueued
             g1Commands: [] as G1Command[],
             keepOnExec: false,
+            jogStepMm: 1,
         }
     },
 
@@ -273,6 +274,26 @@ Vue.createApp({
         },
 
         /**
+         * Parse current position from statusText
+         */
+        currentPos(): { x: number, y: number, z: number } {
+            if (!this.statusText) {
+                return { x: 0, y: 0, z: 0 };
+            }
+
+            // Extract first occurrence of X, Y, Z values
+            const xMatch = this.statusText.match(/X(-?\d+(?:\.\d+)?)/);
+            const yMatch = this.statusText.match(/Y(-?\d+(?:\.\d+)?)/);
+            const zMatch = this.statusText.match(/Z(-?\d+(?:\.\d+)?)/);
+
+            const x = xMatch ? parseFloat(xMatch[1]) : 0;
+            const y = yMatch ? parseFloat(yMatch[1]) : 0;
+            const z = zMatch ? parseFloat(zMatch[1]) : 0;
+
+            return { x, y, z };
+        },
+
+        /**
          * Analyze log for blob data and draw EDML visualization
          */
         async analyzeLog() {
@@ -338,6 +359,48 @@ Vue.createApp({
                     }
                 }
             }
+        },
+
+        /**
+         * Jog: X+
+         */
+        jogXPlus() {
+            client.enqueueCommand(`G0 X${(this.currentPos().x + this.jogStepMm).toFixed(3)}`);
+        },
+
+        /**
+         * Jog: X-
+         */
+        jogXMinus() {
+            client.enqueueCommand(`G0 X${(this.currentPos().x - this.jogStepMm).toFixed(3)}`);
+        },
+
+        /**
+         * Jog: Y+
+         */
+        jogYPlus() {
+            client.enqueueCommand(`G0 Y${(this.currentPos().y + this.jogStepMm).toFixed(3)}`);
+        },
+
+        /**
+         * Jog: Y-
+         */
+        jogYMinus() {
+            client.enqueueCommand(`G0 Y${(this.currentPos().y - this.jogStepMm).toFixed(3)}`);
+        },
+
+        /**
+         * Jog: Z+
+         */
+        jogZPlus() {
+            client.enqueueCommand(`G0 Z${(this.currentPos().z + this.jogStepMm).toFixed(3)}`);
+        },
+
+        /**
+         * Jog: Z-
+         */
+        jogZMinus() {
+            client.enqueueCommand(`G0 Z${(this.currentPos().z - this.jogStepMm).toFixed(3)}`);
         },
 
         /**

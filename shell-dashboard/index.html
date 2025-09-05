@@ -6,6 +6,42 @@
     <meta charset="UTF-8">
     <title>Spark: Dashboard</title>
     <link rel="stylesheet" href="./pure-min.css">
+    <style>
+        /* Jog button layout */
+        .jog-cross, .jog-z {
+            display: inline-block;
+            margin-right: 2em;
+        }
+        
+        .jog-row {
+            display: flex;
+            justify-content: center;
+        }
+        
+        .jog-cell {
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .jog-btn {
+            width: 50px !important;
+            height: 50px !important;
+            min-width: 50px;
+            padding: 0;
+            font-size: 12px;
+        }
+        
+        .jog-z {
+            padding-left: 2em;
+        }
+        
+        .jog-z-row {
+            margin-bottom: 0.2em;
+        }
+    </style>
 </head>
 
 <body>
@@ -15,7 +51,7 @@
             <p>
                 <span :title="'Detailed status: ' + clientStatus">{{ statusEmoji }} {{ uiStatus }}</span>
             </p>
-            <div>{{ statusText }}</div>
+            
             <div>{{ queueStatus }}</div>
             <div>{{ rebootStatus }}</div>
 
@@ -30,6 +66,63 @@
             <label class="pure-checkbox">
                 <input type="checkbox" v-model="keepOnExec"> keep on exec
             </label>
+
+            <h1>Jog</h1>
+            <div>{{ statusText }}</div><br/>
+            <div class="pure-g">
+                <!-- 4-button cross -->
+                <div class="pure-u-1-2">
+                    <div class="jog-cross">
+                        <div class="jog-row">
+                            <div class="jog-cell"></div>
+                            <div class="jog-cell">
+                                <button class="pure-button jog-btn" @click="jogXPlus">X+</button>
+                            </div>
+                            <div class="jog-cell"></div>
+                        </div>
+                        <div class="jog-row">
+                            <div class="jog-cell">
+                                <button class="pure-button jog-btn" @click="jogYPlus">Y+</button>
+                            </div>
+                            <div class="jog-cell"></div>
+                            <div class="jog-cell">
+                                <button class="pure-button jog-btn" @click="jogYMinus">Y-</button>
+                            </div>
+                        </div>
+                        <div class="jog-row">
+                            <div class="jog-cell"></div>
+                            <div class="jog-cell">
+                                <button class="pure-button jog-btn" @click="jogXMinus">X-</button>
+                            </div>
+                            <div class="jog-cell"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 2-button Z up/down -->
+                <div class="pure-u-1-2">
+                    <div class="jog-z">
+                        <div class="jog-z-row">
+                            <button class="pure-button jog-btn" @click="jogZMinus">↑ Z-</button>
+                        </div>
+                        <div class="jog-z-row">
+                            <button class="pure-button jog-btn" @click="jogZPlus">↓ Z+</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 1em;">
+                <label class="pure-radio">
+                    <input type="radio" name="jogStep" :value="0.1" v-model.number="jogStepMm"> 0.1mm
+                </label>
+                <label class="pure-radio">
+                    <input type="radio" name="jogStep" :value="1" v-model.number="jogStepMm"> 1mm
+                </label>
+                <label class="pure-radio">
+                    <input type="radio" name="jogStep" :value="5" v-model.number="jogStepMm"> 5mm
+                </label>
+            </div>
 
             <h1>Tool Supply</h1>
             <button class="pure-button" @click="clamp">Clamp</button>
