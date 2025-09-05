@@ -18,6 +18,74 @@ interface G1Command {
 }
 
 /**
+ * Analyze G1 commands and their execution times
+ * @param host - Host to query
+ * @returns Array of G1 commands with timing information
+ */
+async function getRecentG1Commands(host: string): Promise<G1Command[]> {
+    try {
+        // Find G1 commands
+        const g1Result = await spoolerApi.queryLines(host, {
+            filter_dir: "down",
+            filter_regex: "^G1 "
+        });
+
+        if (g1Result.lines.length === 0) {
+            console.log("No G1 commands found");
+            return [];
+        }
+        console.log(g1Result);
+
+        const g1Commands: G1Command[] = [];
+
+        // Step 2: For each G1 command, find its completion
+        for (const g1Line of g1Result.lines) {
+            const g1Command: G1Command = {
+                startTime: g1Line.time,
+                startLineNum: g1Line.line_num,
+                command: g1Line.content
+            };
+
+            // Query for the first "I" line after this G1
+            const completionResult = await spoolerApi.queryLines(host, {
+                from_line: g1Line.line_num + 1,
+                filter_dir: "up",
+                filter_regex: "^I",
+            });
+
+            if (completionResult.lines.length > 0) {
+                const endLine = completionResult.lines[0];
+                g1Command.endTime = endLine.time;
+
+                // Calculate duration in seconds
+                const startMs = new Date(g1Line.time).getTime();
+                const endMs = new Date(endLine.time).getTime();
+                g1Command.duration = Math.round((endMs - startMs) / 1000);
+            } else {
+                // Still executing - calculate duration from start to now
+                const startMs = new Date(g1Line.time).getTime();
+                const nowMs = Date.now();
+                g1Command.duration = Math.round((nowMs - startMs) / 1000);
+            }
+
+            g1Commands.push(g1Command);
+        }
+
+        // Sort by start time (newest first)
+        g1Commands.sort((a, b) =>
+            new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+        );
+
+        console.log("G1 analysis complete:", g1Commands);
+        return g1Commands;
+
+    } catch (e) {
+        console.error("G1 analysis error:", e.message);
+        return [];
+    }
+}
+
+/**
  * Parses binary data into EDM poll entries.
  * @param binaryData - Raw binary data containing edm_poll_entry_t structs
  * @returns Parsed entries with ratios 0-1
@@ -73,14 +141,14 @@ Vue.createApp({
             keepOnExec: false,
         }
     },
-    
+
     computed: {
         commands() {
             return this.commandText.split('\n')
                 .map(line => line.trim())
                 .filter(line => line.length > 0);
         },
-        
+
         uiStatus() {
             // Map 6 states to 3 UI states
             switch (this.clientStatus) {
@@ -93,7 +161,7 @@ Vue.createApp({
                 default: return 'offline';
             }
         },
-        
+
         statusEmoji() {
             switch (this.uiStatus) {
                 case 'idle': return '🔵';
@@ -102,24 +170,24 @@ Vue.createApp({
                 default: return '⚫';
             }
         },
-        
+
         initButtonText() {
             return (this.clientStatus === 'idle' || this.clientStatus === 'busy-healthcheck') ? 'Init' : 'Enqueue Init';
         },
-        
+
         executeButtonText() {
             return (this.clientStatus === 'idle' || this.clientStatus === 'busy-healthcheck') ? 'Execute' : 'Enqueue';
         },
-        
+
         queueStatus() {
             const queueLength = this.commandQueue.length;
             if (queueLength === 0) {
                 return '';
             }
-            
+
             return `${queueLength} commands in queue`;
         },
-        
+
         rebootStatus() {
             if (!this.rebootTime) {
                 return '';
@@ -130,38 +198,38 @@ Vue.createApp({
                 return `rebooted at ${this.rebootTime}`;
             }
         },
-        
+
     },
-    
+
     mounted() {
         // Initialize client
         client = new SpoolerController(host, 1000);
-        
+
         // Setup callbacks
         client.onUpdate = (state, status) => {
             this.clientStatus = state;
             this.statusText = status;
         };
-        
+
         client.onQueueChange = () => {
             this.commandQueue = client.peekQueue();
         };
-        
+
         client.onReboot = () => {
             this.rebootTime = new Date().toLocaleTimeString();
             this.assumeInitialized = false;
         };
-        
+
         // Start polling
         client.startPolling();
     },
-    
+
     beforeUnmount() {
         if (client) {
             client.stopPolling();
         }
     },
-    
+
     methods: {
         /**
          * Initialize/home the machine
@@ -170,15 +238,15 @@ Vue.createApp({
             if (!client) {
                 return;
             }
-            
+
             for (const cmd of initCommands) {
                 client.enqueueCommand(cmd);
             }
-            
+
             // Assume machine will be initialized after init commands
             this.assumeInitialized = true;
         },
-        
+
         /**
          * Send user commands
          */
@@ -186,16 +254,16 @@ Vue.createApp({
             if (!client || this.commands.length === 0) {
                 return;
             }
-            
+
             for (const cmd of this.commands) {
                 client.enqueueCommand(cmd);
             }
-            
+
             if (!this.keepOnExec) {
                 this.commandText = '';
             }
         },
-        
+
         /**
          * Cancel current operation
          */
@@ -203,97 +271,24 @@ Vue.createApp({
             if (!client) return;
             client.cancel();
         },
-        
+
         /**
          * Analyze log for blob data and draw EDML visualization
          */
         async analyzeLog() {
+            this.g1Commands = await getRecentG1Commands(host);
+            
             try {
-                // Analyze G1 commands
-                await this.analyzeG1Commands();
-                
-                // Analyze blob data
                 const blobData = await spoolerApi.getLastUpBlob(host);
-                
-                if (!blobData) {
-                    console.log("No blob data found in log");
-                    return;
+                if (blobData) {
+                    const vals = parseEdmPollEntries(blobData);
+                    this.drawEdml(vals);
                 }
-                
-                const vals = parseEdmPollEntries(blobData);
-                this.drawEdml(vals);
             } catch (e) {
                 console.error("Blob analysis error:", e.message);
             }
         },
-        
-        /**
-         * Analyze G1 commands and their execution times
-         */
-        async analyzeG1Commands() {
-            try {
-                // Find G1 commands
-                const g1Result = await spoolerApi.queryLines(host, {
-                    filter_dir: "down",
-                    filter_regex: "^G1 "
-                });
-                
-                if (g1Result.lines.length === 0) {
-                    console.log("No G1 commands found");
-                    this.g1Commands = [];
-                    return;
-                }
-                console.log(g1Result);
-                
-                const g1Commands: G1Command[] = [];
-                
-                // Step 2: For each G1 command, find its completion
-                for (const g1Line of g1Result.lines) {
-                    const g1Command: G1Command = {
-                        startTime: g1Line.time,
-                        startLineNum: g1Line.line_num,
-                        command: g1Line.content
-                    };
-                    
-                    // Query for the first "I" line after this G1
-                    const completionResult = await spoolerApi.queryLines(host, {
-                        from_line: g1Line.line_num + 1,
-                        filter_dir: "up",
-                        filter_regex: "^I",
-                    });
-                    
-                    if (completionResult.lines.length > 0) {
-                        const endLine = completionResult.lines[0];
-                        g1Command.endTime = endLine.time;
-                        
-                        // Calculate duration in seconds
-                        const startMs = new Date(g1Line.time).getTime();
-                        const endMs = new Date(endLine.time).getTime();
-                        g1Command.duration = Math.round((endMs - startMs) / 1000);
-                    } else {
-                        // Still executing - calculate duration from start to now
-                        const startMs = new Date(g1Line.time).getTime();
-                        const nowMs = Date.now();
-                        g1Command.duration = Math.round((nowMs - startMs) / 1000);
-                    }
-                    
-                    g1Commands.push(g1Command);
-                }
-                
-                // Sort by start time (newest first)
-                g1Commands.sort((a, b) => 
-                    new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
-                );
-                
-                this.g1Commands = g1Commands;
-                console.log("G1 analysis complete:", g1Commands);
-                
-            } catch (e) {
-                console.error("G1 analysis error:", e.message);
-                this.g1Commands = [];
-            }
-        },
-        
+
         /**
          * Draw EDML visualization on canvas
          * @param vals - EDM poll entries
@@ -303,7 +298,7 @@ Vue.createApp({
                 console.error("EDML canvas not found");
                 return;
             }
-            
+
             const edmlData = [{
                 state: "blob",
                 vals: vals
