@@ -277,7 +277,7 @@ Vue.createApp({
          */
         async analyzeLog() {
             this.g1Commands = await getRecentG1Commands(host);
-            
+
             try {
                 const blobData = await spoolerApi.getLastUpBlob(host);
                 if (blobData) {
@@ -338,6 +338,42 @@ Vue.createApp({
                     }
                 }
             }
+        },
+
+        /**
+         * Tool supply: Clamp
+         */
+        clamp() {
+            [
+                "G0 C0",
+                "G0 C240",
+                "G0 C120",
+            ].forEach(cmd => client.enqueueCommand(cmd));
+        },
+
+        /**
+         * Tool supply: Unclamp
+         */
+        unclamp() {
+            [
+                "G0 C0",
+                "G0 C120",
+                "G0 C240",
+            ].forEach(cmd => client.enqueueCommand(cmd));
+        },
+
+        /**
+         * Tool supply: Open
+         */
+        open() {
+            client.enqueueCommand("M60");
+        },
+
+        /**
+         * Tool supply: Close
+         */
+        close() {
+            client.enqueueCommand("M61");
         }
     }
 }).mount('#app');

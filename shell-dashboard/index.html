@@ -31,6 +31,13 @@
                 <input type="checkbox" v-model="keepOnExec"> keep on exec
             </label>
 
+            <h1>Tool Supply</h1>
+            <button class="pure-button" @click="clamp">Clamp</button>
+            <button class="pure-button" @click="unclamp">Unclamp</button>
+            <br/>
+            <button class="pure-button" @click="open">Open</button>
+            <button class="pure-button" @click="close">Close</button>
+
             <h1>Recent G1</h1>
             <div v-if="g1Commands.length === 0">
                 <em>No G1 commands</em>
