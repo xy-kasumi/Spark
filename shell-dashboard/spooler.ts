@@ -115,15 +115,17 @@ class SpoolerController {
 
             // Handle ping timing for appropriate states  
             const timeSinceLastCommand = Date.now() - this.lastCommandTime;
-            if (timeSinceLastCommand >= this.pingIntervalMs) {
-                if ((this.state === 'idle' || this.state === 'unknown' || this.state === 'board-offline') &&
-                    this.commandQueue.length === 0) {
-                    await this.sendCommand('ping', true);
-                }
+            const sendPing =
+                (timeSinceLastCommand >= this.pingIntervalMs) &&
+                (this.state === 'idle' || this.state === 'unknown' || this.state === 'board-offline') &&
+                (this.commandQueue.length === 0);
+            if (sendPing) {
+                await this.sendCommand('ping', true);
             }
 
-            // Use fast polling when queue has items, normal polling otherwise
-            const delay = this.commandQueue.length > 0 ? SpoolerController.FAST_INTERVAL_MS : intervalMs;
+            // Use fast polling when queue has items or just sent ping, normal polling otherwise.
+            // Former accelerates queue processing, latter reduces blocking time of ping.
+            const delay = (this.commandQueue.length > 0 || sendPing) ? SpoolerController.FAST_INTERVAL_MS : intervalMs;
             await this.delay(delay);
         }
     }
