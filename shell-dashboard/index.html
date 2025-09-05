@@ -8,16 +8,17 @@
     <link rel="stylesheet" href="./pure-min.css">
     <style>
         /* Jog button layout */
-        .jog-cross, .jog-z {
+        .jog-cross,
+        .jog-z {
             display: inline-block;
             margin-right: 2em;
         }
-        
+
         .jog-row {
             display: flex;
             justify-content: center;
         }
-        
+
         .jog-cell {
             width: 50px;
             height: 50px;
@@ -25,7 +26,7 @@
             align-items: center;
             justify-content: center;
         }
-        
+
         .jog-btn {
             width: 50px !important;
             height: 50px !important;
@@ -33,11 +34,11 @@
             padding: 0;
             font-size: 12px;
         }
-        
+
         .jog-z {
             padding-left: 2em;
         }
-        
+
         .jog-z-row {
             margin-bottom: 0.2em;
         }
@@ -50,17 +51,18 @@
             <h1>Status</h1>
             <p>
                 <span :title="'Detailed status: ' + clientStatus">{{ statusEmoji }} {{ uiStatus }}</span>
+                {{ queueStatus }}
             </p>
-            
-            <div>{{ queueStatus }}</div>
+
             <div>{{ rebootStatus }}</div>
 
             <h1>Manual Command</h1>
             <button class="pure-button" @click="init">{{ initButtonText }}</button>
-            <br/>
+            <br />
             <textarea class="pure-input-1-2" v-model="commandText" rows="10" cols="50"
                 placeholder="Enter G-code or commands"></textarea><br />
-            <button class="pure-button" @click="send" :disabled="commands.length === 0 || !assumeInitialized">{{ executeButtonText }}</button>
+            <button class="pure-button" @click="send" :disabled="commands.length === 0 || !assumeInitialized">{{
+                executeButtonText }}</button>
             <button class="pure-button" @click="cancel">Cancel</button>
             <button class="pure-button" @click="analyzeLog">Analyze Log</button>
             <label class="pure-checkbox">
@@ -68,7 +70,7 @@
             </label>
 
             <h1>Jog</h1>
-            <div>{{ statusText }}</div><br/>
+            <div>{{ statusText }}</div><br />
             <div class="pure-g">
                 <!-- 4-button cross -->
                 <div class="pure-u-1-2">
@@ -98,7 +100,7 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- 2-button Z up/down -->
                 <div class="pure-u-1-2">
                     <div class="jog-z">
@@ -127,7 +129,7 @@
             <h1>Tool Supply</h1>
             <button class="pure-button" @click="clamp">Clamp</button>
             <button class="pure-button" @click="unclamp">Unclamp</button>
-            <br/>
+            <br />
             <button class="pure-button" @click="open">Open</button>
             <button class="pure-button" @click="close">Close</button>
 
@@ -137,7 +139,7 @@
             </div>
             <div v-else>
                 <div v-for="g1 in g1Commands" :key="g1.startLineNum">
-                    {{ g1.startTime.split(' ')[1] }} ~ 
+                    {{ g1.startTime.split(' ')[1] }} ~
                     {{ g1.duration }}s
                     <span v-if="!g1.endTime">(executing)</span>
                     {{ g1.command }}
