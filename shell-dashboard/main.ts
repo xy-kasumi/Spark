@@ -115,6 +115,7 @@ function parseEdmPollEntries(binaryData: Uint8Array): EdmPollEntry[] {
 const initCommands: string[] = [
     "set ts.servo.closems 1.75",
     "set ts.servo.openms 0.85",
+    "set m.0.idlems -1",
     "set m.6.unitsteps -814.87",
     "set cs.g.pos.x -58",
     "set cs.g.pos.y 76",
