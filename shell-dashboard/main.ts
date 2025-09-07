@@ -448,11 +448,11 @@ Vue.createApp({
         },
 
         tsInsert() {
-            client.enqueueCommand("G0 Z-72");
+            client.enqueueCommand("G0 Z-67");
         },
 
         tsPull() {
-            client.enqueueCommand("G0 20");
+            client.enqueueCommand("G0 Z-20");
         }
     }
 }).mount('#app');
