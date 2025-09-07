@@ -132,6 +132,10 @@
             <br />
             <button class="pure-button" @click="open">Open</button>
             <button class="pure-button" @click="close">Close</button>
+            <br />
+            <button class="pure-button" @click="moveToTs">Move to TS</button>
+            <button class="pure-button" @click="tsInsert">Insert</button>
+            <button class="pure-button" @click="tsPull">Pull</button>
 
             <h1>Recent G1</h1>
             <div v-if="g1Commands.length === 0">

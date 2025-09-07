@@ -116,6 +116,9 @@ const initCommands: string[] = [
     "set ts.servo.closems 1.75",
     "set ts.servo.openms 0.85",
     "set m.0.idlems -1",
+    "set m.1.idlems -1",
+    "set m.2.idlems -1",
+    "set m.1.thresh 1",
     "set m.6.unitsteps -814.87",
     "set cs.g.pos.x -58",
     "set cs.g.pos.y 76",
@@ -438,6 +441,18 @@ Vue.createApp({
          */
         close() {
             client.enqueueCommand("M61");
+        },
+
+        moveToTs() {
+            client.enqueueCommand("G0 X-15 Y103");
+        },
+
+        tsInsert() {
+            client.enqueueCommand("G0 Z-72");
+        },
+
+        tsPull() {
+            client.enqueueCommand("G0 20");
         }
     }
 }).mount('#app');
