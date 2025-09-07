@@ -128,6 +128,12 @@ const initCommands: string[] = [
     "set cs.w.pos.z -89",
 ];
 
+const tsCenterX = -14.5;
+const tsCenterY = 103.5;
+const tsPulledZ = -10;
+const tsJustBeforeInsertZ = -57;
+const tsFullInsertZ = -68;
+
 // Global client instance for performance
 let client: SpoolerController | null = null;
 
@@ -415,6 +421,10 @@ Vue.createApp({
                 "G0 C0",
                 "G0 C240",
                 "G0 C120",
+                "G0 C0",
+                "G0 C240",
+                "G0 C120",
+                "G0 C0",
             ].forEach(cmd => client.enqueueCommand(cmd));
         },
 
@@ -426,6 +436,7 @@ Vue.createApp({
                 "G0 C0",
                 "G0 C120",
                 "G0 C240",
+                "G0 C0",
             ].forEach(cmd => client.enqueueCommand(cmd));
         },
 
@@ -444,15 +455,45 @@ Vue.createApp({
         },
 
         moveToTs() {
-            client.enqueueCommand("G0 X-15 Y103");
+            client.enqueueCommand(`G0 X${tsCenterX.toFixed(3)} Y${tsCenterY.toFixed(3)}`);
         },
 
         tsInsert() {
-            client.enqueueCommand("G0 Z-67");
+            client.enqueueCommand(`G0 Z${tsJustBeforeInsertZ.toFixed(3)}`);
+
+            // Insert using square-helix path to align tool to the chuck.
+            const halfWidth = 0.25;
+            const quarterPitch = 0.1;
+            const durZ = Math.abs(tsFullInsertZ - tsJustBeforeInsertZ);
+            const dirZ = Math.sign(tsFullInsertZ - tsJustBeforeInsertZ);
+
+            let ofs = 0;
+            let phase = 0;
+            let offsets = [[-1, -1], [-1, 1], [1, 1], [1, -1]];
+            while (true) {
+                const [dx, dy] = offsets[phase];
+                const x = tsCenterX + dx * halfWidth;
+                const y = tsCenterY + dy * halfWidth;
+                const z = tsJustBeforeInsertZ + ofs * dirZ;
+                client.enqueueCommand(`G0 X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(3)}`);
+
+                const nextOfs = ofs + quarterPitch;
+                if (nextOfs >= durZ) {
+                    // spiral ended
+                    break;
+                } else {
+                    // continue
+                    phase = (phase + 1) % 4;
+                    ofs += quarterPitch;
+                }
+            }
+
+            // return to center for final point.
+            client.enqueueCommand(`G0 X${tsCenterX.toFixed(3)} Y${tsCenterY.toFixed(3)} Z${tsFullInsertZ.toFixed(3)}`);
         },
 
         tsPull() {
-            client.enqueueCommand("G0 Z-20");
+            client.enqueueCommand(`G0 Z${tsPulledZ.toFixed(3)}`);
         }
     }
 }).mount('#app');
