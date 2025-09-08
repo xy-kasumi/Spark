@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "Building spooler..."
+echo "Building dashboard..."
 
 # Validate TypeScript first (without emitting files)
 echo "Validating TypeScript..."
