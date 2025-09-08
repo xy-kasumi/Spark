@@ -148,7 +148,7 @@ Vue.createApp({
             rebootTime: null as string | null,
             assumeInitialized: true, // true if we think init commands were executed or enqueued
             g1Commands: [] as G1Command[],
-            keepOnExec: false,
+            clearOnExec: true,
             jogStepMm: 1,
             toolSupplyShowDetails: false,
         }
@@ -271,7 +271,7 @@ Vue.createApp({
                 client.enqueueCommand(cmd);
             }
 
-            if (!this.keepOnExec) {
+            if (this.clearOnExec) {
                 this.commandText = '';
             }
         },
