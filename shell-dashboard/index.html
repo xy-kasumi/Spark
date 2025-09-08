@@ -127,15 +127,40 @@
             </div>
 
             <h1>Tool Supply</h1>
-            <button class="pure-button" @click="clamp">Clamp</button>
-            <button class="pure-button" @click="unclamp">Unclamp</button>
+            <label class="pure-checkbox">
+                <input type="checkbox" v-model="toolSupplyShowDetails"> show details
+            </label>
             <br />
-            <button class="pure-button" @click="open">Open</button>
-            <button class="pure-button" @click="close">Close</button>
-            <br />
-            <button class="pure-button" @click="moveToTs">Move to TS</button>
-            <button class="pure-button" @click="tsInsert">Insert</button>
-            <button class="pure-button" @click="tsPull">Pull</button>
+            
+            <div v-if="!toolSupplyShowDetails">
+                <button class="pure-button" @click="executeAttach">Attach</button>
+                <button class="pure-button" @click="executeDetach">Detach</button>
+            </div>
+            
+            <div v-if="toolSupplyShowDetails">
+                <div style="margin-bottom: 0.5em;">
+                    <button class="pure-button" @click="executeAttach">Attach</button>
+                    <br />
+                    <div style="margin-left: 1em; margin-top: 0.3em;">
+                        <button class="pure-button" @click="moveToTs">Move</button>
+                        <button class="pure-button" @click="open">Open</button>
+                        <button class="pure-button" @click="tsInsert">Insert</button>
+                        <button class="pure-button" @click="clamp">Clamp</button>
+                        <button class="pure-button" @click="tsPull">Pull</button>
+                        <button class="pure-button" @click="close">Close</button>
+                    </div>
+                </div>
+                <div style="margin-bottom: 0.5em;">
+                    <button class="pure-button" @click="executeDetach">Detach</button>
+                    <br />
+                    <div style="margin-left: 1em; margin-top: 0.3em;">
+                        <button class="pure-button" @click="moveToTs">Move</button>
+                        <button class="pure-button" @click="tsInsert">Insert</button>
+                        <button class="pure-button" @click="unclamp">Unclamp</button>
+                        <button class="pure-button" @click="tsPull">Pull</button>
+                    </div>
+                </div>
+            </div>
 
             <h1>Recent G1</h1>
             <div v-if="g1Commands.length === 0">

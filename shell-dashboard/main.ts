@@ -150,6 +150,7 @@ Vue.createApp({
             g1Commands: [] as G1Command[],
             keepOnExec: false,
             jogStepMm: 1,
+            toolSupplyShowDetails: false,
         }
     },
 
@@ -494,6 +495,22 @@ Vue.createApp({
 
         tsPull() {
             client.enqueueCommand(`G0 Z${tsPulledZ.toFixed(3)}`);
+        },
+
+        executeAttach() {
+            this.moveToTs();
+            this.open();
+            this.tsInsert();
+            this.clamp();
+            this.tsPull();
+            this.close();
+        },
+
+        executeDetach() {
+            this.moveToTs();
+            this.tsInsert();
+            this.unclamp();
+            this.tsPull();
         }
     }
 }).mount('#app');
