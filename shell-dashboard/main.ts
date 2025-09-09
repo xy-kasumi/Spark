@@ -126,13 +126,14 @@ const initCommands: string[] = [
     "set cs.w.pos.x -58",
     "set cs.w.pos.y 17",
     "set cs.w.pos.z -89",
+    "set cs.ts.pos.x -15.4",
+    "set cs.ts.pos.y 103.9",
+    "set cs.ts.pos.z -57",
 ];
 
-const tsCenterX = -14.5;
-const tsCenterY = 103.5;
-const tsPulledZ = -10;
-const tsJustBeforeInsertZ = -57;
-const tsFullInsertZ = -68;
+const tsJustBeforeInsertZ = 0;
+const tsPulledZ = 47;
+const tsFullInsertZ = -12;
 
 // Global client instance for performance
 let client: SpoolerController | null = null;
@@ -456,10 +457,14 @@ Vue.createApp({
         },
 
         moveToTs() {
-            client.enqueueCommand(`G0 X${tsCenterX.toFixed(3)} Y${tsCenterY.toFixed(3)}`);
+            [
+                "G56",
+                `G0 X0 Y0 Z${tsPulledZ.toFixed(3)}`,
+            ].forEach(cmd => client.enqueueCommand(cmd));
         },
 
         tsInsert() {
+            client.enqueueCommand("G56"); // set again to make this work even if moveToTs was skipped
             client.enqueueCommand(`G0 Z${tsJustBeforeInsertZ.toFixed(3)}`);
 
             // Insert using square-helix path to align tool to the chuck.
@@ -473,8 +478,8 @@ Vue.createApp({
             let offsets = [[-1, -1], [-1, 1], [1, 1], [1, -1]];
             while (true) {
                 const [dx, dy] = offsets[phase];
-                const x = tsCenterX + dx * halfWidth;
-                const y = tsCenterY + dy * halfWidth;
+                const x = dx * halfWidth;
+                const y = dy * halfWidth;
                 const z = tsJustBeforeInsertZ + ofs * dirZ;
                 client.enqueueCommand(`G0 X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(3)}`);
 
@@ -490,11 +495,14 @@ Vue.createApp({
             }
 
             // return to center for final point.
-            client.enqueueCommand(`G0 X${tsCenterX.toFixed(3)} Y${tsCenterY.toFixed(3)} Z${tsFullInsertZ.toFixed(3)}`);
+            client.enqueueCommand(`G0 X0 Y0 Z${tsFullInsertZ.toFixed(3)}`);
         },
 
         tsPull() {
-            client.enqueueCommand(`G0 Z${tsPulledZ.toFixed(3)}`);
+            [
+                `G0 Z${tsPulledZ.toFixed(3)}`,
+                "G53", // back to machine coordinates
+            ].forEach(cmd => client.enqueueCommand(cmd));
         },
 
         executeAttach() {
