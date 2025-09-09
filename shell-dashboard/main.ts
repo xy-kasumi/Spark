@@ -185,11 +185,11 @@ Vue.createApp({
         },
 
         initButtonText() {
-            return (this.clientStatus === 'idle' || this.clientStatus === 'busy-healthcheck') ? 'Init' : 'Enqueue Init';
+            return (this.clientStatus === 'idle' || this.clientStatus === 'busy-healthcheck') ? 'INIT' : 'ENQUEUE INIT';
         },
 
         executeButtonText() {
-            return (this.clientStatus === 'idle' || this.clientStatus === 'busy-healthcheck') ? 'Execute' : 'Enqueue';
+            return (this.clientStatus === 'idle' || this.clientStatus === 'busy-healthcheck') ? 'EXECUTE' : 'ENQUEUE';
         },
 
         queueStatus() {

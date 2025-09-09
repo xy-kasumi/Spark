@@ -8,6 +8,11 @@
     <style>
         /* design tokens */
         :root {
+            --unit-space: 8px;
+            --text-size: 16px;
+            --radius: 4px;
+            --accent: #00aeef;
+
             --bg-primary: #1a1a1a;
             --bg-secondary: #2d2d2d;
             --bg-widget: #252525;
@@ -23,6 +28,8 @@
             background-color: var(--bg-primary);
             color: var(--text-primary);
             font-family: Arial, sans-serif;
+            font-size: var(--text-size);
+            margin: 0;
         }
 
         /* Fixed header styles */
@@ -63,6 +70,105 @@
             padding-top: 80px;
         }
 
+        .widget {
+            width: calc(var(--unit-space) * 70);
+            background: var(--bg-widget);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 2px 4px var(--shadow-color);
+            margin-bottom: calc(var(--unit-space) * 2);
+        }
+
+        .widget > h1 {
+            font-size: var(--text-size);
+            font-weight: bold;
+            margin: 0;
+            border-bottom: 1px solid var(--accent);
+            color: var(--text-primary);
+            padding: var(--unit-space);
+            background: var(--bg-secondary);
+        }
+        .widget > .widget-content {
+            padding: var(--unit-space);
+        }
+
+        /* Button styles */
+        button {
+            background: var(--button-bg);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: var(--unit-space);
+            height: calc(var(--unit-space) * 4);
+
+            font-size: calc(var(--text-size) * 0.8); /* since button texts are all-caps, make it smaller to balance with bold titles */
+            font-weight: bold;
+            line-height: 1;
+
+            border-radius: var(--radius);
+            cursor: pointer;
+
+            margin-right: var(--unit-space);
+            margin-bottom: var(--unit-space);
+        }
+
+        button:hover {
+            background: var(--button-hover);
+        }
+
+        button:disabled {
+            background: #2a2a2a;
+            color: #666;
+            cursor: not-allowed;
+        }
+
+        textarea,
+        input[type="text"],
+        input[type="number"],
+        input[type="checkbox"] {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: var(--unit-space);
+            border-radius: var(--radius);
+            margin-bottom: var(--unit-space);
+        }
+
+        textarea {
+            line-height: 1.4;
+        }
+
+        textarea:focus,
+        input:focus {
+            border-color: #555;
+            outline: none;
+        }
+
+        /* Checkbox and radio styles */
+        label {
+            color: var(--text-primary);
+            margin-right: 15px;
+        }
+
+        /* Canvas dark background */
+        canvas {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+        }
+
+        /* Two-column layout */
+        .main-content {
+            display: flex;
+            gap: calc(var(--unit-space) * 2);
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 80px calc(var(--unit-space) * 2) calc(var(--unit-space) * 2) calc(var(--unit-space) * 2);
+        }
+
+        .column {
+            flex: 2;
+            min-width: 0;
+        }
+
+        /* Jog layout */
         /* Jog button layout */
         .jog-cross,
         .jog-z {
@@ -99,91 +205,13 @@
             margin-bottom: 0.2em;
         }
 
-        .widget {
-            border: 1px solid var(--border-color);
-            margin-bottom: 20px;
-            background: var(--bg-widget);
-            box-shadow: 0 2px 4px var(--shadow-color);
-        }
-
-        .widget > h1 {
-            font-size: 1em;
-            font-weight: bold;
-            margin: 0;
-            border-bottom: 1px solid var(--border-color);
-            color: var(--text-primary);
-            padding: 10px 15px;
-            background: var(--bg-secondary);
-        }
-
-        /* Button styles */
-        button {
-            background: var(--button-bg);
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-            padding: 8px 16px;
-            margin: 2px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background: var(--button-hover);
-        }
-
-        button:disabled {
-            background: #2a2a2a;
-            color: #666;
-            cursor: not-allowed;
-        }
-
-        /* Input styles */
-        textarea, input[type="text"], input[type="number"] {
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-            padding: 8px;
-            border-radius: 4px;
-        }
-
-        textarea:focus, input:focus {
-            border-color: #555;
-            outline: none;
-        }
-
-        /* Checkbox and radio styles */
-        label {
-            color: var(--text-primary);
-            margin-right: 15px;
-        }
-
-        /* Canvas dark background */
-        canvas {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-        }
-
-        /* Two-column layout */
-        .main-content {
-            display: flex;
-            gap: 20px;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 80px 20px 20px 20px;
-        }
-
-        .column {
-            flex: 2;
-            min-width: 0;
-        }
-
-        /* Jog layout */
         .jog-layout {
             display: flex;
             gap: 20px;
         }
 
-        .jog-left, .jog-right {
+        .jog-left,
+        .jog-right {
             flex: 1;
         }
     </style>
@@ -209,111 +237,117 @@
 
                 <div class="widget">
                     <h1>Manual Command</h1>
-                    <button class="pure-button" @click="init">{{ initButtonText }}</button>
-                    <br />
-                    <textarea class="pure-input-1-2" v-model="commandText" rows="10" cols="50"
-                        placeholder="Enter G-code or commands"></textarea><br />
-                    <button class="pure-button" @click="send" :disabled="commands.length === 0 || !assumeInitialized">{{
-                        executeButtonText }}</button>
-                    <button class="pure-button" @click="cancel">Cancel</button>
-                    <button class="pure-button" @click="analyzeLog">Analyze Log</button>
-                    <label class="pure-checkbox">
-                        <input type="checkbox" v-model="clearOnExec"> clear on exec
-                    </label>
+                    <div class="widget-content">
+                        <button class="" @click="init">{{ initButtonText }}</button>
+                        <br />
+                        <textarea class="" v-model="commandText" rows="10" cols="50"
+                            placeholder="Enter G-code or commands"></textarea><br />
+                        <button class="" @click="send" :disabled="commands.length === 0 || !assumeInitialized">{{
+                            executeButtonText }}</button>
+                        <button class="" @click="cancel">CANCEL</button>
+                        <button class="" @click="analyzeLog">ANALYZE LOG</button>
+                        <label class="">
+                            <input type="checkbox" v-model="clearOnExec"> Clear on exec
+                        </label>
+                    </div>
                 </div>
 
                 <div class="widget">
                     <h1>Jog</h1>
-                    <div>{{ statusText }}</div><br />
-                    <div class="jog-layout">
-                        <!-- 4-button cross -->
-                        <div class="jog-left">
-                            <div class="jog-cross">
-                                <div class="jog-row">
-                                    <div class="jog-cell"></div>
-                                    <div class="jog-cell">
-                                        <button class="pure-button jog-btn" @click="jogXPlus">X+</button>
+                    <div class="widget-content">
+                        <div>{{ statusText }}</div><br />
+                        <div class="jog-layout">
+                            <!-- 4-button cross -->
+                            <div class="jog-left">
+                                <div class="jog-cross">
+                                    <div class="jog-row">
+                                        <div class="jog-cell"></div>
+                                        <div class="jog-cell">
+                                            <button class="jog-btn" @click="jogXPlus">X+</button>
+                                        </div>
+                                        <div class="jog-cell"></div>
                                     </div>
-                                    <div class="jog-cell"></div>
+                                    <div class="jog-row">
+                                        <div class="jog-cell">
+                                            <button class="jog-btn" @click="jogYPlus">Y+</button>
+                                        </div>
+                                        <div class="jog-cell"></div>
+                                        <div class="jog-cell">
+                                            <button class="jog-btn" @click="jogYMinus">Y-</button>
+                                        </div>
+                                    </div>
+                                    <div class="jog-row">
+                                        <div class="jog-cell"></div>
+                                        <div class="jog-cell">
+                                            <button class="jog-btn" @click="jogXMinus">X-</button>
+                                        </div>
+                                        <div class="jog-cell"></div>
+                                    </div>
                                 </div>
-                                <div class="jog-row">
-                                    <div class="jog-cell">
-                                        <button class="pure-button jog-btn" @click="jogYPlus">Y+</button>
+                            </div>
+
+                            <!-- 2-button Z up/down -->
+                            <div class="jog-right">
+                                <div class="jog-z">
+                                    <div class="jog-z-row">
+                                        <button class="jog-btn" @click="jogZMinus">↑ Z-</button>
                                     </div>
-                                    <div class="jog-cell"></div>
-                                    <div class="jog-cell">
-                                        <button class="pure-button jog-btn" @click="jogYMinus">Y-</button>
+                                    <div class="jog-z-row">
+                                        <button class="jog-btn" @click="jogZPlus">↓ Z+</button>
                                     </div>
-                                </div>
-                                <div class="jog-row">
-                                    <div class="jog-cell"></div>
-                                    <div class="jog-cell">
-                                        <button class="pure-button jog-btn" @click="jogXMinus">X-</button>
-                                    </div>
-                                    <div class="jog-cell"></div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- 2-button Z up/down -->
-                        <div class="jog-right">
-                            <div class="jog-z">
-                                <div class="jog-z-row">
-                                    <button class="pure-button jog-btn" @click="jogZMinus">↑ Z-</button>
-                                </div>
-                                <div class="jog-z-row">
-                                    <button class="pure-button jog-btn" @click="jogZPlus">↓ Z+</button>
-                                </div>
-                            </div>
+                        <div style="margin-top: 1em;">
+                            <label class="">
+                                <input type="radio" name="jogStep" :value="0.1" v-model.number="jogStepMm"> 0.1mm
+                            </label>
+                            <label class="">
+                                <input type="radio" name="jogStep" :value="1" v-model.number="jogStepMm"> 1mm
+                            </label>
+                            <label class="">
+                                <input type="radio" name="jogStep" :value="5" v-model.number="jogStepMm"> 5mm
+                            </label>
                         </div>
-                    </div>
-
-                    <div style="margin-top: 1em;">
-                        <label class="pure-radio">
-                            <input type="radio" name="jogStep" :value="0.1" v-model.number="jogStepMm"> 0.1mm
-                        </label>
-                        <label class="pure-radio">
-                            <input type="radio" name="jogStep" :value="1" v-model.number="jogStepMm"> 1mm
-                        </label>
-                        <label class="pure-radio">
-                            <input type="radio" name="jogStep" :value="5" v-model.number="jogStepMm"> 5mm
-                        </label>
                     </div>
                 </div>
 
                 <div class="widget">
                     <h1>Tool Supply</h1>
-                    <label class="pure-checkbox">
-                        <input type="checkbox" v-model="toolSupplyShowDetails"> show details
-                    </label>
-                    <br />
+                    <div class="widget-content">
+                        <label class="">
+                            <input type="checkbox" v-model="toolSupplyShowDetails"> Show details
+                        </label>
+                        <br />
 
-                    <div v-if="!toolSupplyShowDetails">
-                        <button class="pure-button" @click="executeAttach">Attach</button>
-                        <button class="pure-button" @click="executeDetach">Detach</button>
-                    </div>
-
-                    <div v-if="toolSupplyShowDetails">
-                        <div style="margin-bottom: 0.5em;">
-                            <button class="pure-button" @click="executeAttach">Attach</button>
-                            <br />
-                            <div style="margin-left: 1em; margin-top: 0.3em;">
-                                <button class="pure-button" @click="moveToTs">Move</button>
-                                <button class="pure-button" @click="open">Open</button>
-                                <button class="pure-button" @click="tsInsert">Insert</button>
-                                <button class="pure-button" @click="clamp">Clamp</button>
-                                <button class="pure-button" @click="tsPull">Pull</button>
-                                <button class="pure-button" @click="close">Close</button>
-                            </div>
+                        <div v-if="!toolSupplyShowDetails">
+                            <button class="" @click="executeAttach">ATTACH</button>
+                            <button class="" @click="executeDetach">DETACH</button>
                         </div>
-                        <div style="margin-bottom: 0.5em;">
-                            <button class="pure-button" @click="executeDetach">Detach</button>
-                            <br />
-                            <div style="margin-left: 1em; margin-top: 0.3em;">
-                                <button class="pure-button" @click="moveToTs">Move</button>
-                                <button class="pure-button" @click="tsInsert">Insert</button>
-                                <button class="pure-button" @click="unclamp">Unclamp</button>
-                                <button class="pure-button" @click="tsPull">Pull</button>
+
+                        <div v-if="toolSupplyShowDetails">
+                            <div style="margin-bottom: 0.5em;">
+                                <button class="" @click="executeAttach">ATTACH</button>
+                                <br />
+                                <div style="margin-left: 1em; margin-top: 0.3em;">
+                                    <button class="" @click="moveToTs">MOVE</button>
+                                    <button class="" @click="open">OPEN</button>
+                                    <button class="" @click="tsInsert">INSERT</button>
+                                    <button class="" @click="clamp">CLAMP</button>
+                                    <button class="" @click="tsPull">PULL</button>
+                                    <button class="" @click="close">CLOSE</button>
+                                </div>
+                            </div>
+                            <div style="margin-bottom: 0.5em;">
+                                <button class="" @click="executeDetach">DETACH</button>
+                                <br />
+                                <div style="margin-left: 1em; margin-top: 0.3em;">
+                                    <button class="" @click="moveToTs">MOVE</button>
+                                    <button class="" @click="tsInsert">INSERT</button>
+                                    <button class="" @click="unclamp">UNCLAMP</button>
+                                    <button class="" @click="tsPull">PULL</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -321,15 +355,17 @@
 
                 <div class="widget">
                     <h1>Recent G1</h1>
-                    <div v-if="g1Commands.length === 0">
-                        <em>No G1 commands</em>
-                    </div>
-                    <div v-else>
-                        <div v-for="g1 in g1Commands" :key="g1.startLineNum">
-                            {{ g1.startTime.split(' ')[1] }} ~
-                            {{ g1.duration }}s
-                            <span v-if="!g1.endTime">(executing)</span>
-                            {{ g1.command }}
+                    <div class="widget-content">
+                        <div v-if="g1Commands.length === 0">
+                            No G1 commands
+                        </div>
+                        <div v-else>
+                            <div v-for="g1 in g1Commands" :key="g1.startLineNum">
+                                {{ g1.startTime.split(' ')[1] }} ~
+                                {{ g1.duration }}s
+                                <span v-if="!g1.endTime">(executing)</span>
+                                {{ g1.command }}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -339,7 +375,9 @@
             <div class="column">
                 <div class="widget">
                     <h1>EDML (250ms/line)</h1>
-                    <canvas ref="edml" width="500" height="1000"></canvas>
+                    <div class="widget-content">
+                        <canvas ref="edml" width="500" height="1000"></canvas>
+                    </div>
                 </div>
             </div>
         </div>
