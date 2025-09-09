@@ -6,7 +6,7 @@
     <meta charset="UTF-8">
     <title>Spark: Dashboard</title>
     <style>
-        /* design tokens */
+        /* Design tokens */
         :root {
             --unit-space: 8px;
             --text-size: 16px;
@@ -24,6 +24,7 @@
             --button-hover: #4a4a4a;
         }
 
+        /* Global page layout (header & columns) & widgets */
         body {
             background-color: var(--bg-primary);
             color: var(--text-primary);
@@ -32,7 +33,6 @@
             margin: 0;
         }
 
-        /* Fixed header styles */
         .fixed-header {
             position: fixed;
             top: 0;
@@ -53,21 +53,20 @@
             gap: 20px;
         }
 
-        .header-logo {
-            height: 40px;
-            width: auto;
-        }
-
-        .status-info {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            font-size: 16px;
-        }
-
-        /* Main content adjustment for fixed header */
         .main-content {
-            padding-top: 80px;
+            display: flex;
+            gap: calc(var(--unit-space) * 2);
+            /* two widget width + gap */
+            width: calc(var(--unit-space) * (70 * 2 + 2));
+
+            margin: 0 auto;
+
+            /* overlap with header */
+            padding-top: 88px;
+        }
+
+        .column {
+            width: calc(var(--unit-space) * 70);
         }
 
         .widget {
@@ -78,7 +77,7 @@
             margin-bottom: calc(var(--unit-space) * 2);
         }
 
-        .widget > h1 {
+        .widget>h1 {
             font-size: var(--text-size);
             font-weight: bold;
             margin: 0;
@@ -87,11 +86,12 @@
             padding: var(--unit-space);
             background: var(--bg-secondary);
         }
-        .widget > .widget-content {
+
+        .widget>.widget-content {
             padding: var(--unit-space);
         }
 
-        /* Button styles */
+        /* Components */
         button {
             background: var(--button-bg);
             color: var(--text-primary);
@@ -99,7 +99,8 @@
             padding: var(--unit-space);
             height: calc(var(--unit-space) * 4);
 
-            font-size: calc(var(--text-size) * 0.8); /* since button texts are all-caps, make it smaller to balance with bold titles */
+            font-size: calc(var(--text-size) * 0.8);
+            /* since button texts are all-caps, make it smaller to balance with bold titles */
             font-weight: bold;
             line-height: 1;
 
@@ -142,39 +143,36 @@
             outline: none;
         }
 
-        /* Checkbox and radio styles */
         label {
             color: var(--text-primary);
             margin-right: 15px;
         }
 
-        /* Canvas dark background */
-        canvas {
+
+        /* Part-specific things */
+        .fixed-header .header-logo {
+            height: 40px;
+            width: auto;
+        }
+
+        .fixed-header .status-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 16px;
+        }
+
+        #widget-discharge canvas {
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
         }
 
-        /* Two-column layout */
-        .main-content {
-            display: flex;
-            gap: calc(var(--unit-space) * 2);
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 80px calc(var(--unit-space) * 2) calc(var(--unit-space) * 2) calc(var(--unit-space) * 2);
-        }
-
-        .column {
-            flex: 2;
-            min-width: 0;
-        }
-
-        /* Jog table layout */
-        .jog-table {
+        #widget-jog .jog-table {
             border-spacing: calc(var(--unit-space) * 0.5);
             margin-bottom: var(--unit-space);
         }
 
-        .jog-table td {
+        #widget-jog .jog-table td {
             width: calc(var(--unit-space) * 6);
             height: calc(var(--unit-space) * 6);
             text-align: center;
@@ -182,7 +180,7 @@
             padding: 0;
         }
 
-        .jog-btn {
+        #widget-jog .jog-btn {
             width: calc(var(--unit-space) * 6);
             height: calc(var(--unit-space) * 6);
             padding: 0;
@@ -226,7 +224,7 @@
                     </div>
                 </div>
 
-                <div class="widget">
+                <div class="widget" id="widget-jog">
                     <h1>Jog</h1>
                     <div class="widget-content">
                         <div>Position: {{ statusText == "" ? "Unknown" : statusText }}</div><br />
@@ -272,9 +270,9 @@
                     <h1>Tool Supply</h1>
                     <div class="widget-content">
                         <div style="margin-bottom: var(--unit-space)">
-                        <label class="">
-                            <input type="checkbox" v-model="toolSupplyShowDetails"> Individual actions
-                        </label>
+                            <label class="">
+                                <input type="checkbox" v-model="toolSupplyShowDetails"> Individual actions
+                            </label>
                         </div>
 
                         <div v-if="!toolSupplyShowDetails">
@@ -329,9 +327,19 @@
             </div>
 
             <div class="column">
-                <div class="widget">
-                    <h1>EDML (250ms/line)</h1>
+                <div class="widget" id="widget-settings">
+                    <h1>Settings</h1>
                     <div class="widget-content">
+                        <button>REFRESH</button>
+                        <br />
+                        Contents here
+                    </div>
+                </div>
+
+                <div class="widget" id="widget-discharge">
+                    <h1>Discharge</h1>
+                    <div class="widget-content">
+                        250ms/line
                         <canvas ref="edml" width="500" height="1000"></canvas>
                     </div>
                 </div>
