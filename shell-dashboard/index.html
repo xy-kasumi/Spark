@@ -168,51 +168,25 @@
             min-width: 0;
         }
 
-        /* Jog layout */
-        /* Jog button layout */
-        .jog-cross,
-        .jog-z {
-            display: inline-block;
-            margin-right: 2em;
+        /* Jog table layout */
+        .jog-table {
+            border-spacing: calc(var(--unit-space) * 0.5);
+            margin-bottom: var(--unit-space);
         }
 
-        .jog-row {
-            display: flex;
-            justify-content: center;
-        }
-
-        .jog-cell {
-            width: 50px;
-            height: 50px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        .jog-table td {
+            width: calc(var(--unit-space) * 6);
+            height: calc(var(--unit-space) * 6);
+            text-align: center;
+            vertical-align: middle;
+            padding: 0;
         }
 
         .jog-btn {
-            width: 50px !important;
-            height: 50px !important;
-            min-width: 50px;
+            width: calc(var(--unit-space) * 6);
+            height: calc(var(--unit-space) * 6);
             padding: 0;
-            font-size: 12px;
-        }
-
-        .jog-z {
-            padding-left: 2em;
-        }
-
-        .jog-z-row {
-            margin-bottom: 0.2em;
-        }
-
-        .jog-layout {
-            display: flex;
-            gap: 20px;
-        }
-
-        .jog-left,
-        .jog-right {
-            flex: 1;
+            margin: 0;
         }
     </style>
 </head>
@@ -255,51 +229,32 @@
                 <div class="widget">
                     <h1>Jog</h1>
                     <div class="widget-content">
-                        <div>{{ statusText }}</div><br />
-                        <div class="jog-layout">
-                            <!-- 4-button cross -->
-                            <div class="jog-left">
-                                <div class="jog-cross">
-                                    <div class="jog-row">
-                                        <div class="jog-cell"></div>
-                                        <div class="jog-cell">
-                                            <button class="jog-btn" @click="jogXPlus">X+</button>
-                                        </div>
-                                        <div class="jog-cell"></div>
-                                    </div>
-                                    <div class="jog-row">
-                                        <div class="jog-cell">
-                                            <button class="jog-btn" @click="jogYPlus">Y+</button>
-                                        </div>
-                                        <div class="jog-cell"></div>
-                                        <div class="jog-cell">
-                                            <button class="jog-btn" @click="jogYMinus">Y-</button>
-                                        </div>
-                                    </div>
-                                    <div class="jog-row">
-                                        <div class="jog-cell"></div>
-                                        <div class="jog-cell">
-                                            <button class="jog-btn" @click="jogXMinus">X-</button>
-                                        </div>
-                                        <div class="jog-cell"></div>
-                                    </div>
-                                </div>
-                            </div>
+                        <div>Position: {{ statusText == "" ? "Unknown" : statusText }}</div><br />
+                        <table class="jog-table">
+                            <tr>
+                                <td></td>
+                                <td><button class="jog-btn" @click="jogXPlus">X+</button></td>
+                                <td></td>
+                                <td></td>
+                                <td><button class="jog-btn" @click="jogZMinus">↑ Z-</button></td>
+                            </tr>
+                            <tr>
+                                <td><button class="jog-btn" @click="jogYPlus">Y+</button></td>
+                                <td></td>
+                                <td><button class="jog-btn" @click="jogYMinus">Y-</button></td>
+                                <td></td>
+                                <td><button class="jog-btn" @click="jogZPlus">↓ Z+</button></td>
+                            </tr>
+                            <tr>
+                                <td></td>
+                                <td><button class="jog-btn" @click="jogXMinus">X-</button></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                            </tr>
+                        </table>
 
-                            <!-- 2-button Z up/down -->
-                            <div class="jog-right">
-                                <div class="jog-z">
-                                    <div class="jog-z-row">
-                                        <button class="jog-btn" @click="jogZMinus">↑ Z-</button>
-                                    </div>
-                                    <div class="jog-z-row">
-                                        <button class="jog-btn" @click="jogZPlus">↓ Z+</button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div style="margin-top: 1em;">
+                        <div>
                             <label class="">
                                 <input type="radio" name="jogStep" :value="0.1" v-model.number="jogStepMm"> 0.1mm
                             </label>
@@ -316,10 +271,11 @@
                 <div class="widget">
                     <h1>Tool Supply</h1>
                     <div class="widget-content">
+                        <div style="margin-bottom: var(--unit-space)">
                         <label class="">
-                            <input type="checkbox" v-model="toolSupplyShowDetails"> Show details
+                            <input type="checkbox" v-model="toolSupplyShowDetails"> Individual actions
                         </label>
-                        <br />
+                        </div>
 
                         <div v-if="!toolSupplyShowDetails">
                             <button class="" @click="executeAttach">ATTACH</button>
@@ -327,10 +283,10 @@
                         </div>
 
                         <div v-if="toolSupplyShowDetails">
-                            <div style="margin-bottom: 0.5em;">
-                                <button class="" @click="executeAttach">ATTACH</button>
+                            <div style="margin-bottom: var(--unit-space)">
+                                ATTACH
                                 <br />
-                                <div style="margin-left: 1em; margin-top: 0.3em;">
+                                <div>
                                     <button class="" @click="moveToTs">MOVE</button>
                                     <button class="" @click="open">OPEN</button>
                                     <button class="" @click="tsInsert">INSERT</button>
@@ -339,10 +295,10 @@
                                     <button class="" @click="close">CLOSE</button>
                                 </div>
                             </div>
-                            <div style="margin-bottom: 0.5em;">
-                                <button class="" @click="executeDetach">DETACH</button>
+                            <div style="margin-bottom: var(--unit-space)">
+                                DETACH
                                 <br />
-                                <div style="margin-left: 1em; margin-top: 0.3em;">
+                                <div>
                                     <button class="" @click="moveToTs">MOVE</button>
                                     <button class="" @click="tsInsert">INSERT</button>
                                     <button class="" @click="unclamp">UNCLAMP</button>
