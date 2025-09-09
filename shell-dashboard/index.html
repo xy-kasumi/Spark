@@ -5,19 +5,37 @@
 <head>
     <meta charset="UTF-8">
     <title>Spark: Dashboard</title>
-    <link rel="stylesheet" href="./pure-min.css">
     <style>
+        /* design tokens */
+        :root {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2d2d2d;
+            --bg-widget: #252525;
+            --text-primary: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --border-color: #404040;
+            --shadow-color: rgba(0, 0, 0, 0.3);
+            --button-bg: #404040;
+            --button-hover: #4a4a4a;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: Arial, sans-serif;
+        }
+
         /* Fixed header styles */
         .fixed-header {
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
-            background: white;
-            border-bottom: 1px solid #ddd;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
             padding: 10px 20px;
             z-index: 1000;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px var(--shadow-color);
         }
 
         .header-content {
@@ -80,6 +98,94 @@
         .jog-z-row {
             margin-bottom: 0.2em;
         }
+
+        .widget {
+            border: 1px solid var(--border-color);
+            margin-bottom: 20px;
+            background: var(--bg-widget);
+            box-shadow: 0 2px 4px var(--shadow-color);
+        }
+
+        .widget > h1 {
+            font-size: 1em;
+            font-weight: bold;
+            margin: 0;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 10px 15px;
+            background: var(--bg-secondary);
+        }
+
+        /* Button styles */
+        button {
+            background: var(--button-bg);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 8px 16px;
+            margin: 2px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: var(--button-hover);
+        }
+
+        button:disabled {
+            background: #2a2a2a;
+            color: #666;
+            cursor: not-allowed;
+        }
+
+        /* Input styles */
+        textarea, input[type="text"], input[type="number"] {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 8px;
+            border-radius: 4px;
+        }
+
+        textarea:focus, input:focus {
+            border-color: #555;
+            outline: none;
+        }
+
+        /* Checkbox and radio styles */
+        label {
+            color: var(--text-primary);
+            margin-right: 15px;
+        }
+
+        /* Canvas dark background */
+        canvas {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+        }
+
+        /* Two-column layout */
+        .main-content {
+            display: flex;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 80px 20px 20px 20px;
+        }
+
+        .column {
+            flex: 2;
+            min-width: 0;
+        }
+
+        /* Jog layout */
+        .jog-layout {
+            display: flex;
+            gap: 20px;
+        }
+
+        .jog-left, .jog-right {
+            flex: 1;
+        }
     </style>
 </head>
 
@@ -98,131 +204,143 @@
         </header>
 
         <!-- Main Content -->
-        <div class="pure-g main-content">
-            <div class="pure-u-2-5">
+        <div class="main-content">
+            <div class="column">
 
-            <h1>Manual Command</h1>
-            <button class="pure-button" @click="init">{{ initButtonText }}</button>
-            <br />
-            <textarea class="pure-input-1-2" v-model="commandText" rows="10" cols="50"
-                placeholder="Enter G-code or commands"></textarea><br />
-            <button class="pure-button" @click="send" :disabled="commands.length === 0 || !assumeInitialized">{{
-                executeButtonText }}</button>
-            <button class="pure-button" @click="cancel">Cancel</button>
-            <button class="pure-button" @click="analyzeLog">Analyze Log</button>
-            <label class="pure-checkbox">
-                <input type="checkbox" v-model="clearOnExec"> clear on exec
-            </label>
-
-            <h1>Jog</h1>
-            <div>{{ statusText }}</div><br />
-            <div class="pure-g">
-                <!-- 4-button cross -->
-                <div class="pure-u-1-2">
-                    <div class="jog-cross">
-                        <div class="jog-row">
-                            <div class="jog-cell"></div>
-                            <div class="jog-cell">
-                                <button class="pure-button jog-btn" @click="jogXPlus">X+</button>
-                            </div>
-                            <div class="jog-cell"></div>
-                        </div>
-                        <div class="jog-row">
-                            <div class="jog-cell">
-                                <button class="pure-button jog-btn" @click="jogYPlus">Y+</button>
-                            </div>
-                            <div class="jog-cell"></div>
-                            <div class="jog-cell">
-                                <button class="pure-button jog-btn" @click="jogYMinus">Y-</button>
-                            </div>
-                        </div>
-                        <div class="jog-row">
-                            <div class="jog-cell"></div>
-                            <div class="jog-cell">
-                                <button class="pure-button jog-btn" @click="jogXMinus">X-</button>
-                            </div>
-                            <div class="jog-cell"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 2-button Z up/down -->
-                <div class="pure-u-1-2">
-                    <div class="jog-z">
-                        <div class="jog-z-row">
-                            <button class="pure-button jog-btn" @click="jogZMinus">↑ Z-</button>
-                        </div>
-                        <div class="jog-z-row">
-                            <button class="pure-button jog-btn" @click="jogZPlus">↓ Z+</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div style="margin-top: 1em;">
-                <label class="pure-radio">
-                    <input type="radio" name="jogStep" :value="0.1" v-model.number="jogStepMm"> 0.1mm
-                </label>
-                <label class="pure-radio">
-                    <input type="radio" name="jogStep" :value="1" v-model.number="jogStepMm"> 1mm
-                </label>
-                <label class="pure-radio">
-                    <input type="radio" name="jogStep" :value="5" v-model.number="jogStepMm"> 5mm
-                </label>
-            </div>
-
-            <h1>Tool Supply</h1>
-            <label class="pure-checkbox">
-                <input type="checkbox" v-model="toolSupplyShowDetails"> show details
-            </label>
-            <br />
-            
-            <div v-if="!toolSupplyShowDetails">
-                <button class="pure-button" @click="executeAttach">Attach</button>
-                <button class="pure-button" @click="executeDetach">Detach</button>
-            </div>
-            
-            <div v-if="toolSupplyShowDetails">
-                <div style="margin-bottom: 0.5em;">
-                    <button class="pure-button" @click="executeAttach">Attach</button>
+                <div class="widget">
+                    <h1>Manual Command</h1>
+                    <button class="pure-button" @click="init">{{ initButtonText }}</button>
                     <br />
-                    <div style="margin-left: 1em; margin-top: 0.3em;">
-                        <button class="pure-button" @click="moveToTs">Move</button>
-                        <button class="pure-button" @click="open">Open</button>
-                        <button class="pure-button" @click="tsInsert">Insert</button>
-                        <button class="pure-button" @click="clamp">Clamp</button>
-                        <button class="pure-button" @click="tsPull">Pull</button>
-                        <button class="pure-button" @click="close">Close</button>
+                    <textarea class="pure-input-1-2" v-model="commandText" rows="10" cols="50"
+                        placeholder="Enter G-code or commands"></textarea><br />
+                    <button class="pure-button" @click="send" :disabled="commands.length === 0 || !assumeInitialized">{{
+                        executeButtonText }}</button>
+                    <button class="pure-button" @click="cancel">Cancel</button>
+                    <button class="pure-button" @click="analyzeLog">Analyze Log</button>
+                    <label class="pure-checkbox">
+                        <input type="checkbox" v-model="clearOnExec"> clear on exec
+                    </label>
+                </div>
+
+                <div class="widget">
+                    <h1>Jog</h1>
+                    <div>{{ statusText }}</div><br />
+                    <div class="jog-layout">
+                        <!-- 4-button cross -->
+                        <div class="jog-left">
+                            <div class="jog-cross">
+                                <div class="jog-row">
+                                    <div class="jog-cell"></div>
+                                    <div class="jog-cell">
+                                        <button class="pure-button jog-btn" @click="jogXPlus">X+</button>
+                                    </div>
+                                    <div class="jog-cell"></div>
+                                </div>
+                                <div class="jog-row">
+                                    <div class="jog-cell">
+                                        <button class="pure-button jog-btn" @click="jogYPlus">Y+</button>
+                                    </div>
+                                    <div class="jog-cell"></div>
+                                    <div class="jog-cell">
+                                        <button class="pure-button jog-btn" @click="jogYMinus">Y-</button>
+                                    </div>
+                                </div>
+                                <div class="jog-row">
+                                    <div class="jog-cell"></div>
+                                    <div class="jog-cell">
+                                        <button class="pure-button jog-btn" @click="jogXMinus">X-</button>
+                                    </div>
+                                    <div class="jog-cell"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 2-button Z up/down -->
+                        <div class="jog-right">
+                            <div class="jog-z">
+                                <div class="jog-z-row">
+                                    <button class="pure-button jog-btn" @click="jogZMinus">↑ Z-</button>
+                                </div>
+                                <div class="jog-z-row">
+                                    <button class="pure-button jog-btn" @click="jogZPlus">↓ Z+</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 1em;">
+                        <label class="pure-radio">
+                            <input type="radio" name="jogStep" :value="0.1" v-model.number="jogStepMm"> 0.1mm
+                        </label>
+                        <label class="pure-radio">
+                            <input type="radio" name="jogStep" :value="1" v-model.number="jogStepMm"> 1mm
+                        </label>
+                        <label class="pure-radio">
+                            <input type="radio" name="jogStep" :value="5" v-model.number="jogStepMm"> 5mm
+                        </label>
                     </div>
                 </div>
-                <div style="margin-bottom: 0.5em;">
-                    <button class="pure-button" @click="executeDetach">Detach</button>
+
+                <div class="widget">
+                    <h1>Tool Supply</h1>
+                    <label class="pure-checkbox">
+                        <input type="checkbox" v-model="toolSupplyShowDetails"> show details
+                    </label>
                     <br />
-                    <div style="margin-left: 1em; margin-top: 0.3em;">
-                        <button class="pure-button" @click="moveToTs">Move</button>
-                        <button class="pure-button" @click="tsInsert">Insert</button>
-                        <button class="pure-button" @click="unclamp">Unclamp</button>
-                        <button class="pure-button" @click="tsPull">Pull</button>
+
+                    <div v-if="!toolSupplyShowDetails">
+                        <button class="pure-button" @click="executeAttach">Attach</button>
+                        <button class="pure-button" @click="executeDetach">Detach</button>
+                    </div>
+
+                    <div v-if="toolSupplyShowDetails">
+                        <div style="margin-bottom: 0.5em;">
+                            <button class="pure-button" @click="executeAttach">Attach</button>
+                            <br />
+                            <div style="margin-left: 1em; margin-top: 0.3em;">
+                                <button class="pure-button" @click="moveToTs">Move</button>
+                                <button class="pure-button" @click="open">Open</button>
+                                <button class="pure-button" @click="tsInsert">Insert</button>
+                                <button class="pure-button" @click="clamp">Clamp</button>
+                                <button class="pure-button" @click="tsPull">Pull</button>
+                                <button class="pure-button" @click="close">Close</button>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 0.5em;">
+                            <button class="pure-button" @click="executeDetach">Detach</button>
+                            <br />
+                            <div style="margin-left: 1em; margin-top: 0.3em;">
+                                <button class="pure-button" @click="moveToTs">Move</button>
+                                <button class="pure-button" @click="tsInsert">Insert</button>
+                                <button class="pure-button" @click="unclamp">Unclamp</button>
+                                <button class="pure-button" @click="tsPull">Pull</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
+
+                <div class="widget">
+                    <h1>Recent G1</h1>
+                    <div v-if="g1Commands.length === 0">
+                        <em>No G1 commands</em>
+                    </div>
+                    <div v-else>
+                        <div v-for="g1 in g1Commands" :key="g1.startLineNum">
+                            {{ g1.startTime.split(' ')[1] }} ~
+                            {{ g1.duration }}s
+                            <span v-if="!g1.endTime">(executing)</span>
+                            {{ g1.command }}
+                        </div>
+                    </div>
+                </div>
+
             </div>
 
-            <h1>Recent G1</h1>
-            <div v-if="g1Commands.length === 0">
-                <em>No G1 commands</em>
-            </div>
-            <div v-else>
-                <div v-for="g1 in g1Commands" :key="g1.startLineNum">
-                    {{ g1.startTime.split(' ')[1] }} ~
-                    {{ g1.duration }}s
-                    <span v-if="!g1.endTime">(executing)</span>
-                    {{ g1.command }}
+            <div class="column">
+                <div class="widget">
+                    <h1>EDML (250ms/line)</h1>
+                    <canvas ref="edml" width="500" height="1000"></canvas>
                 </div>
-            </div>
-            </div>
-            <div class="pure-u-3-5">
-                <h1>EDML (250ms/line)</h1>
-                <canvas ref="edml" width="500" height="1000"></canvas>
             </div>
         </div>
     </div>
