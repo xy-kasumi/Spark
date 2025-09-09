@@ -22,6 +22,7 @@ echo "Copying static files..."
 cp index.html dist/
 cp pure-min.css dist/
 cp vue.global.js dist/
+cp logo.png dist/
 
 echo "Build complete! Output in dist/"
 echo "To serve, e.g.: cd dist && python3 -m http.server 8000"

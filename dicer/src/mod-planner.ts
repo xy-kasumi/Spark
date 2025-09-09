@@ -1123,17 +1123,17 @@ export class ModulePlanner implements Module {
                 `Y(${viewY.x.toFixed(3)}, ${viewY.y.toFixed(3)}, ${viewY.z.toFixed(3)}) ` +
                 `Z(${viewZ.x.toFixed(3)}, ${viewZ.y.toFixed(3)}, ${viewZ.z.toFixed(3)})`);
 
-            const toolRadius = 0.15; // 1.5;
+            const toolRadius = 1.5; // 0.15; // 1.5;
             const startTime = performance.now();
             let offsets = [toolRadius * 3, toolRadius * 2, toolRadius * 1];
             let contours = [];
             let contour0 = this.wasmGeom.projectManifold(this.targetManifold, origin, viewX, viewY, viewZ);
-            contour0 = this.wasmGeom.outermostCrossSection(contour0);
+            // contour0 = this.wasmGeom.outermostCrossSection(contour0);
             for (const offset of offsets) {
                 const toolCenterContour = this.wasmGeom.offsetCrossSection(contour0, offset);
                 contours = [...contours, this.wasmGeom.crossSectionToContours(toolCenterContour)];
 
-                const innerContour = this.wasmGeom.offsetCrossSectionCircle(toolCenterContour, -toolRadius, 16);
+                const innerContour = this.wasmGeom.offsetCrossSectionCircle(toolCenterContour, -toolRadius, 32);
                 const cutCS = this.wasmGeom.createSquareCrossSection(100); // big enough to contain both work and target.
                 const removeCS = this.wasmGeom.subtractCrossSection(cutCS, innerContour);
                 const removeMani = this.wasmGeom.extrude(removeCS, viewX, viewY, viewZ, viewZ.clone().multiplyScalar(-50), 100); // 100mm should be big enough

@@ -7,6 +7,44 @@
     <title>Spark: Dashboard</title>
     <link rel="stylesheet" href="./pure-min.css">
     <style>
+        /* Fixed header styles */
+        .fixed-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-bottom: 1px solid #ddd;
+            padding: 10px 20px;
+            z-index: 1000;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .header-logo {
+            height: 40px;
+            width: auto;
+        }
+
+        .status-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 16px;
+        }
+
+        /* Main content adjustment for fixed header */
+        .main-content {
+            padding-top: 80px;
+        }
+
         /* Jog button layout */
         .jog-cross,
         .jog-z {
@@ -46,15 +84,22 @@
 </head>
 
 <body>
-    <div class="pure-g" id="app">
-        <div class="pure-u-2-5">
-            <h1>Status</h1>
-            <p>
-                <span :title="'Detailed status: ' + clientStatus">{{ statusEmoji }} {{ uiStatus }}</span>
-                {{ queueStatus }}
-            </p>
+    <div id="app">
+        <!-- Fixed Header with Status -->
+        <header class="fixed-header">
+            <div class="header-content">
+                <img src="logo.png" alt="Spark Logo" class="header-logo">
+                <div class="status-info">
+                    <span :title="'Detailed status: ' + clientStatus">{{ statusEmoji }} {{ uiStatus }}</span>
+                    <span>{{ queueStatus }}</span>
+                    <span v-if="rebootStatus">{{ rebootStatus }}</span>
+                </div>
+            </div>
+        </header>
 
-            <div>{{ rebootStatus }}</div>
+        <!-- Main Content -->
+        <div class="pure-g main-content">
+            <div class="pure-u-2-5">
 
             <h1>Manual Command</h1>
             <button class="pure-button" @click="init">{{ initButtonText }}</button>
@@ -174,10 +219,11 @@
                     {{ g1.command }}
                 </div>
             </div>
-        </div>
-        <div class="pure-u-3-5">
-            <h1>EDML (250ms/line)</h1>
-            <canvas ref="edml" width="500" height="1000"></canvas>
+            </div>
+            <div class="pure-u-3-5">
+                <h1>EDML (250ms/line)</h1>
+                <canvas ref="edml" width="500" height="1000"></canvas>
+            </div>
         </div>
     </div>
 
