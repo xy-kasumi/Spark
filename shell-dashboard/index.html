@@ -186,6 +186,64 @@
             padding: 0;
             margin: 0;
         }
+
+        #widget-settings .settings-placeholder {
+            color: var(--text-secondary);
+            font-style: italic;
+            margin-top: var(--unit-space);
+        }
+
+        #widget-settings .settings-table-container {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: var(--unit-space);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+        }
+
+        #widget-settings .settings-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-secondary);
+        }
+
+        #widget-settings .settings-table th,
+        #widget-settings .settings-table td {
+            padding: calc(var(--unit-space) * 0.75);
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        #widget-settings .settings-table th {
+            background: var(--bg-widget);
+            color: var(--text-primary);
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        #widget-settings .settings-table td {
+            color: var(--text-primary);
+        }
+
+        #widget-settings .settings-table tbody tr:hover {
+            background: var(--button-bg);
+        }
+
+        #widget-settings .settings-info {
+            color: var(--text-secondary);
+            font-size: calc(var(--text-size) * 0.9);
+            margin-bottom: calc(var(--unit-space) * 0.5);
+        }
+
+        #widget-settings .highlight {
+            background-color: var(--accent);
+            color: white;
+            padding: 1px 2px;
+            border-radius: 2px;
+            font-weight: bold;
+        }
     </style>
 </head>
 
@@ -330,9 +388,31 @@
                 <div class="widget" id="widget-settings">
                     <h1>Settings</h1>
                     <div class="widget-content">
-                        <button>REFRESH</button>
+                        <button @click="refreshSettings">REFRESH</button>
                         <br />
-                        Contents here
+                        <div v-if="Object.keys(settings).length === 0" class="settings-placeholder">
+                            Click REFRESH to load settings
+                        </div>
+                        <div v-else>
+                            <label>Filter <input type="text" v-model="settingsFilter" placeholder="Enter filter..."></label>
+                            <div class="settings-info">Showing {{ settingsCount.filtered }}/{{ settingsCount.total }} items</div>
+                            <div class="settings-table-container">
+                            <table class="settings-table">
+                                <thead>
+                                    <tr>
+                                        <th>Key</th>
+                                        <th>Value</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(value, key) in filteredSettings" :key="key">
+                                        <td v-html="highlightKey(key)"></td>
+                                        <td>{{ value }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
