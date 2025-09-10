@@ -29,7 +29,7 @@ class SpoolerController {
 
     private isPolling: boolean;
 
-    private commandQueue: string[];
+    private commandQueue: Array<{command: string, onSent: ((line: number) => void) | null}>;
 
     private state: SpoolerState;
     private statusText: string;
@@ -212,19 +212,27 @@ class SpoolerController {
             return;
         }
 
-        const command = this.commandQueue.shift();
+        const queueItem = this.commandQueue.shift()!;
         if (this.onQueueChange) {
             this.onQueueChange();
         }
-        await this.sendCommand(command, false);
+        try {
+            const lineNum = await this.sendCommand(queueItem.command, false);
+            queueItem.onSent?.(lineNum);
+        } catch (error) {
+            // If sendCommand throws, the onSent callback is not called
+            // This allows waitUntilSent Promise to reject naturally
+            throw error;
+        }
     }
 
     /**
      * Send a command to the spooler
      * @param command - Command to send
      * @param isHealthcheck - Whether this is an auto-initiated healthcheck
+     * @returns Promise that resolves to the assigned line number
      */
-    private async sendCommand(command: string, isHealthcheck: boolean): Promise<void> {
+    private async sendCommand(command: string, isHealthcheck: boolean): Promise<number> {
         try {
             const response = await fetch(`${this.host}/write-line`, {
                 method: 'POST',
@@ -236,15 +244,46 @@ class SpoolerController {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
+            const { line_num }: { line_num: number, time: string } = await response.json();
+
             // Record when command was sent
             this.lastCommandTime = Date.now();
 
             // Set appropriate busy state
             this.setState(isHealthcheck ? 'busy-healthcheck' : 'busy');
+
+            return line_num;
         } catch (error) {
             // Command failed, set state to offline
             this.setState('api-offline');
+            throw error;
         }
+    }
+
+    /**
+     * Add a command to the queue and wait until it is sent
+     * @param command - Command string to enqueue and wait for
+     * @returns Promise that resolves to the assigned line number when command is sent
+     */
+    async waitUntilSent(command: string): Promise<number> {
+        // Remove G-code style comments (everything after semicolon)
+        const withoutComment = command.split(';')[0].trim();
+
+        if (withoutComment.length === 0) {
+            throw new Error('Empty command cannot be sent');
+        }
+
+        return new Promise<number>((resolve, reject) => {
+            const queueItem = {
+                command: withoutComment,
+                onSent: (lineNum: number) => resolve(lineNum)
+            };
+
+            this.commandQueue.push(queueItem);
+            if (this.onQueueChange) {
+                this.onQueueChange();
+            }
+        });
     }
 
     /**
@@ -256,7 +295,7 @@ class SpoolerController {
         const withoutComment = command.split(';')[0].trim();
 
         if (withoutComment.length > 0) {
-            this.commandQueue.push(withoutComment);
+            this.commandQueue.push({command: withoutComment, onSent: null});
             if (this.onQueueChange) {
                 this.onQueueChange();
             }
@@ -265,10 +304,9 @@ class SpoolerController {
 
     /**
      * Get a copy of the current command queue
-     * @returns Array of queued command strings
      */
     peekQueue(): string[] {
-        return [...this.commandQueue];
+        return this.commandQueue.map(item => item.command);
     }
 
     /**
