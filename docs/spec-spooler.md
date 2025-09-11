@@ -7,13 +7,14 @@ Implementation of UIs can be stateless by relying on query capability of the spo
 
 Spooler also serves as reliable comm log for debug purpose.
 
-## HTTP API
-
-### Core concepts
+## Core concepts
 * direction: dataflow direction. Either `up` or `down`. `up` means towards the user (core -> spooler -> UI). `down` means away from the user. (UI -> spooler -> core).
   * This removes confusion of "RX" vs "TX"
 * line number: Stats from 1 and incremented. Both `up` and `down` lines belong to same line number space. Line number is reset to 1 iff spooler is restarted.
+* init lines: lines that are sent (same as /write-line) to the core, when spooler is started.
+  * Can be suppressed by a command line argument.
 
+## HTTP API
 
 ### POST /write-line
 
@@ -157,5 +158,59 @@ Response
     }
   ],
   "now": "2025-07-27 15:04:05.000"
+}
+```
+
+### POST /set-init
+
+Set content of init lines. The content will be persisted as a file across spooler reboot.
+
+**Request Type**
+
+```typescript
+{
+  lines: Array<string>
+}
+```
+
+**Response Type**
+
+```typescript
+{}
+```
+
+**Examples**
+
+Request:
+```json
+{
+  "content": ["set cs.g.pos.x 1", "set cs.g.pos.x 2"]
+}
+```
+
+### POST /get-init
+
+Get current init lines. Empty if not configured or not found.
+
+**Request Type**
+
+```typescript
+{}
+```
+
+**Response Type**
+
+```typescript
+{
+  lines: Array<string>
+}
+```
+
+**Examples**
+
+Request:
+```json
+{
+  "content": ["set cs.g.pos.x 1", "set cs.g.pos.x 2"]
 }
 ```

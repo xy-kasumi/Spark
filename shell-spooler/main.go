@@ -46,6 +46,20 @@ type lineInfo struct {
 	Time    string `json:"time"`    // timestamp of the line in format "2006-01-02 15:04:05.000" (local time)
 }
 
+type setInitRequest struct {
+	Lines []string `json:"lines"`
+}
+
+type setInitResponse struct {
+}
+
+type getInitRequest struct {
+}
+
+type getInitResponse struct {
+	Lines []string `json:"lines"`
+}
+
 // handleCommon returns true if caller should continue RPC processing.
 func handleCommom(w http.ResponseWriter, r *http.Request) bool {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -97,8 +111,15 @@ func fetchInitLines(filePath string) ([]string, error) {
 			}
 		}
 	}
-
 	return initLines, nil
+}
+
+func writeInitLines(filePath string, lines []string) error {
+	content := strings.Join(lines, "\n")
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write init file: %w", err)
+	}
+	return nil
 }
 
 func main() {
@@ -303,16 +324,83 @@ func main() {
 		respondJson(w, &resp)
 	})
 
-	slog.Info("HTTP server started listening", "port", *addr)
-	if err := http.ListenAndServe(*addr, nil); err != nil {
-		slog.Error("HTTP server error", "error", err)
-	}
+	// HTTP handler to set init lines
+	http.HandleFunc("/set-init", func(w http.ResponseWriter, r *http.Request) {
+		if !handleCommom(w, r) {
+			return
+		}
 
+		slog.Debug("/set-init")
+		var req setInitRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "invalid JSON: %v", err)
+			return
+		}
+
+		// Validate
+		for _, line := range req.Lines {
+			if strings.Contains(line, "\n") {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprintf(w, "lines: must not contain newline")
+				return
+			}
+		}
+
+		// Save
+		if err := writeInitLines(initFileAbs, req.Lines); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			slog.Error("Failed to write init file", "error", err)
+			return
+		}
+
+		slog.Info("Init lines updated")
+		resp := setInitResponse{}
+		respondJson(w, &resp)
+	})
+
+	// HTTP handler to get init lines
+	http.HandleFunc("/get-init", func(w http.ResponseWriter, r *http.Request) {
+		if !handleCommom(w, r) {
+			return
+		}
+
+		slog.Debug("/get-init")
+		var req getInitRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "invalid JSON: %v", err)
+			return
+		}
+
+		// Read current init lines
+		lines, err := fetchInitLines(initFileAbs)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			slog.Error("Failed to read init file", "error", err)
+			return
+		}
+
+		resp := getInitResponse{Lines: lines}
+		respondJson(w, &resp)
+	})
+
+	slog.Info("HTTP server started listening", "port", *addr)
+
+	// Send init lines (this must be the last thing in main())
 	if !*noInit && len(initLines) > 0 {
-		slog.Info("Sending init lines")
-		for _, line := range initLines {
+		slog.Info("Sending init lines", "count", len(initLines))
+		for i, line := range initLines {
 			ser.writeLine(line)
 			storage.addLine("down", line)
+			slog.Debug("Sent init line", "index", i+1, "content", line)
 		}
+		slog.Info("Init lines sent successfully")
+	} else {
+		slog.Info("Init not sent", "noInit", *noInit, "lineCount", len(initLines))
+	}
+
+	if err := http.ListenAndServe(*addr, nil); err != nil {
+		slog.Error("HTTP server error", "error", err)
 	}
 }
