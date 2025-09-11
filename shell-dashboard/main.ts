@@ -126,8 +126,8 @@ const initCommands: string[] = [
     "set cs.w.pos.x -58",
     "set cs.w.pos.y 17",
     "set cs.w.pos.z -89",
-    "set cs.ts.pos.x -15.4",
-    "set cs.ts.pos.y 103.9",
+    "set cs.ts.pos.x -16.800",
+    "set cs.ts.pos.y 97.700",
     "set cs.ts.pos.z -57",
 ];
 
