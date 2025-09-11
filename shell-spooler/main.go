@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -66,11 +68,46 @@ func respondJson(w http.ResponseWriter, resp any) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+func fetchInitLines(filePath string) ([]string, error) {
+	// Check if init file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		// Create empty init file
+		if err := os.WriteFile(filePath, []byte(""), 0644); err != nil {
+			return nil, fmt.Errorf("failed to create init file: %w", err)
+		}
+		slog.Info("Created empty init file", "path", filePath)
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to check init file: %w", err)
+	}
+
+	// Read init file
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read init file: %w", err)
+	}
+
+	// Parse lines from init file
+	var initLines []string
+	if len(content) > 0 {
+		lines := strings.Split(string(content), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				initLines = append(initLines, line)
+			}
+		}
+	}
+
+	return initLines, nil
+}
+
 func main() {
 	portName := flag.String("port", "COM3", "Serial port name")
 	baud := flag.Int("baud", 115200, "Serial port baud rate")
 	addr := flag.String("addr", ":9000", "HTTP listen address")
 	logDir := flag.String("log-dir", "logs", "Directory for log files (relative to current directory)")
+	initFile := flag.String("init-file", "init.txt", "Init file path")
+	noInit := flag.Bool("noinit", false, "Suppress sending of init")
 	verbose := flag.Bool("verbose", false, "Verbose logging")
 	flag.Parse()
 
@@ -78,8 +115,24 @@ func main() {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
 
+	// Resolve full paths
+	logDirAbs, err := filepath.Abs(*logDir)
+	if err != nil {
+		slog.Error("Failed to resolve log directory path", "logDir", *logDir, "error", err)
+		return
+	}
+
+	initFileAbs, err := filepath.Abs(*initFile)
+	if err != nil {
+		slog.Error("Failed to resolve init file path", "initFile", *initFile, "error", err)
+		return
+	}
+
+	slog.Info("Using log directory", "path", logDirAbs)
+	slog.Info("Using init file", "path", initFileAbs)
+
 	// Initialize line storage
-	storage := newLineStorage(*logDir)
+	storage := newLineStorage(logDirAbs)
 	defer storage.Close()
 
 	// Initialize serial protocol
@@ -88,6 +141,13 @@ func main() {
 		return
 	}
 	defer ser.Close()
+
+	// Handle init file - always check and prepare init file regardless of noinit flag
+	initLines, err := fetchInitLines(initFileAbs)
+	if err != nil {
+		slog.Error("Init file error", "error", err)
+		return
+	}
 
 	// HTTP handler to write a single line
 	http.HandleFunc("/write-line", func(w http.ResponseWriter, r *http.Request) {
@@ -246,5 +306,13 @@ func main() {
 	slog.Info("HTTP server started listening", "port", *addr)
 	if err := http.ListenAndServe(*addr, nil); err != nil {
 		slog.Error("HTTP server error", "error", err)
+	}
+
+	if !*noInit && len(initLines) > 0 {
+		slog.Info("Sending init lines")
+		for _, line := range initLines {
+			ser.writeLine(line)
+			storage.addLine("down", line)
+		}
 	}
 }
