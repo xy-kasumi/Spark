@@ -21,10 +21,10 @@ func initSerial(portName string, baud int, storage *lineStorage) *serialHandler 
 	mode := &serial.Mode{BaudRate: baud}
 	port, err := serial.Open(portName, mode)
 	if err != nil {
-		slog.Error("failed to open serial port", "port", portName, "baud", baud, "error", err)
+		slog.Error("Failed to open serial port", "port", portName, "baud", baud, "error", err)
 		return nil
 	}
-	slog.Info("opened serial port", "port", portName, "baud", baud)
+	slog.Info("Opened serial port", "port", portName, "baud", baud)
 
 	sh := &serialHandler{
 		port:    port,
@@ -40,13 +40,13 @@ func initSerial(portName string, baud int, storage *lineStorage) *serialHandler 
 
 func (sh *serialHandler) readLoop() {
 	r := bufio.NewReader(sh.port)
-	slog.Info("Starting serial read goroutine")
+	slog.Debug("Starting serial read goroutine")
 
 	for {
 		// Read line from serial
 		line, err := r.ReadString('\n')
 		if err != nil {
-			slog.Error("serial port read error", "error", err)
+			slog.Error("Serial port read error", "error", err)
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
@@ -56,7 +56,7 @@ func (sh *serialHandler) readLoop() {
 			continue
 		}
 
-		slog.Debug("received", "line", line)
+		slog.Debug("Received", "line", line)
 
 		// Add to storage
 		sh.storage.addLine("up", line)
@@ -70,13 +70,13 @@ func (sh *serialHandler) writeLoop() {
 		// Write to serial port
 		_, err := sh.port.Write([]byte(line + "\n"))
 		if err != nil {
-			slog.Error("serial port write error", "error", err)
+			slog.Error("Serial port write error", "error", err)
 			// Keep trying
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
 
-		slog.Debug("sent", "line", line)
+		slog.Debug("Sent", "line", line)
 	}
 }
 

@@ -43,7 +43,7 @@ func newLineStorage(logDir string) *lineStorage {
 
 	// Create log directory if it doesn't exist
 	if err := os.MkdirAll(logDir, 0755); err != nil {
-		slog.Error("failed to create log directory", "dir", logDir, "error", err)
+		slog.Error("Failed to create log directory", "dir", logDir, "error", err)
 		return ls
 	}
 
@@ -53,19 +53,19 @@ func newLineStorage(logDir string) *lineStorage {
 	// Find next available filename for today
 	filename := ls.findNextFileName(logDir, now)
 	if filename == "" {
-		slog.Error("failed to read log directory, continuing without log file", "dir", logDir)
+		slog.Error("Failed to read log directory, continuing without log file", "dir", logDir)
 		return ls
 	}
 
 	logPath := filepath.Join(logDir, filename)
 	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		slog.Error("failed to create log file", "path", logPath, "error", err)
+		slog.Error("Failed to create log file", "path", logPath, "error", err)
 		return ls
 	}
 
 	ls.logFile = file
-	slog.Info("created log file", "path", logPath)
+	slog.Info("Created log file", "path", logPath)
 
 	return ls
 }
@@ -126,7 +126,7 @@ func (ls *lineStorage) addLine(dir string, content string) (int, time.Time) {
 			formatSpoolerTime(now), l.num, dir, content)
 
 		if _, err := ls.logFile.WriteString(logLine); err != nil {
-			slog.Error("failed to write to log file", "error", err)
+			slog.Error("Failed to write to log file", "error", err)
 		} else {
 			// Flush to ensure immediate write
 			ls.logFile.Sync()

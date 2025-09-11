@@ -385,21 +385,18 @@ func main() {
 		respondJson(w, &resp)
 	})
 
-	slog.Info("HTTP server started listening", "port", *addr)
-
-	// Send init lines (this must be the last thing in main())
-	if !*noInit && len(initLines) > 0 {
-		slog.Info("Sending init lines", "count", len(initLines))
-		for i, line := range initLines {
+	// send init if not suppressed
+	if !*noInit {
+		slog.Info("Sending init", "linecount", len(initLines))
+		for _, line := range initLines {
 			ser.writeLine(line)
 			storage.addLine("down", line)
-			slog.Debug("Sent init line", "index", i+1, "content", line)
 		}
-		slog.Info("Init lines sent successfully")
 	} else {
-		slog.Info("Init not sent", "noInit", *noInit, "lineCount", len(initLines))
+		slog.Info("Init suppressed by --noinit")
 	}
 
+	slog.Info("HTTP server started", "port", *addr)
 	if err := http.ListenAndServe(*addr, nil); err != nil {
 		slog.Error("HTTP server error", "error", err)
 	}
