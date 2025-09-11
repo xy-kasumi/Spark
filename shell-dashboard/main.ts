@@ -138,7 +138,7 @@ const tsFullInsertZ = -12;
 // Global client instance for performance
 let client: SpoolerController | null = null;
 
-Vue.createApp({
+const app = Vue.createApp({
     data() {
         return {
             // UI State
@@ -152,8 +152,11 @@ Vue.createApp({
             clearOnExec: true,
             jogStepMm: 1,
             toolSupplyShowDetails: false,
-            settings: {} as Record<string, number>,
+            settingsMachine: {} as Record<string, number>,
+            settingsLocal: {} as Record<string, number>,
             settingsFilter: '',
+            editingKey: null as string | null,
+            escapeHandler: null as ((event: KeyboardEvent) => void) | null,
         }
     },
 
@@ -214,6 +217,23 @@ Vue.createApp({
             }
         },
 
+        // Display values (local edits take precedence over machine values)
+        settings() {
+            const result: Record<string, number> = {};
+            
+            // Start with machine values
+            for (const [key, value] of Object.entries(this.settingsMachine)) {
+                result[key] = value as number;
+            }
+            
+            // Override with local edits
+            for (const [key, value] of Object.entries(this.settingsLocal)) {
+                result[key] = value as number;
+            }
+            
+            return result;
+        },
+
         filteredSettings() {
             if (!this.settingsFilter.trim()) {
                 return this.settings;
@@ -237,6 +257,21 @@ Vue.createApp({
             return { filtered, total };
         },
 
+        modifiedKeys() {
+            const modified: string[] = [];
+            for (const [key, localValue] of Object.entries(this.settingsLocal)) {
+                const machineValue = this.settingsMachine[key];
+                if (machineValue !== undefined && localValue !== machineValue) {
+                    modified.push(key);
+                }
+            }
+            return modified;
+        },
+
+        pendingEditsCount() {
+            return this.modifiedKeys.length;
+        },
+
     },
 
     mounted() {
@@ -258,6 +293,14 @@ Vue.createApp({
             this.assumeInitialized = false;
         };
 
+        // Global Escape key handler to cancel any editing
+        this.escapeHandler = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                this.cancelEdit();
+            }
+        };
+        document.addEventListener('keydown', this.escapeHandler);
+
         // Start polling
         client.startPolling();
     },
@@ -265,6 +308,11 @@ Vue.createApp({
     beforeUnmount() {
         if (client) {
             client.stopPolling();
+        }
+        
+        // Clean up global escape handler
+        if (this.escapeHandler) {
+            document.removeEventListener('keydown', this.escapeHandler);
         }
     },
 
@@ -587,15 +635,31 @@ Vue.createApp({
             });
 
             // Parse and convert to key-value dict
-            const settings: Record<string, number> = {};
+            const machineSettings: Record<string, number> = {};
             for (const line of keyValResult.lines) {
                 const content = line.content;
                 const [key, value] = content.substring(2).split(' ');
-                settings[key] = parseFloat(value);
+                machineSettings[key] = parseFloat(value) as number;
             }
 
-            console.log('Settings retrieved:', settings);
-            this.settings = settings;
+            console.log('Machine settings retrieved:', machineSettings);
+            
+            // Update machine settings
+            this.settingsMachine = machineSettings;
+            
+            // If local settings are completely empty (first REFRESH), copy machine values
+            if (Object.keys(this.settingsLocal).length === 0) {
+                this.settingsLocal = { ...machineSettings };
+            } else {
+                // Remove local keys that don't exist in machine settings
+                const newLocal: Record<string, number> = {};
+                for (const [key, value] of Object.entries(this.settingsLocal)) {
+                    if (key in machineSettings) {
+                        newLocal[key] = value as number;
+                    }
+                }
+                this.settingsLocal = newLocal;
+            }
         },
 
         /**
@@ -621,6 +685,78 @@ Vue.createApp({
             const after = key.substring(index + filter.length);
             
             return `${before}<span class="highlight">${match}</span>${after}`;
+        },
+
+        /**
+         * Start editing a setting value
+         */
+        startEditing(key: string) {
+            this.editingKey = key;
+        },
+
+        /**
+         * Save edited value
+         */
+        saveEdit(key: string, event: Event) {
+            const target = event.target as HTMLInputElement;
+            const newValue = parseFloat(target.value);
+            
+            if (!isNaN(newValue)) {
+                this.settingsLocal[key] = newValue;
+            }
+            
+            this.editingKey = null;
+        },
+
+        /**
+         * Cancel editing
+         */
+        cancelEdit() {
+            this.editingKey = null;
+        },
+
+        /**
+         * Check if a setting is modified
+         */
+        isModified(key: string): boolean {
+            return this.modifiedKeys.includes(key);
+        },
+
+        /**
+         * Apply all pending edits by sending set commands
+         */
+        async applyEdits() {
+            if (!client || this.pendingEditsCount === 0) {
+                return;
+            }
+
+            for (const key of this.modifiedKeys) {
+                const value = this.settingsLocal[key];
+                const command = `set ${key} ${value}`;
+                client.enqueueCommand(command);
+            }
+
+            // Update machine settings to match local settings for applied changes
+            for (const key of this.modifiedKeys) {
+                this.settingsMachine[key] = this.settingsLocal[key];
+            }
+
+            console.log(`Applied ${this.pendingEditsCount} setting changes`);
+        },
+
+        /**
+         * Discard all pending edits and revert to machine values
+         */
+        discardEdits() {
+            // Reset local settings to match machine settings
+            this.settingsLocal = { ...this.settingsMachine };
+            
+            // Cancel any active editing
+            this.editingKey = null;
+            
+            console.log('Discarded all pending edits');
         }
     }
-}).mount('#app');
+});
+
+app.mount('#app');

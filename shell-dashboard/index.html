@@ -244,6 +244,25 @@
             border-radius: 2px;
             font-weight: bold;
         }
+
+        #widget-settings .modified-indicator {
+            color: var(--accent);
+            font-style: italic;
+            font-size: calc(var(--text-size) * 0.85);
+            margin-left: 5px;
+        }
+
+        #widget-settings .settings-table td input {
+            width: 100%;
+            height: calc(var(--unit-space) * 0.75 * 2 + var(--text-size) * 1.2);
+            box-sizing: border-box;
+            margin: 0;
+            padding: calc(var(--unit-space) * 0.75);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border: 1px solid var(--accent);
+            border-radius: var(--radius);
+        }
     </style>
 </head>
 
@@ -407,10 +426,24 @@
                                 <tbody>
                                     <tr v-for="(value, key) in filteredSettings" :key="key">
                                         <td v-html="highlightKey(key)"></td>
-                                        <td>{{ value }}</td>
+                                        <td v-if="editingKey !== key" @click="startEditing(key)" style="cursor: pointer;">
+                                            {{ value }}
+                                            <span v-if="isModified(key)" class="modified-indicator">(modified)</span>
+                                        </td>
+                                        <td v-else>
+                                            <input type="number" 
+                                                   :value="value" 
+                                                   @blur="saveEdit(key, $event)"
+                                                   @keyup.enter="saveEdit(key, $event)"
+                                                   ref="editInput">
+                                        </td>
                                     </tr>
                                 </tbody>
                             </table>
+                            </div>
+                            <div v-if="pendingEditsCount > 0" style="margin-top: var(--unit-space);">
+                                <button @click="applyEdits">APPLY EDITS</button>
+                                <button @click="discardEdits">DISCARD EDITS</button>
                             </div>
                         </div>
                     </div>
