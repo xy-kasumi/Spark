@@ -1,3 +1,4 @@
 *.exe
 shell-spooler
 logs/
+init.txt/
