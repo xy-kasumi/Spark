@@ -128,7 +128,6 @@ func main() {
 	addr := flag.String("addr", ":9000", "HTTP listen address")
 	logDir := flag.String("log-dir", "logs", "Directory for log files (relative to current directory)")
 	initFile := flag.String("init-file", "init.txt", "Init file path")
-	noInit := flag.Bool("noinit", false, "Suppress sending of init")
 	verbose := flag.Bool("verbose", false, "Verbose logging")
 	flag.Parse()
 
@@ -164,7 +163,7 @@ func main() {
 	defer ser.Close()
 
 	// Handle init file - always check and prepare init file regardless of noinit flag
-	initLines, err := fetchInitLines(initFileAbs)
+	_, err = fetchInitLines(initFileAbs)
 	if err != nil {
 		slog.Error("Init file error", "error", err)
 		return
@@ -384,17 +383,6 @@ func main() {
 		resp := getInitResponse{Lines: lines}
 		respondJson(w, &resp)
 	})
-
-	// send init if not suppressed
-	if !*noInit {
-		slog.Info("Sending init", "linecount", len(initLines))
-		for _, line := range initLines {
-			ser.writeLine(line)
-			storage.addLine("down", line)
-		}
-	} else {
-		slog.Info("Init suppressed by --noinit")
-	}
 
 	slog.Info("HTTP server started", "port", *addr)
 	if err := http.ListenAndServe(*addr, nil); err != nil {

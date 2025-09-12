@@ -10,9 +10,8 @@ Spooler also serves as reliable comm log for debug purpose.
 ## Core concepts
 * direction: dataflow direction. Either `up` or `down`. `up` means towards the user (core -> spooler -> UI). `down` means away from the user. (UI -> spooler -> core).
   * This removes confusion of "RX" vs "TX"
-* line number: Stats from 1 and incremented. Both `up` and `down` lines belong to same line number space. Line number is reset to 1 iff spooler is restarted.
-* init lines: lines that are sent (same as /write-line) to the core, when spooler is started.
-  * Can be suppressed by a command line argument.
+* line number: starts from 1 and incremented. Both `up` and `down` lines belong to same line number space. Line number is reset to 1 iff spooler is restarted.
+* init file: text file that is persisted across reboot, useful for initializing the core.
 
 ## HTTP API
 
