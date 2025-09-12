@@ -446,5 +446,41 @@ const spoolerApi = {
             console.error('Failed to query lines:', error);
             return null;
         }
+    },
+
+    /**
+     * Set init lines that will be sent to the core when spooler starts.
+     * @param host - Base URL of the shell-spooler server
+     * @param lines - Array of init line strings to persist
+     */
+    async setInit(host: string, lines: string[]): Promise<void> {
+        const response = await fetch(`${host}/set-init`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lines })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+    },
+
+    /**
+     * Get current init lines configuration.
+     * @param host - Base URL of the shell-spooler server
+     * @returns Array of configured init lines (empty if none configured)
+     */
+    async getInit(host: string): Promise<{ lines: string[] }> {
+        const response = await fetch(`${host}/get-init`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        return await response.json();
     }
 };
