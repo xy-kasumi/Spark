@@ -110,27 +110,6 @@ function parseEdmPollEntries(binaryData: Uint8Array): EdmPollEntry[] {
     return vals;
 }
 
-// Init commands (moved from config.go)
-// These were commented out in the original config.go
-const initCommands: string[] = [
-    "set ts.servo.closems 1.75",
-    "set ts.servo.openms 0.85",
-    "set m.0.idlems -1",
-    "set m.1.idlems -1",
-    "set m.2.idlems -1",
-    "set m.1.thresh 1",
-    "set m.6.unitsteps -814.87",
-    "set cs.g.pos.x -58",
-    "set cs.g.pos.y 76",
-    "set cs.g.pos.z -73",
-    "set cs.w.pos.x -58",
-    "set cs.w.pos.y 17",
-    "set cs.w.pos.z -89",
-    "set cs.ts.pos.x -16.800",
-    "set cs.ts.pos.y 97.700",
-    "set cs.ts.pos.z -57",
-];
-
 const tsJustBeforeInsertZ = 0;
 const tsPulledZ = 47;
 const tsFullInsertZ = -12;
@@ -220,17 +199,17 @@ const app = Vue.createApp({
         // Display values (local edits take precedence over machine values)
         settings() {
             const result: Record<string, number> = {};
-            
+
             // Start with machine values
             for (const [key, value] of Object.entries(this.settingsMachine)) {
                 result[key] = value as number;
             }
-            
+
             // Override with local edits
             for (const [key, value] of Object.entries(this.settingsLocal)) {
                 result[key] = value as number;
             }
-            
+
             return result;
         },
 
@@ -238,16 +217,16 @@ const app = Vue.createApp({
             if (!this.settingsFilter.trim()) {
                 return this.settings;
             }
-            
+
             const filter = this.settingsFilter.toLowerCase();
             const filtered: Record<string, number> = {};
-            
+
             for (const [key, value] of Object.entries(this.settings)) {
                 if (key.toLowerCase().includes(filter)) {
                     filtered[key] = value as number;
                 }
             }
-            
+
             return filtered;
         },
 
@@ -309,7 +288,7 @@ const app = Vue.createApp({
         if (client) {
             client.stopPolling();
         }
-        
+
         // Clean up global escape handler
         if (this.escapeHandler) {
             document.removeEventListener('keydown', this.escapeHandler);
@@ -320,12 +299,13 @@ const app = Vue.createApp({
         /**
          * Initialize/home the machine
          */
-        init() {
+        async init() {
             if (!client) {
                 return;
             }
 
-            for (const cmd of initCommands) {
+            const initData = await spoolerApi.getInit(host);
+            for (const cmd of initData.lines) {
                 client.enqueueCommand(cmd);
             }
 
@@ -643,10 +623,10 @@ const app = Vue.createApp({
             }
 
             console.log('Machine settings retrieved:', machineSettings);
-            
+
             // Update machine settings
             this.settingsMachine = machineSettings;
-            
+
             // If local settings are completely empty (first REFRESH), copy machine values
             if (Object.keys(this.settingsLocal).length === 0) {
                 this.settingsLocal = { ...machineSettings };
@@ -675,7 +655,7 @@ const app = Vue.createApp({
             const filter = this.settingsFilter.toLowerCase();
             const keyLower = key.toLowerCase();
             const index = keyLower.indexOf(filter);
-            
+
             if (index === -1) {
                 return key;
             }
@@ -683,7 +663,7 @@ const app = Vue.createApp({
             const before = key.substring(0, index);
             const match = key.substring(index, index + filter.length);
             const after = key.substring(index + filter.length);
-            
+
             return `${before}<span class="highlight">${match}</span>${after}`;
         },
 
@@ -700,11 +680,11 @@ const app = Vue.createApp({
         saveEdit(key: string, event: Event) {
             const target = event.target as HTMLInputElement;
             const newValue = parseFloat(target.value);
-            
+
             if (!isNaN(newValue)) {
                 this.settingsLocal[key] = newValue;
             }
-            
+
             this.editingKey = null;
         },
 
@@ -750,10 +730,10 @@ const app = Vue.createApp({
         discardEdits() {
             // Reset local settings to match machine settings
             this.settingsLocal = { ...this.settingsMachine };
-            
+
             // Cancel any active editing
             this.editingKey = null;
-            
+
             console.log('Discarded all pending edits');
         }
     }
