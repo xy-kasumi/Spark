@@ -426,6 +426,10 @@ const app = Vue.createApp({
             }
         },
 
+        jogHome() {
+            client.enqueueCommand("G28");
+        },
+
         /**
          * Jog: X+
          */
