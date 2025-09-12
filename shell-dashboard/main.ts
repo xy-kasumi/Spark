@@ -735,6 +735,23 @@ const app = Vue.createApp({
             this.editingKey = null;
 
             console.log('Discarded all pending edits');
+        },
+
+        /**
+         * Save current settings as init commands using setInit API
+         */
+        async saveAsInit() {
+            try {
+                const initLines: string[] = [];
+                for (const [key, value] of Object.entries(this.settingsLocal)) {
+                    initLines.push(`set ${key} ${value}`);
+                }
+
+                await spoolerApi.setInit(host, initLines);
+                console.log(`Saved ${initLines.length} settings as init commands`);
+            } catch (error) {
+                console.error('Failed to save settings as init:', error);
+            }
         }
     }
 });

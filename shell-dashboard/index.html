@@ -445,6 +445,9 @@
                                 <button @click="applyEdits">APPLY EDITS</button>
                                 <button @click="discardEdits">DISCARD EDITS</button>
                             </div>
+                            <div v-if="pendingEditsCount === 0" style="margin-top: var(--unit-space);">
+                                <button @click="saveAsInit">SAVE AS INIT</button>
+                            </div>
                         </div>
                     </div>
                 </div>
