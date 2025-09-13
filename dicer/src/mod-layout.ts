@@ -83,6 +83,7 @@ export class ModuleLayout implements Module {
             BEARING_INNER: "bearing_inner",
             BEARING_OUTER: "bearing_outer",
             SPRING_CONTACT: "spring_contact",
+            WAVE_R2: "wave_r2",
         };
 
         this.model = this.models.GT2_PULLEY;
