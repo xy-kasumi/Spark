@@ -88,6 +88,7 @@ declare module 'three' {
   export const Euler: any;
   export const CylinderGeometry: any;
   export const SphereGeometry: any;
+  export const Line: any;
   export const LineLoop: any;
   export const LineBasicMaterial: any;
   export const Quaternion: any;

@@ -447,8 +447,8 @@ manifold::CrossSection* offset_crosssection_circle(
     int circular_segs) {
   assert(cs_ptr != nullptr);
 
-  manifold::CrossSection result =
-      cs_ptr->Offset(offset, manifold::CrossSection::JoinType::Round, 2.0, circular_segs);
+  manifold::CrossSection result = cs_ptr->Offset(
+      offset, manifold::CrossSection::JoinType::Round, 2.0, circular_segs);
   return new manifold::CrossSection(result);
 }
 
@@ -470,7 +470,8 @@ manifold::CrossSection* subtract_crosssection(
 EMSCRIPTEN_KEEPALIVE
 manifold::CrossSection* create_square_crosssection(double size) {
   manifold::vec2 dimensions(size, size);
-  manifold::CrossSection result = manifold::CrossSection::Square(dimensions, true);
+  manifold::CrossSection result =
+      manifold::CrossSection::Square(dimensions, true);
   return new manifold::CrossSection(result);
 }
 

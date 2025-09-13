@@ -234,6 +234,9 @@ export class ModuleLayout implements Module {
 
         const lines = [];
 
+        const workPulseCondition = "M3 P150 Q20 R50";
+
+        /*
         const grinderZEvacBuffer = 15; // buffer for Z evacuation after grinding
 
         lines.push(`; init`);
@@ -255,8 +258,18 @@ export class ModuleLayout implements Module {
 
         lines.push("");
         return lines.join("\n");
+        */
 
         // normal code
+        lines.push("G53"); // machine coords
+        lines.push("G28"); // home
+
+        lines.push("G55"); // work coords
+        lines.push(`G0 X0 Y0 Z60`);
+        prevX = 0;
+        prevY = 0;
+        prevZ = 60;
+
         for (let i = 0; i < planPath.length; i++) {
             const pt = planPath[i];
             if (prevSweep !== pt.sweep) {
@@ -267,18 +280,15 @@ export class ModuleLayout implements Module {
             let gcode = [];
             if (pt.type === "remove-work") {
                 if (prevType !== pt.type) {
-                    lines.push(`M3 WV100`);
+                    lines.push(workPulseCondition);
                 }
                 gcode.push("G1");
             } else if (pt.type === "remove-tool") {
                 if (prevType !== pt.type) {
-                    lines.push(`M4 GV-100`);
+                    lines.push(this.pulseCondition);
                 }
                 gcode.push("G1");
             } else if (pt.type === "move-out" || pt.type === "move-in" || pt.type === "move") {
-                if (prevType !== pt.type) {
-                    lines.push(`M5`);
-                }
                 gcode.push("G0");
             } else {
                 console.error("unknown path segment type", pt.type);
@@ -298,6 +308,7 @@ export class ModuleLayout implements Module {
                 gcode.push(`Z${vals.z.toFixed(3)}`);
                 prevZ = vals.z;
             }
+            /*
             if (prevB !== vals.b) {
                 gcode.push(`B${(vals.b * 180 / Math.PI).toFixed(3)}`);
                 prevB = vals.b;
@@ -312,12 +323,18 @@ export class ModuleLayout implements Module {
             if (pt.grindDelta !== undefined) {
                 gcode.push(`GW${pt.grindDelta.toFixed(1)}`);
             }
+            */
 
-            lines.push(gcode.join(" "));
+            if (gcode.length > 1) {
+                lines.push(gcode.join(" "));
+            }
         }
 
         lines.push(`; end`);
-        lines.push(`M103`);
+        lines.push(`G0 Z60`); // pull
+        lines.push(`G53`); // machine coords
+
+        //lines.push(`M103`);
 
         lines.push("");
         return lines.join("\n");

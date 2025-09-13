@@ -11,6 +11,7 @@ import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, GpuK
 //import { VoxelGridCpu } from './cpu-geom.js';
 //import { TrackingVoxelGrid, initVGForPoints } from './tracking-voxel.js';
 import { WasmGeom, toTriSoup, ManifoldHandle } from './wasm-geom.js';
+import { cutPolygon } from './cpu-geom.js';
 
 /**
  * Apply translation to geometry in-place
@@ -1093,11 +1094,14 @@ export class ModulePlanner implements Module {
         this.stockManifold = this.wasmGeom.createManifold(stockGeom);
 
         const viewVectors = [
-            new THREE.Vector3(0, 0, 1),
+            // No AB-stage yet
+            new THREE.Vector3(0, 1, 0),
+
+            //new THREE.Vector3(0, 0, 1),
             // crosses
-            new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0),
+            //new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0),
             // diagonals
-            new THREE.Vector3(1, 1, 0).normalize(), new THREE.Vector3(1, -1, 0).normalize(),
+            //new THREE.Vector3(1, 1, 0).normalize(), new THREE.Vector3(1, -1, 0).normalize(),
         ];
 
         for (const viewVector of viewVectors) {
@@ -1125,7 +1129,7 @@ export class ModulePlanner implements Module {
 
             const toolRadius = 1.5; // 0.15; // 1.5;
             const startTime = performance.now();
-            let offsets = [toolRadius * 3, toolRadius * 2, toolRadius * 1];
+            let offsets = [toolRadius]; // [toolRadius * 3, toolRadius * 2, toolRadius * 1];
             let contours = [];
             let contour0 = this.wasmGeom.projectManifold(this.targetManifold, origin, viewX, viewY, viewZ);
             // contour0 = this.wasmGeom.outermostCrossSection(contour0);
@@ -1176,23 +1180,92 @@ export class ModulePlanner implements Module {
 
             // Visualize contours on the view plane using LineLoop
             const contourObjects: THREE.Object3D[] = [];
+            const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
+            const material2 = new THREE.LineBasicMaterial({ color: 0x0000ff, linewidth: 2 });
+            let pathBase = [];
             for (const contour of contours) {
-                // Transform 2D contour points back to 3D using orthonormal basis
-                const points3D: THREE.Vector3[] = [];
-                for (const point2D of contour) {
-                    const point3D = origin.clone()
-                        .add(viewX.clone().multiplyScalar(point2D.x))
-                        .add(viewY.clone().multiplyScalar(point2D.y));
-                    points3D.push(point3D);
+                for (const poly of contour) {
+                    let cutCurves = cutPolygon(poly, new THREE.Vector2(0, 1), 0);
+                    console.log(cutCurves);
+
+                    if (cutCurves.length === 0) {
+                        // not intersecting (bug)
+                        const points3D: THREE.Vector3[] = [];
+                        for (const point2D of poly) {
+                            const point3D = origin.clone()
+                                .add(viewX.clone().multiplyScalar(point2D.x))
+                                .add(viewY.clone().multiplyScalar(point2D.y));
+                            points3D.push(point3D);
+                        }
+                        const geometry = new THREE.BufferGeometry().setFromPoints(points3D);
+                        const lineLoop = new THREE.LineLoop(geometry, material);
+                        contourObjects.push(lineLoop);
+                    } else {
+                        cutCurves = [cutCurves[1]]; // TODO: fix
+                        let pos = true;
+                        for (const cutCurve of cutCurves) {
+                            const points3D: THREE.Vector3[] = [];
+                            const points3DWork: THREE.Vector3[] = [];
+                            for (const point2D of cutCurve) {
+                                const point3D = origin.clone()
+                                    .add(viewX.clone().multiplyScalar(point2D.x))
+                                    .add(viewY.clone().multiplyScalar(point2D.y));
+                                points3D.push(point3D);
+
+                                const points3DW = new THREE.Vector3(-19, 0, 0)
+                                    .add(new THREE.Vector3(0, 1, 0).multiplyScalar(point2D.x))
+                                    .add(new THREE.Vector3(1, 0, 0).multiplyScalar(point2D.y));
+                                points3DWork.push(points3DW);
+                            }
+                            const geometry = new THREE.BufferGeometry().setFromPoints(points3D);
+                            const line = new THREE.Line(geometry, pos ? material : material2);
+                            contourObjects.push(line);
+                            pos = !pos;
+                            pathBase = points3DWork;
+                        }
+                    }
                 }
-
-                const geometry = new THREE.BufferGeometry().setFromPoints(points3D);
-                const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
-                const lineLoop = new THREE.LineLoop(geometry, material);
-                contourObjects.push(lineLoop);
             }
-
             this.framework.updateVis("misc", contourObjects);
+
+            const evacLength = 2;
+            const insP = pathBase[0].clone().add(new THREE.Vector3(0, -evacLength, 0))
+            pathBase.splice(0, 0, insP);
+
+            const insQ = pathBase[pathBase.length - 1].clone().add(new THREE.Vector3(0, evacLength, 0))
+            pathBase.push(insQ);
+
+            const geom = new THREE.BufferGeometry().setFromPoints(pathBase);
+            const line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 }));
+            this.framework.updateVis("path-base", [line], true);
+
+            const safeZ = 60;
+            const opZ = 40;
+
+            const wrap = (type, x, y, z) => {
+                return {
+                    type: type,
+                    axisValues: {
+                        x: x,
+                        y: y,
+                        z: z,
+                        b: 0,
+                        c: 0,
+                    },
+                    // dummy
+                    tipPosM: new THREE.Vector3(),
+                    tipPosW: new THREE.Vector3(),
+                    tipNormalW: new THREE.Vector3(),
+                    sweep: 0,
+                    group: "",
+                };
+            };
+
+            this.planPath = [];
+            this.planPath.push(wrap("move", insP.x, insP.y, safeZ));
+            this.planPath.push(wrap("move", insP.x, insP.y, opZ));
+            this.planPath = this.planPath.concat(pathBase.map(pt => wrap("remove-work", pt.x, pt.y, opZ)));
+            this.planPath.push(wrap("move", insQ.x, insQ.y, safeZ));
         }
     }
 
