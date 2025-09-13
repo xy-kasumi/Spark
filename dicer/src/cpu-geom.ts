@@ -5,7 +5,7 @@
  * 
  * See https://iquilezles.org/articles/distfunctions/ for nice introduction to SDF.
  */
-import { Vector3 } from 'three';
+import { Vector3, Vector2 } from 'three';
 
 /**
  * Common interface for voxel grid geometry properties.
@@ -355,3 +355,88 @@ export class VoxelGridCpu implements VoxelGrid {
         return new Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(this.res).add(this.ofs);
     }
 }
+
+
+/**
+ * Return the intersection point of the line segment (p, q) and line (normal, ofs), by assuming they're intersecting.
+ */
+const isectLineAlways = (p: Vector2, q: Vector2, normal: Vector2, ofs: number): Vector2 => {
+    const tp = normal.dot(p);
+    const tq = normal.dot(q);
+    const dt = tq - tp;
+    if (Math.abs(dt) < 1e-6) {
+        // can't determine (parallel). return mid-point.
+        return p.clone().add(q).multiplyScalar(0.5);
+    }
+    let k = (ofs - tp) / (tq - tp);
+    k = Math.max(0, Math.min(1, k));
+    return p.clone().lerp(q, k);
+};
+
+/**
+ * Cut a closed polygon (CCW) by the line into curves.
+ * Returned curve is ordered in [positive-side, negative-side, positive-side, ...] order.
+ * In [curve0, curve1, ...], curve0.last = curve1.first, so on.
+ * Returned array length will be always even, and each element will contain at least 2 points.
+ * Returns empty array if the polygon does not intersect with the line.
+ * 
+ * New points will be synthesized to represent intersection points.
+ * 
+ * line: {p | dot(p, normal) = ofs}
+ * @param poly Closed polygon (CCW)
+ * @param normal line normal (must be normalized)
+ */
+export const cutPolygon = (poly: Vector2[], normal: Vector2, ofs: number): Vector2[][] => {
+    const len = poly.length;
+    if (len < 2) {
+        throw "Invalid polygon";
+    }
+
+    const prev = (ix) => (ix + len - 1) % len;
+
+    const sides: boolean[] = [];
+    for (const point of poly) {
+        sides.push(normal.dot(point) - ofs >= 0);
+    }
+
+    // Early exit when poly is not intersecting.
+    if (sides.every((_, ix) => sides[ix]) || sides.every((_, ix) => !sides[ix])) {
+        return [];
+    }
+
+    // Find starting point of pos-side segment.
+    const firstPosIx = sides.findIndex((v, ix) => !sides[prev(ix)] && v);
+    console.assert(firstPosIx >= 0);
+
+    const segments: Vector2[][] = [];
+    let currSeg: Vector2[] = [];
+    for (let dix = 0; dix < len; dix++) {
+        const ix = (firstPosIx + dix) % len;
+
+        if (sides[ix] !== sides[prev(ix)]) {
+            // end previous segment (open)
+            if (currSeg.length > 0) {
+                segments.push(currSeg);
+                currSeg = [];
+            }
+            // start new segment with cut point (closed).
+            const cutPoint = isectLineAlways(poly[prev(ix)], poly[ix], normal, ofs);
+            currSeg.push(cutPoint);
+        }
+        currSeg.push(poly[ix]);
+    }
+    // end last segment.
+    if (currSeg.length > 0) {
+        segments.push(currSeg);
+    }
+    console.assert(segments.length % 2 === 0);
+
+    // Augment: (closed,open) -> (closed,closed)
+    for (let segIx = 0; segIx < segments.length; segIx++) {
+        const seg = segments[segIx];
+        const nextSeg = segments[(segIx + 1) % segments.length];
+        console.assert(nextSeg.length >= 1);
+        seg.push(nextSeg[0]);
+    }
+    return segments;
+};
