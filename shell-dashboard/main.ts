@@ -579,6 +579,34 @@ const app = Vue.createApp({
         },
 
         /**
+         * Coordinate System: Machine coordinates
+         */
+        setMachineCoords() {
+            client.enqueueCommand("G53");
+        },
+
+        /**
+         * Coordinate System: Work coordinates
+         */
+        setWorkCoords() {
+            client.enqueueCommand("G55");
+        },
+
+        /**
+         * Coordinate System: Grinder coordinates
+         */
+        setGrinderCoords() {
+            client.enqueueCommand("G54");
+        },
+
+        /**
+         * Coordinate System: Tool supply coordinates
+         */
+        setToolSupplyCoords() {
+            client.enqueueCommand("G56");
+        },
+
+        /**
          * REFRESH button handler for Settings
          */
         async refreshSettings() {
