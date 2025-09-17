@@ -162,7 +162,7 @@ class SpoolerController {
                 } else {
                     const isIdle = line.content.startsWith('I');
                     if (isIdle) {
-                        if (line.content.startsWith('I Spark corefw')) {
+                        if (line.content.startsWith('init ')) {
                             this.handleReboot();
                         }
                         this.setState('idle', this.parseStatus(line.content));

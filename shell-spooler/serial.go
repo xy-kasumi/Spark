@@ -29,7 +29,7 @@ func initSerial(portName string, baud int, storage *lineStorage) *serialHandler 
 	sh := &serialHandler{
 		port:    port,
 		storage: storage,
-		writeCh: make(chan string, 100),
+		writeCh: make(chan string, 10_000_000),
 	}
 
 	go sh.readLoop()
@@ -82,6 +82,20 @@ func (sh *serialHandler) writeLoop() {
 
 func (sh *serialHandler) writeLine(line string) {
 	sh.writeCh <- line
+}
+
+func (sh *serialHandler) writeQueueLength() int {
+	return len(sh.writeCh)
+}
+
+func (sh *serialHandler) drainWriteQueue() {
+	for {
+		select {
+		case <-sh.writeCh:
+		default:
+			return // nothing in writeCh now
+		}
+	}
 }
 
 func (sh *serialHandler) Close() {

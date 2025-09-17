@@ -46,6 +46,19 @@ type lineInfo struct {
 	Time    string `json:"time"`    // timestamp of the line in format "2006-01-02 15:04:05.000" (local time)
 }
 
+type getStatusRequest struct {
+}
+
+type getStatusResponse struct {
+	Busy bool `json:"busy"`
+}
+
+type clearQueueRequest struct {
+}
+
+type clearQueueResponse struct {
+}
+
 type setInitRequest struct {
 	Lines []string `json:"lines"`
 }
@@ -169,7 +182,6 @@ func main() {
 		return
 	}
 
-	// HTTP handler to write a single line
 	http.HandleFunc("/write-line", func(w http.ResponseWriter, r *http.Request) {
 		if !handleCommom(w, r) {
 			return
@@ -203,7 +215,6 @@ func main() {
 		respondJson(w, &resp)
 	})
 
-	// HTTP handler to query lines
 	http.HandleFunc("/query-lines", func(w http.ResponseWriter, r *http.Request) {
 		if !handleCommom(w, r) {
 			return
@@ -323,7 +334,43 @@ func main() {
 		respondJson(w, &resp)
 	})
 
-	// HTTP handler to set init lines
+	http.HandleFunc("/clear-queue", func(w http.ResponseWriter, r *http.Request) {
+		if !handleCommom(w, r) {
+			return
+		}
+
+		slog.Debug("/clear-queue")
+		var req clearQueueRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "invalid JSON: %v", err)
+			return
+		}
+
+		ser.drainWriteQueue()
+
+		var resp clearQueueResponse
+		respondJson(w, &resp)
+	})
+
+	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		if !handleCommom(w, r) {
+			return
+		}
+
+		slog.Debug("/status")
+		var req getStatusRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "invalid JSON: %v", err)
+			return
+		}
+
+		var resp getStatusResponse
+		resp.Busy = ser.writeQueueLength() > 0
+		respondJson(w, &resp)
+	})
+
 	http.HandleFunc("/set-init", func(w http.ResponseWriter, r *http.Request) {
 		if !handleCommom(w, r) {
 			return
@@ -358,7 +405,6 @@ func main() {
 		respondJson(w, &resp)
 	})
 
-	// HTTP handler to get init lines
 	http.HandleFunc("/get-init", func(w http.ResponseWriter, r *http.Request) {
 		if !handleCommom(w, r) {
 			return

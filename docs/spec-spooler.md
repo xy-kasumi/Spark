@@ -160,6 +160,55 @@ Response
 }
 ```
 
+### POST /status
+
+Get spooler status.
+
+**Request Type**
+
+```typescript
+{}
+```
+
+**Response Type**
+
+```typescript
+{
+  busy: bool // Spooler queue contains unsent payloads
+}
+```
+
+**Examples**
+
+Request:
+```json
+{}
+```
+
+Response:
+```json
+{
+  "busy": false
+}
+```
+
+### POST /clear-queue
+
+Clear spooler down queue.
+
+**Request Type**
+
+```typescript
+{}
+```
+
+**Response Type**
+
+```typescript
+{}
+```
+
+
 ### POST /set-init
 
 Set content of init lines. The content will be persisted as a file across spooler reboot.
