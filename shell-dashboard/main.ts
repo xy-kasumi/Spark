@@ -610,50 +610,18 @@ const app = Vue.createApp({
          * REFRESH button handler for Settings
          */
         async refreshSettings() {
-            const getLineNum = await client.waitUntilSent('get');
+            client.enqueueCommand("get");
 
-            // Poll for response every 250ms with 1s timeout
-            const startTime = Date.now();
-            const timeout = 1000; // 1 second
-            let idleLineNum: number | null = null;
+            await new Promise(resolve => setTimeout(resolve, 500));
 
-            while (Date.now() - startTime < timeout) {
-                await new Promise(resolve => setTimeout(resolve, 250));
-
-                // Query for "I" response from line after get command
-                const result = await spoolerApi.queryLines(host, {
-                    from_line: getLineNum + 1,
-                    filter_dir: "up",
-                    filter_regex: "^I"
-                });
-
-                if (result.lines.length > 0) {
-                    idleLineNum = result.lines[0].line_num;
-                    break;
-                }
-            }
-
-            if (idleLineNum === null) {
-                console.error("get didn't complete within 1 second");
+            // TODO: limit to one after "get" somehow
+            const res = await spoolerApi.getLatestSettings(host);
+            if (res === null) {
+                console.error("get didn't result in settings within 500ms");
                 return;
             }
 
-            // Query key-value pairs between get and idle
-            const keyValResult = await spoolerApi.queryLines(host, {
-                from_line: getLineNum + 1,
-                to_line: idleLineNum,
-                filter_dir: "up",
-                filter_regex: "^> [A-Za-z0-9.]+ ([0-9.]|-)+$"
-            });
-
-            // Parse and convert to key-value dict
-            const machineSettings: Record<string, number> = {};
-            for (const line of keyValResult.lines) {
-                const content = line.content;
-                const [key, value] = content.substring(2).split(' ');
-                machineSettings[key] = parseFloat(value) as number;
-            }
-
+            const machineSettings = res.settings;
             console.log('Machine settings retrieved:', machineSettings);
 
             // Update machine settings

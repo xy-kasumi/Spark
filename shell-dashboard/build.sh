@@ -20,7 +20,6 @@ tsc
 # Copy HTML and CSS files
 echo "Copying static files..."
 cp index.html dist/
-cp pure-min.css dist/
 cp vue.global.js dist/
 cp logo.png dist/
 

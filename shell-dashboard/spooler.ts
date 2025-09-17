@@ -29,7 +29,7 @@ class SpoolerController {
 
     private isPolling: boolean;
 
-    private commandQueue: Array<{command: string, onSent: ((line: number) => void) | null}>;
+    private commandQueue: Array<{ command: string, onSent: ((line: number) => void) | null }>;
 
     private state: SpoolerState;
     private statusText: string;
@@ -261,32 +261,6 @@ class SpoolerController {
     }
 
     /**
-     * Add a command to the queue and wait until it is sent
-     * @param command - Command string to enqueue and wait for
-     * @returns Promise that resolves to the assigned line number when command is sent
-     */
-    async waitUntilSent(command: string): Promise<number> {
-        // Remove G-code style comments (everything after semicolon)
-        const withoutComment = command.split(';')[0].trim();
-
-        if (withoutComment.length === 0) {
-            throw new Error('Empty command cannot be sent');
-        }
-
-        return new Promise<number>((resolve, reject) => {
-            const queueItem = {
-                command: withoutComment,
-                onSent: (lineNum: number) => resolve(lineNum)
-            };
-
-            this.commandQueue.push(queueItem);
-            if (this.onQueueChange) {
-                this.onQueueChange();
-            }
-        });
-    }
-
-    /**
      * Add a command to the queue
      * @param command - Command string to enqueue (ignores empty commands and G-code comments)
      */
@@ -295,7 +269,7 @@ class SpoolerController {
         const withoutComment = command.split(';')[0].trim();
 
         if (withoutComment.length > 0) {
-            this.commandQueue.push({command: withoutComment, onSent: null});
+            this.commandQueue.push({ command: withoutComment, onSent: null });
             if (this.onQueueChange) {
                 this.onQueueChange();
             }
@@ -417,6 +391,51 @@ const spoolerApi = {
         }
 
         return await response.json();
+    },
+
+    async getLatestSettings(host: string): Promise<{ beginTime: string, settings: Record<string, number> } | null> {
+        const beginLineRes = await spoolerApi.queryLines(host, {
+            filter_dir: "up",
+            filter_regex: "^settings <.*$"
+        });
+        const endLineRes = await spoolerApi.queryLines(host, {
+            filter_dir: "up",
+            filter_regex: "^settings .*>$"
+        });
+
+        if (beginLineRes.count === 0 || endLineRes.count === 0) {
+            return null;
+        }
+
+        const beginLine = beginLineRes.lines[beginLineRes.lines.length - 1];
+        const endLine = endLineRes.lines[endLineRes.lines.length - 1];
+        if (endLine.line_num < beginLine.line_num) {
+            return null; // mid-transfer (seeing previous ">" and ongoing p-state "<")
+        }
+
+        const content = await spoolerApi.queryLines(host, {
+            from_line: beginLine.line_num,
+            to_line: endLine.line_num,
+            filter_dir: "up",
+            filter_regex: "^settings "
+        });
+
+        let settings: Record<string, number>;
+        for (const line of content.lines) {
+            const content = line.content;
+            for (let item of content.substring("settings ".length).split(' ')) {
+                item = item.trim();
+                if (item === "<") {
+                    settings = {};
+                } else if (item === ">") {
+                    break;
+                } else {
+                    const [key, value] = item.split(":");
+                    settings[key] = parseFloat(value) as number;
+                }
+            }
+        }
+        return { beginTime: beginLine.time, settings };
     },
 
     /**
