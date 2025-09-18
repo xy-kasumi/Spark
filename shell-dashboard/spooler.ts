@@ -29,8 +29,6 @@ class SpoolerController {
 
     private isPolling: boolean;
 
-    private commandQueue: Array<{ command: string, onSent: ((line: number) => void) | null }>;
-
     private state: SpoolerState;
     private statusText: string;
     private lastCommandTime: number; // unix time (seconds)
@@ -48,8 +46,6 @@ class SpoolerController {
         this.host = host;
         this.apiIntervalMs = pollMs;
         this.pingIntervalMs = pingIntervalMs;
-
-        this.commandQueue = [];
 
         this.isPolling = false;
 
@@ -108,25 +104,16 @@ class SpoolerController {
         while (this.isPolling) {
             await this.fetchNewLines();
 
-            // Process commands only when idle
-            if (this.state === 'idle') {
-                await this.processCommandQueue();
-            }
-
             // Handle ping timing for appropriate states  
             const timeSinceLastCommand = Date.now() - this.lastCommandTime;
             const sendPing =
                 (timeSinceLastCommand >= this.pingIntervalMs) &&
-                (this.state === 'idle' || this.state === 'unknown' || this.state === 'board-offline') &&
-                (this.commandQueue.length === 0);
+                (this.state === 'idle' || this.state === 'unknown' || this.state === 'board-offline');
             if (sendPing) {
-                await this.sendCommand('ping', true);
+                await this.sendCommand('?pos', true);
             }
 
-            // Use fast polling when queue has items or just sent ping, normal polling otherwise.
-            // Former accelerates queue processing, latter reduces blocking time of ping.
-            const delay = (this.commandQueue.length > 0 || sendPing) ? SpoolerController.FAST_INTERVAL_MS : intervalMs;
-            await this.delay(delay);
+            await this.delay(intervalMs);
         }
     }
 
@@ -183,8 +170,9 @@ class SpoolerController {
      * @returns Status text or null if not parseable
      */
     private parseStatus(line: string): string | null {
-        if (line.startsWith('I ready ')) {
-            return line.substring(8).trim();
+        const prefix = 'I pos ';
+        if (line.startsWith(prefix)) {
+            return line.substring(prefix.length).trim();
         }
         return null;
     }
@@ -194,35 +182,12 @@ class SpoolerController {
      */
     private handleReboot(): void {
         // Cancel pending commands
-        this.commandQueue.length = 0;
         if (this.onQueueChange) {
             this.onQueueChange();
         }
 
         if (this.onReboot) {
             this.onReboot();
-        }
-    }
-
-    /**
-     * Process command queue (assumes state check already done)
-     */
-    private async processCommandQueue(): Promise<void> {
-        if (this.commandQueue.length === 0) {
-            return;
-        }
-
-        const queueItem = this.commandQueue.shift()!;
-        if (this.onQueueChange) {
-            this.onQueueChange();
-        }
-        try {
-            const lineNum = await this.sendCommand(queueItem.command, false);
-            queueItem.onSent?.(lineNum);
-        } catch (error) {
-            // If sendCommand throws, the onSent callback is not called
-            // This allows waitUntilSent Promise to reject naturally
-            throw error;
         }
     }
 
@@ -266,21 +231,23 @@ class SpoolerController {
      */
     enqueueCommand(command: string): void {
         // Remove G-code style comments (everything after semicolon)
-        const withoutComment = command.split(';')[0].trim();
-
-        if (withoutComment.length > 0) {
-            this.commandQueue.push({ command: withoutComment, onSent: null });
-            if (this.onQueueChange) {
-                this.onQueueChange();
-            }
+        const cleanCommand = command.split(';')[0].trim();
+        if (cleanCommand.length > 100) {
+            throw new Error("Command too long");
         }
-    }
 
-    /**
-     * Get a copy of the current command queue
-     */
-    peekQueue(): string[] {
-        return this.commandQueue.map(item => item.command);
+        const send = async () => {
+            const response = await fetch(`${host}/write-line`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ line: cleanCommand })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+        };
+        send();
     }
 
     /**
@@ -288,7 +255,6 @@ class SpoolerController {
      */
     cancel(): void {
         // Clear queue
-        this.commandQueue.length = 0;
         if (this.onQueueChange) {
             this.onQueueChange();
         }
@@ -393,9 +359,7 @@ const spoolerApi = {
         return await response.json();
     },
 
-    async getLatestSettings(host: string): Promise<{ beginTime: string, settings: Record<string, number> } | null> {
-        const psName = "stg";
-
+    async getLatestPState(host: string, psName: string): Promise<{ beginTime: string, pstate: Record<string, number> } | null> {
         const beginLineRes = await spoolerApi.queryLines(host, {
             filter_dir: "up",
             filter_regex: `^${psName} <.*$`
@@ -422,22 +386,22 @@ const spoolerApi = {
             filter_regex: `^${psName} `
         });
 
-        let settings: Record<string, number>;
+        let pstate: Record<string, number>;
         for (const line of content.lines) {
             const content = line.content;
             for (let item of content.substring(`${psName} `.length).split(' ')) {
                 item = item.trim();
                 if (item === "<") {
-                    settings = {};
+                    pstate = {};
                 } else if (item === ">") {
                     break;
                 } else {
                     const [key, value] = item.split(":");
-                    settings[key] = parseFloat(value) as number;
+                    pstate[key] = parseFloat(value) as number;
                 }
             }
         }
-        return { beginTime: beginLine.time, settings };
+        return { beginTime: beginLine.time, pstate };
     },
 
     /**

@@ -264,7 +264,7 @@ const app = Vue.createApp({
         };
 
         client.onQueueChange = () => {
-            this.commandQueue = client.peekQueue();
+            this.commandQueue = [];
         };
 
         client.onReboot = () => {
@@ -347,9 +347,9 @@ const app = Vue.createApp({
             }
 
             // Extract first occurrence of X, Y, Z values
-            const xMatch = this.statusText.match(/X(-?\d+(?:\.\d+)?)/);
-            const yMatch = this.statusText.match(/Y(-?\d+(?:\.\d+)?)/);
-            const zMatch = this.statusText.match(/Z(-?\d+(?:\.\d+)?)/);
+            const xMatch = this.statusText.match(/m.x:(-?\d+(?:\.\d+)?)/);
+            const yMatch = this.statusText.match(/m.y:(-?\d+(?:\.\d+)?)/);
+            const zMatch = this.statusText.match(/m.z:(-?\d+(?:\.\d+)?)/);
 
             const x = xMatch ? parseFloat(xMatch[1]) : 0;
             const y = yMatch ? parseFloat(yMatch[1]) : 0;
@@ -615,13 +615,13 @@ const app = Vue.createApp({
             await new Promise(resolve => setTimeout(resolve, 500));
 
             // TODO: limit to one after "get" somehow
-            const res = await spoolerApi.getLatestSettings(host);
+            const res = await spoolerApi.getLatestPState(host, "stg");
             if (res === null) {
                 console.error("get didn't result in settings within 500ms");
                 return;
             }
 
-            const machineSettings = res.settings;
+            const machineSettings = res.pstate;
             console.log('Machine settings retrieved:', machineSettings);
 
             // Update machine settings
