@@ -24,16 +24,12 @@ type SpoolerState = 'api-offline' | 'board-offline' | 'idle' | 'unknown' | 'busy
 class SpoolerController {
     private readonly host: string;
     private readonly apiIntervalMs: number;
-    private readonly pingIntervalMs: number;
-    private static readonly FAST_INTERVAL_MS = 10;
 
     private isPolling: boolean;
 
     private state: SpoolerState;
-    private statusText: string;
-    private lastCommandTime: number; // unix time (seconds)
 
-    public onUpdate: ((state: SpoolerState, status: string) => void) | null;
+    public onUpdate: ((state: SpoolerState, status: Record<string, any>) => void) | null;
     public onQueueChange: (() => void) | null;
     public onReboot: (() => void) | null;
 
@@ -45,40 +41,16 @@ class SpoolerController {
     constructor(host: string, pollMs = 500, pingIntervalMs = 5000) {
         this.host = host;
         this.apiIntervalMs = pollMs;
-        this.pingIntervalMs = pingIntervalMs;
 
         this.isPolling = false;
 
         // Enhanced status tracking
         this.state = 'unknown';
-        this.statusText = '';
-        this.lastCommandTime = 0;
 
         // Callbacks for UI updates
         this.onUpdate = null;
         this.onQueueChange = null;
         this.onReboot = null;
-    }
-
-    /**
-     * Set state and notify callback
-     * @param newState - New state value
-     * @param newStatus - Optional status text
-     */
-    private setState(newState: SpoolerState, newStatus?: string): void {
-        const stateChanged = this.state !== newState;
-        const statusChanged = newStatus !== undefined && this.statusText !== newStatus;
-
-        if (stateChanged) {
-            this.state = newState;
-        }
-        if (statusChanged) {
-            this.statusText = newStatus!;
-        }
-
-        if ((stateChanged || statusChanged) && this.onUpdate) {
-            this.onUpdate(this.state, this.statusText);
-        }
     }
 
     /**
@@ -102,79 +74,16 @@ class SpoolerController {
      */
     private async pollLoop(intervalMs: number): Promise<void> {
         while (this.isPolling) {
-            await this.fetchNewLines();
+            await this.sendCommand('?pos', true);
 
-            // Handle ping timing for appropriate states  
-            const timeSinceLastCommand = Date.now() - this.lastCommandTime;
-            const sendPing =
-                (timeSinceLastCommand >= this.pingIntervalMs) &&
-                (this.state === 'idle' || this.state === 'unknown' || this.state === 'board-offline');
-            if (sendPing) {
-                await this.sendCommand('?pos', true);
+            const latestPos = await spoolerApi.getLatestPState(this.host, "pos");
+            if (latestPos !== null) {
+                this.state = "idle";
+                this.onUpdate(this.state, latestPos.pstate);
             }
 
             await this.delay(intervalMs);
         }
-    }
-
-    /**
-     * Fetch new lines from the spooler
-     */
-    private async fetchNewLines(): Promise<void> {
-        try {
-            const response = await fetch(`${this.host}/query-lines`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    tail: 1
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            const { lines, count, now }: { lines: LogLine[], count: number, now: string } = await response.json();
-
-            if (count === 0) {
-                this.setState('unknown');
-            } else {
-                const line = lines[lines.length - 1];
-                if (line.dir === 'down') {
-                    if (line.content.startsWith('!')) {
-                        this.setState('unknown');
-                    } else {
-                        this.setState('busy');
-                    }
-                } else {
-                    const isIdle = line.content.startsWith('I');
-                    if (isIdle) {
-                        if (line.content.startsWith('init ')) {
-                            this.handleReboot();
-                        }
-                        this.setState('idle', this.parseStatus(line.content));
-                    } else {
-                        this.setState('busy');
-                    }
-                }
-            }
-        } catch (error) {
-            this.setState('api-offline');
-            console.log("spooler error", error);
-        }
-    }
-
-    /**
-     * Parse machine status from "I ready ..." lines
-     * @param line - Status line content
-     * @returns Status text or null if not parseable
-     */
-    private parseStatus(line: string): string | null {
-        const prefix = 'I pos ';
-        if (line.startsWith(prefix)) {
-            return line.substring(prefix.length).trim();
-        }
-        return null;
     }
 
     /**
@@ -211,16 +120,13 @@ class SpoolerController {
 
             const { line_num }: { line_num: number, time: string } = await response.json();
 
-            // Record when command was sent
-            this.lastCommandTime = Date.now();
-
             // Set appropriate busy state
-            this.setState(isHealthcheck ? 'busy-healthcheck' : 'busy');
+            this.state = isHealthcheck ? 'busy-healthcheck' : 'busy';
 
             return line_num;
         } catch (error) {
             // Command failed, set state to offline
-            this.setState('api-offline');
+            this.state = 'api-offline';
             throw error;
         }
     }
@@ -279,38 +185,19 @@ class SpoolerController {
     }
 }
 
-
 /**
- * Calculates Adler-32 checksum for binary data.
- * @param data - Binary data to checksum
- * @returns 32-bit unsigned checksum
- */
-function calculateAdler32(data: Uint8Array): number {
-    let a = 1, b = 0;
-    const MOD_ADLER = 65521;
-
-    for (let i = 0; i < data.length; i++) {
-        a = (a + data[i]) % MOD_ADLER;
-        b = (b + a) % MOD_ADLER;
-    }
-
-    return ((b << 16) | a) >>> 0;
-}
-
-/**
- * Parses ">blob <base64> <checksum>" line and validates payload.
- * @param blobLine - Line containing ">blob <base64> <checksum>"
+ * Parses "blob <base64>" line and validates payload.
+ * @param blobLine - Line containing "blob <base64>"
  * @returns Verified binary payload
  * @throws On invalid format or checksum mismatch
  */
 function parseBlobPayload(blobLine: string): Uint8Array {
     const parts = blobLine.split(' ');
-    if (parts.length < 3 || parts[0] !== ">blob") {
+    if (parts.length != 2 || parts[0] !== "blob") {
         throw new Error("Invalid blob format");
     }
 
     const base64Payload = parts[1];
-    const expectedChecksum = parts[2];
 
     // decode base64 payload (URL-safe without padding)
     let binaryData: Uint8Array;
@@ -323,12 +210,6 @@ function parseBlobPayload(blobLine: string): Uint8Array {
         }
     } catch (e) {
         throw new Error("Failed to decode base64: " + e.message);
-    }
-
-    // verify checksum
-    const actualChecksum = calculateAdler32(binaryData);
-    if (actualChecksum.toString(16).padStart(8, '0') !== expectedChecksum) {
-        throw new Error("Checksum mismatch");
     }
 
     return binaryData;
@@ -359,7 +240,7 @@ const spoolerApi = {
         return await response.json();
     },
 
-    async getLatestPState(host: string, psName: string): Promise<{ beginTime: string, pstate: Record<string, number> } | null> {
+    async getLatestPState(host: string, psName: string): Promise<{ beginTime: string, pstate: Record<string, any> } | null> {
         const beginLineRes = await spoolerApi.queryLines(host, {
             filter_dir: "up",
             filter_regex: `^${psName} <.*$`
@@ -381,12 +262,12 @@ const spoolerApi = {
 
         const content = await spoolerApi.queryLines(host, {
             from_line: beginLine.line_num,
-            to_line: endLine.line_num,
+            to_line: endLine.line_num + 1,
             filter_dir: "up",
             filter_regex: `^${psName} `
         });
 
-        let pstate: Record<string, number>;
+        let pstate: Record<string, any>;
         for (const line of content.lines) {
             const content = line.content;
             for (let item of content.substring(`${psName} `.length).split(' ')) {
@@ -397,9 +278,27 @@ const spoolerApi = {
                     break;
                 } else {
                     const [key, value] = item.split(":");
-                    pstate[key] = parseFloat(value) as number;
+                    if (value === "true") {
+                        pstate[key] = true;
+                    } else if (value === "false") {
+                        pstate[key] = false;
+                    } else if (value.startsWith('"')) {
+                        // TODO: unescape
+                        pstate[key] = value.substring(1, value.length - 1);
+                    } else {
+                        const maybeNum = parseFloat(value) as number;
+                        if (!isNaN(maybeNum)) {
+                            pstate[key] = maybeNum;
+                        } else {
+                            console.warn(`Ignoring invalid pstate item: key=${key}, value=${value}`);
+                        }
+                    }
                 }
             }
+        }
+        if (pstate === undefined) {
+            console.warn("broken pstate; '<' not found. Highly likely a bug.");
+            return null;
         }
         return { beginTime: beginLine.time, pstate };
     },
@@ -413,7 +312,7 @@ const spoolerApi = {
         try {
             const result = await this.queryLines(host, {
                 filter_dir: "up",
-                filter_regex: "^>blob"
+                filter_regex: "^blob"
             });
             if (result.lines.length === 0) {
                 return null;

@@ -314,7 +314,7 @@
                 <div class="widget" id="widget-jog">
                     <h1>Jog</h1>
                     <div class="widget-content">
-                        <div>Position: {{ statusText == "" ? "Unknown" : statusText }}</div><br />
+                        <div>Position: {{ JSON.stringify(statusData) }}</div><br />
                         <table class="jog-table">
                             <tr>
                                 <td></td>

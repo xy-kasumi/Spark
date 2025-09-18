@@ -123,7 +123,7 @@ const app = Vue.createApp({
             // UI State
             commandText: '',
             clientStatus: 'unknown',
-            statusText: '',
+            statusData: {} as Record<string, number>,
             commandQueue: [],
             rebootTime: null as string | null,
             assumeInitialized: true, // true if we think init commands were executed or enqueued
@@ -260,7 +260,7 @@ const app = Vue.createApp({
         // Setup callbacks
         client.onUpdate = (state, status) => {
             this.clientStatus = state;
-            this.statusText = status;
+            this.statusData = status;
         };
 
         client.onQueueChange = () => {
@@ -342,20 +342,11 @@ const app = Vue.createApp({
          * Parse current position from statusText
          */
         currentPos(): { x: number, y: number, z: number } {
-            if (!this.statusText) {
-                return { x: 0, y: 0, z: 0 };
-            }
-
-            // Extract first occurrence of X, Y, Z values
-            const xMatch = this.statusText.match(/m.x:(-?\d+(?:\.\d+)?)/);
-            const yMatch = this.statusText.match(/m.y:(-?\d+(?:\.\d+)?)/);
-            const zMatch = this.statusText.match(/m.z:(-?\d+(?:\.\d+)?)/);
-
-            const x = xMatch ? parseFloat(xMatch[1]) : 0;
-            const y = yMatch ? parseFloat(yMatch[1]) : 0;
-            const z = zMatch ? parseFloat(zMatch[1]) : 0;
-
-            return { x, y, z };
+            return {
+                x: this.statusData["m.x"],
+                y: this.statusData["m.y"],
+                z: this.statusData["m.z"],
+            };
         },
 
         /**
