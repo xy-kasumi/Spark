@@ -394,13 +394,15 @@ const spoolerApi = {
     },
 
     async getLatestSettings(host: string): Promise<{ beginTime: string, settings: Record<string, number> } | null> {
+        const psName = "stg";
+
         const beginLineRes = await spoolerApi.queryLines(host, {
             filter_dir: "up",
-            filter_regex: "^settings <.*$"
+            filter_regex: `^${psName} <.*$`
         });
         const endLineRes = await spoolerApi.queryLines(host, {
             filter_dir: "up",
-            filter_regex: "^settings .*>$"
+            filter_regex: `^${psName} .*>$`
         });
 
         if (beginLineRes.count === 0 || endLineRes.count === 0) {
@@ -417,13 +419,13 @@ const spoolerApi = {
             from_line: beginLine.line_num,
             to_line: endLine.line_num,
             filter_dir: "up",
-            filter_regex: "^settings "
+            filter_regex: `^${psName} `
         });
 
         let settings: Record<string, number>;
         for (const line of content.lines) {
             const content = line.content;
-            for (let item of content.substring("settings ".length).split(' ')) {
+            for (let item of content.substring(`${psName} `.length).split(' ')) {
                 item = item.trim();
                 if (item === "<") {
                     settings = {};
