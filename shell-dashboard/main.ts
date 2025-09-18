@@ -255,7 +255,7 @@ const app = Vue.createApp({
 
     mounted() {
         // Initialize client
-        client = new SpoolerController(host, 1000);
+        client = new SpoolerController(host, 5000);
 
         // Setup callbacks
         client.onUpdate = (state, status) => {
