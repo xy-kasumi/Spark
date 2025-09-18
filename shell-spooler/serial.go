@@ -4,9 +4,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"log/slog"
 	"strings"
 	"time"
+	"unicode"
 
 	"go.bug.st/serial"
 )
@@ -44,12 +46,24 @@ func (sh *serialHandler) readLoop() {
 
 	for {
 		// Read line from serial
-		line, err := r.ReadString('\n')
+		lineBytes, err := r.ReadBytes('\n')
 		if err != nil {
 			slog.Error("Serial port read error", "error", err)
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
+
+		// Discard CRs & non-printables.
+		line := string(bytes.Map(func(r rune) rune {
+			switch r {
+			case '\r':
+				return -1
+			}
+			if unicode.IsPrint(r) {
+				return r
+			}
+			return -1
+		}, lineBytes))
 
 		line = strings.TrimSpace(line)
 		if line == "" {
