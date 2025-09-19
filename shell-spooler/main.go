@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -135,6 +136,39 @@ func writeInitLines(filePath string, lines []string) error {
 	return nil
 }
 
+// path: URL path (e.g. "/write-line")
+func registerJsonHandler[ReqT any, RespT any](path string, validate func(*ReqT) error, exec func(*ReqT) (*RespT, error)) {
+	http.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+		if !handleCommom(w, r) {
+			return
+		}
+
+		slog.Debug(path)
+		var req ReqT
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "invalid JSON: %v", err)
+			return
+		}
+
+		// Validate request
+		err := validate(&req)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "invalid request: %v", err)
+			return
+		}
+
+		resp, err := exec(&req)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			slog.Error("error during API processing", "error", err)
+			return
+		}
+		respondJson(w, resp)
+	})
+}
+
 func main() {
 	portName := flag.String("port", "COM3", "Serial port name")
 	baud := flag.Int("baud", 115200, "Serial port baud rate")
@@ -182,109 +216,71 @@ func main() {
 		return
 	}
 
-	http.HandleFunc("/write-line", func(w http.ResponseWriter, r *http.Request) {
-		if !handleCommom(w, r) {
-			return
-		}
-
-		slog.Debug("/write-line")
-		var req writeLineRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "invalid JSON: %v", err)
-			return
-		}
-
-		// Validate request
+	// Register RPC endpoints
+	validateWriteLine := func(req *writeLineRequest) error {
 		if strings.Contains(req.Line, "\n") {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "line cannot contain newline")
-			return
+			return errors.New("line cannot contain newline")
 		}
-
-		// Write to serial
+		return nil
+	}
+	execWriteLine := func(req *writeLineRequest) (*writeLineResponse, error) {
 		ser.writeLine(req.Line)
-
-		// Add to storage
 		lineNum, timestamp := storage.addLine("down", req.Line)
-
 		resp := writeLineResponse{
 			LineNum: lineNum,
 			Time:    formatSpoolerTime(timestamp),
 		}
-		respondJson(w, &resp)
-	})
+		return &resp, nil
+	}
+	registerJsonHandler("/write-line", validateWriteLine, execWriteLine)
 
-	http.HandleFunc("/query-lines", func(w http.ResponseWriter, r *http.Request) {
-		if !handleCommom(w, r) {
-			return
-		}
-
-		slog.Debug("/query-lines")
-		var req queryLinesRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "invalid JSON: %v", err)
-			return
-		}
-
+	validateQueryLines := func(req *queryLinesRequest) error {
 		tailExists := req.Tail != nil
 		rangeExists := req.FromLine != nil || req.ToLine != nil
 
 		// Validate range parameters
 		if tailExists && rangeExists {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "tail: cannot be used together ranges (from_line, to_line)")
-			return
+			return errors.New("tail: cannot be used together ranges (from_line, to_line)")
 		}
 		if rangeExists {
 			if req.FromLine != nil && *req.FromLine < 1 {
-				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintf(w, "from_line: must be >= 1")
-				return
+				return errors.New("from_line: must be >= 1")
 			}
 			if req.ToLine != nil && *req.ToLine < 1 {
-				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintf(w, "to_line: must be >= 1")
-				return
+				return errors.New("to_line: must be >= 1")
 			}
-
 			if (req.FromLine != nil && req.ToLine != nil) && *req.ToLine < *req.FromLine {
-				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintf(w, "to_line must be >= from_line")
-				return
+				return errors.New("to_line must be >= from_line")
 			}
 		}
 		if tailExists && *req.Tail < 1 {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "tail: must be >= 1")
-			return
+			return errors.New("tail: must be >= 1")
 		}
 
 		// Validate tail value if provided
 		if tailExists && *req.Tail <= 0 {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "tail: must be positive")
-			return
+			return errors.New("tail: must be positive")
 		}
 
 		// Validate filter_dir
 		if req.FilterDir != "" && req.FilterDir != "up" && req.FilterDir != "down" {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "filter_dir: must be 'up' or 'down'")
-			return
+			return errors.New("filter_dir: must be 'up' or 'down'")
 		}
 
 		// Compile regex if provided
+		if req.FilterRegex != "" {
+			_, err := regexp.Compile(req.FilterRegex)
+			if err != nil {
+				return fmt.Errorf("filter_regex: invalid regex %v", err)
+			}
+		}
+		return nil
+	}
+	execQueryLines := func(req *queryLinesRequest) (*queryLinesResponse, error) {
+		// Compile regex if provided
 		var filterRegex *regexp.Regexp
 		if req.FilterRegex != "" {
-			var err error
-			filterRegex, err = regexp.Compile(req.FilterRegex)
-			if err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintf(w, "filter_regex: invalid regex %v", err)
-				return
-			}
+			filterRegex, _ = regexp.Compile(req.FilterRegex)
 		}
 
 		// Build query options
@@ -294,6 +290,8 @@ func main() {
 		}
 
 		// Build scan range
+		tailExists := req.Tail != nil
+		rangeExists := req.FromLine != nil || req.ToLine != nil
 		if tailExists {
 			opts.Scan = TailScan{N: *req.Tail}
 		} else if rangeExists {
@@ -330,105 +328,59 @@ func main() {
 				Time:    formatSpoolerTime(l.time),
 			}
 		}
+		return &resp, nil
+	}
+	registerJsonHandler("/query-lines", validateQueryLines, execQueryLines)
 
-		respondJson(w, &resp)
-	})
-
-	http.HandleFunc("/clear-queue", func(w http.ResponseWriter, r *http.Request) {
-		if !handleCommom(w, r) {
-			return
-		}
-
-		slog.Debug("/clear-queue")
-		var req clearQueueRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "invalid JSON: %v", err)
-			return
-		}
-
+	validateClearQueue := func(req *clearQueueRequest) error {
+		return nil
+	}
+	execClearQueue := func(req *clearQueueRequest) (*clearQueueResponse, error) {
 		ser.drainWriteQueue()
+		return &clearQueueResponse{}, nil
+	}
+	registerJsonHandler("/clear-queue", validateClearQueue, execClearQueue)
 
-		var resp clearQueueResponse
-		respondJson(w, &resp)
-	})
-
-	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		if !handleCommom(w, r) {
-			return
+	validateGetStatus := func(req *getStatusRequest) error {
+		return nil
+	}
+	execGetStatus := func(req *getStatusRequest) (*getStatusResponse, error) {
+		resp := getStatusResponse{
+			Busy: ser.writeQueueLength() > 0,
 		}
+		return &resp, nil
+	}
+	registerJsonHandler("/status", validateGetStatus, execGetStatus)
 
-		slog.Debug("/status")
-		var req getStatusRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "invalid JSON: %v", err)
-			return
-		}
-
-		var resp getStatusResponse
-		resp.Busy = ser.writeQueueLength() > 0
-		respondJson(w, &resp)
-	})
-
-	http.HandleFunc("/set-init", func(w http.ResponseWriter, r *http.Request) {
-		if !handleCommom(w, r) {
-			return
-		}
-
-		slog.Debug("/set-init")
-		var req setInitRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "invalid JSON: %v", err)
-			return
-		}
-
-		// Validate
+	validateSetInit := func(req *setInitRequest) error {
 		for _, line := range req.Lines {
 			if strings.Contains(line, "\n") {
-				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintf(w, "lines: must not contain newline")
-				return
+				return errors.New("lines: must not contain newline")
 			}
 		}
-
-		// Save
+		return nil
+	}
+	execSetInit := func(req *setInitRequest) (*setInitResponse, error) {
 		if err := writeInitLines(initFileAbs, req.Lines); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			slog.Error("Failed to write init file", "error", err)
-			return
+			return nil, fmt.Errorf("failed to write init file: %w", err)
 		}
-
 		slog.Info("Init lines updated")
-		resp := setInitResponse{}
-		respondJson(w, &resp)
-	})
+		return &setInitResponse{}, nil
+	}
+	registerJsonHandler("/set-init", validateSetInit, execSetInit)
 
-	http.HandleFunc("/get-init", func(w http.ResponseWriter, r *http.Request) {
-		if !handleCommom(w, r) {
-			return
-		}
-
-		slog.Debug("/get-init")
-		var req getInitRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "invalid JSON: %v", err)
-			return
-		}
-
-		// Read current init lines
+	validateGetInit := func(req *getInitRequest) error {
+		return nil
+	}
+	execGetInit := func(req *getInitRequest) (*getInitResponse, error) {
 		lines, err := fetchInitLines(initFileAbs)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			slog.Error("Failed to read init file", "error", err)
-			return
+			return nil, fmt.Errorf("failed to read init file: %w", err)
 		}
 
-		resp := getInitResponse{Lines: lines}
-		respondJson(w, &resp)
-	})
+		return &getInitResponse{Lines: lines}, nil
+	}
+	registerJsonHandler("/get-init", validateGetInit, execGetInit)
 
 	slog.Info("HTTP server started", "port", *addr)
 	if err := http.ListenAndServe(*addr, nil); err != nil {
