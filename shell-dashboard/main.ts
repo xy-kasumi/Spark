@@ -426,6 +426,7 @@ const app = Vue.createApp({
          */
         jogXPlus() {
             client.enqueueCommand(`G0 X${(this.currentPos().x + this.jogStepMm).toFixed(3)}`);
+            client.enqueueCommand('?pos');
         },
 
         /**
@@ -433,6 +434,7 @@ const app = Vue.createApp({
          */
         jogXMinus() {
             client.enqueueCommand(`G0 X${(this.currentPos().x - this.jogStepMm).toFixed(3)}`);
+            client.enqueueCommand('?pos');
         },
 
         /**
@@ -440,6 +442,7 @@ const app = Vue.createApp({
          */
         jogYPlus() {
             client.enqueueCommand(`G0 Y${(this.currentPos().y + this.jogStepMm).toFixed(3)}`);
+            client.enqueueCommand('?pos');
         },
 
         /**
@@ -447,6 +450,7 @@ const app = Vue.createApp({
          */
         jogYMinus() {
             client.enqueueCommand(`G0 Y${(this.currentPos().y - this.jogStepMm).toFixed(3)}`);
+            client.enqueueCommand('?pos');
         },
 
         /**
@@ -454,6 +458,7 @@ const app = Vue.createApp({
          */
         jogZPlus() {
             client.enqueueCommand(`G0 Z${(this.currentPos().z + this.jogStepMm).toFixed(3)}`);
+            client.enqueueCommand('?pos');
         },
 
         /**
@@ -461,6 +466,7 @@ const app = Vue.createApp({
          */
         jogZMinus() {
             client.enqueueCommand(`G0 Z${(this.currentPos().z - this.jogStepMm).toFixed(3)}`);
+            client.enqueueCommand('?pos');
         },
 
         /**

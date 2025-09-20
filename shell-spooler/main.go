@@ -22,8 +22,7 @@ type writeLineRequest struct {
 }
 
 type writeLineResponse struct {
-	LineNum int    `json:"line_num"`
-	Time    string `json:"time"`
+	Now string `json:"now"`
 }
 
 type queryLinesRequest struct {
@@ -225,10 +224,9 @@ func main() {
 	}
 	execWriteLine := func(req *writeLineRequest) (*writeLineResponse, error) {
 		ser.writeLine(req.Line)
-		lineNum, timestamp := storage.addLine("down", req.Line)
+
 		resp := writeLineResponse{
-			LineNum: lineNum,
-			Time:    formatSpoolerTime(timestamp),
+			Now: formatSpoolerTime(time.Now()),
 		}
 		return &resp, nil
 	}

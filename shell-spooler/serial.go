@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -14,9 +15,81 @@ import (
 )
 
 type serialHandler struct {
-	port    serial.Port
-	storage *lineStorage
-	writeCh chan string
+	port      serial.Port
+	storage   *lineStorage
+	writeCh   chan string
+	ps        *pstate
+	signalCh  chan string
+	commandCh chan string
+}
+
+type pstate struct {
+	partial  map[string]map[string]string
+	complete map[string]map[string]string
+}
+
+func newPstate() *pstate {
+	return &pstate{
+		partial:  make(map[string]map[string]string),
+		complete: make(map[string]map[string]string),
+	}
+}
+
+func (ps *pstate) update(line string) {
+	tokens := strings.Split(line, " ")
+	if len(tokens) < 1 {
+		return
+	}
+	psType := tokens[0]
+	for _, token := range tokens[1:] {
+		switch token {
+		case "<":
+			ps.partial[psType] = map[string]string{}
+		case ">":
+			m, ok := ps.partial[psType]
+			if !ok {
+				slog.Warn("Received '>' without matching '<'", "type", psType)
+				continue
+			}
+			ps.complete[psType] = m
+		default:
+			// K:V
+			m, ok := ps.partial[psType]
+			if !ok {
+				slog.Warn("Received pstate key-value without matching '<'", "type", psType)
+				continue
+			}
+			kv := strings.SplitN(token, ":", 2)
+			if len(kv) != 2 {
+				slog.Warn("Received malformed pstate", "payload", line)
+				continue
+			}
+			m[kv[0]] = kv[1]
+		}
+	}
+}
+
+type psQueue struct {
+	Cap int
+	Num int
+}
+
+func (ps *pstate) getQueue() (psQueue, bool) {
+	m, ok := ps.complete["queue"]
+	if !ok {
+		return psQueue{}, false
+	}
+	capStr, ok1 := m["cap"]
+	numStr, ok2 := m["num"]
+	if !ok1 || !ok2 {
+		return psQueue{}, false
+	}
+	cap, err1 := strconv.Atoi(capStr)
+	num, err2 := strconv.Atoi(numStr)
+	if err1 != nil || err2 != nil {
+		return psQueue{}, false
+	}
+	return psQueue{Cap: cap, Num: num}, true
 }
 
 func initSerial(portName string, baud int, storage *lineStorage) *serialHandler {
@@ -29,13 +102,21 @@ func initSerial(portName string, baud int, storage *lineStorage) *serialHandler 
 	slog.Info("Opened serial port", "port", portName, "baud", baud)
 
 	sh := &serialHandler{
-		port:    port,
-		storage: storage,
-		writeCh: make(chan string, 10_000_000),
+		port:      port,
+		storage:   storage,
+		writeCh:   make(chan string),
+		ps:        newPstate(),
+		signalCh:  make(chan string, 10),
+		commandCh: make(chan string, 10_000_000),
 	}
 
+	// transport layer
 	go sh.readLoop()
 	go sh.writeLoop()
+
+	// application layer
+	go sh.pollQueueStatus()
+	go sh.feedCore()
 
 	return sh
 }
@@ -65,15 +146,13 @@ func (sh *serialHandler) readLoop() {
 			return -1
 		}, lineBytes))
 
-		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 
-		slog.Debug("Received", "line", line)
-
-		// Add to storage
 		sh.storage.addLine("up", line)
+		sh.ps.update(line)
+		slog.Debug("Received", "line", line)
 	}
 }
 
@@ -90,22 +169,65 @@ func (sh *serialHandler) writeLoop() {
 			continue
 		}
 
+		sh.storage.addLine("down", line)
 		slog.Debug("Sent", "line", line)
 	}
 }
 
+func (sh *serialHandler) feedCore() {
+	maxFillRate := 0.8
+	for {
+		// Send signal whenever available
+		select {
+		case line := <-sh.signalCh:
+			sh.writeCh <- line
+			continue
+		default:
+		}
+
+		// Send command only when queue is not too filled
+		qs, ok := sh.ps.getQueue()
+		if !ok {
+			continue
+		}
+		currFillRate := float64(qs.Num) / float64(qs.Cap)
+		if currFillRate >= maxFillRate {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		select {
+		case line := <-sh.commandCh:
+			sh.writeCh <- line
+		default:
+		}
+	}
+}
+
+func (sh *serialHandler) pollQueueStatus() {
+	for {
+		if len(sh.commandCh) > 0 {
+			sh.signalCh <- "?queue"
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 func (sh *serialHandler) writeLine(line string) {
-	sh.writeCh <- line
+	if line[0] == '!' || line[0] == '?' {
+		sh.signalCh <- line
+	} else {
+		sh.commandCh <- line
+	}
 }
 
 func (sh *serialHandler) writeQueueLength() int {
-	return len(sh.writeCh)
+	return len(sh.commandCh)
 }
 
 func (sh *serialHandler) drainWriteQueue() {
 	for {
 		select {
-		case <-sh.writeCh:
+		case <-sh.commandCh:
 		default:
 			return // nothing in writeCh now
 		}

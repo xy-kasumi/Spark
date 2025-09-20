@@ -17,7 +17,8 @@ Spooler also serves as reliable comm log for debug purpose.
 
 ### POST /write-line
 
-Write a line to the serial device.
+Enqueue sending of a payload.
+It won't be sent if /clear-queue is called after /write-line and before actual sending.
 
 **Request Type**
 
@@ -31,8 +32,7 @@ Write a line to the serial device.
 
 ```typescript
 {
-  line_num: number  // Assigned line number
-  time: string      // Local timestamp "YYYY-MM-DD HH:MM:SS.mmm", just after line is sent to the device.
+  time: string      // Local timestamp "YYYY-MM-DD HH:MM:SS.mmm", time of enqueue
 }
 ```
 
@@ -48,8 +48,7 @@ Request:
 Response:
 ```json
 {
-  "line_num": 123,
-  "time": "2025-07-27 15:04:05.000"
+  "now": "2025-07-27 15:04:05.000"
 }
 ```
 
