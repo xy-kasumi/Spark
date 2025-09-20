@@ -218,7 +218,13 @@ func main() {
 	// Register RPC endpoints
 	validateWriteLine := func(req *writeLineRequest) error {
 		if strings.Contains(req.Line, "\n") {
-			return errors.New("line cannot contain newline")
+			return errors.New("payload cannot contain newline")
+		}
+		if len(req.Line) > 100 {
+			return errors.New("payload must be <= 100 byte")
+		}
+		if req.Line == "" {
+			return errors.New("payload cannot be empty")
 		}
 		return nil
 	}
