@@ -168,6 +168,43 @@ const app = Vue.createApp({
             }
         },
 
+        posLineLocal() {
+            if (this.statusData["sys"] === "machine") {
+                return "";
+            }
+
+            const prefixTable = {
+                "grinder": "g",
+                "toolsupply": "t",
+                "work": "w",
+            };
+            const sys = this.statusData["sys"];
+            const prefix = prefixTable[sys];
+            if (!prefix) {
+                return `(${sys}) unknown`;
+            }
+
+            const x = this.statusData[`${prefix}.x`];
+            const y = this.statusData[`${prefix}.y`];
+            const z = this.statusData[`${prefix}.z`];
+            const c = this.statusData[`${prefix}.c`];
+            if (x === undefined || y === undefined || z === undefined || c === undefined) {
+                return `(${sys}) unknown`;
+            }
+            return `(${sys}) X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(3)} C${c.toFixed(3)}`;
+        },
+
+        posLineMachine() {
+            const x = this.statusData["m.x"];
+            const y = this.statusData["m.y"];
+            const z = this.statusData["m.z"];
+            const c = this.statusData["m.c"];
+            if (x === undefined || y === undefined || z === undefined || c === undefined) {
+                return "(machine) unknown";
+            }
+            return `(machine) X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(3)} C${c.toFixed(3)}`;
+        },
+
         initButtonText() {
             return (this.clientStatus === 'idle' || this.clientStatus === 'busy-healthcheck') ? 'INIT' : 'ENQUEUE INIT';
         },

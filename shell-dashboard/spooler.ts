@@ -231,6 +231,8 @@ function parseBlobPayload(blobLine: string): Uint8Array {
  * This is separate from SpoolerController and provides raw API access.
  */
 const spoolerApi = {
+    psLatestBeginLines: new Map<string, number>(),
+
     /**
      * Query log lines from the spooler.
      * @param host - Base URL of the shell-spooler server
@@ -252,11 +254,14 @@ const spoolerApi = {
     },
 
     async getLatestPState(host: string, psName: string): Promise<{ beginTime: string, pstate: Record<string, any> } | null> {
+        const latestBeginLine = this.psLatestBeginLines.get(psName) || 1;
         const beginLineRes = await spoolerApi.queryLines(host, {
+            from_line: latestBeginLine,
             filter_dir: "up",
             filter_regex: `^${psName} <.*$`
         });
         const endLineRes = await spoolerApi.queryLines(host, {
+            from_line: latestBeginLine,
             filter_dir: "up",
             filter_regex: `^${psName} .*>$`
         });
@@ -311,6 +316,7 @@ const spoolerApi = {
             console.warn("broken pstate; '<' not found. Highly likely a bug.");
             return null;
         }
+        this.psLatestBeginLines.set(psName, beginLine.line_num);
         return { beginTime: beginLine.time, pstate };
     },
 
