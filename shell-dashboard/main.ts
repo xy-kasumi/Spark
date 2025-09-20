@@ -255,7 +255,7 @@ const app = Vue.createApp({
 
     mounted() {
         // Initialize client
-        client = new SpoolerController(host, 5000);
+        client = new SpoolerController(host);
 
         // Setup callbacks
         client.onUpdate = (state, status) => {
@@ -426,7 +426,7 @@ const app = Vue.createApp({
          */
         jogXPlus() {
             client.enqueueCommand(`G0 X${(this.currentPos().x + this.jogStepMm).toFixed(3)}`);
-            client.enqueueCommand('?pos');
+            client.requestPosUpdate();
         },
 
         /**
@@ -434,7 +434,7 @@ const app = Vue.createApp({
          */
         jogXMinus() {
             client.enqueueCommand(`G0 X${(this.currentPos().x - this.jogStepMm).toFixed(3)}`);
-            client.enqueueCommand('?pos');
+            client.requestPosUpdate();
         },
 
         /**
@@ -442,7 +442,7 @@ const app = Vue.createApp({
          */
         jogYPlus() {
             client.enqueueCommand(`G0 Y${(this.currentPos().y + this.jogStepMm).toFixed(3)}`);
-            client.enqueueCommand('?pos');
+            client.requestPosUpdate();
         },
 
         /**
@@ -450,7 +450,7 @@ const app = Vue.createApp({
          */
         jogYMinus() {
             client.enqueueCommand(`G0 Y${(this.currentPos().y - this.jogStepMm).toFixed(3)}`);
-            client.enqueueCommand('?pos');
+            client.requestPosUpdate();
         },
 
         /**
@@ -580,6 +580,7 @@ const app = Vue.createApp({
          */
         setMachineCoords() {
             client.enqueueCommand("G53");
+            client.requestPosUpdate();
         },
 
         /**
@@ -587,6 +588,7 @@ const app = Vue.createApp({
          */
         setWorkCoords() {
             client.enqueueCommand("G55");
+            client.requestPosUpdate();
         },
 
         /**
@@ -594,6 +596,7 @@ const app = Vue.createApp({
          */
         setGrinderCoords() {
             client.enqueueCommand("G54");
+            client.requestPosUpdate();
         },
 
         /**
@@ -601,6 +604,7 @@ const app = Vue.createApp({
          */
         setToolSupplyCoords() {
             client.enqueueCommand("G56");
+            client.requestPosUpdate();
         },
 
         /**

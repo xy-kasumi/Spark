@@ -27,6 +27,7 @@ class SpoolerController {
     private readonly pingIntervalMs: number;
 
     private isPolling: boolean;
+    private requestPos: boolean = false;
 
     private state: SpoolerState;
 
@@ -39,7 +40,7 @@ class SpoolerController {
      * @param pollIntervalMs API polling & state check interval in milliseconds
      * @param pingIntervalMs ping interval in milliseconds (must be multiples of pollMs)
      */
-    constructor(host: string, pollIntervalMs = 500, pingIntervalMs = 5000) {
+    constructor(host: string, pollIntervalMs = 100, pingIntervalMs = 5000) {
         this.host = host;
         this.pollIntervalMs = pollIntervalMs;
         this.pingIntervalMs = pingIntervalMs;
@@ -76,7 +77,8 @@ class SpoolerController {
     private async pollLoop(): Promise<void> {
         let lastPingTime = Date.now();
         while (this.isPolling) {
-            if (Date.now() - lastPingTime >= this.pingIntervalMs) {
+            if (this.requestPos || Date.now() - lastPingTime >= this.pingIntervalMs) {
+                this.requestPos = false;
                 await this.sendCommand('?pos', true);
                 lastPingTime = Date.now();
             }
@@ -89,6 +91,11 @@ class SpoolerController {
 
             await this.delay(this.pollIntervalMs);
         }
+    }
+
+    async requestPosUpdate() {
+        await this.delay(100); // hack to make request after command
+        this.requestPos = true;
     }
 
     /**
