@@ -33,7 +33,7 @@ AGPL, CERN-OHL, and Apache-2.0 also include *patent retaliation* clauses, promot
 | Source Sans 3       | SIL OFL 1.1      | <https://fonts.google.com/specimen/Source+Sans+3>       |
 | lil-gui             | MIT              | <https://github.com/georgealways/lil-gui>               |
 | vue.js              | MIT              | <https://github.com/vuejs/vue>                          |
-| pure-css            | BSD-3-Clause     | <https://github.com/pure-css/pure/>                     |
+| Manifold            | Apache-2.0       | <https://github.com/elalish/manifold>                   |
 | qunit               | MIT              | <https://github.com/qunitjs/qunit>                      |
 | cq-electronics      | MIT              | <https://github.com/sethfischer/cq-electronics>         |
 | go-serial           | BSD-3-Clause     | <https://github.com/bugst/go-serial>                    |
