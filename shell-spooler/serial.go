@@ -82,6 +82,7 @@ type psQueue struct {
 func (ps *pstate) getQueue() (psQueue, bool) {
 	ps.muComplete.Lock()
 	defer ps.muComplete.Unlock()
+
 	m, ok := ps.complete["queue"]
 	if !ok {
 		return psQueue{}, false
@@ -96,6 +97,7 @@ func (ps *pstate) getQueue() (psQueue, bool) {
 	if err1 != nil || err2 != nil {
 		return psQueue{}, false
 	}
+	delete(ps.complete, "queue")
 	return psQueue{Cap: cap, Num: num}, true
 }
 
@@ -122,8 +124,8 @@ func initSerial(portName string, baud int, storage *lineStorage) *serialHandler 
 	go sh.writeLoop()
 
 	// application layer
-	go sh.pollQueueStatus()
-	go sh.feedCore()
+	go sh.feedSignal()
+	go sh.feedCommand()
 
 	return sh
 }
@@ -181,30 +183,50 @@ func (sh *serialHandler) writeLoop() {
 	}
 }
 
-func (sh *serialHandler) feedCore() {
-	maxFillRate := 0.8
+func (sh *serialHandler) feedSignal() {
 	for {
-		// Send signal whenever available
-		select {
-		case line := <-sh.signalCh:
-			sh.writeCh <- line
-			continue
-		default:
+		line := <-sh.signalCh
+		sh.writeCh <- line
+	}
+}
+
+func (sh *serialHandler) queryQueueBlocking() psQueue {
+	const queueSignalTimeout = 1 * time.Second
+	for {
+		sh.signalCh <- "?queue"
+		sent := time.Now()
+		for {
+			qs, ok := sh.ps.getQueue()
+			if ok {
+				return qs
+			}
+			if time.Now().After(sent.Add(queueSignalTimeout)) {
+				// queue signal timeout can happen in core reboot)
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
+
+func (sh *serialHandler) feedCommand() {
+	const maxFillRate = 0.75
+	okToSend := 0
+
+	for {
+		for {
+			if okToSend > 0 {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+			qs := sh.queryQueueBlocking()
+			okToSend = int(float64(qs.Cap)*maxFillRate) - qs.Num
 		}
 
-		// Send command only when queue is not too filled
-		time.Sleep(10 * time.Millisecond)
-		qs, ok := sh.ps.getQueue()
-		if !ok {
-			continue
-		}
-		currFillRate := float64(qs.Num) / float64(qs.Cap)
-		if currFillRate >= maxFillRate {
-			continue
-		}
 		select {
 		case line := <-sh.commandCh:
 			sh.writeCh <- line
+			okToSend--
 		default:
 		}
 	}
