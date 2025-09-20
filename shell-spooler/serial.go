@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -24,8 +25,10 @@ type serialHandler struct {
 }
 
 type pstate struct {
-	partial  map[string]map[string]string
-	complete map[string]map[string]string
+	partial map[string]map[string]string
+
+	muComplete sync.Mutex
+	complete   map[string]map[string]string
 }
 
 func newPstate() *pstate {
@@ -51,7 +54,9 @@ func (ps *pstate) update(line string) {
 				slog.Warn("Received '>' without matching '<'", "type", psType)
 				continue
 			}
+			ps.muComplete.Lock()
 			ps.complete[psType] = m
+			ps.muComplete.Unlock()
 		default:
 			// K:V
 			m, ok := ps.partial[psType]
@@ -75,6 +80,8 @@ type psQueue struct {
 }
 
 func (ps *pstate) getQueue() (psQueue, bool) {
+	ps.muComplete.Lock()
+	defer ps.muComplete.Unlock()
 	m, ok := ps.complete["queue"]
 	if !ok {
 		return psQueue{}, false
@@ -186,13 +193,13 @@ func (sh *serialHandler) feedCore() {
 		}
 
 		// Send command only when queue is not too filled
+		time.Sleep(10 * time.Millisecond)
 		qs, ok := sh.ps.getQueue()
 		if !ok {
 			continue
 		}
 		currFillRate := float64(qs.Num) / float64(qs.Cap)
 		if currFillRate >= maxFillRate {
-			time.Sleep(10 * time.Millisecond)
 			continue
 		}
 		select {
