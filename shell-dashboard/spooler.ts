@@ -142,29 +142,32 @@ class SpoolerController {
         }
     }
 
+    async enqueueCommands(commands: string[]): Promise<void> {
+        for (const command of commands) {
+            await this.enqueueCommand(command);
+        }
+    }
+
     /**
      * Add a command to the queue
      * @param command - Command string to enqueue (ignores empty commands and G-code comments)
      */
-    enqueueCommand(command: string): void {
+    async enqueueCommand(command: string): Promise<void> {
         // Remove G-code style comments (everything after semicolon)
         const cleanCommand = command.split(';')[0].trim();
         if (cleanCommand.length > 100) {
             throw new Error("Command too long");
         }
 
-        const send = async () => {
-            const response = await fetch(`${host}/write-line`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ line: cleanCommand })
-            });
+        const response = await fetch(`${host}/write-line`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ line: cleanCommand })
+        });
 
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-        };
-        send();
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
     }
 
     /**

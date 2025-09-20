@@ -358,9 +358,7 @@ const app = Vue.createApp({
                 return;
             }
 
-            for (const cmd of this.commands) {
-                client.enqueueCommand(cmd);
-            }
+            client.enqueueCommands(this.commands); // don't wait
 
             if (this.clearOnExec) {
                 this.commandText = '';
@@ -525,12 +523,14 @@ const app = Vue.createApp({
          * Tool supply: Unclamp
          */
         unclamp() {
-            [
-                "G0 C0",
-                "G0 C120",
-                "G0 C240",
-                "G0 C0",
-            ].forEach(cmd => client.enqueueCommand(cmd));
+            client.enqueueCommands(
+                [
+                    "G0 C0",
+                    "G0 C120",
+                    "G0 C240",
+                    "G0 C0",
+                ]
+            );
         },
 
         /**
@@ -548,15 +548,18 @@ const app = Vue.createApp({
         },
 
         moveToTs() {
-            [
-                "G56",
-                `G0 X0 Y0 Z${tsPulledZ.toFixed(3)}`,
-            ].forEach(cmd => client.enqueueCommand(cmd));
+            client.enqueueCommands(
+                [
+                    "G56",
+                    `G0 X0 Y0 Z${tsPulledZ.toFixed(3)}`,
+                ]
+            );
         },
 
         tsInsert() {
-            client.enqueueCommand("G56"); // set again to make this work even if moveToTs was skipped
-            client.enqueueCommand(`G0 Z${tsJustBeforeInsertZ.toFixed(3)}`);
+            const cmds = [];
+            cmds.push("G56"); // set again to make this work even if moveToTs was skipped
+            cmds.push(`G0 Z${tsJustBeforeInsertZ.toFixed(3)}`);
 
             // Insert using square-helix path to align tool to the chuck.
             const halfWidth = 0.25;
@@ -572,7 +575,7 @@ const app = Vue.createApp({
                 const x = dx * halfWidth;
                 const y = dy * halfWidth;
                 const z = tsJustBeforeInsertZ + ofs * dirZ;
-                client.enqueueCommand(`G0 X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(3)}`);
+                cmds.push(`G0 X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(3)}`);
 
                 const nextOfs = ofs + quarterPitch;
                 if (nextOfs >= durZ) {
@@ -586,14 +589,18 @@ const app = Vue.createApp({
             }
 
             // return to center for final point.
-            client.enqueueCommand(`G0 X0 Y0 Z${tsFullInsertZ.toFixed(3)}`);
+            cmds.push(`G0 X0 Y0 Z${tsFullInsertZ.toFixed(3)}`);
+
+            client.enqueueCommands(cmds);
         },
 
         tsPull() {
-            [
-                `G0 Z${tsPulledZ.toFixed(3)}`,
-                "G53", // back to machine coordinates
-            ].forEach(cmd => client.enqueueCommand(cmd));
+            client.enqueueCommands(
+                [
+                    `G0 Z${tsPulledZ.toFixed(3)}`,
+                    "G53", // back to machine coordinates
+                ]
+            );
         },
 
         executeAttach() {
