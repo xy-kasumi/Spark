@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -38,8 +39,61 @@ func newPstate() *pstate {
 	}
 }
 
+// e.g. "pos < sys:"a b" a.b:2 >" -> ["pos", "<", `sys:"a b"`, "a.b:2", ">"]
+// won't do much extra validation
+func splitPsTokens(payload string) ([]string, error) {
+	var toks []string
+	var buf []rune
+	inQuote := false
+	inEscape := false
+	for _, ch := range payload {
+		if inEscape {
+			if ch == '\\' {
+				buf = append(buf, '\\')
+			} else if ch == '"' {
+				buf = append(buf, '"')
+			} else {
+				return nil, errors.New("invalid escape sequence" + string(ch))
+			}
+			inEscape = false
+		} else if inQuote {
+			if ch == '\\' {
+				inEscape = true
+			} else {
+				if ch == '"' {
+					inQuote = false
+				}
+				buf = append(buf, ch)
+			}
+		} else {
+			if ch == ' ' {
+				if len(buf) > 0 {
+					toks = append(toks, string(buf))
+					buf = nil
+				}
+			} else {
+				if ch == '"' {
+					inQuote = true
+				}
+				buf = append(buf, ch)
+			}
+		}
+	}
+	if len(buf) > 0 {
+		toks = append(toks, string(buf))
+	}
+	if inQuote || inEscape {
+		return nil, errors.New("unclosed quote or escape")
+	}
+	return toks, nil
+}
+
 func (ps *pstate) update(line string) {
-	tokens := strings.Split(line, " ")
+	tokens, err := splitPsTokens(line)
+	if err != nil {
+		slog.Warn("Malformed pstate", "error", err)
+		return
+	}
 	if len(tokens) < 1 {
 		return
 	}
