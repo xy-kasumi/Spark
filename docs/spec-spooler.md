@@ -1,9 +1,17 @@
 # Spooler Spec
 
-Spooler is line-based I/O buffer between UIs (e.g. shell-dashboard) and the core.
+Spooler is  I/O buffer between UIs (e.g. shell-dashboard) and the core.
 
-Spooler doesn't know about core protocols or G-code. It just assumes it's line-based bi-directional stream.
-Implementation of UIs can be stateless by relying on query capability of the spooler.
+Spooler communicates with the core via serial port, and provides HTTP API.
+UI implementations can be stateless by querying spooler as needed.
+
+Within the [protocol](https://github.com/xy-kasumi/Spark-corefw/blob/main/spec/protocol.md), spooler knows
+* Transport layer
+* P-states
+* Signals (e.g. difference between "!", "?queue")
+
+Spooler does not know
+* G-code, Commands (e.g. what "G1" or "set" means)
 
 Spooler also serves as reliable comm log for debug purpose.
 
@@ -15,26 +23,38 @@ Spooler also serves as reliable comm log for debug purpose.
 
 ## HTTP API
 
+Spooler uses HTTP as RPC.
+All API is POST, both request & response are `application/json`.
+
+It sticks to just 3 types of status codes.
+* 200 OK: Request is processed succesfully, response is JSON.
+* 400 Bad Request: Returned for non-comforming (syntax or semantics) request. Response is human-readable error text.
+* 500 Internal Server Error: Request seemed ok, but somehow processing failed. Response is human-readable error text.
+
 ### POST /write-line
 
 Enqueue sending of a payload.
 It won't be sent if /clear-queue is called after /write-line and before actual sending.
+Signals will be immediately sent even if a job is running.
+If any job is `WAITING` or `RUNNING`, /write-line of commands will fail.
 
-**Request Type**
+**Request Schema**
 
-```typescript
-{
-  line: string  // Line content (no newlines allowed)
-}
+```yaml
+properties:
+  line: {type: string}
 ```
+* `line`: a valid payload. (between 1~100 bytes, does not contain newline, etc.)
 
-**Response Type**
+**Response Schema**
 
-```typescript
-{
-  time: string      // Local timestamp "YYYY-MM-DD HH:MM:SS.mmm", time of enqueue
-}
+```yaml
+properties:
+  ok: {type: bool}
+  time: {type: string}
 ```
+* `ok`: commands was enqueued
+* `time`: time of spooler enqueue (timestamp)
 
 **Examples**
 
@@ -48,13 +68,14 @@ Request:
 Response:
 ```json
 {
-  "now": "2025-07-27 15:04:05.000"
+  "ok": true,
+  "now": "2025-07-27 15:04:05.000Z"
 }
 ```
 
 ### POST /query-lines
 
-Query logged lines.
+Query raw payloads.
 
 **Request Type**
 
@@ -94,7 +115,7 @@ Filter
     line_num: number  // Line number
     dir: "up" | "down"  // Direction
     content: string   // Line content
-    time: string      // Local timestamp "YYYY-MM-DD HH:MM:SS.mmm"
+    time: string      // Timestamp
   }>
   now: string         // Current spooler time
 }
@@ -161,21 +182,31 @@ Response
 
 ### POST /status
 
-Get spooler status.
+Get spooler status summary.
 
 **Request Type**
 
-```typescript
+```json
 {}
 ```
 
-**Response Type**
+**Response Schema**
 
-```typescript
-{
-  busy: bool // Spooler queue contains unsent payloads
-}
+```yaml
+properties:
+  busy: {type: bool}
+  command_queue:
+    properties:
+      spooler: {type: int}
+      core: {type: int}
+      job: {type: int}
 ```
+
+* `busy`: some commands are pending to execute (or being executed). Signals do not count as busy.
+* `command_queue`: current queue size of various place
+  * `spooler`: commands by `/write-line` queued in spooler
+  * `core`: command queued in core
+  * `job`: remaining commands in `WAITING` or `RUNNING`
 
 **Examples**
 
@@ -187,7 +218,11 @@ Request:
 Response:
 ```json
 {
-  "busy": false
+  "busy": true,
+  "command_queue": {
+    "spooler": 13,
+    "core": 24
+  }
 }
 ```
 
@@ -261,3 +296,164 @@ Request:
   "content": ["set cs.g.pos.x 1", "set cs.g.pos.x 2"]
 }
 ```
+
+### POST /add-job
+
+Add a "job", which is a collection of commands and periodic signals.
+Add only succeeds if all existing jobs are ended (`CANCELED` or `COMPLETED`).
+
+Job only starts executing when command queue of both spooler and core become is fully empty.
+Job completes when all `commands` are sent and core queue become fully empty.
+
+**Request Schema**
+```yaml
+properties:
+  commands:
+    elements: {type: string}
+  signals:
+    values: {type: float32}
+```
+
+* `commands`: list of commands to be executed
+* `signals`: list of signals to be periodically executed
+
+**Response Schema**
+```yaml
+properties:
+  ok: {type: bool}
+optionalProperties:
+  job_id: {type: string}
+```
+
+* `job_id`: Unique id describing the job in the spooler session. Undef if !ok.
+
+**Examples**
+Request
+```json
+{
+  "commands": [
+    "set m.x 3",
+    "G0 X10 Y10",
+    ...
+  ],
+  "signals": {
+    "?pos": 1,
+    "?edm": 0.5
+  }
+}
+```
+
+Response
+```json
+{
+  "ok": true,
+  "job_id": "A3zF"
+}
+```
+
+### POST /list-jobs
+
+List all added jobs.
+
+**Request**
+```json
+{}
+```
+
+**Response Schema**
+```yaml
+elements:
+  properties:
+    job_id: {type: string}
+    status:
+      enum: [WAITING, RUNNING, COMPLETED, CANCELED]
+    time_added: {type: string}
+  optionalProperties:
+    time_started: {type: string}
+    time_ended: {type: string}
+```
+
+* `status`: Current status of the job
+  * `WAITING`: added but not started (time_started, time_ended are undef)
+  * `RUNNING`: job is currently being executed (time_started exists, time_ended is undef)
+  * `COMPLETED`: entirety of job was executed (time_started, time_ended exists)
+  * `CANCELED`: job was cancled without becoming completed (time_started, time_ended exists)
+* `time_added`, `time_started`, `time_ended`: timestamps
+
+
+### POST /query-ts
+
+Query time-series data from p-state.
+
+**Request Schema**
+```yaml
+properties:
+  start: {type: string}
+  end: {type: string}
+  step: {type: float32}
+  query:
+    elements: {type: string}
+```
+
+* `start`, `end`: timestamps to specify time range, inclusive. End >= start.
+* `step`: resolution in seconds (> 0)
+* `query`: p-state tags and keys to query in `<tag>.<keys>` format
+
+`start`, `end`, `step` determines query timestamps like
+* start + step * 0, start + step * 1, ...
+  * this continues until end. The last element can be smaller than, or same as end.
+  * in valid request, this will always contain at least one element (start)
+
+For each timestamp T, latest original data point in window [T-step, T] is returned.
+Query will never re-sample the data.
+
+**Response Schema**
+```yaml
+properties:
+  times:
+    elements: {type: float64}
+  values:
+    values: {}
+```
+
+* `times`: sequence of Unix timestamps, as calculated by `start`, `end`, `step`.
+* `values`: sequence of data. null if data is missing.
+
+All the arrays (`times`, and each element of `values`) has same length.
+
+**Examples**
+Request
+```json
+{
+  "start": "2025-01-01 15:00:00.000Z",
+  "end": "2025-01-01 15:10:00.000Z",
+  "step": 60,
+  "query": ["pos.x", "edm.open"]
+}
+```
+
+Response
+```json
+{
+  "times": [
+    1735711200,
+    1735711260,
+    ...
+    1735711800
+  ],
+  "values": {
+    "pos.sys": ["machine", "machine", "work", ...],
+    "edm.open": [0.1, 0.2, ...]
+  }
+}
+```
+
+### Appendix: Timestamps
+All timestamps use [RFC3339](https://datatracker.ietf.org/doc/html/rfc3339) timestamp.
+
+For readability and precision, implementations should:
+* Use local time offset instead of UTC ("Z")
+* Use millisecond precision
+* Allow " " for "T" separator
+
+Example: "2025-01-02 23:03:48.123+09:00"
