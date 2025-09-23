@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"bytes"
 	"log/slog"
-	"sync"
 	"time"
 	"unicode"
 
@@ -15,17 +14,11 @@ import (
 
 type transport struct {
 	port    serial.Port
-	storage *LineDB
-	logger  *PayloadLogger
+	handler CommHandler
 	writeCh chan string
-	onRecv  func(string)
-
-	// lineNum assignment
-	lineNumMu  sync.Mutex
-	nextLineNum int
 }
 
-func initTransport(serialPort string, baud int, storage *LineDB, logger *PayloadLogger, onRecv func(string)) (*transport, error) {
+func initTransport(serialPort string, baud int, handler CommHandler) (*transport, error) {
 	mode := &serial.Mode{BaudRate: baud}
 	port, err := serial.Open(serialPort, mode)
 	if err != nil {
@@ -34,12 +27,9 @@ func initTransport(serialPort string, baud int, storage *LineDB, logger *Payload
 	slog.Info("Opened serial port", "port", serialPort, "baud", baud)
 
 	tran := &transport{
-		port:        port,
-		storage:     storage,
-		logger:      logger,
-		writeCh:     make(chan string),
-		onRecv:      onRecv,
-		nextLineNum: 1,
+		port:    port,
+		handler: handler,
+		writeCh: make(chan string),
 	}
 
 	go tran.readLoop()
@@ -81,8 +71,7 @@ func (tran *transport) readLoop() {
 			continue
 		}
 
-		tran.addLineAtomic("up", payload)
-		tran.onRecv(payload)
+		tran.handler.PayloadRecv(payload)
 		slog.Debug("Received", "line", payload)
 	}
 }
@@ -100,23 +89,11 @@ func (tran *transport) writeLoop() {
 			continue
 		}
 
-		tran.addLineAtomic("down", line)
+		tran.handler.PayloadSent(line)
 		slog.Debug("Sent", "line", line)
 	}
 }
 
-func (tran *transport) addLineAtomic(dir string, payload string) {
-	tran.lineNumMu.Lock()
-	defer tran.lineNumMu.Unlock()
-
-	lineNum := tran.nextLineNum
-	tran.nextLineNum++
-
-	tran.storage.addLine(lineNum, dir, payload)
-	tran.logger.AddLine(lineNum, dir, payload)
-}
-
 func (tran *transport) Close() {
 	tran.port.Close()
-	tran.logger.Close()
 }

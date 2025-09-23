@@ -13,8 +13,46 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
+
+// CommHandler implementation that handles storage and logging
+type mainCommHandler struct {
+	storage *LineDB
+	logger  *PayloadLogger
+
+	// line serialization
+	lineNumMu   sync.Mutex
+	nextLineNum int
+}
+
+func (h *mainCommHandler) PayloadSent(payload string) {
+	h.addLineAtomic("down", payload)
+}
+
+func (h *mainCommHandler) PayloadRecv(payload string) {
+	h.addLineAtomic("up", payload)
+}
+
+func (h *mainCommHandler) PStateRecv(tag string, ps PState) {
+	// TBD
+}
+
+func (h *mainCommHandler) addLineAtomic(dir string, payload string) {
+	h.lineNumMu.Lock()
+	defer h.lineNumMu.Unlock()
+
+	lineNum := h.nextLineNum
+	h.nextLineNum++
+
+	h.storage.addLine(lineNum, dir, payload)
+	h.logger.AddLine(lineNum, dir, payload)
+}
+
+func (h *mainCommHandler) Close() {
+	h.logger.Close()
+}
 
 // Line-based API
 type writeLineRequest struct {
@@ -204,8 +242,16 @@ func main() {
 	logger := NewPayloadLogger(logDirAbs)
 	defer logger.Close()
 
+	// Initialize comm handler
+	handler := &mainCommHandler{
+		storage:     storage,
+		logger:      logger,
+		nextLineNum: 1,
+	}
+	defer handler.Close()
+
 	// Initialize serial protocol
-	comm, err := initComm(*portName, *baud, storage, logger)
+	comm, err := initComm(*portName, *baud, handler)
 	if err != nil {
 		slog.Error("Failed to initialize comm", "port", portName, "baud", baud, "error", err)
 		return

@@ -160,11 +160,31 @@ func (ps *pstateParser) getQueue() (psQueue, bool) {
 	return psQueue{Cap: cap, Num: num}, true
 }
 
-func initComm(serialPort string, baud int, storage *LineDB, logger *PayloadLogger) (*comm, error) {
+type commHandlerWithParser struct {
+	handler CommHandler
+	parser  *pstateParser
+}
+
+func (h *commHandlerWithParser) PayloadSent(payload string) {
+	h.handler.PayloadSent(payload)
+}
+
+func (h *commHandlerWithParser) PayloadRecv(payload string) {
+	h.handler.PayloadRecv(payload)
+	h.parser.update(payload)
+}
+
+func (h *commHandlerWithParser) PStateRecv(tag string, ps PState) {
+	h.handler.PStateRecv(tag, ps)
+}
+
+func initComm(serialPort string, baud int, handler CommHandler) (*comm, error) {
 	ps := newPstateParser()
-	tran, err := initTransport(serialPort, baud, storage, logger, func(payload string) {
-		ps.update(payload)
-	})
+	handlerWithParser := &commHandlerWithParser{
+		handler: handler,
+		parser:  ps,
+	}
+	tran, err := initTransport(serialPort, baud, handlerWithParser)
 	if err != nil {
 		return nil, err
 	}
