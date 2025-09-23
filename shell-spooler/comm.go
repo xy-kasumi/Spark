@@ -3,23 +3,16 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"errors"
 	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"unicode"
-
-	"go.bug.st/serial"
 )
 
-type serialHandler struct {
-	port      serial.Port
-	storage   *lineStorage
-	writeCh   chan string
+type comm struct {
+	tran      *transport
 	ps        *pstate
 	signalCh  chan string
 	commandCh chan string
@@ -155,102 +148,41 @@ func (ps *pstate) getQueue() (psQueue, bool) {
 	return psQueue{Cap: cap, Num: num}, true
 }
 
-func initSerial(portName string, baud int, storage *lineStorage) *serialHandler {
-	mode := &serial.Mode{BaudRate: baud}
-	port, err := serial.Open(portName, mode)
+func initComm(serialPort string, baud int, storage *lineStorage) (*comm, error) {
+	ps := newPstate()
+	tran, err := initTransport(serialPort, baud, storage, func(payload string) {
+		ps.update(payload)
+	})
 	if err != nil {
-		slog.Error("Failed to open serial port", "port", portName, "baud", baud, "error", err)
-		return nil
+		return nil, err
 	}
-	slog.Info("Opened serial port", "port", portName, "baud", baud)
-
-	sh := &serialHandler{
-		port:      port,
-		storage:   storage,
-		writeCh:   make(chan string),
-		ps:        newPstate(),
+	cm := &comm{
+		tran:      tran,
+		ps:        ps,
 		signalCh:  make(chan string, 10),
 		commandCh: make(chan string, 10_000_000),
 	}
 
-	// transport layer
-	go sh.readLoop()
-	go sh.writeLoop()
+	go cm.feedSignal()
+	go cm.feedCommand()
 
-	// application layer
-	go sh.feedSignal()
-	go sh.feedCommand()
-
-	return sh
+	return cm, nil
 }
 
-func (sh *serialHandler) readLoop() {
-	r := bufio.NewReader(sh.port)
-	slog.Debug("Starting serial read goroutine")
-
+func (cm *comm) feedSignal() {
 	for {
-		// Read line from serial
-		lineBytes, err := r.ReadBytes('\n')
-		if err != nil {
-			slog.Error("Serial port read error", "error", err)
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-
-		// Discard CRs & non-printables.
-		line := string(bytes.Map(func(r rune) rune {
-			switch r {
-			case '\r':
-				return -1
-			}
-			if unicode.IsPrint(r) {
-				return r
-			}
-			return -1
-		}, lineBytes))
-
-		if line == "" {
-			continue
-		}
-
-		sh.storage.addLine("up", line)
-		sh.ps.update(line)
-		slog.Debug("Received", "line", line)
+		line := <-cm.signalCh
+		cm.tran.sendPayload(line)
 	}
 }
 
-func (sh *serialHandler) writeLoop() {
-	for {
-		line := <-sh.writeCh
-
-		// Write to serial port
-		_, err := sh.port.Write([]byte(line + "\n"))
-		if err != nil {
-			slog.Error("Serial port write error", "error", err)
-			// Keep trying
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-
-		sh.storage.addLine("down", line)
-		slog.Debug("Sent", "line", line)
-	}
-}
-
-func (sh *serialHandler) feedSignal() {
-	for {
-		line := <-sh.signalCh
-		sh.writeCh <- line
-	}
-}
-
-func (sh *serialHandler) queryQueueBlocking() psQueue {
+func (cm *comm) queryQueueBlocking() psQueue {
 	const queueSignalTimeout = 1 * time.Second
 	for {
-		sh.signalCh <- "?queue"
+		cm.signalCh <- "?queue"
 		sent := time.Now()
 		for {
-			qs, ok := sh.ps.getQueue()
+			qs, ok := cm.ps.getQueue()
 			if ok {
 				return qs
 			}
@@ -263,7 +195,7 @@ func (sh *serialHandler) queryQueueBlocking() psQueue {
 	}
 }
 
-func (sh *serialHandler) feedCommand() {
+func (cm *comm) feedCommand() {
 	const maxFillRate = 0.75
 	okToSend := 0
 
@@ -273,50 +205,50 @@ func (sh *serialHandler) feedCommand() {
 				break
 			}
 			time.Sleep(100 * time.Millisecond)
-			qs := sh.queryQueueBlocking()
+			qs := cm.queryQueueBlocking()
 			okToSend = int(float64(qs.Cap)*maxFillRate) - qs.Num
 		}
 
 		select {
-		case line := <-sh.commandCh:
-			sh.writeCh <- line
+		case line := <-cm.commandCh:
+			cm.tran.sendPayload(line)
 			okToSend--
 		default:
 		}
 	}
 }
 
-func (sh *serialHandler) pollQueueStatus() {
+func (cm *comm) pollQueueStatus() {
 	for {
-		if len(sh.commandCh) > 0 {
-			sh.signalCh <- "?queue"
+		if len(cm.commandCh) > 0 {
+			cm.signalCh <- "?queue"
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 }
 
-func (sh *serialHandler) writeLine(line string) {
+func (cm *comm) writeLine(line string) {
 	if line[0] == '!' || line[0] == '?' {
-		sh.signalCh <- line
+		cm.signalCh <- line
 	} else {
-		sh.commandCh <- line
+		cm.commandCh <- line
 	}
 }
 
-func (sh *serialHandler) writeQueueLength() int {
-	return len(sh.commandCh)
+func (cm *comm) writeQueueLength() int {
+	return len(cm.commandCh)
 }
 
-func (sh *serialHandler) drainWriteQueue() {
+func (cm *comm) drainWriteQueue() {
 	for {
 		select {
-		case <-sh.commandCh:
+		case <-cm.commandCh:
 		default:
 			return // nothing in writeCh now
 		}
 	}
 }
 
-func (sh *serialHandler) Close() {
-	sh.port.Close()
+func (cm *comm) Close() {
+	cm.tran.Close()
 }

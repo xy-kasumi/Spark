@@ -202,11 +202,12 @@ func main() {
 	defer storage.Close()
 
 	// Initialize serial protocol
-	ser := initSerial(*portName, *baud, storage)
-	if ser == nil {
+	comm, err := initComm(*portName, *baud, storage)
+	if err != nil {
+		slog.Error("Failed to initialize comm", "port", portName, "baud", baud, "error", err)
 		return
 	}
-	defer ser.Close()
+	defer comm.Close()
 
 	// Handle init file - always check and prepare init file regardless of noinit flag
 	_, err = fetchInitLines(initFileAbs)
@@ -229,7 +230,7 @@ func main() {
 		return nil
 	}
 	execWriteLine := func(req *writeLineRequest) (*writeLineResponse, error) {
-		ser.writeLine(req.Line)
+		comm.writeLine(req.Line)
 
 		resp := writeLineResponse{
 			Now: formatSpoolerTime(time.Now()),
@@ -340,7 +341,7 @@ func main() {
 		return nil
 	}
 	execClearQueue := func(req *clearQueueRequest) (*clearQueueResponse, error) {
-		ser.drainWriteQueue()
+		comm.drainWriteQueue()
 		return &clearQueueResponse{}, nil
 	}
 	registerJsonHandler("/clear-queue", validateClearQueue, execClearQueue)
@@ -350,7 +351,7 @@ func main() {
 	}
 	execGetStatus := func(req *getStatusRequest) (*getStatusResponse, error) {
 		resp := getStatusResponse{
-			Busy: ser.writeQueueLength() > 0,
+			Busy: comm.writeQueueLength() > 0,
 		}
 		return &resp, nil
 	}
