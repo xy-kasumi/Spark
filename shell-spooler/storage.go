@@ -3,12 +3,7 @@
 package main
 
 import (
-	"fmt"
-	"log/slog"
-	"os"
-	"path/filepath"
 	"regexp"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -28,112 +23,33 @@ func formatSpoolerTime(t time.Time) string {
 
 // Global line storage
 type lineStorage struct {
-	mu      sync.RWMutex
-	lines   []line
-	nextNum int
-	logFile *os.File
+	mu    sync.RWMutex
+	lines []line
 }
 
 // Create new lineStorage instance
-func newLineStorage(logDir string) *lineStorage {
-	ls := &lineStorage{
-		lines:   make([]line, 0),
-		nextNum: 1,
+func newLineStorage() *lineStorage {
+	return &lineStorage{
+		lines: make([]line, 0),
 	}
-
-	// Create log directory if it doesn't exist
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		slog.Error("Failed to create log directory", "dir", logDir, "error", err)
-		return ls
-	}
-
-	// Create log file
-	now := time.Now()
-
-	// Find next available filename for today
-	filename := ls.findNextFileName(logDir, now)
-	if filename == "" {
-		slog.Error("Failed to read log directory, continuing without log file", "dir", logDir)
-		return ls
-	}
-
-	logPath := filepath.Join(logDir, filename)
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		slog.Error("Failed to create log file", "path", logPath, "error", err)
-		return ls
-	}
-
-	ls.logFile = file
-	slog.Info("Created log file", "path", logPath)
-
-	return ls
 }
 
-// findNextFileName scans the log directory for existing session files
-// and returns the next available filename for today
-func (ls *lineStorage) findNextFileName(logDir string, now time.Time) string {
-	today := now.Format("2006-01-02")
 
-	entries, err := os.ReadDir(logDir)
-	if err != nil {
-		return ""
-	}
-	// Pattern to match: YYYY-MM-DD-sessN-serial.txt
-	pattern := regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})-sess(\d+)-serial\.txt$`)
-	maxSession := -1
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		matches := pattern.FindStringSubmatch(entry.Name())
-		if len(matches) == 3 {
-			fileDate := matches[1]
-			// Only consider files from today
-			if fileDate == today {
-				sessionNum, err := strconv.Atoi(matches[2])
-				if err == nil && sessionNum > maxSession {
-					maxSession = sessionNum
-				}
-			}
-		}
-	}
-
-	nextSession := maxSession + 1
-	return fmt.Sprintf("%s-sess%d-serial.txt", today, nextSession)
-}
-
-// Add a line to storage and log file
-func (ls *lineStorage) addLine(dir string, content string) (int, time.Time) {
+// Add a line to storage
+func (ls *lineStorage) addLine(lineNum int, dir string, content string) time.Time {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
 
 	now := time.Now()
 	l := line{
-		num:     ls.nextNum,
+		num:     lineNum,
 		dir:     dir,
 		content: content,
 		time:    now,
 	}
 	ls.lines = append(ls.lines, l)
-	ls.nextNum++
 
-	// Write to log file if available
-	if ls.logFile != nil {
-		logLine := fmt.Sprintf("%s %d %s %s\n",
-			formatSpoolerTime(now), l.num, dir, content)
-
-		if _, err := ls.logFile.WriteString(logLine); err != nil {
-			slog.Error("Failed to write to log file", "error", err)
-		} else {
-			// Flush to ensure immediate write
-			ls.logFile.Sync()
-		}
-	}
-
-	return l.num, now
+	return now
 }
 
 // ScanRange represents either a line range or tail mode
@@ -294,13 +210,3 @@ func (ls *lineStorage) queryTail(n int) []line {
 	return ls.lines[startIdx:]
 }
 
-// Close the storage and log file
-func (ls *lineStorage) Close() {
-	ls.mu.Lock()
-	defer ls.mu.Unlock()
-
-	if ls.logFile != nil {
-		ls.logFile.Close()
-		ls.logFile = nil
-	}
-}

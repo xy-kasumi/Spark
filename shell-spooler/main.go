@@ -198,11 +198,14 @@ func main() {
 	slog.Info("Using init file", "path", initFileAbs)
 
 	// Initialize line storage
-	storage := newLineStorage(logDirAbs)
-	defer storage.Close()
+	storage := newLineStorage()
+
+	// Initialize payload logger
+	logger := NewPayloadLogger(logDirAbs)
+	defer logger.Close()
 
 	// Initialize serial protocol
-	comm, err := initComm(*portName, *baud, storage)
+	comm, err := initComm(*portName, *baud, storage, logger)
 	if err != nil {
 		slog.Error("Failed to initialize comm", "port", portName, "baud", baud, "error", err)
 		return

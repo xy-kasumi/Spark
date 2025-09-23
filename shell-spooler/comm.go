@@ -11,22 +11,34 @@ import (
 	"time"
 )
 
+type CommHandler interface {
+	// Called when payload is definitely sent (ack-ed) to the core.
+	PayloadSent(payload string)
+	// Called when payload is definitely received (ack-ed) from the core.
+	PayloadRecv(payload string)
+	// Called when a p-state is definitely received (ack-ed and parsed ok) from the core.
+	PStateRecv(tag string, ps PState)
+}
+
+type PState struct {
+}
+
 type comm struct {
 	tran      *transport
-	ps        *pstate
+	psp       *pstateParser
 	signalCh  chan string
 	commandCh chan string
 }
 
-type pstate struct {
+type pstateParser struct {
 	partial map[string]map[string]string
 
 	muComplete sync.Mutex
 	complete   map[string]map[string]string
 }
 
-func newPstate() *pstate {
-	return &pstate{
+func newPstateParser() *pstateParser {
+	return &pstateParser{
 		partial:  make(map[string]map[string]string),
 		complete: make(map[string]map[string]string),
 	}
@@ -81,7 +93,7 @@ func splitPsTokens(payload string) ([]string, error) {
 	return toks, nil
 }
 
-func (ps *pstate) update(line string) {
+func (ps *pstateParser) update(line string) {
 	tokens, err := splitPsTokens(line)
 	if err != nil {
 		slog.Warn("Malformed pstate", "error", err)
@@ -126,7 +138,7 @@ type psQueue struct {
 	Num int
 }
 
-func (ps *pstate) getQueue() (psQueue, bool) {
+func (ps *pstateParser) getQueue() (psQueue, bool) {
 	ps.muComplete.Lock()
 	defer ps.muComplete.Unlock()
 
@@ -148,9 +160,9 @@ func (ps *pstate) getQueue() (psQueue, bool) {
 	return psQueue{Cap: cap, Num: num}, true
 }
 
-func initComm(serialPort string, baud int, storage *lineStorage) (*comm, error) {
-	ps := newPstate()
-	tran, err := initTransport(serialPort, baud, storage, func(payload string) {
+func initComm(serialPort string, baud int, storage *lineStorage, logger *PayloadLogger) (*comm, error) {
+	ps := newPstateParser()
+	tran, err := initTransport(serialPort, baud, storage, logger, func(payload string) {
 		ps.update(payload)
 	})
 	if err != nil {
@@ -158,7 +170,7 @@ func initComm(serialPort string, baud int, storage *lineStorage) (*comm, error) 
 	}
 	cm := &comm{
 		tran:      tran,
-		ps:        ps,
+		psp:       ps,
 		signalCh:  make(chan string, 10),
 		commandCh: make(chan string, 10_000_000),
 	}
@@ -182,7 +194,7 @@ func (cm *comm) queryQueueBlocking() psQueue {
 		cm.signalCh <- "?queue"
 		sent := time.Now()
 		for {
-			qs, ok := cm.ps.getQueue()
+			qs, ok := cm.psp.getQueue()
 			if ok {
 				return qs
 			}
