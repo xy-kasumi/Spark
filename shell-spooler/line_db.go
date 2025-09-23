@@ -22,21 +22,21 @@ func formatSpoolerTime(t time.Time) string {
 }
 
 // Global line storage
-type lineStorage struct {
+type LineDB struct {
 	mu    sync.RWMutex
 	lines []line
 }
 
-// Create new lineStorage instance
-func newLineStorage() *lineStorage {
-	return &lineStorage{
+// Create new LineDB instance
+func NewLineDB() *LineDB {
+	return &LineDB{
 		lines: make([]line, 0),
 	}
 }
 
 
 // Add a line to storage
-func (ls *lineStorage) addLine(lineNum int, dir string, content string) time.Time {
+func (ls *LineDB) addLine(lineNum int, dir string, content string) time.Time {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
 
@@ -113,7 +113,7 @@ type QueryOptions struct {
 }
 
 // Query lines with the given options
-func (ls *lineStorage) Query(opts QueryOptions) []line {
+func (ls *LineDB) Query(opts QueryOptions) []line {
 	ls.mu.RLock()
 	defer ls.mu.RUnlock()
 
@@ -145,7 +145,7 @@ func (ls *lineStorage) Query(opts QueryOptions) []line {
 // Query lines by range [fromLine, toLine)
 // fromLine: inclusive, 1-based line number (0 means from beginning)
 // toLine: exclusive, 1-based line number (0 means to end)
-func (ls *lineStorage) queryRange(fromLine, toLine int) []line {
+func (ls *LineDB) queryRange(fromLine, toLine int) []line {
 	ls.mu.RLock()
 	defer ls.mu.RUnlock()
 
@@ -194,7 +194,7 @@ func (ls *lineStorage) queryRange(fromLine, toLine int) []line {
 
 // Deprecated: Use Query() instead
 // Query last N lines
-func (ls *lineStorage) queryTail(n int) []line {
+func (ls *LineDB) queryTail(n int) []line {
 	ls.mu.RLock()
 	defer ls.mu.RUnlock()
 

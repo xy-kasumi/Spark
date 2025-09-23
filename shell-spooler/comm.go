@@ -160,7 +160,7 @@ func (ps *pstateParser) getQueue() (psQueue, bool) {
 	return psQueue{Cap: cap, Num: num}, true
 }
 
-func initComm(serialPort string, baud int, storage *lineStorage, logger *PayloadLogger) (*comm, error) {
+func initComm(serialPort string, baud int, storage *LineDB, logger *PayloadLogger) (*comm, error) {
 	ps := newPstateParser()
 	tran, err := initTransport(serialPort, baud, storage, logger, func(payload string) {
 		ps.update(payload)

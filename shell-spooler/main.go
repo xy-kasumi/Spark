@@ -198,7 +198,7 @@ func main() {
 	slog.Info("Using init file", "path", initFileAbs)
 
 	// Initialize line storage
-	storage := newLineStorage()
+	storage := NewLineDB()
 
 	// Initialize payload logger
 	logger := NewPayloadLogger(logDirAbs)

@@ -9,13 +9,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"sync"
 	"time"
 )
 
 type PayloadLogger struct {
-	mu      sync.Mutex
-	logFile *os.File
+	file *os.File
 }
 
 func NewPayloadLogger(logDir string) *PayloadLogger {
@@ -44,7 +42,7 @@ func NewPayloadLogger(logDir string) *PayloadLogger {
 		return pl
 	}
 
-	pl.logFile = file
+	pl.file = file
 	slog.Info("Created log file", "path", logPath)
 
 	return pl
@@ -86,30 +84,28 @@ func (pl *PayloadLogger) findNextFileName(logDir string, now time.Time) string {
 }
 
 func (pl *PayloadLogger) AddLine(lineNum int, dir string, payload string) {
-	pl.mu.Lock()
-	defer pl.mu.Unlock()
-
-	// Write to log file if available
-	if pl.logFile != nil {
-		now := time.Now()
-		logLine := fmt.Sprintf("%s %d %s %s\n",
-			formatSpoolerTime(now), lineNum, dir, payload)
-
-		if _, err := pl.logFile.WriteString(logLine); err != nil {
-			slog.Error("Failed to write to log file", "error", err)
-		} else {
-			// Flush to ensure immediate write
-			pl.logFile.Sync()
-		}
+	if pl.file == nil {
+		return
 	}
+
+	now := time.Now()
+	logLine := fmt.Sprintf("%s %d %s %s\n",
+		formatSpoolerTime(now), lineNum, dir, payload)
+
+	if _, err := pl.file.WriteString(logLine); err != nil {
+		slog.Error("Failed to write to log file", "error", err)
+		return
+	}
+
+	// Flush to ensure immediate write
+	pl.file.Sync()
 }
 
 func (pl *PayloadLogger) Close() {
-	pl.mu.Lock()
-	defer pl.mu.Unlock()
-
-	if pl.logFile != nil {
-		pl.logFile.Close()
-		pl.logFile = nil
+	if pl.file == nil {
+		return
 	}
+
+	pl.file.Close()
+	pl.file = nil
 }

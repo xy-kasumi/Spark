@@ -15,7 +15,7 @@ import (
 
 type transport struct {
 	port    serial.Port
-	storage *lineStorage
+	storage *LineDB
 	logger  *PayloadLogger
 	writeCh chan string
 	onRecv  func(string)
@@ -25,7 +25,7 @@ type transport struct {
 	nextLineNum int
 }
 
-func initTransport(serialPort string, baud int, storage *lineStorage, logger *PayloadLogger, onRecv func(string)) (*transport, error) {
+func initTransport(serialPort string, baud int, storage *LineDB, logger *PayloadLogger, onRecv func(string)) (*transport, error) {
 	mode := &serial.Mode{BaudRate: baud}
 	port, err := serial.Open(serialPort, mode)
 	if err != nil {
