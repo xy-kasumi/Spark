@@ -3,12 +3,9 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,29 +16,32 @@ import (
 	"shell-spooler/comm"
 )
 
-// CommHandler implementation that handles storage and logging
-type mainCommHandler struct {
+type apiImpl struct {
 	storage *LineDB
 	logger  *PayloadLogger
 
 	// line serialization
 	lineNumMu   sync.Mutex
 	nextLineNum int
+
+	// dependencies for SpoolerAPI
+	commInstance *comm.Comm
+	initFileAbs  string
 }
 
-func (h *mainCommHandler) PayloadSent(payload string) {
+func (h *apiImpl) PayloadSent(payload string) {
 	h.addLineAtomic("down", payload)
 }
 
-func (h *mainCommHandler) PayloadRecv(payload string) {
+func (h *apiImpl) PayloadRecv(payload string) {
 	h.addLineAtomic("up", payload)
 }
 
-func (h *mainCommHandler) PStateRecv(tag string, ps comm.PState) {
+func (h *apiImpl) PStateRecv(tag string, ps comm.PState) {
 	// TBD
 }
 
-func (h *mainCommHandler) addLineAtomic(dir string, payload string) {
+func (h *apiImpl) addLineAtomic(dir string, payload string) {
 	h.lineNumMu.Lock()
 	defer h.lineNumMu.Unlock()
 
@@ -52,87 +52,102 @@ func (h *mainCommHandler) addLineAtomic(dir string, payload string) {
 	h.logger.AddLine(lineNum, dir, payload)
 }
 
-func (h *mainCommHandler) Close() {
+func (h *apiImpl) Close() {
 	h.logger.Close()
 }
 
-// Line-based API
-type writeLineRequest struct {
-	Line string `json:"line"` // single line of command. cannot contain newline.
-}
+// SpoolerAPI implementation
+func (h *apiImpl) WriteLine(req *WriteLineRequest) (*WriteLineResponse, error) {
+	h.commInstance.WriteLine(req.Line)
 
-type writeLineResponse struct {
-	Now string `json:"now"`
-}
-
-type queryLinesRequest struct {
-	FromLine    *int   `json:"from_line,omitempty"`    // Optional: start from this line number (inclusive), 1-based
-	ToLine      *int   `json:"to_line,omitempty"`      // Optional: up to this line number (exclusive), 1-based
-	Tail        *int   `json:"tail,omitempty"`         // Optional: get last N lines (overrides from/to)
-	FilterDir   string `json:"filter_dir,omitempty"`   // Optional: "up" or "down" direction filter
-	FilterRegex string `json:"filter_regex,omitempty"` // Optional: regex filter (RE2 syntax)
-}
-
-type queryLinesResponse struct {
-	Count int        `json:"count"` // total number of matching lines
-	Lines []lineInfo `json:"lines"` // actual lines (max 1000), ordered by line number (ascending)
-	Now   string     `json:"now"`   // current recognized time of spooler in format "2006-01-02 15:04:05.000" (local time)
-}
-
-type lineInfo struct {
-	LineNum int    `json:"line_num"`
-	Dir     string `json:"dir"`     // "up" for client->host, "down" for host->client
-	Content string `json:"content"` // content of the line, without newlines
-	Time    string `json:"time"`    // timestamp of the line in format "2006-01-02 15:04:05.000" (local time)
-}
-
-type getStatusRequest struct {
-}
-
-type getStatusResponse struct {
-	Busy bool `json:"busy"`
-}
-
-type clearQueueRequest struct {
-}
-
-type clearQueueResponse struct {
-}
-
-type setInitRequest struct {
-	Lines []string `json:"lines"`
-}
-
-type setInitResponse struct {
-}
-
-type getInitRequest struct {
-}
-
-type getInitResponse struct {
-	Lines []string `json:"lines"`
-}
-
-// handleCommon returns true if caller should continue RPC processing.
-func handleCommom(w http.ResponseWriter, r *http.Request) bool {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusNoContent)
-		return false
+	resp := WriteLineResponse{
+		Now: formatSpoolerTime(time.Now()),
 	}
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return false
-	}
-	return true
+	return &resp, nil
 }
 
-func respondJson(w http.ResponseWriter, resp any) {
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+func (h *apiImpl) QueryLines(req *QueryLinesRequest) (*QueryLinesResponse, error) {
+	// Compile regex if provided
+	var filterRegex *regexp.Regexp
+	if req.FilterRegex != "" {
+		filterRegex, _ = regexp.Compile(req.FilterRegex)
+	}
+
+	// Build query options
+	opts := QueryOptions{
+		FilterDir:   req.FilterDir,
+		FilterRegex: filterRegex,
+	}
+
+	// Build scan range
+	tailExists := req.Tail != nil
+	rangeExists := req.FromLine != nil || req.ToLine != nil
+	if tailExists {
+		opts.Scan = TailScan{N: *req.Tail}
+	} else if rangeExists {
+		rangeScan := RangeScan{}
+		if req.FromLine != nil {
+			rangeScan.FromLine = req.FromLine
+		}
+		if req.ToLine != nil {
+			rangeScan.ToLine = req.ToLine
+		}
+		opts.Scan = rangeScan
+	}
+
+	// Query lines from storage
+	lines := h.storage.Query(opts)
+
+	totalCount := len(lines)
+	const maxLines = 1000 // Limit response to 1000 lines
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+	}
+
+	// Convert to response format
+	resp := QueryLinesResponse{
+		Count: totalCount,
+		Lines: make([]LineInfo, len(lines)),
+		Now:   formatSpoolerTime(time.Now()),
+	}
+	for i, l := range lines {
+		resp.Lines[i] = LineInfo{
+			LineNum: l.num,
+			Dir:     l.dir,
+			Content: l.content,
+			Time:    formatSpoolerTime(l.time),
+		}
+	}
+	return &resp, nil
+}
+
+func (h *apiImpl) ClearQueue(req *ClearQueueRequest) (*ClearQueueResponse, error) {
+	h.commInstance.DrainWriteQueue()
+	return &ClearQueueResponse{}, nil
+}
+
+func (h *apiImpl) GetStatus(req *GetStatusRequest) (*GetStatusResponse, error) {
+	resp := GetStatusResponse{
+		Busy: h.commInstance.WriteQueueLength() > 0,
+	}
+	return &resp, nil
+}
+
+func (h *apiImpl) SetInit(req *SetInitRequest) (*SetInitResponse, error) {
+	if err := writeInitLines(h.initFileAbs, req.Lines); err != nil {
+		return nil, fmt.Errorf("failed to write init file: %w", err)
+	}
+	slog.Info("Init lines updated")
+	return &SetInitResponse{}, nil
+}
+
+func (h *apiImpl) GetInit(req *GetInitRequest) (*GetInitResponse, error) {
+	lines, err := fetchInitLines(h.initFileAbs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read init file: %w", err)
+	}
+
+	return &GetInitResponse{Lines: lines}, nil
 }
 
 func fetchInitLines(filePath string) ([]string, error) {
@@ -175,39 +190,6 @@ func writeInitLines(filePath string, lines []string) error {
 	return nil
 }
 
-// path: URL path (e.g. "/write-line")
-func registerJsonHandler[ReqT any, RespT any](path string, validate func(*ReqT) error, exec func(*ReqT) (*RespT, error)) {
-	http.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-		if !handleCommom(w, r) {
-			return
-		}
-
-		slog.Debug(path)
-		var req ReqT
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "invalid JSON: %v", err)
-			return
-		}
-
-		// Validate request
-		err := validate(&req)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "invalid request: %v", err)
-			return
-		}
-
-		resp, err := exec(&req)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			slog.Error("error during API processing", "error", err)
-			return
-		}
-		respondJson(w, resp)
-	})
-}
-
 func main() {
 	portName := flag.String("port", "COM3", "Serial port name")
 	baud := flag.Int("baud", 115200, "Serial port baud rate")
@@ -237,23 +219,19 @@ func main() {
 	slog.Info("Using log directory", "path", logDirAbs)
 	slog.Info("Using init file", "path", initFileAbs)
 
-	// Initialize line storage
 	storage := NewLineDB()
 
-	// Initialize payload logger
 	logger := NewPayloadLogger(logDirAbs)
 	defer logger.Close()
 
-	// Initialize comm handler
-	handler := &mainCommHandler{
+	apiImpl := &apiImpl{
 		storage:     storage,
 		logger:      logger,
 		nextLineNum: 1,
 	}
-	defer handler.Close()
+	defer apiImpl.Close()
 
-	// Initialize serial protocol
-	commInstance, err := comm.InitComm(*portName, *baud, handler)
+	commInstance, err := comm.InitComm(*portName, *baud, apiImpl)
 	if err != nil {
 		slog.Error("Failed to initialize comm", "port", portName, "baud", baud, "error", err)
 		return
@@ -267,179 +245,13 @@ func main() {
 		return
 	}
 
-	// Register RPC endpoints
-	validateWriteLine := func(req *writeLineRequest) error {
-		if strings.Contains(req.Line, "\n") {
-			return errors.New("payload cannot contain newline")
-		}
-		if len(req.Line) > 100 {
-			return errors.New("payload must be <= 100 byte")
-		}
-		if req.Line == "" {
-			return errors.New("payload cannot be empty")
-		}
-		return nil
-	}
-	execWriteLine := func(req *writeLineRequest) (*writeLineResponse, error) {
-		commInstance.WriteLine(req.Line)
+	// Initialize handler with dependencies
+	apiImpl.commInstance = commInstance
+	apiImpl.initFileAbs = initFileAbs
 
-		resp := writeLineResponse{
-			Now: formatSpoolerTime(time.Now()),
-		}
-		return &resp, nil
-	}
-	registerJsonHandler("/write-line", validateWriteLine, execWriteLine)
-
-	validateQueryLines := func(req *queryLinesRequest) error {
-		tailExists := req.Tail != nil
-		rangeExists := req.FromLine != nil || req.ToLine != nil
-
-		// Validate range parameters
-		if tailExists && rangeExists {
-			return errors.New("tail: cannot be used together ranges (from_line, to_line)")
-		}
-		if rangeExists {
-			if req.FromLine != nil && *req.FromLine < 1 {
-				return errors.New("from_line: must be >= 1")
-			}
-			if req.ToLine != nil && *req.ToLine < 1 {
-				return errors.New("to_line: must be >= 1")
-			}
-			if (req.FromLine != nil && req.ToLine != nil) && *req.ToLine < *req.FromLine {
-				return errors.New("to_line must be >= from_line")
-			}
-		}
-		if tailExists && *req.Tail < 1 {
-			return errors.New("tail: must be >= 1")
-		}
-
-		// Validate tail value if provided
-		if tailExists && *req.Tail <= 0 {
-			return errors.New("tail: must be positive")
-		}
-
-		// Validate filter_dir
-		if req.FilterDir != "" && req.FilterDir != "up" && req.FilterDir != "down" {
-			return errors.New("filter_dir: must be 'up' or 'down'")
-		}
-
-		// Compile regex if provided
-		if req.FilterRegex != "" {
-			_, err := regexp.Compile(req.FilterRegex)
-			if err != nil {
-				return fmt.Errorf("filter_regex: invalid regex %v", err)
-			}
-		}
-		return nil
-	}
-	execQueryLines := func(req *queryLinesRequest) (*queryLinesResponse, error) {
-		// Compile regex if provided
-		var filterRegex *regexp.Regexp
-		if req.FilterRegex != "" {
-			filterRegex, _ = regexp.Compile(req.FilterRegex)
-		}
-
-		// Build query options
-		opts := QueryOptions{
-			FilterDir:   req.FilterDir,
-			FilterRegex: filterRegex,
-		}
-
-		// Build scan range
-		tailExists := req.Tail != nil
-		rangeExists := req.FromLine != nil || req.ToLine != nil
-		if tailExists {
-			opts.Scan = TailScan{N: *req.Tail}
-		} else if rangeExists {
-			rangeScan := RangeScan{}
-			if req.FromLine != nil {
-				rangeScan.FromLine = req.FromLine
-			}
-			if req.ToLine != nil {
-				rangeScan.ToLine = req.ToLine
-			}
-			opts.Scan = rangeScan
-		}
-
-		// Query lines from storage
-		lines := storage.Query(opts)
-
-		totalCount := len(lines)
-		const maxLines = 1000 // Limit response to 1000 lines
-		if len(lines) > maxLines {
-			lines = lines[:maxLines]
-		}
-
-		// Convert to response format
-		resp := queryLinesResponse{
-			Count: totalCount,
-			Lines: make([]lineInfo, len(lines)),
-			Now:   formatSpoolerTime(time.Now()),
-		}
-		for i, l := range lines {
-			resp.Lines[i] = lineInfo{
-				LineNum: l.num,
-				Dir:     l.dir,
-				Content: l.content,
-				Time:    formatSpoolerTime(l.time),
-			}
-		}
-		return &resp, nil
-	}
-	registerJsonHandler("/query-lines", validateQueryLines, execQueryLines)
-
-	validateClearQueue := func(req *clearQueueRequest) error {
-		return nil
-	}
-	execClearQueue := func(req *clearQueueRequest) (*clearQueueResponse, error) {
-		commInstance.DrainWriteQueue()
-		return &clearQueueResponse{}, nil
-	}
-	registerJsonHandler("/clear-queue", validateClearQueue, execClearQueue)
-
-	validateGetStatus := func(req *getStatusRequest) error {
-		return nil
-	}
-	execGetStatus := func(req *getStatusRequest) (*getStatusResponse, error) {
-		resp := getStatusResponse{
-			Busy: commInstance.WriteQueueLength() > 0,
-		}
-		return &resp, nil
-	}
-	registerJsonHandler("/status", validateGetStatus, execGetStatus)
-
-	validateSetInit := func(req *setInitRequest) error {
-		for _, line := range req.Lines {
-			if strings.Contains(line, "\n") {
-				return errors.New("lines: must not contain newline")
-			}
-		}
-		return nil
-	}
-	execSetInit := func(req *setInitRequest) (*setInitResponse, error) {
-		if err := writeInitLines(initFileAbs, req.Lines); err != nil {
-			return nil, fmt.Errorf("failed to write init file: %w", err)
-		}
-		slog.Info("Init lines updated")
-		return &setInitResponse{}, nil
-	}
-	registerJsonHandler("/set-init", validateSetInit, execSetInit)
-
-	validateGetInit := func(req *getInitRequest) error {
-		return nil
-	}
-	execGetInit := func(req *getInitRequest) (*getInitResponse, error) {
-		lines, err := fetchInitLines(initFileAbs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read init file: %w", err)
-		}
-
-		return &getInitResponse{Lines: lines}, nil
-	}
-	registerJsonHandler("/get-init", validateGetInit, execGetInit)
-
-	slog.Info("HTTP server started", "port", *addr)
-	if err := http.ListenAndServe(*addr, nil); err != nil {
+	// Start HTTP server
+	slog.Info("HTTP server starting", "port", *addr)
+	if err := StartHTTPServer(*addr, apiImpl); err != nil {
 		slog.Error("HTTP server error", "error", err)
 	}
 }
