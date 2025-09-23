@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"shell-spooler/comm"
 )
 
 // CommHandler implementation that handles storage and logging
@@ -35,7 +37,7 @@ func (h *mainCommHandler) PayloadRecv(payload string) {
 	h.addLineAtomic("up", payload)
 }
 
-func (h *mainCommHandler) PStateRecv(tag string, ps PState) {
+func (h *mainCommHandler) PStateRecv(tag string, ps comm.PState) {
 	// TBD
 }
 
@@ -251,12 +253,12 @@ func main() {
 	defer handler.Close()
 
 	// Initialize serial protocol
-	comm, err := initComm(*portName, *baud, handler)
+	commInstance, err := comm.InitComm(*portName, *baud, handler)
 	if err != nil {
 		slog.Error("Failed to initialize comm", "port", portName, "baud", baud, "error", err)
 		return
 	}
-	defer comm.Close()
+	defer commInstance.Close()
 
 	// Handle init file - always check and prepare init file regardless of noinit flag
 	_, err = fetchInitLines(initFileAbs)
@@ -279,7 +281,7 @@ func main() {
 		return nil
 	}
 	execWriteLine := func(req *writeLineRequest) (*writeLineResponse, error) {
-		comm.writeLine(req.Line)
+		commInstance.WriteLine(req.Line)
 
 		resp := writeLineResponse{
 			Now: formatSpoolerTime(time.Now()),
@@ -390,7 +392,7 @@ func main() {
 		return nil
 	}
 	execClearQueue := func(req *clearQueueRequest) (*clearQueueResponse, error) {
-		comm.drainWriteQueue()
+		commInstance.DrainWriteQueue()
 		return &clearQueueResponse{}, nil
 	}
 	registerJsonHandler("/clear-queue", validateClearQueue, execClearQueue)
@@ -400,7 +402,7 @@ func main() {
 	}
 	execGetStatus := func(req *getStatusRequest) (*getStatusResponse, error) {
 		resp := getStatusResponse{
-			Busy: comm.writeQueueLength() > 0,
+			Busy: commInstance.WriteQueueLength() > 0,
 		}
 		return &resp, nil
 	}

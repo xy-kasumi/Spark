@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2025 夕月霞
 // SPDX-License-Identifier: AGPL-3.0-or-later
-package main
+package comm
 
 import (
 	"errors"
@@ -23,7 +23,7 @@ type CommHandler interface {
 type PState struct {
 }
 
-type comm struct {
+type Comm struct {
 	tran      *transport
 	psp       *pstateParser
 	signalCh  chan string
@@ -178,7 +178,7 @@ func (h *commHandlerWithParser) PStateRecv(tag string, ps PState) {
 	h.handler.PStateRecv(tag, ps)
 }
 
-func initComm(serialPort string, baud int, handler CommHandler) (*comm, error) {
+func InitComm(serialPort string, baud int, handler CommHandler) (*Comm, error) {
 	ps := newPstateParser()
 	handlerWithParser := &commHandlerWithParser{
 		handler: handler,
@@ -188,7 +188,7 @@ func initComm(serialPort string, baud int, handler CommHandler) (*comm, error) {
 	if err != nil {
 		return nil, err
 	}
-	cm := &comm{
+	cm := &Comm{
 		tran:      tran,
 		psp:       ps,
 		signalCh:  make(chan string, 10),
@@ -201,14 +201,14 @@ func initComm(serialPort string, baud int, handler CommHandler) (*comm, error) {
 	return cm, nil
 }
 
-func (cm *comm) feedSignal() {
+func (cm *Comm) feedSignal() {
 	for {
 		line := <-cm.signalCh
 		cm.tran.sendPayload(line)
 	}
 }
 
-func (cm *comm) queryQueueBlocking() psQueue {
+func (cm *Comm) queryQueueBlocking() psQueue {
 	const queueSignalTimeout = 1 * time.Second
 	for {
 		cm.signalCh <- "?queue"
@@ -227,7 +227,7 @@ func (cm *comm) queryQueueBlocking() psQueue {
 	}
 }
 
-func (cm *comm) feedCommand() {
+func (cm *Comm) feedCommand() {
 	const maxFillRate = 0.75
 	okToSend := 0
 
@@ -250,7 +250,7 @@ func (cm *comm) feedCommand() {
 	}
 }
 
-func (cm *comm) pollQueueStatus() {
+func (cm *Comm) pollQueueStatus() {
 	for {
 		if len(cm.commandCh) > 0 {
 			cm.signalCh <- "?queue"
@@ -259,7 +259,7 @@ func (cm *comm) pollQueueStatus() {
 	}
 }
 
-func (cm *comm) writeLine(line string) {
+func (cm *Comm) WriteLine(line string) {
 	if line[0] == '!' || line[0] == '?' {
 		cm.signalCh <- line
 	} else {
@@ -267,11 +267,11 @@ func (cm *comm) writeLine(line string) {
 	}
 }
 
-func (cm *comm) writeQueueLength() int {
+func (cm *Comm) WriteQueueLength() int {
 	return len(cm.commandCh)
 }
 
-func (cm *comm) drainWriteQueue() {
+func (cm *Comm) DrainWriteQueue() {
 	for {
 		select {
 		case <-cm.commandCh:
@@ -281,6 +281,6 @@ func (cm *comm) drainWriteQueue() {
 	}
 }
 
-func (cm *comm) Close() {
+func (cm *Comm) Close() {
 	cm.tran.Close()
 }
