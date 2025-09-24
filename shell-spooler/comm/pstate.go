@@ -9,20 +9,73 @@ import (
 	"sync"
 )
 
-type PState struct {
+type PState map[string]interface{}
+
+func (ps PState) GetString(key string) (string, bool) {
+	v, ok := ps[key]
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	return s, ok
 }
 
+func (ps PState) GetUInt(key string) (uint32, bool) {
+	v, ok := ps[key]
+	if !ok {
+		return 0, false
+	}
+	i, ok := v.(uint32)
+	return i, ok
+}
+
+func (ps PState) GetFloat(key string) (float32, bool) {
+	v, ok := ps[key]
+	if !ok {
+		return 0.0, false
+	}
+	f, ok := v.(float32)
+	return f, ok
+}
+
+func (ps PState) GetBool(key string) (bool, bool) {
+	v, ok := ps[key]
+	if !ok {
+		return false, false
+	}
+	b, ok := v.(bool)
+	return b, ok
+}
+
+// Token types for parsing pstate data
+type Token interface {
+	token() // marker method
+}
+
+type ID struct{ Value string }
+type KV struct {
+	Key   string
+	Value interface{}
+}
+type Begin struct{}
+type End struct{}
+
+func (ID) token()    {}
+func (KV) token()    {}
+func (Begin) token() {}
+func (End) token()   {}
+
 type pstateParser struct {
-	partial map[string]map[string]string
+	partial map[string]PState
 
 	muComplete sync.Mutex
-	complete   map[string]map[string]string
+	complete   map[string]PState
 }
 
 func newPstateParser() *pstateParser {
 	return &pstateParser{
-		partial:  make(map[string]map[string]string),
-		complete: make(map[string]map[string]string),
+		partial:  make(map[string]PState),
+		complete: make(map[string]PState),
 	}
 }
 
@@ -75,7 +128,7 @@ func splitPsTokens(payload string) ([]string, error) {
 	return toks, nil
 }
 
-func (ps *pstateParser) update(line string) {
+func (parser *pstateParser) update(line string) {
 	tokens, err := splitPsTokens(line)
 	if err != nil {
 		slog.Warn("Malformed pstate", "error", err)
@@ -88,19 +141,18 @@ func (ps *pstateParser) update(line string) {
 	for _, token := range tokens[1:] {
 		switch token {
 		case "<":
-			ps.partial[psType] = map[string]string{}
+			parser.partial[psType] = nil
 		case ">":
-			m, ok := ps.partial[psType]
+			m, ok := parser.partial[psType]
 			if !ok {
 				slog.Warn("Received '>' without matching '<'", "type", psType)
 				continue
 			}
-			ps.muComplete.Lock()
-			ps.complete[psType] = m
-			ps.muComplete.Unlock()
+			parser.muComplete.Lock()
+			parser.complete[psType] = m
+			parser.muComplete.Unlock()
 		default:
-			// K:V
-			m, ok := ps.partial[psType]
+			m, ok := parser.partial[psType]
 			if !ok {
 				slog.Warn("Received pstate key-value without matching '<'", "type", psType)
 				continue
@@ -114,4 +166,3 @@ func (ps *pstateParser) update(line string) {
 		}
 	}
 }
-

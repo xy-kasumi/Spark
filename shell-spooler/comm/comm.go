@@ -21,16 +21,16 @@ type psQueue struct {
 	Num int
 }
 
-func (ps *pstateParser) getQueue() (psQueue, bool) {
-	ps.muComplete.Lock()
-	defer ps.muComplete.Unlock()
+func (parser *pstateParser) getQueue() (psQueue, bool) {
+	parser.muComplete.Lock()
+	defer parser.muComplete.Unlock()
 
-	m, ok := ps.complete["queue"]
+	m, ok := parser.complete["queue"]
 	if !ok {
 		return psQueue{}, false
 	}
-	capStr, ok1 := m["cap"]
-	numStr, ok2 := m["num"]
+	capStr, ok1 := m.GetString("cap")
+	numStr, ok2 := m.GetString("num")
 	if !ok1 || !ok2 {
 		return psQueue{}, false
 	}
@@ -39,7 +39,7 @@ func (ps *pstateParser) getQueue() (psQueue, bool) {
 	if err1 != nil || err2 != nil {
 		return psQueue{}, false
 	}
-	delete(ps.complete, "queue")
+	delete(parser.complete, "queue")
 	return psQueue{Cap: cap, Num: num}, true
 }
 
