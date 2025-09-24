@@ -7,13 +7,22 @@ import (
 	"time"
 )
 
+type Comm struct {
+	tran        *transport
+	parser      PStateParser
+	handler     CommHandler
+	signalCh    chan string
+	commandCh   chan string
+	latestQueue *psQueue
+}
+
 type CommHandler interface {
 	// Called when payload is definitely sent (ack-ed) to the core.
 	PayloadSent(payload string)
 	// Called when payload is definitely received (ack-ed) from the core.
 	PayloadRecv(payload string)
 	// Called when a p-state is definitely received (ack-ed and parsed ok) from the core.
-	PStateRecv(tag string, ps PState)
+	PStateRecv(ps PState)
 }
 
 type psQueue struct {
@@ -21,73 +30,55 @@ type psQueue struct {
 	Num int
 }
 
-func (parser *pstateParser) getQueue() (psQueue, bool) {
-	parser.muComplete.Lock()
-	defer parser.muComplete.Unlock()
-
-	m, ok := parser.complete["queue"]
-	if !ok {
-		return psQueue{}, false
-	}
-	capStr, ok1 := m.GetString("cap")
-	numStr, ok2 := m.GetString("num")
+func parseQueuePS(ps PState) *psQueue {
+	capStr, ok1 := ps.GetString("cap")
+	numStr, ok2 := ps.GetString("num")
 	if !ok1 || !ok2 {
-		return psQueue{}, false
+		return nil
 	}
 	cap, err1 := strconv.Atoi(capStr)
 	num, err2 := strconv.Atoi(numStr)
 	if err1 != nil || err2 != nil {
-		return psQueue{}, false
+		return nil
 	}
-	delete(parser.complete, "queue")
-	return psQueue{Cap: cap, Num: num}, true
+	return &psQueue{Cap: cap, Num: num}
 }
 
-type Comm struct {
-	tran      *transport
-	psp       *pstateParser
-	signalCh  chan string
-	commandCh chan string
+func (cm *Comm) PayloadSent(payload string) {
+	cm.handler.PayloadSent(payload)
 }
-
-type commHandlerWithParser struct {
-	handler CommHandler
-	parser  *pstateParser
+func (cm *Comm) PayloadRecv(payload string) {
+	cm.handler.PayloadRecv(payload)
+	ps, ok := cm.parser.update(payload)
+	if ok {
+		if ps.Tag == "queue" {
+			q := parseQueuePS(*ps)
+			if q != nil {
+				cm.latestQueue = q
+			}
+		}
+		cm.handler.PStateRecv(*ps)
+	}
 }
-
-func (h *commHandlerWithParser) PayloadSent(payload string) {
-	h.handler.PayloadSent(payload)
-}
-
-func (h *commHandlerWithParser) PayloadRecv(payload string) {
-	h.handler.PayloadRecv(payload)
-	h.parser.update(payload)
-}
-
-func (h *commHandlerWithParser) PStateRecv(tag string, ps PState) {
-	h.handler.PStateRecv(tag, ps)
+func (cm *Comm) PStateRecv(ps PState) {
+	panic("unreachable")
 }
 
 func InitComm(serialPort string, baud int, handler CommHandler) (*Comm, error) {
-	ps := newPstateParser()
-	handlerWithParser := &commHandlerWithParser{
-		handler: handler,
-		parser:  ps,
-	}
-	tran, err := initTransport(serialPort, baud, handlerWithParser)
-	if err != nil {
-		return nil, err
-	}
 	cm := &Comm{
-		tran:      tran,
-		psp:       ps,
+		handler:   handler,
+		parser:    NewPStateParser(),
 		signalCh:  make(chan string, 10),
 		commandCh: make(chan string, 10_000_000),
 	}
+	tran, err := initTransport(serialPort, baud, cm)
+	if err != nil {
+		return nil, err
+	}
+	cm.tran = tran
 
 	go cm.feedSignal()
 	go cm.feedCommand()
-
 	return cm, nil
 }
 
@@ -101,12 +92,12 @@ func (cm *Comm) feedSignal() {
 func (cm *Comm) queryQueueBlocking() psQueue {
 	const queueSignalTimeout = 1 * time.Second
 	for {
+		cm.latestQueue = nil
 		cm.signalCh <- "?queue"
 		sent := time.Now()
 		for {
-			qs, ok := cm.psp.getQueue()
-			if ok {
-				return qs
+			if cm.latestQueue != nil {
+				return *cm.latestQueue
 			}
 			if time.Now().After(sent.Add(queueSignalTimeout)) {
 				// queue signal timeout can happen in core reboot)
@@ -122,13 +113,17 @@ func (cm *Comm) feedCommand() {
 	okToSend := 0
 
 	for {
+		queueQueryInterval := 100 * time.Millisecond
 		for {
 			if okToSend > 0 {
 				break
 			}
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(queueQueryInterval)
 			qs := cm.queryQueueBlocking()
 			okToSend = int(float64(qs.Cap)*maxFillRate) - qs.Num
+			// When core queue has many slow commands, no point in querying too often.
+			// Gradually reduce query frequency by exponential backoff.
+			queueQueryInterval *= 2
 		}
 
 		select {
@@ -137,15 +132,6 @@ func (cm *Comm) feedCommand() {
 			okToSend--
 		default:
 		}
-	}
-}
-
-func (cm *Comm) pollQueueStatus() {
-	for {
-		if len(cm.commandCh) > 0 {
-			cm.signalCh <- "?queue"
-		}
-		time.Sleep(100 * time.Millisecond)
 	}
 }
 

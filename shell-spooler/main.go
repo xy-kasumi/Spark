@@ -35,7 +35,7 @@ func (h *apiImpl) PayloadRecv(payload string) {
 	h.addLineAtomic("up", payload)
 }
 
-func (h *apiImpl) PStateRecv(tag string, ps comm.PState) {
+func (h *apiImpl) PStateRecv(ps comm.PState) {
 	// TBD
 }
 

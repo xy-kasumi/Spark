@@ -6,13 +6,22 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
-	"sync"
 )
 
-type PState map[string]interface{}
+type PState struct {
+	Tag string
+	m   map[string]interface{}
+}
+
+func NewPState(tag string) PState {
+	return PState{
+		Tag: tag,
+		m:   make(map[string]interface{}),
+	}
+}
 
 func (ps PState) GetString(key string) (string, bool) {
-	v, ok := ps[key]
+	v, ok := ps.m[key]
 	if !ok {
 		return "", false
 	}
@@ -21,7 +30,7 @@ func (ps PState) GetString(key string) (string, bool) {
 }
 
 func (ps PState) GetUInt(key string) (uint32, bool) {
-	v, ok := ps[key]
+	v, ok := ps.m[key]
 	if !ok {
 		return 0, false
 	}
@@ -30,7 +39,7 @@ func (ps PState) GetUInt(key string) (uint32, bool) {
 }
 
 func (ps PState) GetFloat(key string) (float32, bool) {
-	v, ok := ps[key]
+	v, ok := ps.m[key]
 	if !ok {
 		return 0.0, false
 	}
@@ -39,7 +48,7 @@ func (ps PState) GetFloat(key string) (float32, bool) {
 }
 
 func (ps PState) GetBool(key string) (bool, bool) {
-	v, ok := ps[key]
+	v, ok := ps.m[key]
 	if !ok {
 		return false, false
 	}
@@ -47,36 +56,10 @@ func (ps PState) GetBool(key string) (bool, bool) {
 	return b, ok
 }
 
-// Token types for parsing pstate data
-type Token interface {
-	token() // marker method
-}
+type PStateParser map[string]*PState
 
-type ID struct{ Value string }
-type KV struct {
-	Key   string
-	Value interface{}
-}
-type Begin struct{}
-type End struct{}
-
-func (ID) token()    {}
-func (KV) token()    {}
-func (Begin) token() {}
-func (End) token()   {}
-
-type pstateParser struct {
-	partial map[string]PState
-
-	muComplete sync.Mutex
-	complete   map[string]PState
-}
-
-func newPstateParser() *pstateParser {
-	return &pstateParser{
-		partial:  make(map[string]PState),
-		complete: make(map[string]PState),
-	}
+func NewPStateParser() PStateParser {
+	return make(map[string]*PState)
 }
 
 // e.g. "pos < sys:"a b" a.b:2 >" -> ["pos", "<", `sys:"a b"`, "a.b:2", ">"]
@@ -128,33 +111,33 @@ func splitPsTokens(payload string) ([]string, error) {
 	return toks, nil
 }
 
-func (parser *pstateParser) update(line string) {
+func (parser PStateParser) update(line string) (*PState, bool) {
 	tokens, err := splitPsTokens(line)
 	if err != nil {
 		slog.Warn("Malformed pstate", "error", err)
-		return
+		return nil, false
 	}
 	if len(tokens) < 1 {
-		return
+		return nil, false
 	}
-	psType := tokens[0]
+	tag := tokens[0]
 	for _, token := range tokens[1:] {
 		switch token {
 		case "<":
-			parser.partial[psType] = nil
+			ps := NewPState(tag)
+			parser[tag] = &ps
 		case ">":
-			m, ok := parser.partial[psType]
+			ps, ok := parser[tag]
 			if !ok {
-				slog.Warn("Received '>' without matching '<'", "type", psType)
+				slog.Warn("Received '>' without matching '<'", "type", tag)
 				continue
 			}
-			parser.muComplete.Lock()
-			parser.complete[psType] = m
-			parser.muComplete.Unlock()
+			delete(parser, tag)
+			return ps, true
 		default:
-			m, ok := parser.partial[psType]
+			ps, ok := parser[tag]
 			if !ok {
-				slog.Warn("Received pstate key-value without matching '<'", "type", psType)
+				slog.Warn("Received pstate key-value without matching '<'", "type", tag)
 				continue
 			}
 			kv := strings.SplitN(token, ":", 2)
@@ -162,7 +145,8 @@ func (parser *pstateParser) update(line string) {
 				slog.Warn("Received malformed pstate", "payload", line)
 				continue
 			}
-			m[kv[0]] = kv[1]
+			ps.m[kv[0]] = kv[1]
 		}
 	}
+	return nil, false
 }
