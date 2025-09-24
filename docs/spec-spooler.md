@@ -408,7 +408,9 @@ properties:
   * in valid request, this will always contain at least one element (start)
 
 For each timestamp T, latest original data point in window [T-step, T] is returned.
-Query will never re-sample the data.
+/query-ts will never re-sample the data.
+
+When step is smaller than sampling rate of original data, response will contain lots of nulls inbetween.
 
 **Response Schema**
 ```yaml
