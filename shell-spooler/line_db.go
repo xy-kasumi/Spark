@@ -17,8 +17,9 @@ type line struct {
 }
 
 // formatTimestamp formats a time.Time to the standard string format used by the API
+// Uses RFC3339 with local time offset, millisecond precision, and space separator as per spec
 func formatSpoolerTime(t time.Time) string {
-	return t.Local().Format("2006-01-02 15:04:05.000")
+	return t.Local().Format("2006-01-02 15:04:05.000-07:00")
 }
 
 // Global line storage

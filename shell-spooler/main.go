@@ -59,7 +59,8 @@ func (h *apiImpl) WriteLine(req *WriteLineRequest) (*WriteLineResponse, error) {
 	h.commInstance.WriteLine(req.Line)
 
 	resp := WriteLineResponse{
-		Now: formatSpoolerTime(time.Now()),
+		OK:   true,
+		Time: formatSpoolerTime(time.Now()),
 	}
 	return &resp, nil
 }
@@ -127,6 +128,11 @@ func (h *apiImpl) ClearQueue(req *ClearQueueRequest) (*ClearQueueResponse, error
 func (h *apiImpl) GetStatus(req *GetStatusRequest) (*GetStatusResponse, error) {
 	resp := GetStatusResponse{
 		Busy: h.commInstance.WriteQueueLength() > 0,
+		CommandQueue: CommandQueue{
+			Spooler: h.commInstance.WriteQueueLength(),
+			Core:    0, // TBD: get from core
+			Job:     0, // TBD: get from job system
+		},
 	}
 	return &resp, nil
 }
@@ -145,6 +151,18 @@ func (h *apiImpl) GetInit(req *GetInitRequest) (*GetInitResponse, error) {
 		return nil, fmt.Errorf("failed to read init file: %w", err)
 	}
 	return &GetInitResponse{Lines: lines}, nil
+}
+
+func (h *apiImpl) AddJob(req *AddJobRequest) (*AddJobResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (h *apiImpl) ListJobs(req *ListJobsRequest) (*ListJobsResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (h *apiImpl) QueryTS(req *QueryTSRequest) (*QueryTSResponse, error) {
+	return nil, fmt.Errorf("not implemented")
 }
 
 func main() {

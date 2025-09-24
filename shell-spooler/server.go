@@ -20,6 +20,9 @@ type SpoolerAPI interface {
 	SetInit(req *SetInitRequest) (*SetInitResponse, error)
 	GetInit(req *GetInitRequest) (*GetInitResponse, error)
 	GetStatus(req *GetStatusRequest) (*GetStatusResponse, error)
+	AddJob(req *AddJobRequest) (*AddJobResponse, error)
+	ListJobs(req *ListJobsRequest) (*ListJobsResponse, error)
+	QueryTS(req *QueryTSRequest) (*QueryTSResponse, error)
 }
 
 type LineInfo struct {
@@ -34,7 +37,8 @@ type WriteLineRequest struct {
 }
 
 type WriteLineResponse struct {
-	Now string `json:"now"`
+	OK   bool   `json:"ok"`
+	Time string `json:"time"`
 }
 
 func validateWriteLine(req *WriteLineRequest) error {
@@ -147,11 +151,81 @@ func validateGetInit(req *GetInitRequest) error {
 type GetStatusRequest struct {
 }
 
+type CommandQueue struct {
+	Spooler int `json:"spooler"`
+	Core    int `json:"core"`
+	Job     int `json:"job"`
+}
+
 type GetStatusResponse struct {
-	Busy bool `json:"busy"`
+	Busy         bool         `json:"busy"`
+	CommandQueue CommandQueue `json:"command_queue"`
 }
 
 func validateGetStatus(req *GetStatusRequest) error {
+	return nil
+}
+
+type AddJobRequest struct {
+	Commands []string           `json:"commands"`
+	Signals  map[string]float32 `json:"signals"`
+}
+
+type AddJobResponse struct {
+	OK    bool    `json:"ok"`
+	JobID *string `json:"job_id,omitempty"`
+}
+
+func validateAddJob(req *AddJobRequest) error {
+	for _, command := range req.Commands {
+		if strings.Contains(command, "\n") {
+			return errors.New("commands: must not contain newline")
+		}
+	}
+	return nil
+}
+
+type ListJobsRequest struct {
+}
+
+type JobInfo struct {
+	JobID       string  `json:"job_id"`
+	Status      string  `json:"status"` // "WAITING", "RUNNING", "COMPLETED", "CANCELED"
+	TimeAdded   string  `json:"time_added"`
+	TimeStarted *string `json:"time_started,omitempty"`
+	TimeEnded   *string `json:"time_ended,omitempty"`
+}
+
+type ListJobsResponse struct {
+	Jobs []JobInfo `json:"jobs"`
+}
+
+func validateListJobs(req *ListJobsRequest) error {
+	return nil
+}
+
+type QueryTSRequest struct {
+	Start string   `json:"start"`
+	End   string   `json:"end"`
+	Step  float32  `json:"step"`
+	Query []string `json:"query"`
+}
+
+type QueryTSResponse struct {
+	Times  []float64              `json:"times"`
+	Values map[string]interface{} `json:"values"`
+}
+
+func validateQueryTS(req *QueryTSRequest) error {
+	if req.Step <= 0 {
+		return errors.New("step: must be > 0")
+	}
+	if req.Start == "" {
+		return errors.New("start: cannot be empty")
+	}
+	if req.End == "" {
+		return errors.New("end: cannot be empty")
+	}
 	return nil
 }
 
@@ -206,6 +280,9 @@ func StartHTTPServer(addr string, api SpoolerAPI) error {
 	registerJsonHandler("/status", validateGetStatus, api.GetStatus)
 	registerJsonHandler("/set-init", validateSetInit, api.SetInit)
 	registerJsonHandler("/get-init", validateGetInit, api.GetInit)
+	registerJsonHandler("/add-job", validateAddJob, api.AddJob)
+	registerJsonHandler("/list-jobs", validateListJobs, api.ListJobs)
+	registerJsonHandler("/query-ts", validateQueryTS, api.QueryTS)
 
 	return http.ListenAndServe(addr, nil)
 }

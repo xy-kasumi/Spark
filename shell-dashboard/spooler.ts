@@ -130,11 +130,11 @@ class SpoolerController {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
-            const { now }: { now: string } = await response.json();
+            const { time }: { time: string } = await response.json();
 
             // Set appropriate busy state
             this.state = isHealthcheck ? 'busy-healthcheck' : 'busy';
-            return now;
+            return time;
         } catch (error) {
             // Command failed, set state to offline
             this.state = 'api-offline';
