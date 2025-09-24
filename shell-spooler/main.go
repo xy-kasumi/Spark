@@ -14,25 +14,6 @@ import (
 	"shell-spooler/comm"
 )
 
-type JobStatus string
-
-const (
-	JobWaiting   JobStatus = "WAITING"
-	JobRunning   JobStatus = "RUNNING"
-	JobCompleted JobStatus = "COMPLETED"
-	JobCanceled  JobStatus = "CANCELED"
-)
-
-type Job struct {
-	ID          string
-	Commands    []string
-	Signals     map[string]float32
-	Status      JobStatus
-	TimeAdded   time.Time
-	TimeStarted *time.Time
-	TimeEnded   *time.Time
-}
-
 func mapJob(job Job) JobInfo {
 	jobInfo := JobInfo{
 		JobID:     job.ID,
@@ -51,21 +32,16 @@ func mapJob(job Job) JobInfo {
 }
 
 type apiImpl struct {
-	lineDB *LineDB
-	logger *PayloadLogger
+	commInstance *comm.Comm
+	jobSched     *JobSched
 
 	// line serialization
-	lineNumMu   sync.Mutex
+	lineMu      sync.Mutex
 	nextLineNum int
+	lineDB      *LineDB
+	logger      *PayloadLogger
 
-	// job management
-	jobsMu    sync.Mutex
-	jobs      []Job
-	nextJobID int
-
-	// dependencies for SpoolerAPI
-	commInstance *comm.Comm
-	initFileAbs  string
+	initFileAbs string
 }
 
 func (h *apiImpl) PayloadSent(payload string) {
@@ -81,8 +57,8 @@ func (h *apiImpl) PStateRecv(ps comm.PState) {
 }
 
 func (h *apiImpl) addLineAtomic(dir string, payload string) {
-	h.lineNumMu.Lock()
-	defer h.lineNumMu.Unlock()
+	h.lineMu.Lock()
+	defer h.lineMu.Unlock()
 
 	lineNum := h.nextLineNum
 	h.nextLineNum++
@@ -97,7 +73,7 @@ func (h *apiImpl) Close() {
 
 // SpoolerAPI implementation
 func (h *apiImpl) WriteLine(req *WriteLineRequest) (*WriteLineResponse, error) {
-	if h.hasPendingJob() {
+	if h.jobSched.hasPendingJob() {
 		return &WriteLineResponse{
 			OK:   false,
 			Time: formatSpoolerTime(time.Now()),
@@ -201,31 +177,13 @@ func (h *apiImpl) GetInit(req *GetInitRequest) (*GetInitResponse, error) {
 }
 
 func (h *apiImpl) AddJob(req *AddJobRequest) (*AddJobResponse, error) {
-	h.jobsMu.Lock()
-	defer h.jobsMu.Unlock()
-
-	if h.hasPendingJob() || h.commInstance.CommandQueueLength() > 0 {
+	jobID, ok := h.jobSched.AddJob(req.Commands, req.Signals)
+	if !ok {
 		return &AddJobResponse{
 			OK:    false,
 			JobID: nil,
 		}, nil
 	}
-
-	// Generate job ID
-	jobID := fmt.Sprintf("jb%d", h.nextJobID)
-	h.nextJobID++
-
-	// Create new job
-	job := Job{
-		ID:        jobID,
-		Commands:  req.Commands,
-		Signals:   req.Signals,
-		Status:    JobWaiting,
-		TimeAdded: time.Now(),
-	}
-
-	// Add to jobs list
-	h.jobs = append(h.jobs, job)
 
 	return &AddJobResponse{
 		OK:    true,
@@ -234,11 +192,9 @@ func (h *apiImpl) AddJob(req *AddJobRequest) (*AddJobResponse, error) {
 }
 
 func (h *apiImpl) ListJobs(req *ListJobsRequest) (*ListJobsResponse, error) {
-	h.jobsMu.Lock()
-	defer h.jobsMu.Unlock()
-
-	jobInfos := make([]JobInfo, len(h.jobs))
-	for i, job := range h.jobs {
+	jobs := h.jobSched.ListJobs()
+	jobInfos := make([]JobInfo, len(jobs))
+	for i, job := range jobs {
 		jobInfos[i] = mapJob(job)
 	}
 
@@ -251,78 +207,8 @@ func (h *apiImpl) QueryTS(req *QueryTSRequest) (*QueryTSResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (h *apiImpl) hasPendingJob() bool {
-	h.jobsMu.Lock()
-	defer h.jobsMu.Unlock()
-
-	for _, job := range h.jobs {
-		if job.Status == JobWaiting || job.Status == JobRunning {
-			return true
-		}
-	}
-	return false
-}
-
-func (h *apiImpl) findWaitingJob() *Job {
-	h.jobsMu.Lock()
-	defer h.jobsMu.Unlock()
-
-	for i := range h.jobs {
-		if h.jobs[i].Status == JobWaiting {
-			return &h.jobs[i]
-		}
-	}
-	return nil
-}
-
-func (h *apiImpl) keepSendingSignals(signal string, value float32) {
-	interval := time.Duration(value * float32(time.Second))
-	for {
-		time.Sleep(interval)
-		h.commInstance.Write(signal)
-	}
-}
-
-func (h *apiImpl) keepExecutingJobs() {
-	for {
-		// Wait until a job become runnable.
-		var job *Job
-		for {
-			job = h.findWaitingJob()
-			if job != nil && h.commInstance.CommandQueueLength() == 0 {
-				break
-			}
-			time.Sleep(500 * time.Millisecond)
-		}
-
-		// Execute job
-		tStart := time.Now().Local()
-		job.Status = JobRunning
-		job.TimeStarted = &tStart
-
-		for signal, value := range job.Signals {
-			go h.keepSendingSignals(signal, value)
-		}
-		for _, command := range job.Commands {
-			h.commInstance.Write(command)
-		}
-
-		// Wait job completion (== cmd queue become empty)
-		for {
-			if h.commInstance.CommandQueueLength() == 0 {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-
-		// Mark job as completed
-		tEnd := time.Now().Local()
-		job.Status = JobCompleted
-		job.TimeEnded = &tEnd
-	}
-}
-
 func main() {
+	// Flag resolution
 	portName := flag.String("port", "COM3", "Serial port name")
 	baud := flag.Int("baud", 115200, "Serial port baud rate")
 	addr := flag.String("addr", ":9000", "HTTP listen address")
@@ -335,7 +221,6 @@ func main() {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
 
-	// Resolve full paths
 	logDirAbs, err := filepath.Abs(*logDir)
 	if err != nil {
 		slog.Error("Failed to resolve log directory path", "logDir", *logDir, "error", err)
@@ -351,16 +236,23 @@ func main() {
 	slog.Info("Using log directory", "path", logDirAbs)
 	slog.Info("Using init file", "path", initFileAbs)
 
+	// Storage & payload loggers
 	storage := NewLineDB()
 
 	logger := NewPayloadLogger(logDirAbs)
 	defer logger.Close()
 
+	_, err = fetchInitLines(initFileAbs) // Prepare the file to detect path error early
+	if err != nil {
+		slog.Error("Init file error", "error", err)
+		return
+	}
+
+	// Initialize communication & server impl.
 	apiImpl := &apiImpl{
 		lineDB:      storage,
 		logger:      logger,
 		nextLineNum: 1,
-		nextJobID:   1,
 	}
 	defer apiImpl.Close()
 
@@ -371,19 +263,10 @@ func main() {
 	}
 	defer commInstance.Close()
 
-	// Handle init file - always check and prepare init file so we can detect path error before starting server
-	_, err = fetchInitLines(initFileAbs)
-	if err != nil {
-		slog.Error("Init file error", "error", err)
-		return
-	}
-
-	// Initialize handler with dependencies
 	apiImpl.commInstance = commInstance
 	apiImpl.initFileAbs = initFileAbs
-
-	// Start job execution goroutine
-	go apiImpl.keepExecutingJobs()
+	apiImpl.jobSched = NewJobSched(commInstance)
+	go apiImpl.jobSched.keepExecutingJobs()
 
 	// Start HTTP server
 	slog.Info("HTTP server starting", "port", *addr)
