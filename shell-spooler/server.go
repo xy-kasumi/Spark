@@ -178,8 +178,16 @@ type AddJobResponse struct {
 
 func validateAddJob(req *AddJobRequest) error {
 	for _, command := range req.Commands {
-		if strings.Contains(command, "\n") {
-			return errors.New("commands: must not contain newline")
+		if strings.Contains(command, "\n") || command == "" {
+			return errors.New("invalid command")
+		}
+	}
+	for signal, interval := range req.Signals {
+		if strings.Contains(signal, "\n") || !strings.HasPrefix(signal, "?") {
+			return errors.New("invalid signal")
+		}
+		if interval <= 0 {
+			return errors.New("signal interval: must be > 0")
 		}
 	}
 	return nil

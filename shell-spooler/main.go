@@ -33,9 +33,26 @@ type Job struct {
 	TimeEnded   *time.Time
 }
 
+func mapJob(job Job) JobInfo {
+	jobInfo := JobInfo{
+		JobID:     job.ID,
+		Status:    string(job.Status),
+		TimeAdded: formatSpoolerTime(job.TimeAdded),
+	}
+	if job.TimeStarted != nil {
+		timeStarted := formatSpoolerTime(*job.TimeStarted)
+		jobInfo.TimeStarted = &timeStarted
+	}
+	if job.TimeEnded != nil {
+		timeEnded := formatSpoolerTime(*job.TimeEnded)
+		jobInfo.TimeEnded = &timeEnded
+	}
+	return jobInfo
+}
+
 type apiImpl struct {
-	storage *LineDB
-	logger  *PayloadLogger
+	lineDB *LineDB
+	logger *PayloadLogger
 
 	// line serialization
 	lineNumMu   sync.Mutex
@@ -70,7 +87,7 @@ func (h *apiImpl) addLineAtomic(dir string, payload string) {
 	lineNum := h.nextLineNum
 	h.nextLineNum++
 
-	h.storage.addLine(lineNum, dir, payload)
+	h.lineDB.AddLine(lineNum, dir, payload)
 	h.logger.AddLine(lineNum, dir, payload)
 }
 
@@ -80,8 +97,13 @@ func (h *apiImpl) Close() {
 
 // SpoolerAPI implementation
 func (h *apiImpl) WriteLine(req *WriteLineRequest) (*WriteLineResponse, error) {
+	if h.hasPendingJob() {
+		return &WriteLineResponse{
+			OK:   false,
+			Time: formatSpoolerTime(time.Now()),
+		}, nil
+	}
 	h.commInstance.Write(req.Line)
-
 	resp := WriteLineResponse{
 		OK:   true,
 		Time: formatSpoolerTime(time.Now()),
@@ -119,7 +141,7 @@ func (h *apiImpl) QueryLines(req *QueryLinesRequest) (*QueryLinesResponse, error
 	}
 
 	// Query lines from storage
-	lines := h.storage.Query(opts)
+	lines := h.lineDB.Query(opts)
 
 	totalCount := len(lines)
 	const maxLines = 1000 // Limit response to 1000 lines
@@ -146,6 +168,7 @@ func (h *apiImpl) QueryLines(req *QueryLinesRequest) (*QueryLinesResponse, error
 
 func (h *apiImpl) ClearQueue(req *ClearQueueRequest) (*ClearQueueResponse, error) {
 	h.commInstance.DrainCommandQueue()
+	// TODO: cancel running job
 	return &ClearQueueResponse{}, nil
 }
 
@@ -181,18 +204,7 @@ func (h *apiImpl) AddJob(req *AddJobRequest) (*AddJobResponse, error) {
 	h.jobsMu.Lock()
 	defer h.jobsMu.Unlock()
 
-	// Check new job is addable.
-	addJobPossible := true
-	for _, job := range h.jobs {
-		if job.Status == JobWaiting || job.Status == JobRunning {
-			addJobPossible = false
-			break
-		}
-	}
-	if h.commInstance.CommandQueueLength() > 0 {
-		addJobPossible = false
-	}
-	if !addJobPossible {
+	if h.hasPendingJob() || h.commInstance.CommandQueueLength() > 0 {
 		return &AddJobResponse{
 			OK:    false,
 			JobID: nil,
@@ -221,23 +233,6 @@ func (h *apiImpl) AddJob(req *AddJobRequest) (*AddJobResponse, error) {
 	}, nil
 }
 
-func mapJob(job Job) JobInfo {
-	jobInfo := JobInfo{
-		JobID:     job.ID,
-		Status:    string(job.Status),
-		TimeAdded: formatSpoolerTime(job.TimeAdded),
-	}
-	if job.TimeStarted != nil {
-		timeStarted := formatSpoolerTime(*job.TimeStarted)
-		jobInfo.TimeStarted = &timeStarted
-	}
-	if job.TimeEnded != nil {
-		timeEnded := formatSpoolerTime(*job.TimeEnded)
-		jobInfo.TimeEnded = &timeEnded
-	}
-	return jobInfo
-}
-
 func (h *apiImpl) ListJobs(req *ListJobsRequest) (*ListJobsResponse, error) {
 	h.jobsMu.Lock()
 	defer h.jobsMu.Unlock()
@@ -254,6 +249,77 @@ func (h *apiImpl) ListJobs(req *ListJobsRequest) (*ListJobsResponse, error) {
 
 func (h *apiImpl) QueryTS(req *QueryTSRequest) (*QueryTSResponse, error) {
 	return nil, fmt.Errorf("not implemented")
+}
+
+func (h *apiImpl) hasPendingJob() bool {
+	h.jobsMu.Lock()
+	defer h.jobsMu.Unlock()
+
+	for _, job := range h.jobs {
+		if job.Status == JobWaiting || job.Status == JobRunning {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *apiImpl) findWaitingJob() *Job {
+	h.jobsMu.Lock()
+	defer h.jobsMu.Unlock()
+
+	for i := range h.jobs {
+		if h.jobs[i].Status == JobWaiting {
+			return &h.jobs[i]
+		}
+	}
+	return nil
+}
+
+func (h *apiImpl) keepSendingSignals(signal string, value float32) {
+	interval := time.Duration(value * float32(time.Second))
+	for {
+		time.Sleep(interval)
+		h.commInstance.Write(signal)
+	}
+}
+
+func (h *apiImpl) keepExecutingJobs() {
+	for {
+		// Wait until a job become runnable.
+		var job *Job
+		for {
+			job = h.findWaitingJob()
+			if job != nil && h.commInstance.CommandQueueLength() == 0 {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		// Execute job
+		tStart := time.Now().Local()
+		job.Status = JobRunning
+		job.TimeStarted = &tStart
+
+		for signal, value := range job.Signals {
+			go h.keepSendingSignals(signal, value)
+		}
+		for _, command := range job.Commands {
+			h.commInstance.Write(command)
+		}
+
+		// Wait job completion (== cmd queue become empty)
+		for {
+			if h.commInstance.CommandQueueLength() == 0 {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		// Mark job as completed
+		tEnd := time.Now().Local()
+		job.Status = JobCompleted
+		job.TimeEnded = &tEnd
+	}
 }
 
 func main() {
@@ -291,7 +357,7 @@ func main() {
 	defer logger.Close()
 
 	apiImpl := &apiImpl{
-		storage:     storage,
+		lineDB:      storage,
 		logger:      logger,
 		nextLineNum: 1,
 		nextJobID:   1,
@@ -315,6 +381,9 @@ func main() {
 	// Initialize handler with dependencies
 	apiImpl.commInstance = commInstance
 	apiImpl.initFileAbs = initFileAbs
+
+	// Start job execution goroutine
+	go apiImpl.keepExecutingJobs()
 
 	// Start HTTP server
 	slog.Info("HTTP server starting", "port", *addr)

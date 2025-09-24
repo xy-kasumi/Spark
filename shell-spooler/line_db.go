@@ -22,7 +22,6 @@ func formatSpoolerTime(t time.Time) string {
 	return t.Local().Format("2006-01-02 15:04:05.000-07:00")
 }
 
-// Global line storage
 type LineDB struct {
 	mu    sync.RWMutex
 	lines []line
@@ -35,9 +34,8 @@ func NewLineDB() *LineDB {
 	}
 }
 
-
-// Add a line to storage
-func (ls *LineDB) addLine(lineNum int, dir string, content string) time.Time {
+// (thread-safe) Append a line. lineNum must be increasing from 1 for each call.
+func (ls *LineDB) AddLine(lineNum int, dir string, content string) time.Time {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
 
@@ -113,7 +111,7 @@ type QueryOptions struct {
 	FilterRegex *regexp.Regexp // Compiled regex, nil means no filter
 }
 
-// Query lines with the given options
+// (thread-safe) Query lines with the given options
 func (ls *LineDB) Query(opts QueryOptions) []line {
 	ls.mu.RLock()
 	defer ls.mu.RUnlock()
@@ -141,73 +139,3 @@ func (ls *LineDB) Query(opts QueryOptions) []line {
 	}
 	return result
 }
-
-// Deprecated: Use Query() instead
-// Query lines by range [fromLine, toLine)
-// fromLine: inclusive, 1-based line number (0 means from beginning)
-// toLine: exclusive, 1-based line number (0 means to end)
-func (ls *LineDB) queryRange(fromLine, toLine int) []line {
-	ls.mu.RLock()
-	defer ls.mu.RUnlock()
-
-	numLines := len(ls.lines)
-	if numLines == 0 {
-		return []line{}
-	}
-
-	// Note: line numbers are 1-based, slice indices are 0-based.
-	// We assume line numbers in storage are contiguous and start from 1.
-	// So, for line number `n`, its index is `n-1`.
-
-	var startIdx int
-	if fromLine > 0 {
-		startIdx = fromLine - 1
-	} else {
-		startIdx = 0 // fromLine <= 0 means from the beginning
-	}
-
-	if startIdx < 0 {
-		startIdx = 0
-	}
-
-	if startIdx >= numLines {
-		return []line{} // fromLine is after all stored lines
-	}
-
-	var endIdx int
-	if toLine > 0 {
-		// toLine is exclusive, so the index is toLine - 1.
-		endIdx = toLine - 1
-	} else {
-		endIdx = numLines // toLine <= 0 means to the end
-	}
-
-	if endIdx > numLines {
-		endIdx = numLines
-	}
-
-	if startIdx >= endIdx {
-		return []line{}
-	}
-
-	return ls.lines[startIdx:endIdx]
-}
-
-// Deprecated: Use Query() instead
-// Query last N lines
-func (ls *LineDB) queryTail(n int) []line {
-	ls.mu.RLock()
-	defer ls.mu.RUnlock()
-
-	if len(ls.lines) == 0 || n <= 0 {
-		return []line{}
-	}
-
-	startIdx := len(ls.lines) - n
-	if startIdx < 0 {
-		startIdx = 0
-	}
-
-	return ls.lines[startIdx:]
-}
-
