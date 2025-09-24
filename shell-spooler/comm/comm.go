@@ -70,7 +70,7 @@ func InitComm(serialPort string, baud int, handler CommHandler) (*Comm, error) {
 		handler:   handler,
 		parser:    NewPStateParser(),
 		signalCh:  make(chan string, 10),
-		commandCh: make(chan string, 10_000_000),
+		commandCh: make(chan string, 10_000_000), // must be bigger than any G-code file
 	}
 	tran, err := initTransport(serialPort, baud, cm)
 	if err != nil {

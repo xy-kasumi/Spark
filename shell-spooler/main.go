@@ -73,7 +73,7 @@ func (h *apiImpl) Close() {
 
 // SpoolerAPI implementation
 func (h *apiImpl) WriteLine(req *WriteLineRequest) (*WriteLineResponse, error) {
-	if h.jobSched.hasPendingJob() {
+	if h.jobSched.HasPendingJob() {
 		return &WriteLineResponse{
 			OK:   false,
 			Time: formatSpoolerTime(time.Now()),
@@ -263,10 +263,11 @@ func main() {
 	}
 	defer commInstance.Close()
 
+	jobSched := InitJobSched(commInstance)
+
 	apiImpl.commInstance = commInstance
 	apiImpl.initFileAbs = initFileAbs
-	apiImpl.jobSched = NewJobSched(commInstance)
-	go apiImpl.jobSched.keepExecutingJobs()
+	apiImpl.jobSched = jobSched
 
 	// Start HTTP server
 	slog.Info("HTTP server starting", "port", *addr)

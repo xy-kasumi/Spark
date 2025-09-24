@@ -30,6 +30,7 @@ type Job struct {
 }
 
 // JobSched stores list of jobs and manage their execution
+// ~unsafe methods are not mutex-protected, caller must protect with mutex
 type JobSched struct {
 	mu        sync.Mutex
 	jobs      []Job
@@ -38,29 +39,32 @@ type JobSched struct {
 	commInstance *comm.Comm
 }
 
-func NewJobSched(commInstance *comm.Comm) *JobSched {
-	return &JobSched{
+// Create & start running new scheduler. At most one scheduler should be created for a single Comm instance.
+func InitJobSched(commInstance *comm.Comm) *JobSched {
+	sched := &JobSched{
 		nextJobID:    1,
 		commInstance: commInstance,
 	}
+	go sched.keepExecutingJobs()
+	return sched
 }
 
-func (js *JobSched) hasPendingJob() bool {
-	js.mu.Lock()
-	defer js.mu.Unlock()
+func (js *JobSched) issueNewJobIDUnsafe() string {
+	jobID := fmt.Sprintf("jb%d", js.nextJobID)
+	js.nextJobID++
+	return jobID
+}
 
+func (js *JobSched) findPendingJobUnsafe() *Job {
 	for _, job := range js.jobs {
 		if job.Status == JobWaiting || job.Status == JobRunning {
-			return true
+			return &job
 		}
 	}
-	return false
+	return nil
 }
 
-func (js *JobSched) findWaitingJob() *Job {
-	js.mu.Lock()
-	defer js.mu.Unlock()
-
+func (js *JobSched) findWaitingJobUnsafe() *Job {
 	for i := range js.jobs {
 		if js.jobs[i].Status == JobWaiting {
 			return &js.jobs[i]
@@ -69,9 +73,30 @@ func (js *JobSched) findWaitingJob() *Job {
 	return nil
 }
 
-func (js *JobSched) keepSendingSignals(signal string, value float32) {
+// creates deep copy of job. Immutable fields are shallow copied.
+func copyJobUnsafe(job Job) Job {
+	newJob := Job{
+		ID:        job.ID,
+		Commands:  job.Commands,
+		Signals:   job.Signals,
+		Status:    job.Status,
+		TimeAdded: job.TimeAdded,
+	}
+	if job.TimeStarted != nil {
+		t := *job.TimeStarted
+		newJob.TimeStarted = &t
+	}
+	if job.TimeEnded != nil {
+		t := *job.TimeEnded
+		newJob.TimeEnded = &t
+	}
+	return newJob
+}
+
+func (js *JobSched) keepSendingSignals(signal string, value float32, stop chan struct{}) {
 	interval := time.Duration(value * float32(time.Second))
 	for {
+		// TODO: stop
 		time.Sleep(interval)
 		js.commInstance.Write(signal)
 	}
@@ -82,37 +107,48 @@ func (js *JobSched) keepExecutingJobs() {
 		// Wait until a job become runnable.
 		var job *Job
 		for {
-			job = js.findWaitingJob()
-			if job != nil && js.commInstance.CommandQueueLength() == 0 {
-				break
+			{
+				js.mu.Lock()
+				defer js.mu.Unlock()
+				job = js.findWaitingJobUnsafe()
+				if job != nil && js.commInstance.CommandQueueLength() == 0 {
+					// Mark as started
+					tStart := time.Now().Local()
+					job.Status = JobRunning
+					job.TimeStarted = &tStart
+					break
+				}
 			}
 			time.Sleep(500 * time.Millisecond)
 		}
 
-		// Execute job
-		tStart := time.Now().Local()
-		job.Status = JobRunning
-		job.TimeStarted = &tStart
-
+		// Execute
+		stop := make(chan struct{})
 		for signal, value := range job.Signals {
-			go js.keepSendingSignals(signal, value)
+			go js.keepSendingSignals(signal, value, stop)
 		}
 		for _, command := range job.Commands {
 			js.commInstance.Write(command)
 		}
 
-		// Wait job completion (== cmd queue become empty)
+		// Wait job completion (== cmd queue become empty) or cancellation
 		for {
-			if js.commInstance.CommandQueueLength() == 0 {
-				break
+			{
+				js.mu.Lock()
+				defer js.mu.Unlock()
+				if job.Status == JobCanceled {
+					break
+				}
+				if js.commInstance.CommandQueueLength() == 0 {
+					// Mark job as completed
+					tEnd := time.Now().Local()
+					job.Status = JobCompleted
+					job.TimeEnded = &tEnd
+					break
+				}
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
-
-		// Mark job as completed
-		tEnd := time.Now().Local()
-		job.Status = JobCompleted
-		job.TimeEnded = &tEnd
 	}
 }
 
@@ -120,46 +156,48 @@ func (js *JobSched) AddJob(commands []string, signals map[string]float32) (strin
 	js.mu.Lock()
 	defer js.mu.Unlock()
 
-	if js.hasPendingJobUnsafe() || js.commInstance.CommandQueueLength() > 0 {
+	if js.findPendingJobUnsafe() != nil || js.commInstance.CommandQueueLength() > 0 {
 		return "", false
 	}
 
-	// Generate job ID
-	jobID := fmt.Sprintf("jb%d", js.nextJobID)
-	js.nextJobID++
-
-	// Create new job
+	// Add new job
 	job := Job{
-		ID:        jobID,
+		ID:        js.issueNewJobIDUnsafe(),
 		Commands:  commands,
 		Signals:   signals,
 		Status:    JobWaiting,
-		TimeAdded: time.Now(),
+		TimeAdded: time.Now().Local(),
 	}
-
-	// Add to jobs list
 	js.jobs = append(js.jobs, job)
-
-	return jobID, true
+	return job.ID, true
 }
 
 func (js *JobSched) ListJobs() []Job {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 
-	// Return copy of jobs slice
 	jobs := make([]Job, len(js.jobs))
-	copy(jobs, js.jobs)
+	for i, job := range js.jobs {
+		jobs[i] = copyJobUnsafe(job)
+	}
 	return jobs
 }
 
-// hasPendingJobUnsafe is the unsafe version that doesn't acquire mutex
-// Used internally when mutex is already held
-func (js *JobSched) hasPendingJobUnsafe() bool {
-	for _, job := range js.jobs {
-		if job.Status == JobWaiting || job.Status == JobRunning {
-			return true
-		}
+func (js *JobSched) Cancel() {
+	js.mu.Lock()
+	defer js.mu.Unlock()
+
+	job := js.findPendingJobUnsafe()
+	if job != nil {
+		job.Status = JobCanceled
+		tEnd := time.Now().Local()
+		job.TimeEnded = &tEnd
 	}
-	return false
+}
+
+func (js *JobSched) HasPendingJob() bool {
+	js.mu.Lock()
+	defer js.mu.Unlock()
+
+	return js.findPendingJobUnsafe() != nil
 }
