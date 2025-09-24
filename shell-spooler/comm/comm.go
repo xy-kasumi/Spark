@@ -136,19 +136,19 @@ func (cm *Comm) feedCommand() {
 	}
 }
 
-func (cm *Comm) WriteLine(line string) {
-	if line[0] == '!' || line[0] == '?' {
-		cm.signalCh <- line
+func (cm *Comm) Write(payload string) {
+	if payload[0] == '!' || payload[0] == '?' {
+		cm.signalCh <- payload
 	} else {
-		cm.commandCh <- line
+		cm.commandCh <- payload
 	}
 }
 
-func (cm *Comm) WriteQueueLength() int {
+func (cm *Comm) CommandQueueLength() int {
 	return len(cm.commandCh)
 }
 
-func (cm *Comm) DrainWriteQueue() {
+func (cm *Comm) DrainCommandQueue() {
 	for {
 		select {
 		case <-cm.commandCh:

@@ -56,7 +56,7 @@ func (h *apiImpl) Close() {
 
 // SpoolerAPI implementation
 func (h *apiImpl) WriteLine(req *WriteLineRequest) (*WriteLineResponse, error) {
-	h.commInstance.WriteLine(req.Line)
+	h.commInstance.Write(req.Line)
 
 	resp := WriteLineResponse{
 		OK:   true,
@@ -121,15 +121,15 @@ func (h *apiImpl) QueryLines(req *QueryLinesRequest) (*QueryLinesResponse, error
 }
 
 func (h *apiImpl) ClearQueue(req *ClearQueueRequest) (*ClearQueueResponse, error) {
-	h.commInstance.DrainWriteQueue()
+	h.commInstance.DrainCommandQueue()
 	return &ClearQueueResponse{}, nil
 }
 
 func (h *apiImpl) GetStatus(req *GetStatusRequest) (*GetStatusResponse, error) {
 	resp := GetStatusResponse{
-		Busy: h.commInstance.WriteQueueLength() > 0,
+		Busy: h.commInstance.CommandQueueLength() > 0,
 		CommandQueue: CommandQueue{
-			Spooler: h.commInstance.WriteQueueLength(),
+			Spooler: h.commInstance.CommandQueueLength(),
 			Core:    0, // TBD: get from core
 			Job:     0, // TBD: get from job system
 		},
