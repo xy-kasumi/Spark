@@ -94,11 +94,14 @@ func copyJobUnsafe(job Job) Job {
 }
 
 func (js *JobSched) keepSendingSignals(signal string, value float32, stop chan struct{}) {
-	interval := time.Duration(value * float32(time.Second))
+	tick := time.Tick(time.Duration(value * float32(time.Second)))
 	for {
-		// TODO: stop
-		time.Sleep(interval)
-		js.commInstance.Write(signal)
+		select {
+		case <-stop:
+			return
+		case <-tick:
+			js.commInstance.Write(signal)
+		}
 	}
 }
 
@@ -137,9 +140,11 @@ func (js *JobSched) keepExecutingJobs() {
 				js.mu.Lock()
 				defer js.mu.Unlock()
 				if job.Status == JobCanceled {
+					close(stop)
 					break
 				}
 				if js.commInstance.CommandQueueLength() == 0 {
+					close(stop)
 					// Mark job as completed
 					tEnd := time.Now().Local()
 					job.Status = JobCompleted

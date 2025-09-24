@@ -142,10 +142,11 @@ func (h *apiImpl) QueryLines(req *QueryLinesRequest) (*QueryLinesResponse, error
 	return &resp, nil
 }
 
-func (h *apiImpl) ClearQueue(req *ClearQueueRequest) (*ClearQueueResponse, error) {
+func (h *apiImpl) Cancel(req *CancelRequest) (*CancelResponse, error) {
+	h.jobSched.Cancel()
 	h.commInstance.DrainCommandQueue()
-	// TODO: cancel running job
-	return &ClearQueueResponse{}, nil
+	h.commInstance.Write("!")
+	return &CancelResponse{}, nil
 }
 
 func (h *apiImpl) GetStatus(req *GetStatusRequest) (*GetStatusResponse, error) {

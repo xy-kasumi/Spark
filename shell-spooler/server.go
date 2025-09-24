@@ -16,7 +16,7 @@ import (
 type SpoolerAPI interface {
 	WriteLine(req *WriteLineRequest) (*WriteLineResponse, error)
 	QueryLines(req *QueryLinesRequest) (*QueryLinesResponse, error)
-	ClearQueue(req *ClearQueueRequest) (*ClearQueueResponse, error)
+	Cancel(req *CancelRequest) (*CancelResponse, error)
 	SetInit(req *SetInitRequest) (*SetInitResponse, error)
 	GetInit(req *GetInitRequest) (*GetInitResponse, error)
 	GetStatus(req *GetStatusRequest) (*GetStatusResponse, error)
@@ -111,13 +111,13 @@ func validateQueryLines(req *QueryLinesRequest) error {
 	return nil
 }
 
-type ClearQueueRequest struct {
+type CancelRequest struct {
 }
 
-type ClearQueueResponse struct {
+type CancelResponse struct {
 }
 
-func validateClearQueue(req *ClearQueueRequest) error {
+func validateCancel(req *CancelRequest) error {
 	return nil
 }
 
@@ -284,7 +284,7 @@ func registerJsonHandler[ReqT any, RespT any](path string, validate func(*ReqT) 
 func StartHTTPServer(addr string, api SpoolerAPI) error {
 	registerJsonHandler("/write-line", validateWriteLine, api.WriteLine)
 	registerJsonHandler("/query-lines", validateQueryLines, api.QueryLines)
-	registerJsonHandler("/clear-queue", validateClearQueue, api.ClearQueue)
+	registerJsonHandler("/cancel", validateCancel, api.Cancel)
 	registerJsonHandler("/status", validateGetStatus, api.GetStatus)
 	registerJsonHandler("/set-init", validateSetInit, api.SetInit)
 	registerJsonHandler("/get-init", validateGetInit, api.GetInit)

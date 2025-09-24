@@ -34,7 +34,6 @@ It sticks to just 3 types of status codes.
 ### POST /write-line
 
 Enqueue sending of a payload.
-It won't be sent if /clear-queue is called after /write-line and before actual sending.
 Signals will be immediately sent even if a job is running.
 If any job is `WAITING` or `RUNNING`, /write-line of commands will fail.
 
@@ -226,9 +225,13 @@ Response:
 }
 ```
 
-### POST /clear-queue
+### POST /cancel
 
-Clear spooler down queue.
+Cancel everything through the stack, including:
+* currently running command in core
+* command queue in core
+* command queue in spooler
+* waiting / running job in spooler
 
 **Request Type**
 
