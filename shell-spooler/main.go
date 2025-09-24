@@ -14,6 +14,25 @@ import (
 	"shell-spooler/comm"
 )
 
+type JobStatus string
+
+const (
+	JobWaiting   JobStatus = "WAITING"
+	JobRunning   JobStatus = "RUNNING"
+	JobCompleted JobStatus = "COMPLETED"
+	JobCanceled  JobStatus = "CANCELED"
+)
+
+type Job struct {
+	ID          string
+	Commands    []string
+	Signals     map[string]float32
+	Status      JobStatus
+	TimeAdded   time.Time
+	TimeStarted *time.Time
+	TimeEnded   *time.Time
+}
+
 type apiImpl struct {
 	storage *LineDB
 	logger  *PayloadLogger
@@ -21,6 +40,11 @@ type apiImpl struct {
 	// line serialization
 	lineNumMu   sync.Mutex
 	nextLineNum int
+
+	// job management
+	jobsMu    sync.Mutex
+	jobs      []Job
+	nextJobID int
 
 	// dependencies for SpoolerAPI
 	commInstance *comm.Comm
@@ -154,11 +178,78 @@ func (h *apiImpl) GetInit(req *GetInitRequest) (*GetInitResponse, error) {
 }
 
 func (h *apiImpl) AddJob(req *AddJobRequest) (*AddJobResponse, error) {
-	return nil, fmt.Errorf("not implemented")
+	h.jobsMu.Lock()
+	defer h.jobsMu.Unlock()
+
+	// Check new job is addable.
+	addJobPossible := true
+	for _, job := range h.jobs {
+		if job.Status == JobWaiting || job.Status == JobRunning {
+			addJobPossible = false
+			break
+		}
+	}
+	if h.commInstance.CommandQueueLength() > 0 {
+		addJobPossible = false
+	}
+	if !addJobPossible {
+		return &AddJobResponse{
+			OK:    false,
+			JobID: nil,
+		}, nil
+	}
+
+	// Generate job ID
+	jobID := fmt.Sprintf("jb%d", h.nextJobID)
+	h.nextJobID++
+
+	// Create new job
+	job := Job{
+		ID:        jobID,
+		Commands:  req.Commands,
+		Signals:   req.Signals,
+		Status:    JobWaiting,
+		TimeAdded: time.Now(),
+	}
+
+	// Add to jobs list
+	h.jobs = append(h.jobs, job)
+
+	return &AddJobResponse{
+		OK:    true,
+		JobID: &jobID,
+	}, nil
+}
+
+func mapJob(job Job) JobInfo {
+	jobInfo := JobInfo{
+		JobID:     job.ID,
+		Status:    string(job.Status),
+		TimeAdded: formatSpoolerTime(job.TimeAdded),
+	}
+	if job.TimeStarted != nil {
+		timeStarted := formatSpoolerTime(*job.TimeStarted)
+		jobInfo.TimeStarted = &timeStarted
+	}
+	if job.TimeEnded != nil {
+		timeEnded := formatSpoolerTime(*job.TimeEnded)
+		jobInfo.TimeEnded = &timeEnded
+	}
+	return jobInfo
 }
 
 func (h *apiImpl) ListJobs(req *ListJobsRequest) (*ListJobsResponse, error) {
-	return nil, fmt.Errorf("not implemented")
+	h.jobsMu.Lock()
+	defer h.jobsMu.Unlock()
+
+	jobInfos := make([]JobInfo, len(h.jobs))
+	for i, job := range h.jobs {
+		jobInfos[i] = mapJob(job)
+	}
+
+	return &ListJobsResponse{
+		Jobs: jobInfos,
+	}, nil
 }
 
 func (h *apiImpl) QueryTS(req *QueryTSRequest) (*QueryTSResponse, error) {
@@ -203,6 +294,7 @@ func main() {
 		storage:     storage,
 		logger:      logger,
 		nextLineNum: 1,
+		nextJobID:   1,
 	}
 	defer apiImpl.Close()
 
