@@ -3,7 +3,7 @@
 package comm
 
 import (
-	"strconv"
+	"log/slog"
 	"time"
 )
 
@@ -31,17 +31,12 @@ type psQueue struct {
 }
 
 func parseQueuePS(ps PState) *psQueue {
-	capStr, ok1 := ps.GetString("cap")
-	numStr, ok2 := ps.GetString("num")
+	cap, ok1 := ps.GetFloat("cap")
+	num, ok2 := ps.GetFloat("num")
 	if !ok1 || !ok2 {
 		return nil
 	}
-	cap, err1 := strconv.Atoi(capStr)
-	num, err2 := strconv.Atoi(numStr)
-	if err1 != nil || err2 != nil {
-		return nil
-	}
-	return &psQueue{Cap: cap, Num: num}
+	return &psQueue{Cap: int(cap), Num: int(num)}
 }
 
 func (cm *Comm) PayloadSent(payload string) {
@@ -49,17 +44,23 @@ func (cm *Comm) PayloadSent(payload string) {
 }
 func (cm *Comm) PayloadRecv(payload string) {
 	cm.handler.PayloadRecv(payload)
-	ps, ok := cm.parser.update(payload)
-	if ok {
-		if ps.Tag == "queue" {
-			q := parseQueuePS(*ps)
-			if q != nil {
-				cm.latestQueue = q
-			}
-		}
-		cm.handler.PStateRecv(*ps)
+	ps, err := cm.parser.Update(payload)
+	if err != nil {
+		slog.Warn("Failed to parse p-state", "payload", payload, "error", err)
+		return
 	}
+	if ps == nil {
+		return
+	}
+	if ps.Tag == "queue" {
+		q := parseQueuePS(*ps)
+		if q != nil {
+			cm.latestQueue = q
+		}
+	}
+	cm.handler.PStateRecv(*ps)
 }
+
 func (cm *Comm) PStateRecv(ps PState) {
 	panic("unreachable")
 }

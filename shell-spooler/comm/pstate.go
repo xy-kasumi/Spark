@@ -4,7 +4,7 @@ package comm
 
 import (
 	"errors"
-	"log/slog"
+	"fmt"
 	"strings"
 )
 
@@ -62,91 +62,177 @@ func NewPStateParser() PStateParser {
 	return make(map[string]*PState)
 }
 
-// e.g. "pos < sys:"a b" a.b:2 >" -> ["pos", "<", `sys:"a b"`, "a.b:2", ">"]
-// won't do much extra validation
-func splitPsTokens(payload string) ([]string, error) {
-	var toks []string
+type tokenType string
+
+const (
+	tokBegin tokenType = "<"
+	tokEnd   tokenType = ">"
+	tokSep   tokenType = ":"
+	tokStr   tokenType = "str"   // string literal
+	tokOther tokenType = "other" // keys, tags, numbers, bools
+)
+
+type token struct {
+	typ tokenType
+	val string // for tokStr: unescaped value, for tokOther: raw value string, for tokBegin/tokEnd/tokSep: empty
+}
+
+// e.g. `pos < sys:"a \"b" a.b:2 >“ -> [Other "pos", Begin, Other "sys", Sep, Str `a "b`, Other "a.b", Sep, Other "2", End]
+func tokenize(payload string) ([]token, error) {
+	type stateType int
+	const (
+		normal stateType = iota
+		inQuote
+		inQuoteEscape
+	)
+
+	var toks []token
 	var buf []rune
-	inQuote := false
-	inEscape := false
+	state := normal
 	for _, ch := range payload {
-		if inEscape {
-			if ch == '\\' {
+		switch state {
+		case inQuoteEscape:
+			switch ch {
+			case '\\':
 				buf = append(buf, '\\')
-			} else if ch == '"' {
+			case '"':
 				buf = append(buf, '"')
-			} else {
+			default:
 				return nil, errors.New("invalid escape sequence" + string(ch))
 			}
-			inEscape = false
-		} else if inQuote {
-			if ch == '\\' {
-				inEscape = true
-			} else {
-				if ch == '"' {
-					inQuote = false
-				}
+			state = inQuote
+		case inQuote:
+			switch ch {
+			case '\\':
+				state = inQuoteEscape
+			case '"':
+				toks = append(toks, token{typ: tokStr, val: string(buf)})
+				buf = nil
+				state = normal
+			default:
 				buf = append(buf, ch)
 			}
-		} else {
-			if ch == ' ' {
+		case normal:
+			switch ch {
+			case '"':
+				state = inQuote
+			case '<':
 				if len(buf) > 0 {
-					toks = append(toks, string(buf))
+					return nil, errors.New("unexpected '<'")
+				}
+				toks = append(toks, token{typ: tokBegin})
+			case '>':
+				if len(buf) > 0 {
+					return nil, errors.New("unexpected '>'")
+				}
+				toks = append(toks, token{typ: tokEnd})
+			case ':':
+				if len(buf) == 0 {
+					return nil, errors.New("unexpected ':'")
+				}
+				toks = append(toks, token{typ: tokOther, val: string(buf)})
+				buf = nil
+				toks = append(toks, token{typ: tokSep})
+			case ' ':
+				if len(buf) > 0 {
+					toks = append(toks, token{typ: tokOther, val: string(buf)})
 					buf = nil
 				}
-			} else {
-				if ch == '"' {
-					inQuote = true
-				}
+			default:
 				buf = append(buf, ch)
 			}
 		}
 	}
-	if len(buf) > 0 {
-		toks = append(toks, string(buf))
+	if state != normal {
+		return nil, errors.New("unclosed string")
 	}
-	if inQuote || inEscape {
-		return nil, errors.New("unclosed quote or escape")
+	if len(buf) > 0 {
+		toks = append(toks, token{typ: tokOther, val: string(buf)})
 	}
 	return toks, nil
 }
 
-func (parser PStateParser) update(line string) (*PState, bool) {
-	tokens, err := splitPsTokens(line)
+// Feed new payload and return completed pstate if any.
+// Note that (nil, nil) can be returned if payload has no error but didn't complete any p-state.
+func (parser PStateParser) Update(payload string) (*PState, error) {
+	toks, err := tokenize(payload)
 	if err != nil {
-		slog.Warn("Malformed pstate", "error", err)
-		return nil, false
+		return nil, err
 	}
-	if len(tokens) < 1 {
-		return nil, false
+	if len(toks) < 1 || toks[0].typ != tokOther {
+		return nil, errors.New("missing p-state tag")
 	}
-	tag := tokens[0]
-	for _, token := range tokens[1:] {
-		switch token {
-		case "<":
-			ps := NewPState(tag)
-			parser[tag] = &ps
-		case ">":
-			ps, ok := parser[tag]
-			if !ok {
-				slog.Warn("Received '>' without matching '<'", "type", tag)
-				continue
+	type stateType int
+	const (
+		normal stateType = iota
+		expSep
+		expVal
+	)
+
+	tag := toks[0].val
+	ps := parser[tag]
+
+	state := normal
+	var key string
+	for _, tok := range toks[1:] {
+		switch state {
+		case normal:
+			switch tok.typ {
+			case tokBegin:
+				psInst := NewPState(tag)
+				ps = &psInst
+				parser[tag] = ps
+			case tokEnd:
+				if ps == nil {
+					return nil, errors.New("unexpected '>' without matching '<'")
+				}
+				delete(parser, tag)
+				return ps, nil
+			case tokOther:
+				key = tok.val
+				state = expSep
+			default:
+				return nil, fmt.Errorf("unexpected token(typ=%s,val=%s)", tok.typ, tok.val)
 			}
-			delete(parser, tag)
-			return ps, true
-		default:
-			ps, ok := parser[tag]
-			if !ok {
-				slog.Warn("Received pstate key-value without matching '<'", "type", tag)
-				continue
+		case expSep:
+			switch tok.typ {
+			case tokSep:
+				state = expVal
+			default:
+				return nil, fmt.Errorf("expected ':', got (typ=%s,val=%s)", tok.typ, tok.val)
 			}
-			kv := strings.SplitN(token, ":", 2)
-			if len(kv) != 2 {
-				slog.Warn("Received malformed pstate", "payload", line)
-				continue
+		case expVal:
+			if ps == nil {
+				return nil, errors.New("unexpected value without matching '<'")
 			}
-			ps.m[kv[0]] = kv[1]
+			switch tok.typ {
+			case tokStr:
+				ps.m[key] = tok.val
+			case tokOther:
+				if tok.val == "true" {
+					ps.m[key] = true
+				} else if tok.val == "false" {
+					ps.m[key] = false
+				} else if strings.HasPrefix(tok.val, "0x") {
+					var u uint32
+					_, err := fmt.Sscanf(tok.val, "0x%x", &u)
+					if err != nil {
+						return nil, errors.New("invalid hex: " + tok.val)
+					}
+					ps.m[key] = u
+				} else {
+					var f float32
+					n, err := fmt.Sscanf(tok.val, "%f", &f)
+					if err != nil || n != 1 {
+						return nil, errors.New("invalid float: " + tok.val)
+					}
+					ps.m[key] = f
+				}
+			default:
+				return nil, errors.New("expected value, got " + tok.val)
+			}
+			state = normal
 		}
 	}
-	return nil, false
+	return nil, nil
 }
