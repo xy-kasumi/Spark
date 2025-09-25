@@ -136,6 +136,8 @@ const app = Vue.createApp({
             settingsFilter: '',
             editingKey: null as string | null,
             escapeHandler: null as ((event: KeyboardEvent) => void) | null,
+            tsSpan: 60,
+            tsRefreshInterval: 60,
         }
     },
 
@@ -316,6 +318,23 @@ const app = Vue.createApp({
             }
         };
         document.addEventListener('keydown', this.escapeHandler);
+
+        // Initialize chart
+        const data = {
+            labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"],
+            datasets: [{
+                label: 'My First Dataset',
+                data: [65, 59, 80, 81, 56, 55, 40],
+                fill: false,
+                borderColor: 'rgb(75, 192, 192)',
+            }]
+        };
+        this.chart = new Chart(document.getElementById('timeseries-chart') as HTMLCanvasElement,
+            {
+                type: 'line',
+                data: data,
+            });
+
 
         // Start polling
         client.startPolling();
@@ -797,6 +816,16 @@ const app = Vue.createApp({
             } catch (error) {
                 console.error('Failed to save settings as init:', error);
             }
+        },
+
+        async tsRefreshNow() {
+            const now = new Date().getTime();
+            const start = new Date(now - this.tsSpan);
+            const end = new Date(now);
+
+            const res = await spoolerApi.queryTS(host, start, end, 1, ["m.z"]);
+            this.chart;
+            
         }
     }
 });

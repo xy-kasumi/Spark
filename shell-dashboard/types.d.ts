@@ -7,4 +7,8 @@ declare const Vue: {
     };
 };
 
+declare const Chart: {
+    new (context: string | HTMLCanvasElement | HTMLVideoElement | OffscreenCanvas, config: any): any;
+};
+
 declare function atob(encodedData: string): string;

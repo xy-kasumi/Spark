@@ -179,11 +179,11 @@ class SpoolerController {
             this.onQueueChange();
         }
 
-        // Send cancel command directly
-        fetch(`${this.host}/write-line`, {
+        // Send cancel
+        fetch(`${this.host}/cancel`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ line: '!' })
+            body: JSON.stringify({})
         }).catch(error => {
             console.log("cancel error", error);
         });
@@ -383,6 +383,46 @@ const spoolerApi = {
 
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        return await response.json();
+    },
+
+    async queryTS(host: string, start: Date, end: Date, step: number, keys: string[]): Promise<{ times: number[]; values: Record<string, any[]> }> {
+        // Format timestamps according to spec (RFC3339 with local timezone and millisecond precision)
+        const formatTimestamp = (date: Date): string => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            const milliseconds = String(date.getMilliseconds()).padStart(3, '0');
+
+            // Get timezone offset in format +HH:MM or -HH:MM
+            const timezoneOffset = -date.getTimezoneOffset();
+            const offsetHours = String(Math.floor(Math.abs(timezoneOffset) / 60)).padStart(2, '0');
+            const offsetMinutes = String(Math.abs(timezoneOffset) % 60).padStart(2, '0');
+            const offsetSign = timezoneOffset >= 0 ? '+' : '-';
+            const timezone = `${offsetSign}${offsetHours}:${offsetMinutes}`;
+
+            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}${timezone}`;
+        };
+
+        const response = await fetch(`${host}/query-ts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                start: formatTimestamp(start),
+                end: formatTimestamp(end),
+                step: step,
+                query: keys
+            })
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`HTTP ${response.status}: ${text}`);
         }
 
         return await response.json();

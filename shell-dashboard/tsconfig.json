@@ -21,6 +21,7 @@
   "exclude": [
     "node_modules",
     "dist",
-    "vue.global.js"
+    "vue.global.js",
+    "chart.und.js"
   ]
 }

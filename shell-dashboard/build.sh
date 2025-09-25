@@ -20,7 +20,7 @@ tsc
 # Copy HTML and CSS files
 echo "Copying static files..."
 cp index.html dist/
-cp vue.global.js dist/
+cp vue.global.js chart.umd.js dist/
 cp logo.png dist/
 
 echo "Build complete! Output in dist/"

@@ -425,33 +425,34 @@
                             Click REFRESH to load settings
                         </div>
                         <div v-else>
-                            <label>Filter <input type="text" v-model="settingsFilter" placeholder="Enter filter..."></label>
-                            <div class="settings-info">Showing {{ settingsCount.filtered }}/{{ settingsCount.total }} items</div>
+                            <label>Filter <input type="text" v-model="settingsFilter"
+                                    placeholder="Enter filter..."></label>
+                            <div class="settings-info">Showing {{ settingsCount.filtered }}/{{ settingsCount.total }}
+                                items</div>
                             <div class="settings-table-container">
-                            <table class="settings-table">
-                                <thead>
-                                    <tr>
-                                        <th>Key</th>
-                                        <th>Value</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr v-for="(value, key) in filteredSettings" :key="key">
-                                        <td v-html="highlightKey(key)"></td>
-                                        <td v-if="editingKey !== key" @click="startEditing(key)" style="cursor: pointer;">
-                                            {{ value }}
-                                            <span v-if="isModified(key)" class="modified-indicator">(modified)</span>
-                                        </td>
-                                        <td v-else>
-                                            <input type="number" 
-                                                   :value="value" 
-                                                   @blur="saveEdit(key, $event)"
-                                                   @keyup.enter="saveEdit(key, $event)"
-                                                   ref="editInput">
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                                <table class="settings-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Key</th>
+                                            <th>Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="(value, key) in filteredSettings" :key="key">
+                                            <td v-html="highlightKey(key)"></td>
+                                            <td v-if="editingKey !== key" @click="startEditing(key)"
+                                                style="cursor: pointer;">
+                                                {{ value }}
+                                                <span v-if="isModified(key)"
+                                                    class="modified-indicator">(modified)</span>
+                                            </td>
+                                            <td v-else>
+                                                <input type="number" :value="value" @blur="saveEdit(key, $event)"
+                                                    @keyup.enter="saveEdit(key, $event)" ref="editInput">
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
                             </div>
                             <div v-if="pendingEditsCount > 0" style="margin-top: var(--unit-space);">
                                 <button @click="applyEdits">APPLY EDITS</button>
@@ -461,6 +462,38 @@
                                 <button @click="saveAsInit">SAVE AS INIT</button>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <div class="widget" id="widget-timeseries">
+                    <h1>Timeseries</h1>
+                    <div class="widget-content">
+                        <div>
+                            Last
+                            <label class="">
+                                <input type="radio" name="tsSpan" :value="60" v-model.number="tsSpan"> 1m
+                            </label>
+                            <label class="">
+                                <input type="radio" name="tsSpan" :value="600" v-model.number="tsSpan"> 10m
+                            </label>
+                            <label class="">
+                                <input type="radio" name="tsSpan" :value="3600" v-model.number="tsSpan"> 60m
+                            </label>
+                        </div>
+                        <div>
+                            Auto refresh
+                            <label class="">
+                                <input type="radio" name="tsRefreshInterval" :value="0" v-model.number="tsRefreshInterval"> No
+                            </label>
+                            <label class="">
+                                <input type="radio" name="tsRefreshInterval" :value="10" v-model.number="tsRefreshInterval"> 10s
+                            </label>
+                            <label class="">
+                                <input type="radio" name="tsRefreshInterval" :value="60" v-model.number="tsRefreshInterval"> 1m
+                            </label>
+                            <button @click="tsRefreshNow">REFRESH</button>
+                        </div>
+                        <canvas id="timeseries-chart" width="500" height="300"></canvas>
                     </div>
                 </div>
 
@@ -476,6 +509,7 @@
     </div>
 
     <script src="vue.global.js"></script>
+    <script src="chart.umd.js"></script>
     <script src="spooler.js"></script>
     <script src="main.js"></script>
 </body>

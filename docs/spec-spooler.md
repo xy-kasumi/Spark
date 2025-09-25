@@ -50,7 +50,7 @@ properties:
 ```yaml
 properties:
   ok: {type: bool}
-  time: {type: string}
+  time: {type: float64}
 ```
 * `ok`: commands was enqueued
 * `time`: time of spooler enqueue (timestamp)
@@ -68,7 +68,7 @@ Response:
 ```json
 {
   "ok": true,
-  "now": "2025-07-27 15:04:05.000Z"
+  "now": 1735689600.123
 }
 ```
 
@@ -114,7 +114,7 @@ Filter
     line_num: number  // Line number
     dir: "up" | "down"  // Direction
     content: string   // Line content
-    time: string      // Timestamp
+    time: float64      // Timestamp
   }>
   now: string         // Current spooler time
 }
@@ -141,16 +141,16 @@ Response:
       "line_num": 122,
       "dir": "down",
       "content": "G1 X10 Y20",
-      "time": "2025-07-27 15:04:04.500"
+      "time": 1735689600.123
     },
     {
       "line_num": 123,
       "dir": "up",
       "content": ">ack",
-      "time": "2025-07-27 15:04:04.600"
+      "time": 1735689600.456
     }
   ],
-  "now": "2025-07-27 15:04:05.000"
+  "now": 1735689600.789
 }
 ```
 
@@ -172,10 +172,10 @@ Response
       "line_num": 123,
       "dir": "up",
       "content": ">ack",
-      "time": "2025-07-27 15:04:04.600"
+      "time": 1735689600.456
     }
   ],
-  "now": "2025-07-27 15:04:05.000"
+  "now": 1735689600.790
 }
 ```
 
@@ -370,10 +370,10 @@ elements:
     job_id: {type: string}
     status:
       enum: [WAITING, RUNNING, COMPLETED, CANCELED]
-    time_added: {type: string}
+    time_added: {type: float64}
   optionalProperties:
-    time_started: {type: string}
-    time_ended: {type: string}
+    time_started: {type: float64}
+    time_ended: {type: float64}
 ```
 
 * `status`: Current status of the job
@@ -391,9 +391,9 @@ Query time-series data from p-state.
 **Request Schema**
 ```yaml
 properties:
-  start: {type: string}
-  end: {type: string}
-  step: {type: float32}
+  start: {type: float64}
+  end: {type: float64}
+  step: {type: float64}
   query:
     elements: {type: string}
 ```
@@ -430,9 +430,9 @@ All the arrays (`times`, and each element of `values`) has same length.
 Request
 ```json
 {
-  "start": "2025-01-01 15:00:00.000Z",
-  "end": "2025-01-01 15:10:00.000Z",
-  "step": 60,
+  "start": 1735689600,
+  "end": 1735690600,
+  "step": 10,
   "query": ["pos.x", "edm.open"]
 }
 ```
@@ -441,10 +441,10 @@ Response
 ```json
 {
   "times": [
-    1735711200,
-    1735711260,
+    1735689600,
+    1735689610,
     ...
-    1735711800
+    1735690600
   ],
   "values": {
     "pos.sys": ["machine", "machine", "work", ...],
@@ -454,11 +454,11 @@ Response
 ```
 
 ### Appendix: Timestamps
-All timestamps use [RFC3339](https://datatracker.ietf.org/doc/html/rfc3339) timestamp.
+All timestamps use Unix time in seconds.
+They should have at least millisecond precision.
 
-For readability and precision, implementations should:
-* Use local time offset instead of UTC ("Z")
-* Use millisecond precision
-* Allow " " for "T" separator
+Note that leap seconds might end up elongating "1 second" for a day (smearing),
+or time can reverse for that duration.
 
-Example: "2025-01-02 23:03:48.123+09:00"
+Implementation should not crash when encountering such timestamps,
+but OK to lose data for that period.
