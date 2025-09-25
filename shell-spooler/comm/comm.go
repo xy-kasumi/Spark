@@ -129,12 +129,9 @@ func (cm *Comm) feedCommand() {
 			queueQueryInterval *= 2
 		}
 
-		select {
-		case line := <-cm.commandCh:
-			cm.tran.sendPayload(line)
-			okToSend--
-		default:
-		}
+		line := <-cm.commandCh
+		cm.tran.sendPayload(line)
+		okToSend--
 	}
 }
 

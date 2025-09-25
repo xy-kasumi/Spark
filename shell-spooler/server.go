@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // Model of spooler HTTP API.
@@ -240,6 +242,12 @@ func validateQueryTS(req *QueryTSRequest) error {
 	if req.Step <= 0 {
 		return errors.New("step: must be > 0")
 	}
+	if (req.End-req.Start)/float64(req.Step) > 10000 {
+		return errors.New("too many steps")
+	}
+	if len(req.Query) > 1000 {
+		return errors.New("query: too many")
+	}
 	return nil
 }
 
@@ -274,7 +282,16 @@ func registerJsonHandler[ReqT any, RespT any](path string, validate func(*ReqT) 
 		}
 
 		// Execute
+		slowTimer := time.AfterFunc(1*time.Second, func() {
+			body, err := json.Marshal(req)
+			dumpBody := "unknown"
+			if err == nil {
+				dumpBody = string(body)
+			}
+			slog.Warn("API exec taking more than 1 second", "path", path, "req", dumpBody)
+		})
 		resp, err := exec(&req)
+		slowTimer.Stop()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return

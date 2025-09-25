@@ -61,7 +61,7 @@ func (h *apiImpl) PayloadRecv(payload string, tm time.Time) {
 func (h *apiImpl) PStateRecv(ps comm.PState, tm time.Time) {
 	for _, k := range ps.Keys() {
 		v, _ := ps.GetAny(k)
-		h.tsDB.Insert(ps.Tag+k, tm, v)
+		h.tsDB.Insert(ps.Tag+"."+k, tm, v)
 	}
 }
 
@@ -211,9 +211,9 @@ func (h *apiImpl) ListJobs(req *ListJobsRequest) (*ListJobsResponse, error) {
 
 func (h *apiImpl) QueryTS(req *QueryTSRequest) (*QueryTSResponse, error) {
 	// Convert Unix timestamps to time.Time
-	tmStart := time.Unix(int64(req.Start), int64((req.Start-float64(int64(req.Start)))*1e9))
-	tmEnd := time.Unix(int64(req.End), int64((req.End-float64(int64(req.End)))*1e9))
-	step := time.Duration(req.Step) * time.Second
+	tmStart := time.Unix(0, int64(req.Start*1e9))
+	tmEnd := time.Unix(0, int64(req.End*1e9))
+	step := time.Duration(int64(req.Step * 1e9))
 
 	ts, valsMap := h.tsDB.QueryRanges(req.Query, tmStart, tmEnd, step)
 
