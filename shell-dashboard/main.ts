@@ -814,15 +814,62 @@ const app = Vue.createApp({
         },
 
         async tsRefreshNow() {
-            const now = new Date().getTime();
-            const start = new Date(now - this.tsSpan);
-            const end = new Date(now);
+            const key = "pos.m.x";
 
-            const res = await spoolerApi.queryTS(host, start, end, 1, ["m.z"]);
-            console.log(res, this.chart);
-            
+            const nowSec = Math.floor(new Date().getTime() * 1e-3); // floor to suppress annoying sub-sec labels
+            const start = new Date((nowSec - this.tsSpan) * 1e3);
+            const end = new Date(nowSec * 1e3);
+
+            const targetNumSteps = 100;
+            const preAdjustStep = this.tsSpan / targetNumSteps;
+            let step;
+            // nice-fy step size
+            if (preAdjustStep < 0.5) {
+                step = 0.5;
+            } else if (preAdjustStep < 1) {
+                step = 1;
+            } else if (preAdjustStep < 5) {
+                step = 5;
+            } else if (preAdjustStep < 10) {
+                step = 10;
+            } else if (preAdjustStep < 30) {
+                step = 30;
+            } else if (preAdjustStep < 60) {
+                step = 60;
+            } else {
+                // minite increments
+                step = Math.ceil(preAdjustStep / 60) * 60;
+            }
+
+            const includeDate = toLocalDate(start) != toLocalDate(new Date()) || toLocalDate(end) != toLocalDate(new Date());
+            const dateToLabel = (d:Date): string => {
+                return (includeDate ? toLocalDate(d) + " " : "") + toLocalTime(d);
+            };
+
+            const res = await spoolerApi.queryTS(host, start, end, step, [key]);
+            this.chart.data.labels = res.times.map(dateToLabel);
+            this.chart.data.datasets[0].label = key;
+            this.chart.data.datasets[0].data = res.values[key];
+            this.chart.update();
         }
     }
 });
+
+// Convert Date to "YYYY-MM-DD" string
+const toLocalDate = (d: Date): string => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+};
+
+// Convert Date to "HH:mm:ss.s" string
+function toLocalTime(d = new Date()) {
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  const s = String(d.getSeconds()).padStart(2, '0');
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+  return `${h}:${m}:${s}.${ms[0]}`;
+}
 
 app.mount('#app');

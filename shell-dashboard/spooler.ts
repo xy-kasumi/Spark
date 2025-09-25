@@ -397,7 +397,7 @@ const spoolerApi = {
         return await response.json();
     },
 
-    async queryTS(host: string, start: Date, end: Date, step: number, keys: string[]): Promise<{ times: number[]; values: Record<string, any[]> }> {
+    async queryTS(host: string, start: Date, end: Date, step: number, keys: string[]): Promise<{ times: Date[]; values: Record<string, any[]> }> {
         // Convert Date objects to Unix timestamps
         const startUnix = start.getTime() / 1000;
         const endUnix = end.getTime() / 1000;
@@ -418,6 +418,11 @@ const spoolerApi = {
             throw new Error(`HTTP ${response.status}: ${text}`);
         }
 
-        return await response.json();
+        const {times, values} = await response.json();
+        const dates = times.map((ts: number) => new Date(ts * 1000));
+        return {
+            times: dates,
+            values: values
+        };
     }
 };
