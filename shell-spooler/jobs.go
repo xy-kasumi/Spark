@@ -110,17 +110,21 @@ func (js *JobSched) keepExecutingJobs() {
 		// Wait until a job become runnable.
 		var job *Job
 		for {
-			{
+			job = func() *Job {
 				js.mu.Lock()
 				defer js.mu.Unlock()
-				job = js.findWaitingJobUnsafe()
+				job := js.findWaitingJobUnsafe()
 				if job != nil && js.commInstance.CommandQueueLength() == 0 {
 					// Mark as started
 					tStart := time.Now().Local()
 					job.Status = JobRunning
 					job.TimeStarted = &tStart
-					break
+					return job
 				}
+				return nil
+			}()
+			if job != nil {
+				break
 			}
 			time.Sleep(500 * time.Millisecond)
 		}
@@ -136,12 +140,12 @@ func (js *JobSched) keepExecutingJobs() {
 
 		// Wait job completion (== cmd queue become empty) or cancellation
 		for {
-			{
+			ended := func() bool {
 				js.mu.Lock()
 				defer js.mu.Unlock()
 				if job.Status == JobCanceled {
 					close(stop)
-					break
+					return true
 				}
 				if js.commInstance.CommandQueueLength() == 0 {
 					close(stop)
@@ -149,8 +153,12 @@ func (js *JobSched) keepExecutingJobs() {
 					tEnd := time.Now().Local()
 					job.Status = JobCompleted
 					job.TimeEnded = &tEnd
-					break
+					return true
 				}
+				return false
+			}()
+			if ended {
+				break
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
