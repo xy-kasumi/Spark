@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // Model of spooler HTTP API.
@@ -220,19 +221,28 @@ type QueryTSRequest struct {
 }
 
 type QueryTSResponse struct {
-	Times  []float64              `json:"times"`
-	Values map[string]interface{} `json:"values"`
+	Times  []float64                `json:"times"`
+	Values map[string][]interface{} `json:"values"`
 }
 
 func validateQueryTS(req *QueryTSRequest) error {
-	if req.Step <= 0 {
-		return errors.New("step: must be > 0")
+	if len(req.Query) == 0 {
+		return errors.New("query: cannot be empty")
 	}
 	if req.Start == "" {
 		return errors.New("start: cannot be empty")
 	}
+	if _, err := time.Parse(time.RFC3339, req.Start); err != nil {
+		return fmt.Errorf("start: must be valid RFC3339 timestamp: %v", err)
+	}
 	if req.End == "" {
 		return errors.New("end: cannot be empty")
+	}
+	if _, err := time.Parse(time.RFC3339, req.End); err != nil {
+		return fmt.Errorf("end: must be valid RFC3339 timestamp: %v", err)
+	}
+	if req.Step <= 0 {
+		return errors.New("step: must be > 0")
 	}
 	return nil
 }

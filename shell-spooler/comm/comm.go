@@ -16,13 +16,15 @@ type Comm struct {
 	latestQueue *psQueue
 }
 
+// Called after payload or p-state sent or received (ack-ed).
+// Timestamp is also the time of ack.
 type CommHandler interface {
-	// Called when payload is definitely sent (ack-ed) to the core.
-	PayloadSent(payload string)
-	// Called when payload is definitely received (ack-ed) from the core.
-	PayloadRecv(payload string)
-	// Called when a p-state is definitely received (ack-ed and parsed ok) from the core.
-	PStateRecv(ps PState)
+	// Payload was sent to the core.
+	PayloadSent(payload string, tm time.Time)
+	// Payload was received from the core.
+	PayloadRecv(payload string, tm time.Time)
+	// P-state was received from the core.
+	PStateRecv(ps PState, tm time.Time)
 }
 
 type psQueue struct {
@@ -39,11 +41,11 @@ func parseQueuePS(ps PState) *psQueue {
 	return &psQueue{Cap: int(cap), Num: int(num)}
 }
 
-func (cm *Comm) PayloadSent(payload string) {
-	cm.handler.PayloadSent(payload)
+func (cm *Comm) PayloadSent(payload string, tm time.Time) {
+	cm.handler.PayloadSent(payload, tm)
 }
-func (cm *Comm) PayloadRecv(payload string) {
-	cm.handler.PayloadRecv(payload)
+func (cm *Comm) PayloadRecv(payload string, tm time.Time) {
+	cm.handler.PayloadRecv(payload, tm)
 	ps, err := cm.parser.Update(payload)
 	if err != nil {
 		slog.Warn("Failed to parse p-state", "payload", payload, "error", err)
@@ -58,10 +60,10 @@ func (cm *Comm) PayloadRecv(payload string) {
 			cm.latestQueue = q
 		}
 	}
-	cm.handler.PStateRecv(*ps)
+	cm.handler.PStateRecv(*ps, tm)
 }
 
-func (cm *Comm) PStateRecv(ps PState) {
+func (cm *Comm) PStateRecv(ps PState, tm time.Time) {
 	panic("unreachable")
 }
 

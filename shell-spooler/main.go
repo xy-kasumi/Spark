@@ -35,6 +35,8 @@ type apiImpl struct {
 	commInstance *comm.Comm
 	jobSched     *JobSched
 
+	tsDB *TSDB
+
 	// line serialization
 	lineMu      sync.Mutex
 	nextLineNum int
@@ -44,16 +46,19 @@ type apiImpl struct {
 	initFileAbs string
 }
 
-func (h *apiImpl) PayloadSent(payload string) {
+func (h *apiImpl) PayloadSent(payload string, tm time.Time) {
 	h.addLineAtomic("down", payload)
 }
 
-func (h *apiImpl) PayloadRecv(payload string) {
+func (h *apiImpl) PayloadRecv(payload string, tm time.Time) {
 	h.addLineAtomic("up", payload)
 }
 
-func (h *apiImpl) PStateRecv(ps comm.PState) {
-	// TBD
+func (h *apiImpl) PStateRecv(ps comm.PState, tm time.Time) {
+	for _, k := range ps.Keys() {
+		v, _ := ps.GetAny(k)
+		h.tsDB.Insert(ps.Tag+k, tm, v)
+	}
 }
 
 func (h *apiImpl) addLineAtomic(dir string, payload string) {
@@ -205,7 +210,30 @@ func (h *apiImpl) ListJobs(req *ListJobsRequest) (*ListJobsResponse, error) {
 }
 
 func (h *apiImpl) QueryTS(req *QueryTSRequest) (*QueryTSResponse, error) {
-	return nil, fmt.Errorf("not implemented")
+	tmStart, _ := time.Parse(time.RFC3339, req.Start)
+	tmEnd, _ := time.Parse(time.RFC3339, req.End)
+	step := time.Duration(req.Step) * time.Second
+
+	ts, valsMap := h.tsDB.QueryRanges(req.Query, tmStart, tmEnd, step)
+
+	tsF64 := make([]float64, len(ts))
+	for i, t := range ts {
+		tsF64[i] = float64(t.UnixNano()) * 1e-9
+	}
+	jsonMap := make(map[string][]interface{})
+	for k, vals := range valsMap {
+		jsonVals := make([]interface{}, len(vals))
+		for i, v := range vals {
+			jsonVals[i] = v
+		}
+		jsonMap[k] = jsonVals
+	}
+
+	resp := &QueryTSResponse{
+		Times:  tsF64,
+		Values: jsonMap,
+	}
+	return resp, nil
 }
 
 func main() {
@@ -238,7 +266,8 @@ func main() {
 	slog.Info("Using init file", "path", initFileAbs)
 
 	// Storage & payload loggers
-	storage := NewLineDB()
+	lineDB := NewLineDB()
+	tsDB := NewTSDB()
 
 	logger := NewPayloadLogger(logDirAbs)
 	defer logger.Close()
@@ -251,7 +280,8 @@ func main() {
 
 	// Initialize communication & server impl.
 	apiImpl := &apiImpl{
-		lineDB:      storage,
+		lineDB:      lineDB,
+		tsDB:        tsDB,
 		logger:      logger,
 		nextLineNum: 1,
 	}

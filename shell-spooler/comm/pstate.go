@@ -20,6 +20,19 @@ func NewPState(tag string) PState {
 	}
 }
 
+func (ps PState) Keys() []string {
+	keys := make([]string, 0, len(ps.m))
+	for k := range ps.m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func (ps PState) GetAny(key string) (interface{}, bool) {
+	v, ok := ps.m[key]
+	return v, ok
+}
+
 func (ps PState) GetString(key string) (string, bool) {
 	v, ok := ps.m[key]
 	if !ok {

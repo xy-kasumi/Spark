@@ -71,7 +71,7 @@ func (tran *transport) readLoop() {
 			continue
 		}
 
-		tran.handler.PayloadRecv(payload)
+		tran.handler.PayloadRecv(payload, time.Now())
 		slog.Debug("Received", "line", payload)
 	}
 }
@@ -89,7 +89,7 @@ func (tran *transport) writeLoop() {
 			continue
 		}
 
-		tran.handler.PayloadSent(line)
+		tran.handler.PayloadSent(line, time.Now())
 		slog.Debug("Sent", "line", line)
 	}
 }
