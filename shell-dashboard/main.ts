@@ -10,11 +10,11 @@ interface EdmPollEntry {
 }
 
 interface G1Command {
-    startTime: string;
+    startTime: number; // Unix timestamp
     startLineNum: number;
     command: string;
     duration?: number;
-    endTime?: string;
+    endTime?: number; // Unix timestamp
 }
 
 /**
@@ -41,7 +41,7 @@ async function getRecentG1Commands(host: string): Promise<G1Command[]> {
         // Step 2: For each G1 command, find its completion
         for (const g1Line of g1Result.lines) {
             const g1Command: G1Command = {
-                startTime: g1Line.time,
+                startTime: g1Line.time.getTime() / 1000, // Convert Date to Unix timestamp
                 startLineNum: g1Line.line_num,
                 command: g1Line.content
             };
@@ -55,26 +55,21 @@ async function getRecentG1Commands(host: string): Promise<G1Command[]> {
 
             if (completionResult.lines.length > 0) {
                 const endLine = completionResult.lines[0];
-                g1Command.endTime = endLine.time;
+                g1Command.endTime = endLine.time.getTime() / 1000; // Convert Date to Unix timestamp
 
                 // Calculate duration in seconds
-                const startMs = new Date(g1Line.time).getTime();
-                const endMs = new Date(endLine.time).getTime();
-                g1Command.duration = Math.round((endMs - startMs) / 1000);
+                g1Command.duration = Math.round((endLine.time.getTime() - g1Line.time.getTime()) / 1000);
             } else {
                 // Still executing - calculate duration from start to now
-                const startMs = new Date(g1Line.time).getTime();
-                const nowMs = Date.now();
-                g1Command.duration = Math.round((nowMs - startMs) / 1000);
+                const nowUnix = Date.now() / 1000;
+                g1Command.duration = Math.round(nowUnix - (g1Line.time.getTime() / 1000));
             }
 
             g1Commands.push(g1Command);
         }
 
-        // Sort by start time (newest first)
-        g1Commands.sort((a, b) =>
-            new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
-        );
+        // Sort by start time (newest first) - startTime is already Unix timestamp
+        g1Commands.sort((a, b) => b.startTime - a.startTime);
 
         console.log("G1 analysis complete:", g1Commands);
         return g1Commands;
@@ -824,7 +819,7 @@ const app = Vue.createApp({
             const end = new Date(now);
 
             const res = await spoolerApi.queryTS(host, start, end, 1, ["m.z"]);
-            this.chart;
+            console.log(res, this.chart);
             
         }
     }

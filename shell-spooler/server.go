@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 )
 
 // Model of spooler HTTP API.
@@ -27,10 +26,10 @@ type SpoolerAPI interface {
 }
 
 type LineInfo struct {
-	LineNum int    `json:"line_num"`
-	Dir     string `json:"dir"`     // "up" for client->host, "down" for host->client
-	Content string `json:"content"` // content of the line, without newlines
-	Time    string `json:"time"`    // timestamp of the line in format "2006-01-02 15:04:05.000" (local time)
+	LineNum int     `json:"line_num"`
+	Dir     string  `json:"dir"`     // "up" for client->host, "down" for host->client
+	Content string  `json:"content"` // content of the line, without newlines
+	Time    float64 `json:"time"`    // Unix timestamp
 }
 
 type WriteLineRequest struct {
@@ -38,8 +37,8 @@ type WriteLineRequest struct {
 }
 
 type WriteLineResponse struct {
-	OK   bool   `json:"ok"`
-	Time string `json:"time"`
+	OK   bool    `json:"ok"`
+	Time float64 `json:"time"`
 }
 
 func validateWriteLine(req *WriteLineRequest) error {
@@ -66,7 +65,7 @@ type QueryLinesRequest struct {
 type QueryLinesResponse struct {
 	Count int        `json:"count"` // total number of matching lines
 	Lines []LineInfo `json:"lines"` // actual lines (max 1000), ordered by line number (ascending)
-	Now   string     `json:"now"`   // current recognized time of spooler in format "2006-01-02 15:04:05.000" (local time)
+	Now   float64    `json:"now"`   // current Unix timestamp
 }
 
 func validateQueryLines(req *QueryLinesRequest) error {
@@ -198,11 +197,11 @@ type ListJobsRequest struct {
 }
 
 type JobInfo struct {
-	JobID       string  `json:"job_id"`
-	Status      string  `json:"status"` // "WAITING", "RUNNING", "COMPLETED", "CANCELED"
-	TimeAdded   string  `json:"time_added"`
-	TimeStarted *string `json:"time_started,omitempty"`
-	TimeEnded   *string `json:"time_ended,omitempty"`
+	JobID       string   `json:"job_id"`
+	Status      string   `json:"status"` // "WAITING", "RUNNING", "COMPLETED", "CANCELED"
+	TimeAdded   float64  `json:"time_added"`
+	TimeStarted *float64 `json:"time_started,omitempty"`
+	TimeEnded   *float64 `json:"time_ended,omitempty"`
 }
 
 type ListJobsResponse struct {
@@ -214,8 +213,8 @@ func validateListJobs(req *ListJobsRequest) error {
 }
 
 type QueryTSRequest struct {
-	Start string   `json:"start"`
-	End   string   `json:"end"`
+	Start float64  `json:"start"`
+	End   float64  `json:"end"`
 	Step  float32  `json:"step"`
 	Query []string `json:"query"`
 }
@@ -229,17 +228,14 @@ func validateQueryTS(req *QueryTSRequest) error {
 	if len(req.Query) == 0 {
 		return errors.New("query: cannot be empty")
 	}
-	if req.Start == "" {
-		return errors.New("start: cannot be empty")
+	if req.Start < 0 {
+		return errors.New("start: must be >= 0")
 	}
-	if _, err := time.Parse(time.RFC3339, req.Start); err != nil {
-		return fmt.Errorf("start: must be valid RFC3339 timestamp: %v", err)
+	if req.End < 0 {
+		return errors.New("end: must be >= 0")
 	}
-	if req.End == "" {
-		return errors.New("end: cannot be empty")
-	}
-	if _, err := time.Parse(time.RFC3339, req.End); err != nil {
-		return fmt.Errorf("end: must be valid RFC3339 timestamp: %v", err)
+	if req.End < req.Start {
+		return errors.New("end: must be >= start")
 	}
 	if req.Step <= 0 {
 		return errors.New("step: must be > 0")

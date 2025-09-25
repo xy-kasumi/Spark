@@ -18,17 +18,21 @@ func mapJob(job Job) JobInfo {
 	jobInfo := JobInfo{
 		JobID:     job.ID,
 		Status:    string(job.Status),
-		TimeAdded: formatSpoolerTime(job.TimeAdded),
+		TimeAdded: toUnixTimestamp(job.TimeAdded),
 	}
 	if job.TimeStarted != nil {
-		timeStarted := formatSpoolerTime(*job.TimeStarted)
+		timeStarted := toUnixTimestamp(*job.TimeStarted)
 		jobInfo.TimeStarted = &timeStarted
 	}
 	if job.TimeEnded != nil {
-		timeEnded := formatSpoolerTime(*job.TimeEnded)
+		timeEnded := toUnixTimestamp(*job.TimeEnded)
 		jobInfo.TimeEnded = &timeEnded
 	}
 	return jobInfo
+}
+
+func toUnixTimestamp(t time.Time) float64 {
+	return float64(t.UnixNano()) / 1e9
 }
 
 type apiImpl struct {
@@ -77,13 +81,13 @@ func (h *apiImpl) WriteLine(req *WriteLineRequest) (*WriteLineResponse, error) {
 	if h.jobSched.HasPendingJob() {
 		return &WriteLineResponse{
 			OK:   false,
-			Time: formatSpoolerTime(time.Now()),
+			Time: toUnixTimestamp(time.Now()),
 		}, nil
 	}
 	h.commInstance.Write(req.Line)
 	resp := WriteLineResponse{
 		OK:   true,
-		Time: formatSpoolerTime(time.Now()),
+		Time: toUnixTimestamp(time.Now()),
 	}
 	return &resp, nil
 }
@@ -130,14 +134,14 @@ func (h *apiImpl) QueryLines(req *QueryLinesRequest) (*QueryLinesResponse, error
 	resp := QueryLinesResponse{
 		Count: totalCount,
 		Lines: make([]LineInfo, len(lines)),
-		Now:   formatSpoolerTime(time.Now()),
+		Now:   toUnixTimestamp(time.Now()),
 	}
 	for i, l := range lines {
 		resp.Lines[i] = LineInfo{
 			LineNum: l.num,
 			Dir:     l.dir,
 			Content: l.content,
-			Time:    formatSpoolerTime(l.time),
+			Time:    toUnixTimestamp(l.time),
 		}
 	}
 	return &resp, nil
@@ -206,8 +210,9 @@ func (h *apiImpl) ListJobs(req *ListJobsRequest) (*ListJobsResponse, error) {
 }
 
 func (h *apiImpl) QueryTS(req *QueryTSRequest) (*QueryTSResponse, error) {
-	tmStart, _ := time.Parse(time.RFC3339, req.Start)
-	tmEnd, _ := time.Parse(time.RFC3339, req.End)
+	// Convert Unix timestamps to time.Time
+	tmStart := time.Unix(int64(req.Start), int64((req.Start-float64(int64(req.Start)))*1e9))
+	tmEnd := time.Unix(int64(req.End), int64((req.End-float64(int64(req.End)))*1e9))
 	step := time.Duration(req.Step) * time.Second
 
 	ts, valsMap := h.tsDB.QueryRanges(req.Query, tmStart, tmEnd, step)

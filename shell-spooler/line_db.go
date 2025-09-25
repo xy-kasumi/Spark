@@ -16,8 +16,9 @@ type line struct {
 	time    time.Time
 }
 
-// formatTimestamp formats a time.Time to the standard string format used by the API
+// formatSpoolerTime formats a time.Time to the standard string format used by the API
 // Uses RFC3339 with local time offset, millisecond precision, and space separator as per spec
+// NOTE: This is kept for payload_logger only - API now uses Unix timestamps
 func formatSpoolerTime(t time.Time) string {
 	return t.Local().Format("2006-01-02 15:04:05.000-07:00")
 }

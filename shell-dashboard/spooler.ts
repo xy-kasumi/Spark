@@ -5,7 +5,7 @@ interface LogLine {
     line_num: number;
     dir: 'up' | 'down';
     content: string;
-    time: string;
+    time: Date;
 }
 
 /**
@@ -242,7 +242,7 @@ const spoolerApi = {
      * @param params - Query parameters (tail, from_line, to_line, filter_dir, filter_regex)
      * @returns Response with count, lines array, and timestamp
      */
-    async queryLines(host: string, params: { tail?: number; from_line?: number; to_line?: number; filter_dir?: "up" | "down"; filter_regex?: string }): Promise<{ count: number; lines: LogLine[]; now: string }> {
+    async queryLines(host: string, params: { tail?: number; from_line?: number; to_line?: number; filter_dir?: "up" | "down"; filter_regex?: string }): Promise<{ count: number; lines: LogLine[]; now: number }> {
         const response = await fetch(`${host}/query-lines`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -253,10 +253,19 @@ const spoolerApi = {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        return await response.json();
+        const result = await response.json();
+
+        // Convert Unix timestamps to Date objects
+        if (result.lines) {
+            for (const line of result.lines) {
+                line.time = new Date(line.time * 1000); // Convert Unix timestamp to Date
+            }
+        }
+
+        return result;
     },
 
-    async getLatestPState(host: string, psName: string): Promise<{ beginTime: string, pstate: Record<string, any> } | null> {
+    async getLatestPState(host: string, psName: string): Promise<{ beginTime: number, pstate: Record<string, any> } | null> {
         const latestBeginLine = this.psLatestBeginLines.get(psName) || 1;
         const beginLineRes = await spoolerApi.queryLines(host, {
             from_line: latestBeginLine,
@@ -320,7 +329,7 @@ const spoolerApi = {
             return null;
         }
         this.psLatestBeginLines.set(psName, beginLine.line_num);
-        return { beginTime: beginLine.time, pstate };
+        return { beginTime: beginLine.time.getTime() / 1000, pstate };
     },
 
     /**
@@ -389,32 +398,16 @@ const spoolerApi = {
     },
 
     async queryTS(host: string, start: Date, end: Date, step: number, keys: string[]): Promise<{ times: number[]; values: Record<string, any[]> }> {
-        // Format timestamps according to spec (RFC3339 with local timezone and millisecond precision)
-        const formatTimestamp = (date: Date): string => {
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            const hours = String(date.getHours()).padStart(2, '0');
-            const minutes = String(date.getMinutes()).padStart(2, '0');
-            const seconds = String(date.getSeconds()).padStart(2, '0');
-            const milliseconds = String(date.getMilliseconds()).padStart(3, '0');
-
-            // Get timezone offset in format +HH:MM or -HH:MM
-            const timezoneOffset = -date.getTimezoneOffset();
-            const offsetHours = String(Math.floor(Math.abs(timezoneOffset) / 60)).padStart(2, '0');
-            const offsetMinutes = String(Math.abs(timezoneOffset) % 60).padStart(2, '0');
-            const offsetSign = timezoneOffset >= 0 ? '+' : '-';
-            const timezone = `${offsetSign}${offsetHours}:${offsetMinutes}`;
-
-            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}${timezone}`;
-        };
+        // Convert Date objects to Unix timestamps
+        const startUnix = start.getTime() / 1000;
+        const endUnix = end.getTime() / 1000;
 
         const response = await fetch(`${host}/query-ts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                start: formatTimestamp(start),
-                end: formatTimestamp(end),
+                start: startUnix,
+                end: endUnix,
                 step: step,
                 query: keys
             })
