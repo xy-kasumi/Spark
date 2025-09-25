@@ -72,10 +72,6 @@ func (h *apiImpl) addLineAtomic(dir string, payload string) {
 	h.logger.AddLine(lineNum, dir, payload)
 }
 
-func (h *apiImpl) Close() {
-	h.logger.Close()
-}
-
 // SpoolerAPI implementation
 func (h *apiImpl) WriteLine(req *WriteLineRequest) (*WriteLineResponse, error) {
 	if h.jobSched.HasPendingJob() {
@@ -285,7 +281,6 @@ func main() {
 		logger:      logger,
 		nextLineNum: 1,
 	}
-	defer apiImpl.Close()
 
 	commInstance, err := comm.InitComm(*portName, *baud, apiImpl)
 	if err != nil {
