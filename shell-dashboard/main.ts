@@ -124,6 +124,7 @@ const app = Vue.createApp({
             assumeInitialized: true, // true if we think init commands were executed or enqueued
             g1Commands: [] as G1Command[],
             clearOnExec: true,
+            asJob: false,
             jogStepMm: 1,
             toolSupplyShowDetails: false,
             settingsMachine: {} as Record<string, number>,
@@ -314,22 +315,8 @@ const app = Vue.createApp({
         };
         document.addEventListener('keydown', this.escapeHandler);
 
-        // Initialize chart
-        const data = {
-            labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"],
-            datasets: [{
-                label: 'My First Dataset',
-                data: [65, 59, 80, 81, 56, 55, 40],
-                fill: false,
-                borderColor: 'rgb(75, 192, 192)',
-            }]
-        };
-        this.chart = new Chart(document.getElementById('timeseries-chart') as HTMLCanvasElement,
-            {
-                type: 'line',
-                data: data,
-            });
-
+        // Initialize empty line chart
+        this.chart = new Chart(document.getElementById('timeseries-chart') as HTMLCanvasElement, { type: 'line' });
 
         // Start polling
         client.startPolling();
@@ -372,7 +359,14 @@ const app = Vue.createApp({
                 return;
             }
 
-            client.enqueueCommands(this.commands); // don't wait
+            if (this.asJob) {
+                spoolerApi.addJob(host, this.commands, {
+                    "?pos": 1,
+                    "?edm": 0.5,
+                });
+            } else {
+                client.enqueueCommands(this.commands); // don't wait
+            }
 
             if (this.clearOnExec) {
                 this.commandText = '';
@@ -814,7 +808,7 @@ const app = Vue.createApp({
         },
 
         async tsRefreshNow() {
-            const key = "pos.m.x";
+            const keys = ["queue.num", "edm.open", "edm.short", "edm.pb_f", "edm.pb_b", "dist", "dist_max"];
 
             const nowSec = Math.floor(new Date().getTime() * 1e-3); // floor to suppress annoying sub-sec labels
             const start = new Date((nowSec - this.tsSpan) * 1e3);
@@ -842,14 +836,13 @@ const app = Vue.createApp({
             }
 
             const includeDate = toLocalDate(start) != toLocalDate(new Date()) || toLocalDate(end) != toLocalDate(new Date());
-            const dateToLabel = (d:Date): string => {
+            const dateToLabel = (d: Date): string => {
                 return (includeDate ? toLocalDate(d) + " " : "") + toLocalTime(d);
             };
 
-            const res = await spoolerApi.queryTS(host, start, end, step, [key]);
+            const res = await spoolerApi.queryTS(host, start, end, step, keys);
             this.chart.data.labels = res.times.map(dateToLabel);
-            this.chart.data.datasets[0].label = key;
-            this.chart.data.datasets[0].data = res.values[key];
+            this.chart.data.datasets = keys.map(key => ({ label: key, data: res.values[key] }));
             this.chart.update();
         }
     }
@@ -865,11 +858,11 @@ const toLocalDate = (d: Date): string => {
 
 // Convert Date to "HH:mm:ss.s" string
 function toLocalTime(d = new Date()) {
-  const h = String(d.getHours()).padStart(2, '0');
-  const m = String(d.getMinutes()).padStart(2, '0');
-  const s = String(d.getSeconds()).padStart(2, '0');
-  const ms = String(d.getMilliseconds()).padStart(3, '0');
-  return `${h}:${m}:${s}.${ms[0]}`;
+    const h = String(d.getHours()).padStart(2, '0');
+    const m = String(d.getMinutes()).padStart(2, '0');
+    const s = String(d.getSeconds()).padStart(2, '0');
+    const ms = String(d.getMilliseconds()).padStart(3, '0');
+    return `${h}:${m}:${s}.${ms[0]}`;
 }
 
 app.mount('#app');

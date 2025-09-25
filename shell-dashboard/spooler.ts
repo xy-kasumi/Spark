@@ -424,5 +424,51 @@ const spoolerApi = {
             times: dates,
             values: values
         };
+    },
+
+    async addJob(host: string, commands: string[], signals: Record<string, number>): Promise<{ ok: boolean; job_id?: string }> {
+        const response = await fetch(`${host}/add-job`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                commands: commands,
+                signals: signals
+            })
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`HTTP ${response.status}: ${text}`);
+        }
+
+        return await response.json();
+    },
+
+    async listJobs(host: string): Promise<Array<{ job_id: string; status: 'WAITING' | 'RUNNING' | 'COMPLETED' | 'CANCELED'; time_added: Date; time_started?: Date; time_ended?: Date }>> {
+        const response = await fetch(`${host}/list-jobs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`HTTP ${response.status}: ${text}`);
+        }
+
+        const jobs = await response.json();
+
+        // Convert Unix timestamps to Date objects
+        for (const job of jobs) {
+            job.time_added = new Date(job.time_added * 1000);
+            if (job.time_started !== undefined) {
+                job.time_started = new Date(job.time_started * 1000);
+            }
+            if (job.time_ended !== undefined) {
+                job.time_ended = new Date(job.time_ended * 1000);
+            }
+        }
+
+        return jobs;
     }
 };
