@@ -100,7 +100,7 @@ func (js *JobSched) keepSendingSignals(signal string, value float32, stop chan s
 		case <-stop:
 			return
 		case <-tick:
-			js.commInstance.Write(signal)
+			js.commInstance.SendSignal(signal)
 		}
 	}
 }
@@ -135,7 +135,7 @@ func (js *JobSched) keepExecutingJobs() {
 			go js.keepSendingSignals(signal, value, stop)
 		}
 		for _, command := range job.Commands {
-			js.commInstance.Write(command)
+			js.commInstance.WriteCommand(command)
 		}
 
 		// Wait job completion (== cmd queue become empty) or cancellation

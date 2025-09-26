@@ -4,6 +4,7 @@ package comm
 
 import (
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -44,6 +45,7 @@ func parseQueuePS(ps PState) *psQueue {
 func (cm *Comm) PayloadSent(payload string, tm time.Time) {
 	cm.handler.PayloadSent(payload, tm)
 }
+
 func (cm *Comm) PayloadRecv(payload string, tm time.Time) {
 	cm.handler.PayloadRecv(payload, tm)
 	ps, err := cm.parser.Update(payload)
@@ -135,12 +137,19 @@ func (cm *Comm) feedCommand() {
 	}
 }
 
-func (cm *Comm) Write(payload string) {
-	if payload[0] == '!' || payload[0] == '?' {
-		cm.signalCh <- payload
-	} else {
-		cm.commandCh <- payload
+func (cm *Comm) SendSignal(payload string) {
+	if !IsSignal(payload) {
+		panic("not a signal: " + payload)
 	}
+	cm.signalCh <- payload
+}
+
+// TODO: move queue out
+func (cm *Comm) WriteCommand(payload string) {
+	if IsSignal(payload) {
+		panic("not a command: " + payload)
+	}
+	cm.commandCh <- payload
 }
 
 func (cm *Comm) CommandQueueLength() int {
@@ -159,4 +168,8 @@ func (cm *Comm) DrainCommandQueue() {
 
 func (cm *Comm) Close() {
 	cm.tran.Close()
+}
+
+func IsSignal(payload string) bool {
+	return strings.HasPrefix(payload, "!") || strings.HasPrefix(payload, "?")
 }

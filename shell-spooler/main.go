@@ -78,13 +78,18 @@ func (h *apiImpl) addLineAtomic(dir string, payload string) {
 
 // SpoolerAPI implementation
 func (h *apiImpl) WriteLine(req *WriteLineRequest) (*WriteLineResponse, error) {
-	if h.jobSched.HasPendingJob() {
-		return &WriteLineResponse{
-			OK:   false,
-			Time: toUnixTimestamp(time.Now()),
-		}, nil
+	payload := req.Line
+	if comm.IsSignal(payload) {
+		h.commInstance.SendSignal(payload)
+	} else {
+		if h.jobSched.HasPendingJob() {
+			return &WriteLineResponse{
+				OK:   false,
+				Time: toUnixTimestamp(time.Now()),
+			}, nil
+		}
+		h.commInstance.WriteCommand(req.Line)
 	}
-	h.commInstance.Write(req.Line)
 	resp := WriteLineResponse{
 		OK:   true,
 		Time: toUnixTimestamp(time.Now()),
@@ -150,7 +155,7 @@ func (h *apiImpl) QueryLines(req *QueryLinesRequest) (*QueryLinesResponse, error
 func (h *apiImpl) Cancel(req *CancelRequest) (*CancelResponse, error) {
 	h.jobSched.Cancel()
 	h.commInstance.DrainCommandQueue()
-	h.commInstance.Write("!")
+	h.commInstance.SendSignal("!")
 	return &CancelResponse{}, nil
 }
 

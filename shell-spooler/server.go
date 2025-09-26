@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"shell-spooler/comm"
 	"strings"
 	"time"
 )
@@ -180,12 +181,12 @@ type AddJobResponse struct {
 
 func validateAddJob(req *AddJobRequest) error {
 	for _, command := range req.Commands {
-		if strings.Contains(command, "\n") || command == "" {
+		if strings.Contains(command, "\n") || command == "" || comm.IsSignal(command) {
 			return errors.New("invalid command")
 		}
 	}
 	for signal, interval := range req.Signals {
-		if strings.Contains(signal, "\n") || !strings.HasPrefix(signal, "?") {
+		if strings.Contains(signal, "\n") || !strings.HasPrefix(signal, "?") || !comm.IsSignal(signal) {
 			return errors.New("invalid signal")
 		}
 		if interval <= 0 {
