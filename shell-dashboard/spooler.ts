@@ -33,7 +33,6 @@ class SpoolerController {
 
     public onUpdate: ((state: SpoolerState, status: Record<string, any>) => void) | null;
     public onQueueChange: (() => void) | null;
-    public onReboot: (() => void) | null;
 
     /**
      * @param host base URL of the shell-spooler server
@@ -53,7 +52,6 @@ class SpoolerController {
         // Callbacks for UI updates
         this.onUpdate = null;
         this.onQueueChange = null;
-        this.onReboot = null;
     }
 
     /**
@@ -96,20 +94,6 @@ class SpoolerController {
     async requestPosUpdate() {
         await this.delay(100); // hack to make request after command
         this.requestPos = true;
-    }
-
-    /**
-     * Handle board reboot detection
-     */
-    private handleReboot(): void {
-        // Cancel pending commands
-        if (this.onQueueChange) {
-            this.onQueueChange();
-        }
-
-        if (this.onReboot) {
-            this.onReboot();
-        }
     }
 
     /**
@@ -197,36 +181,6 @@ class SpoolerController {
     private delay(ms: number): Promise<void> {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
-}
-
-/**
- * Parses "blob <base64>" line and validates payload.
- * @param blobLine - Line containing "blob <base64>"
- * @returns Verified binary payload
- * @throws On invalid format or checksum mismatch
- */
-function parseBlobPayload(blobLine: string): Uint8Array {
-    const parts = blobLine.split(' ');
-    if (parts.length != 2 || parts[0] !== "blob") {
-        throw new Error("Invalid blob format");
-    }
-
-    const base64Payload = parts[1];
-
-    // decode base64 payload (URL-safe without padding)
-    let binaryData: Uint8Array;
-    try {
-        const standardBase64 = base64Payload.replace(/-/g, '+').replace(/_/g, '/');
-        const binaryString = atob(standardBase64);
-        binaryData = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-            binaryData[i] = binaryString.charCodeAt(i);
-        }
-    } catch (e) {
-        throw new Error("Failed to decode base64: " + e.message);
-    }
-
-    return binaryData;
 }
 
 /**
@@ -333,35 +287,6 @@ const spoolerApi = {
     },
 
     /**
-     * Get the last blob from upward (machine response) log lines.
-     * @param host - Base URL of the shell-spooler server
-     * @returns Parsed blob data or null if not found
-     */
-    async getLastUpBlob(host: string): Promise<Uint8Array | null> {
-        try {
-            const result = await this.queryLines(host, {
-                filter_dir: "up",
-                filter_regex: "^blob"
-            });
-            if (result.lines.length === 0) {
-                return null;
-            }
-
-            // Get the last line
-            const lastBlobLine = result.lines[result.lines.length - 1];
-            try {
-                return parseBlobPayload(lastBlobLine.content);
-            } catch (e) {
-                console.error('Failed to parse blob:', e);
-                return null;
-            }
-        } catch (error) {
-            console.error('Failed to query lines:', error);
-            return null;
-        }
-    },
-
-    /**
      * Set init lines that will be sent to the core when spooler starts.
      * @param host - Base URL of the shell-spooler server
      * @param lines - Array of init line strings to persist
@@ -418,7 +343,7 @@ const spoolerApi = {
             throw new Error(`HTTP ${response.status}: ${text}`);
         }
 
-        const {times, values} = await response.json();
+        const { times, values } = await response.json();
         const dates = times.map((ts: number) => new Date(ts * 1000));
         return {
             times: dates,

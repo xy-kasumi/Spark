@@ -3,107 +3,9 @@
 
 const host = "http://localhost:9000";
 
-interface EdmPollEntry {
-    short: number;
-    open: number;
-    pulse: number;
-}
 
-interface G1Command {
-    startTime: number; // Unix timestamp
-    startLineNum: number;
-    command: string;
-    duration?: number;
-    endTime?: number; // Unix timestamp
-}
 
-/**
- * Analyze G1 commands and their execution times
- * @param host - Host to query
- * @returns Array of G1 commands with timing information
- */
-async function getRecentG1Commands(host: string): Promise<G1Command[]> {
-    try {
-        // Find G1 commands
-        const g1Result = await spoolerApi.queryLines(host, {
-            filter_dir: "down",
-            filter_regex: "^G1 "
-        });
 
-        if (g1Result.lines.length === 0) {
-            console.log("No G1 commands found");
-            return [];
-        }
-        console.log(g1Result);
-
-        const g1Commands: G1Command[] = [];
-
-        // Step 2: For each G1 command, find its completion
-        for (const g1Line of g1Result.lines) {
-            const g1Command: G1Command = {
-                startTime: g1Line.time.getTime() / 1000, // Convert Date to Unix timestamp
-                startLineNum: g1Line.line_num,
-                command: g1Line.content
-            };
-
-            // Query for the first "I" line after this G1
-            const completionResult = await spoolerApi.queryLines(host, {
-                from_line: g1Line.line_num + 1,
-                filter_dir: "up",
-                filter_regex: "^I",
-            });
-
-            if (completionResult.lines.length > 0) {
-                const endLine = completionResult.lines[0];
-                g1Command.endTime = endLine.time.getTime() / 1000; // Convert Date to Unix timestamp
-
-                // Calculate duration in seconds
-                g1Command.duration = Math.round((endLine.time.getTime() - g1Line.time.getTime()) / 1000);
-            } else {
-                // Still executing - calculate duration from start to now
-                const nowUnix = Date.now() / 1000;
-                g1Command.duration = Math.round(nowUnix - (g1Line.time.getTime() / 1000));
-            }
-
-            g1Commands.push(g1Command);
-        }
-
-        // Sort by start time (newest first) - startTime is already Unix timestamp
-        g1Commands.sort((a, b) => b.startTime - a.startTime);
-
-        console.log("G1 analysis complete:", g1Commands);
-        return g1Commands;
-
-    } catch (e) {
-        console.error("G1 analysis error:", e.message);
-        return [];
-    }
-}
-
-/**
- * Parses binary data into EDM poll entries.
- * @param binaryData - Raw binary data containing edm_poll_entry_t structs
- * @returns Parsed entries with ratios 0-1
- */
-function parseEdmPollEntries(binaryData: Uint8Array): EdmPollEntry[] {
-    const vals: EdmPollEntry[] = [];
-    for (let i = 0; i < binaryData.length; i += 4) {
-        if (i + 3 < binaryData.length) {
-            const r_short = binaryData[i] / 255.0;
-            const r_open = binaryData[i + 1] / 255.0;
-            const r_pulse = 1 - (r_short + r_open);
-            // skip reserved byte at i+2, i+3
-
-            vals.push({
-                short: r_short,
-                open: r_open,
-                pulse: r_pulse,
-            });
-        }
-    }
-
-    return vals;
-}
 
 const tsJustBeforeInsertZ = 0;
 const tsPulledZ = 47;
@@ -120,9 +22,6 @@ const app = Vue.createApp({
             clientStatus: 'unknown',
             statusData: {} as Record<string, number>,
             commandQueue: [],
-            rebootTime: null as string | null,
-            assumeInitialized: true, // true if we think init commands were executed or enqueued
-            g1Commands: [] as G1Command[],
             jobs: [] as Array<{ job_id: string; status: 'WAITING' | 'RUNNING' | 'COMPLETED' | 'CANCELED'; time_added: Date; time_started?: Date; time_ended?: Date }>,
             clearOnExec: true,
             asJob: false,
@@ -221,17 +120,6 @@ const app = Vue.createApp({
             return `${queueLength} commands in queue`;
         },
 
-        rebootStatus() {
-            if (!this.rebootTime) {
-                return '';
-            }
-            if (!this.assumeInitialized) {
-                return `rebooted at ${this.rebootTime} (not initialized)`;
-            } else {
-                return `rebooted at ${this.rebootTime}`;
-            }
-        },
-
         // Display values (local edits take precedence over machine values)
         settings() {
             const result: Record<string, number> = {};
@@ -303,11 +191,6 @@ const app = Vue.createApp({
             this.commandQueue = [];
         };
 
-        client.onReboot = () => {
-            this.rebootTime = new Date().toLocaleTimeString();
-            this.assumeInitialized = false;
-        };
-
         // Global Escape key handler to cancel any editing
         this.escapeHandler = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
@@ -350,9 +233,6 @@ const app = Vue.createApp({
             for (const cmd of initData.lines) {
                 client.enqueueCommand(cmd);
             }
-
-            // Assume machine will be initialized after init commands
-            this.assumeInitialized = true;
         },
 
         /**
@@ -394,74 +274,6 @@ const app = Vue.createApp({
                 y: this.statusData["m.y"],
                 z: this.statusData["m.z"],
             };
-        },
-
-        /**
-         * Analyze log for blob data and draw EDML visualization
-         */
-        async analyzeLog() {
-            this.g1Commands = await getRecentG1Commands(host);
-
-            try {
-                const blobData = await spoolerApi.getLastUpBlob(host);
-                if (blobData) {
-                    const vals = parseEdmPollEntries(blobData);
-                    this.drawEdml(vals);
-                }
-            } catch (e) {
-                console.error("Blob analysis error:", e.message);
-            }
-        },
-
-        /**
-         * Draw EDML visualization on canvas
-         * @param vals - EDM poll entries
-         */
-        drawEdml(vals: EdmPollEntry[]): void {
-            if (!this.$refs.edml) {
-                console.error("EDML canvas not found");
-                return;
-            }
-
-            const edmlData = [{
-                state: "blob",
-                vals: vals
-            }];
-            console.log(edmlData);
-
-            // draw
-            const ctx = this.$refs.edml.getContext('2d');
-            const width = 500;
-            const height = 1000;
-            const barWidth = 2;
-            const barHeight = 20;
-            ctx.clearRect(0, 0, width, height);
-
-            let posx = 0;
-            let posy = 0;
-            for (let row of edmlData) {
-                for (let val of row.vals) {
-                    let d = 0;
-                    ctx.fillStyle = '#00aeef'; // blue = pulse
-                    ctx.fillRect(posx, posy + barHeight, barWidth, -val.pulse * barHeight);
-                    d += val.pulse * barHeight;
-
-                    ctx.fillStyle = '#F03266'; // red = short
-                    ctx.fillRect(posx, posy + barHeight - d, barWidth, -val.short * barHeight);
-                    d += val.short * barHeight;
-
-                    ctx.fillStyle = 'lightgray'; // gray = open
-                    ctx.fillRect(posx, posy + barHeight - d, barWidth, -val.open * barHeight);
-
-                    // (white = no activity)
-
-                    posx += barWidth;
-                    if (posx >= width) {
-                        posx = 0;
-                        posy += 25; // must be bigger than barHeight
-                    }
-                }
-            }
         },
 
         jogHome() {
