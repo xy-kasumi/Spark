@@ -1,10 +1,13 @@
 // SPDX-FileCopyrightText: 2025 夕月霞
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { createApp } from 'vue';
+import { SpoolerController, spoolerApi } from './spooler.js';
+
+// Chart.js is loaded as global script
+declare const Chart: any;
+
 const host = "http://localhost:9000";
-
-
-
 
 
 const tsJustBeforeInsertZ = 0;
@@ -14,7 +17,7 @@ const tsFullInsertZ = -12;
 // Global client instance for performance
 let client: SpoolerController | null = null;
 
-const app = Vue.createApp({
+const app = createApp({
     data() {
         return {
             // UI State
@@ -201,6 +204,7 @@ const app = Vue.createApp({
         // Initialize empty line chart
         this.chart = new Chart(document.getElementById('timeseries-chart') as HTMLCanvasElement, {
             type: 'line',
+            data: { datasets: [] },
             options: { animation: false }
         });
 
@@ -733,4 +737,12 @@ function toLocalTime(d = new Date()) {
     return `${h}:${m}:${s}.${ms[0]}`;
 }
 
-app.mount('#app');
+// Mount Vue app with error handling
+try {
+    app.mount('#app');
+    console.log('Vue app mounted successfully');
+} catch (error) {
+    console.error('Vue mounting failed:', error);
+    // Remove v-cloak to show raw templates if Vue fails
+    document.getElementById('app')?.removeAttribute('v-cloak');
+}

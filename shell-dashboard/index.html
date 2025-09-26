@@ -259,11 +259,16 @@
             border: 1px solid var(--accent);
             border-radius: var(--radius);
         }
+
+        /* Hide Vue templates until Vue loads */
+        [v-cloak] {
+            display: none !important;
+        }
     </style>
 </head>
 
 <body>
-    <div id="app">
+    <div id="app" v-cloak>
         <!-- Fixed Header with Status -->
         <header class="fixed-header">
             <div class="header-content">
@@ -521,10 +526,15 @@
         </div>
     </div>
 
-    <script src="vue.global.js"></script>
+    <script type="importmap">
+    {
+      "imports": {
+        "vue": "./vue.esm-browser.js"
+      }
+    }
+    </script>
     <script src="chart.umd.js"></script>
-    <script src="spooler.js"></script>
-    <script src="main.js"></script>
+    <script type="module" src="main.js"></script>
 </body>
 
 </html>

@@ -144,7 +144,7 @@ class SpoolerController {
             throw new Error("Command too long");
         }
 
-        const response = await fetch(`${host}/write-line`, {
+        const response = await fetch(`${this.host}/write-line`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ line: cleanCommand })
@@ -414,3 +414,5 @@ const spoolerApi = {
         return await response.json();
     }
 };
+
+export { SpoolerController, spoolerApi };
