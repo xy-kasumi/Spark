@@ -13,10 +13,9 @@ interface LogLine {
  * @property board-offline - API is OK, board response timed out (NOT IMPLEMENTED YET)
  * @property idle - API is OK, board is known to be idle state (ready to receive commands)
  * @property unknown - API is OK, board is in unknown state
- * @property busy - API is OK, board is known to be busy (or probably busy)
- * @property busy-healthcheck - API is OK, board is busy due to auto-initiated ping
+ * @property busy - API is OK, board is known to be busy
  */
-type SpoolerState = 'api-offline' | 'board-offline' | 'idle' | 'unknown' | 'busy' | 'busy-healthcheck';
+type SpoolerState = 'api-offline' | 'board-offline' | 'idle' | 'unknown' | 'busy';
 
 /**
  * SpoolerController handles state check & command queue.
@@ -31,8 +30,8 @@ class SpoolerController {
 
     private state: SpoolerState;
 
-    public onUpdate: ((state: SpoolerState, status: Record<string, any>) => void) | null;
-    public onQueueChange: (() => void) | null;
+    public onUpdatePos: ((pos: Record<string, any>) => void) | null;
+    public onUpdateStatus: ((state: SpoolerState, numQueuedCommands: number, runningJob: string | null) => void) | null;
 
     /**
      * @param host base URL of the shell-spooler server
@@ -50,8 +49,8 @@ class SpoolerController {
         this.state = 'unknown';
 
         // Callbacks for UI updates
-        this.onUpdate = null;
-        this.onQueueChange = null;
+        this.onUpdatePos = null;
+        this.onUpdateStatus = null;
     }
 
     /**
@@ -59,7 +58,8 @@ class SpoolerController {
      */
     startPolling(): void {
         this.isPolling = true;
-        this.pollLoop();
+        this.pollPos();
+        this.pollStatus();
     }
 
     /**
@@ -69,24 +69,31 @@ class SpoolerController {
         this.isPolling = false;
     }
 
-    /**
-     * Internal polling loop
-     */
-    private async pollLoop(): Promise<void> {
-        let lastPingTime = Date.now();
+    private async pollPos(): Promise<void> {
         while (this.isPolling) {
-            if (this.requestPos || Date.now() - lastPingTime >= this.pingIntervalMs) {
-                this.requestPos = false;
-                await this.sendCommand('?pos', true);
-                lastPingTime = Date.now();
+            try {
+                await this.sendPayload('?pos');
+                const latestPos = await spoolerApi.getLatestPState(this.host, "pos");
+                if (latestPos !== null) {
+                    this.onUpdatePos(latestPos.pstate);
+                }
+            } catch (error) {
+                // squash
             }
+            await this.delay(this.pingIntervalMs);
+        }
+    }
 
-            const latestPos = await spoolerApi.getLatestPState(this.host, "pos");
-            if (latestPos !== null) {
-                this.state = "idle";
-                this.onUpdate(this.state, latestPos.pstate);
+    private async pollStatus(): Promise<void> {
+        while (this.isPolling) {
+            try {
+                const status = await spoolerApi.getStatus(this.host);
+                this.state = status.busy ? 'busy' : 'idle';
+                this.onUpdateStatus(this.state, status.num_pending_commands, status.running_job || null);
+            } catch (error) {
+                this.state = 'api-offline';
+                this.onUpdateStatus(this.state, 0, null)
             }
-
             await this.delay(this.pollIntervalMs);
         }
     }
@@ -97,17 +104,14 @@ class SpoolerController {
     }
 
     /**
-     * Send a command to the spooler
-     * @param command - Command to send
-     * @param isHealthcheck - Whether this is an auto-initiated healthcheck
      * @returns Timestamp of enqueued
      */
-    private async sendCommand(command: string, isHealthcheck: boolean): Promise<string> {
+    private async sendPayload(payload: string): Promise<string> {
         try {
             const response = await fetch(`${this.host}/write-line`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ line: command })
+                body: JSON.stringify({ line: payload })
             });
 
             if (!response.ok) {
@@ -115,9 +119,6 @@ class SpoolerController {
             }
 
             const { time }: { time: string } = await response.json();
-
-            // Set appropriate busy state
-            this.state = isHealthcheck ? 'busy-healthcheck' : 'busy';
             return time;
         } catch (error) {
             // Command failed, set state to offline
@@ -158,11 +159,6 @@ class SpoolerController {
      * Clear the command queue and send cancel command
      */
     cancel(): void {
-        // Clear queue
-        if (this.onQueueChange) {
-            this.onQueueChange();
-        }
-
         // Send cancel
         fetch(`${this.host}/cancel`, {
             method: 'POST',
@@ -396,5 +392,25 @@ const spoolerApi = {
         }
 
         return jobs;
+    },
+
+    /**
+     * Get spooler status summary.
+     * @param host - Base URL of the shell-spooler server
+     * @returns Status object containing busy state, pending commands count, and optional running job ID
+     */
+    async getStatus(host: string): Promise<{ busy: boolean; num_pending_commands: number; running_job?: string }> {
+        const response = await fetch(`${host}/status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`HTTP ${response.status}: ${text}`);
+        }
+
+        return await response.json();
     }
 };

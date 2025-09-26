@@ -270,7 +270,7 @@
                 <img src="logo.png" alt="Spark Logo" class="header-logo">
                 <div class="status-info">
                     <span :title="'Detailed status: ' + clientStatus">{{ statusEmoji }} {{ uiStatus }}</span>
-                    <span>{{ queueStatus }}</span>
+                    {{ busyStatusText }}
                 </div>
             </div>
         </header>

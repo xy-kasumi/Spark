@@ -20,8 +20,8 @@ const app = Vue.createApp({
             // UI State
             commandText: '',
             clientStatus: 'unknown',
-            statusData: {} as Record<string, number>,
-            commandQueue: [],
+            latestPos: {} as Record<string, number>,
+            busyStatusText: '',
             jobs: [] as Array<{ job_id: string; status: 'WAITING' | 'RUNNING' | 'COMPLETED' | 'CANCELED'; time_added: Date; time_started?: Date; time_ended?: Date }>,
             clearOnExec: true,
             asJob: false,
@@ -48,12 +48,15 @@ const app = Vue.createApp({
             // Map 6 states to 3 UI states
             switch (this.clientStatus) {
                 case 'idle':
-                case 'busy-healthcheck': return 'idle';
-                case 'busy': return 'busy';
+                    return 'idle';
+                case 'busy':
+                    return 'busy';
                 case 'api-offline':
                 case 'board-offline':
-                case 'unknown': return 'offline';
-                default: return 'offline';
+                case 'unknown':
+                    return 'offline';
+                default:
+                    return 'offline';
             }
         },
 
@@ -67,7 +70,7 @@ const app = Vue.createApp({
         },
 
         posLineLocal() {
-            if (this.statusData["sys"] === "machine") {
+            if (this.latestPos["sys"] === "machine") {
                 return "";
             }
 
@@ -76,16 +79,16 @@ const app = Vue.createApp({
                 "toolsupply": "t",
                 "work": "w",
             };
-            const sys = this.statusData["sys"];
+            const sys = this.latestPos["sys"];
             const prefix = prefixTable[sys];
             if (!prefix) {
                 return `(${sys}) unknown`;
             }
 
-            const x = this.statusData[`${prefix}.x`];
-            const y = this.statusData[`${prefix}.y`];
-            const z = this.statusData[`${prefix}.z`];
-            const c = this.statusData[`${prefix}.c`];
+            const x = this.latestPos[`${prefix}.x`];
+            const y = this.latestPos[`${prefix}.y`];
+            const z = this.latestPos[`${prefix}.z`];
+            const c = this.latestPos[`${prefix}.c`];
             if (x === undefined || y === undefined || z === undefined || c === undefined) {
                 return `(${sys}) unknown`;
             }
@@ -93,10 +96,10 @@ const app = Vue.createApp({
         },
 
         posLineMachine() {
-            const x = this.statusData["m.x"];
-            const y = this.statusData["m.y"];
-            const z = this.statusData["m.z"];
-            const c = this.statusData["m.c"];
+            const x = this.latestPos["m.x"];
+            const y = this.latestPos["m.y"];
+            const z = this.latestPos["m.z"];
+            const c = this.latestPos["m.c"];
             if (x === undefined || y === undefined || z === undefined || c === undefined) {
                 return "(machine) unknown";
             }
@@ -104,20 +107,11 @@ const app = Vue.createApp({
         },
 
         initButtonText() {
-            return (this.clientStatus === 'idle' || this.clientStatus === 'busy-healthcheck') ? 'INIT' : 'ENQUEUE INIT';
+            return (this.clientStatus === 'idle') ? 'INIT' : 'ENQUEUE INIT';
         },
 
         executeButtonText() {
-            return (this.clientStatus === 'idle' || this.clientStatus === 'busy-healthcheck') ? 'EXECUTE' : 'ENQUEUE';
-        },
-
-        queueStatus() {
-            const queueLength = this.commandQueue.length;
-            if (queueLength === 0) {
-                return '';
-            }
-
-            return `${queueLength} commands in queue`;
+            return (this.clientStatus === 'idle') ? 'EXECUTE' : 'ENQUEUE';
         },
 
         // Display values (local edits take precedence over machine values)
@@ -182,13 +176,18 @@ const app = Vue.createApp({
         client = new SpoolerController(host);
 
         // Setup callbacks
-        client.onUpdate = (state, status) => {
-            this.clientStatus = state;
-            this.statusData = status;
+        client.onUpdatePos = (pos) => {
+            this.latestPos = pos;
         };
-
-        client.onQueueChange = () => {
-            this.commandQueue = [];
+        client.onUpdateStatus = (state, numCommands, runningJob) => {
+            this.clientStatus = state;
+            if (state === 'busy') {
+                if (runningJob !== null) {
+                    this.busyStatusText = `Job ${runningJob} running`;
+                } else {
+                    this.busyStatusText = `${numCommands} commands in queue`;
+                }
+            }
         };
 
         // Global Escape key handler to cancel any editing
@@ -270,9 +269,9 @@ const app = Vue.createApp({
          */
         currentPos(): { x: number, y: number, z: number } {
             return {
-                x: this.statusData["m.x"],
-                y: this.statusData["m.y"],
-                z: this.statusData["m.z"],
+                x: this.latestPos["m.x"],
+                y: this.latestPos["m.y"],
+                z: this.latestPos["m.z"],
             };
         },
 
