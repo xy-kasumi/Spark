@@ -316,7 +316,10 @@ const app = Vue.createApp({
         document.addEventListener('keydown', this.escapeHandler);
 
         // Initialize empty line chart
-        this.chart = new Chart(document.getElementById('timeseries-chart') as HTMLCanvasElement, { type: 'line' });
+        this.chart = new Chart(document.getElementById('timeseries-chart') as HTMLCanvasElement, {
+            type: 'line',
+            options: { animation: false }
+        });
 
         // Start polling
         client.startPolling();
@@ -808,7 +811,13 @@ const app = Vue.createApp({
         },
 
         async tsRefreshNow() {
+            let visibleKeys = this.chart.getSortedVisibleDatasetMetas().map(meta => meta.label);
             const keys = ["queue.num", "edm.open", "edm.short", "edm.pb_f", "edm.pb_b", "edm.dist", "edm.dist_max"];
+            if (visibleKeys.length === 0) {
+                // if nothing is visible, show all (can especially happen on first load)
+                visibleKeys = keys;
+            }
+            console.log("visible keys", visibleKeys);
 
             const nowSec = Math.floor(new Date().getTime() * 1e-3); // floor to suppress annoying sub-sec labels
             const start = new Date((nowSec - this.tsSpan) * 1e3);
@@ -842,7 +851,8 @@ const app = Vue.createApp({
 
             const res = await spoolerApi.queryTS(host, start, end, step, keys);
             this.chart.data.labels = res.times.map(dateToLabel);
-            this.chart.data.datasets = keys.map(key => ({ label: key, data: res.values[key] }));
+            this.chart.data.datasets = keys.map(key => ({ label: key, data: res.values[key], hidden: !visibleKeys.includes(key) }));
+            console.log(this.chart.data.datasets);
             this.chart.update();
         }
     }
