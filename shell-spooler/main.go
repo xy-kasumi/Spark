@@ -153,8 +153,11 @@ func (h *apiImpl) QueryLines(req *QueryLinesRequest) (*QueryLinesResponse, error
 }
 
 func (h *apiImpl) Cancel(req *CancelRequest) (*CancelResponse, error) {
-	h.jobSched.Cancel()
-	h.commInstance.DrainCommandQueue()
+	ok := h.jobSched.CancelJob()
+	if !ok {
+		// Need to drain command queue ourselves
+		h.commInstance.DrainCommandQueue()
+	}
 	h.commInstance.SendSignal("!")
 	return &CancelResponse{}, nil
 }

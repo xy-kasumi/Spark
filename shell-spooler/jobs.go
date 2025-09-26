@@ -145,6 +145,7 @@ func (js *JobSched) keepExecutingJobs() {
 				defer js.mu.Unlock()
 				if job.Status == JobCanceled {
 					close(stop)
+					js.commInstance.DrainCommandQueue()
 					return true
 				}
 				if js.commInstance.CommandQueueLength() == 0 {
@@ -196,16 +197,21 @@ func (js *JobSched) ListJobs() []Job {
 	return jobs
 }
 
-func (js *JobSched) Cancel() {
+// Returns true if a job was canceled, false if no pending job exists.
+// JobSched drains CommandQueue iff job was canceled.
+func (js *JobSched) CancelJob() bool {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 
 	job := js.findPendingJobUnsafe()
-	if job != nil {
-		job.Status = JobCanceled
-		tEnd := time.Now().Local()
-		job.TimeEnded = &tEnd
+	if job == nil {
+		return false
 	}
+
+	job.Status = JobCanceled
+	tEnd := time.Now().Local()
+	job.TimeEnded = &tEnd
+	return true
 }
 
 func (js *JobSched) HasPendingJob() bool {
