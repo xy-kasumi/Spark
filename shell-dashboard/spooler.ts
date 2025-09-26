@@ -456,7 +456,8 @@ const spoolerApi = {
             throw new Error(`HTTP ${response.status}: ${text}`);
         }
 
-        const jobs = await response.json();
+        // TODO: API response & doc mismatch
+        const jobs = (await response.json()).jobs;
 
         // Convert Unix timestamps to Date objects
         for (const job of jobs) {

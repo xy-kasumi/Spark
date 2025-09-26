@@ -123,6 +123,7 @@ const app = Vue.createApp({
             rebootTime: null as string | null,
             assumeInitialized: true, // true if we think init commands were executed or enqueued
             g1Commands: [] as G1Command[],
+            jobs: [] as Array<{ job_id: string; status: 'WAITING' | 'RUNNING' | 'COMPLETED' | 'CANCELED'; time_added: Date; time_started?: Date; time_ended?: Date }>,
             clearOnExec: true,
             asJob: false,
             jogStepMm: 1,
@@ -854,6 +855,52 @@ const app = Vue.createApp({
             this.chart.data.datasets = keys.map(key => ({ label: key, data: res.values[key], hidden: !visibleKeys.includes(key) }));
             console.log(this.chart.data.datasets);
             this.chart.update();
+        },
+
+        async refreshJobs() {
+            try {
+                this.jobs = await spoolerApi.listJobs(host);
+            } catch (error) {
+                console.error('Failed to refresh jobs:', error);
+                this.jobs = [];
+            }
+        },
+
+        formatJobTime(date: Date): string {
+            return date.toLocaleString();
+        },
+
+        getElapsedTime(job: { status: string; time_added: Date; time_started?: Date; time_ended?: Date }): string {
+            const now = new Date();
+            let startTime: Date;
+            let endTime: Date;
+
+            if (job.time_started) {
+                startTime = job.time_started;
+            } else {
+                startTime = job.time_added;
+            }
+
+            if (job.time_ended) {
+                endTime = job.time_ended;
+            } else {
+                endTime = now;
+            }
+
+            const elapsedMs = endTime.getTime() - startTime.getTime();
+            const elapsedSec = Math.floor(elapsedMs / 1000);
+
+            const hours = Math.floor(elapsedSec / 3600);
+            const minutes = Math.floor((elapsedSec % 3600) / 60);
+            const seconds = elapsedSec % 60;
+
+            if (hours > 0) {
+                return `${hours}h ${minutes}m ${seconds}s`;
+            } else if (minutes > 0) {
+                return `${minutes}m ${seconds}s`;
+            } else {
+                return `${seconds}s`;
+            }
         }
     }
 });
