@@ -163,13 +163,13 @@ func (h *apiImpl) Cancel(req *CancelRequest) (*CancelResponse, error) {
 }
 
 func (h *apiImpl) GetStatus(req *GetStatusRequest) (*GetStatusResponse, error) {
+	numCommands := h.commInstance.CommandQueueLength()
 	resp := GetStatusResponse{
-		Busy: h.commInstance.CommandQueueLength() > 0,
-		CommandQueue: CommandQueue{
-			Spooler: h.commInstance.CommandQueueLength(),
-			Core:    0, // TBD: get from core
-			Job:     0, // TBD: get from job system
-		},
+		Busy:               numCommands > 0,
+		NumPendingCommands: numCommands,
+	}
+	if jobID, ok := h.jobSched.FindRunningJobID(); ok {
+		resp.RunningJob = &jobID
 	}
 	return &resp, nil
 }

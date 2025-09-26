@@ -64,6 +64,15 @@ func (js *JobSched) findPendingJobUnsafe() *Job {
 	return nil
 }
 
+func (js *JobSched) findRunningJobUnsafe() *Job {
+	for i := range js.jobs {
+		if js.jobs[i].Status == JobRunning {
+			return &js.jobs[i]
+		}
+	}
+	return nil
+}
+
 func (js *JobSched) findWaitingJobUnsafe() *Job {
 	for i := range js.jobs {
 		if js.jobs[i].Status == JobWaiting {
@@ -219,4 +228,15 @@ func (js *JobSched) HasPendingJob() bool {
 	defer js.mu.Unlock()
 
 	return js.findPendingJobUnsafe() != nil
+}
+
+func (js *JobSched) FindRunningJobID() (string, bool) {
+	js.mu.Lock()
+	defer js.mu.Unlock()
+
+	job := js.findRunningJobUnsafe()
+	if job == nil {
+		return "", false
+	}
+	return job.ID, true
 }

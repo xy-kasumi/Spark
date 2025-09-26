@@ -194,18 +194,15 @@ Get spooler status summary.
 ```yaml
 properties:
   busy: {type: bool}
-  command_queue:
-    properties:
-      spooler: {type: int}
-      core: {type: int}
-      job: {type: int}
+  num_pending_commands: {type: int}
+optionalProperties:
+  running_job: {type: string}
 ```
 
 * `busy`: some commands are pending to execute (or being executed). Signals do not count as busy.
-* `command_queue`: current queue size of various place
-  * `spooler`: commands by `/write-line` queued in spooler
-  * `core`: command queued in core
-  * `job`: remaining commands in `WAITING` or `RUNNING`
+* `num_pending_commands`: number of commands (either directly or via job)
+  * note this might be a slightly lower because of core queue is not counted
+* `running_job`: job_id if a job is running
 
 **Examples**
 

@@ -161,8 +161,9 @@ type CommandQueue struct {
 }
 
 type GetStatusResponse struct {
-	Busy         bool         `json:"busy"`
-	CommandQueue CommandQueue `json:"command_queue"`
+	Busy               bool    `json:"busy"`
+	NumPendingCommands int     `json:"num_pending_commands"`
+	RunningJob         *string `json:"running_job,omitempty"`
 }
 
 func validateGetStatus(req *GetStatusRequest) error {
