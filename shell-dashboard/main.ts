@@ -808,7 +808,7 @@ const app = Vue.createApp({
         },
 
         async tsRefreshNow() {
-            const keys = ["queue.num", "edm.open", "edm.short", "edm.pb_f", "edm.pb_b", "dist", "dist_max"];
+            const keys = ["queue.num", "edm.open", "edm.short", "edm.pb_f", "edm.pb_b", "edm.dist", "edm.dist_max"];
 
             const nowSec = Math.floor(new Date().getTime() * 1e-3); // floor to suppress annoying sub-sec labels
             const start = new Date((nowSec - this.tsSpan) * 1e3);
