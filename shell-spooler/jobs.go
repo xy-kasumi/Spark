@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -55,27 +56,9 @@ func (js *JobSched) issueNewJobIDUnsafe() string {
 	return jobID
 }
 
-func (js *JobSched) findPendingJobUnsafe() *Job {
-	for _, job := range js.jobs {
-		if job.Status == JobWaiting || job.Status == JobRunning {
-			return &job
-		}
-	}
-	return nil
-}
-
-func (js *JobSched) findRunningJobUnsafe() *Job {
+func (js *JobSched) findJobUnsafe(status []JobStatus) *Job {
 	for i := range js.jobs {
-		if js.jobs[i].Status == JobRunning {
-			return &js.jobs[i]
-		}
-	}
-	return nil
-}
-
-func (js *JobSched) findWaitingJobUnsafe() *Job {
-	for i := range js.jobs {
-		if js.jobs[i].Status == JobWaiting {
+		if slices.Contains(status, js.jobs[i].Status) {
 			return &js.jobs[i]
 		}
 	}
@@ -122,7 +105,7 @@ func (js *JobSched) keepExecutingJobs() {
 			job = func() *Job {
 				js.mu.Lock()
 				defer js.mu.Unlock()
-				job := js.findWaitingJobUnsafe()
+				job := js.findJobUnsafe([]JobStatus{JobWaiting})
 				if job != nil && js.commInstance.CommandQueueLength() == 0 {
 					// Mark as started
 					tStart := time.Now().Local()
@@ -179,7 +162,7 @@ func (js *JobSched) AddJob(commands []string, signals map[string]float32) (strin
 	js.mu.Lock()
 	defer js.mu.Unlock()
 
-	if js.findPendingJobUnsafe() != nil || js.commInstance.CommandQueueLength() > 0 {
+	if js.findJobUnsafe([]JobStatus{JobWaiting, JobRunning}) != nil || js.commInstance.CommandQueueLength() > 0 {
 		return "", false
 	}
 
@@ -212,7 +195,7 @@ func (js *JobSched) CancelJob() bool {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 
-	job := js.findPendingJobUnsafe()
+	job := js.findJobUnsafe([]JobStatus{JobWaiting, JobRunning})
 	if job == nil {
 		return false
 	}
@@ -227,14 +210,14 @@ func (js *JobSched) HasPendingJob() bool {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 
-	return js.findPendingJobUnsafe() != nil
+	return js.findJobUnsafe([]JobStatus{JobWaiting, JobRunning}) != nil
 }
 
 func (js *JobSched) FindRunningJobID() (string, bool) {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 
-	job := js.findRunningJobUnsafe()
+	job := js.findJobUnsafe([]JobStatus{JobRunning})
 	if job == nil {
 		return "", false
 	}
