@@ -4,9 +4,11 @@
     <!-- Fixed Header with Status -->
     <header class="fixed-header">
       <div class="header-content">
-        <img :src="logoUrl" alt="Spark Logo" class="header-logo">
+        <img :src="logoUrl" alt="Spark Logo" class="header-logo" />
         <div class="status-info">
-          <span :title="'Detailed status: ' + clientStatus">{{ statusEmoji }} {{ uiStatus }}</span>
+          <span :title="'Detailed status: ' + clientStatus"
+            >{{ statusEmoji }} {{ uiStatus }}</span
+          >
           {{ busyStatusText }}
         </div>
       </div>
@@ -35,97 +37,101 @@
 </template>
 
 <script>
-import { SpoolerController } from './spooler.ts';
-import logoUrl from './logo.png';
-import ManualCommand from './components/ManualCommand.vue';
-import CoordinateSystem from './components/CoordinateSystem.vue';
-import Jog from './components/Jog.vue';
-import ToolSupply from './components/ToolSupply.vue';
-import JobList from './components/JobList.vue';
-import Settings from './components/Settings.vue';
-import Timeseries from './components/Timeseries.vue';
+import { SpoolerController } from "./spooler.ts";
+import logoUrl from "./logo.png";
+import ManualCommand from "./components/ManualCommand.vue";
+import CoordinateSystem from "./components/CoordinateSystem.vue";
+import Jog from "./components/Jog.vue";
+import ToolSupply from "./components/ToolSupply.vue";
+import JobList from "./components/JobList.vue";
+import Settings from "./components/Settings.vue";
+import Timeseries from "./components/Timeseries.vue";
 
 // Global client instance for performance
 let client = null;
 
 export default {
-    components: {
-        ManualCommand,
-        CoordinateSystem,
-        Jog,
-        ToolSupply,
-        JobList,
-        Settings,
-        Timeseries,
+  components: {
+    ManualCommand,
+    CoordinateSystem,
+    Jog,
+    ToolSupply,
+    JobList,
+    Settings,
+    Timeseries,
+  },
+  data() {
+    return {
+      logoUrl,
+      client: null,
+      clientStatus: "unknown",
+      latestPos: {},
+      busyStatusText: "",
+    };
+  },
+
+  computed: {
+    uiStatus() {
+      switch (this.clientStatus) {
+        case "idle":
+          return "idle";
+        case "busy":
+          return "busy";
+        case "api-offline":
+        case "board-offline":
+        case "unknown":
+          return "offline";
+        default:
+          return "offline";
+      }
     },
-    data() {
-        return {
-            logoUrl,
-            client: null,
-            clientStatus: 'unknown',
-            latestPos: {},
-            busyStatusText: '',
+
+    statusEmoji() {
+      switch (this.uiStatus) {
+        case "idle":
+          return "🔵";
+        case "busy":
+          return "🟠";
+        case "offline":
+          return "⚫";
+        default:
+          return "⚫";
+      }
+    },
+
+    assumeInitialized() {
+      return this.clientStatus === "idle" || this.clientStatus === "busy";
+    },
+  },
+
+  mounted() {
+    const host = "http://localhost:9000";
+    client = new SpoolerController(host);
+    this.client = client;
+
+    client.onUpdatePos = (pos) => {
+      this.latestPos = pos;
+    };
+    client.onUpdateStatus = (state, numCommands, runningJob) => {
+      this.clientStatus = state;
+      if (state === "busy") {
+        if (runningJob !== null) {
+          this.busyStatusText = `Job ${runningJob} running`;
+        } else {
+          this.busyStatusText = `${numCommands} commands in queue`;
         }
-    },
+      }
+    };
 
-    computed: {
-        uiStatus() {
-            switch (this.clientStatus) {
-                case 'idle':
-                    return 'idle';
-                case 'busy':
-                    return 'busy';
-                case 'api-offline':
-                case 'board-offline':
-                case 'unknown':
-                    return 'offline';
-                default:
-                    return 'offline';
-            }
-        },
+    client.startPolling();
+  },
 
-        statusEmoji() {
-            switch (this.uiStatus) {
-                case 'idle': return '🔵';
-                case 'busy': return '🟠';
-                case 'offline': return '⚫';
-                default: return '⚫';
-            }
-        },
-
-        assumeInitialized() {
-            return this.clientStatus === 'idle' || this.clientStatus === 'busy';
-        },
-    },
-
-    mounted() {
-        const host = "http://localhost:9000";
-        client = new SpoolerController(host);
-        this.client = client;
-
-        client.onUpdatePos = (pos) => {
-            this.latestPos = pos;
-        };
-        client.onUpdateStatus = (state, numCommands, runningJob) => {
-            this.clientStatus = state;
-            if (state === 'busy') {
-                if (runningJob !== null) {
-                    this.busyStatusText = `Job ${runningJob} running`;
-                } else {
-                    this.busyStatusText = `${numCommands} commands in queue`;
-                }
-            }
-        };
-
-        client.startPolling();
-    },
-
-    beforeUnmount() {
-        if (client) {
-            client.stopPolling();
-        }
-    },
-}
+  beforeUnmount() {
+    if (client) {
+      client.stopPolling();
+    }
+  },
+};
 </script>
 
 <style>
@@ -200,7 +206,7 @@ body {
   margin-bottom: calc(var(--unit-space) * 2);
 }
 
-.widget>h1 {
+.widget > h1 {
   font-size: var(--text-size);
   font-weight: bold;
   margin: 0;
@@ -210,7 +216,7 @@ body {
   background: var(--bg-secondary);
 }
 
-.widget>.widget-content {
+.widget > .widget-content {
   padding: var(--unit-space);
 }
 
@@ -270,7 +276,6 @@ label {
   color: var(--text-primary);
   margin-right: 15px;
 }
-
 
 /* Part-specific things */
 .fixed-header .header-logo {

@@ -13,9 +13,9 @@
 
 <script>
 export default {
-  name: 'CoordinateSystem',
+  name: "CoordinateSystem",
   props: {
-    client: Object
+    client: Object,
   },
   methods: {
     setMachineCoords() {
@@ -37,6 +37,6 @@ export default {
       this.client.enqueueCommand("G56");
       this.client.requestPosUpdate();
     },
-  }
-}
+  },
+};
 </script>

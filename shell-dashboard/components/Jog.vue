@@ -32,13 +32,31 @@
 
       <div>
         <label class="">
-          <input type="radio" name="jogStep" :value="0.1" v-model.number="jogStepMm"> 0.1mm
+          <input
+            type="radio"
+            name="jogStep"
+            :value="0.1"
+            v-model.number="jogStepMm"
+          />
+          0.1mm
         </label>
         <label class="">
-          <input type="radio" name="jogStep" :value="1" v-model.number="jogStepMm"> 1mm
+          <input
+            type="radio"
+            name="jogStep"
+            :value="1"
+            v-model.number="jogStepMm"
+          />
+          1mm
         </label>
         <label class="">
-          <input type="radio" name="jogStep" :value="5" v-model.number="jogStepMm"> 5mm
+          <input
+            type="radio"
+            name="jogStep"
+            :value="5"
+            v-model.number="jogStepMm"
+          />
+          5mm
         </label>
       </div>
     </div>
@@ -47,15 +65,15 @@
 
 <script>
 export default {
-  name: 'Jog',
+  name: "Jog",
   props: {
     client: Object,
-    latestPos: Object
+    latestPos: Object,
   },
   data() {
     return {
       jogStepMm: 1,
-    }
+    };
   },
   computed: {
     posLineLocal() {
@@ -64,9 +82,9 @@ export default {
       }
 
       const prefixTable = {
-        "grinder": "g",
-        "toolsupply": "t",
-        "work": "w",
+        grinder: "g",
+        toolsupply: "t",
+        work: "w",
       };
       const sys = this.latestPos["sys"];
       const prefix = prefixTable[sys];
@@ -78,10 +96,17 @@ export default {
       const y = this.latestPos[`${prefix}.y`];
       const z = this.latestPos[`${prefix}.z`];
       const c = this.latestPos[`${prefix}.c`];
-      if (x === undefined || y === undefined || z === undefined || c === undefined) {
+      if (
+        x === undefined ||
+        y === undefined ||
+        z === undefined ||
+        c === undefined
+      ) {
         return `(${sys}) unknown`;
       }
-      return `(${sys}) X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(3)} C${c.toFixed(3)}`;
+      return `(${sys}) X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(
+        3
+      )} C${c.toFixed(3)}`;
     },
 
     posLineMachine() {
@@ -89,10 +114,17 @@ export default {
       const y = this.latestPos["m.y"];
       const z = this.latestPos["m.z"];
       const c = this.latestPos["m.c"];
-      if (x === undefined || y === undefined || z === undefined || c === undefined) {
+      if (
+        x === undefined ||
+        y === undefined ||
+        z === undefined ||
+        c === undefined
+      ) {
         return "(machine) unknown";
       }
-      return `(machine) X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(3)} C${c.toFixed(3)}`;
+      return `(machine) X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(
+        3
+      )} C${c.toFixed(3)}`;
     },
   },
   methods: {
@@ -109,36 +141,48 @@ export default {
     },
 
     jogXPlus() {
-      this.client.enqueueCommand(`G0 X${(this.currentPos().x + this.jogStepMm).toFixed(3)}`);
+      this.client.enqueueCommand(
+        `G0 X${(this.currentPos().x + this.jogStepMm).toFixed(3)}`
+      );
       this.client.requestPosUpdate();
     },
 
     jogXMinus() {
-      this.client.enqueueCommand(`G0 X${(this.currentPos().x - this.jogStepMm).toFixed(3)}`);
+      this.client.enqueueCommand(
+        `G0 X${(this.currentPos().x - this.jogStepMm).toFixed(3)}`
+      );
       this.client.requestPosUpdate();
     },
 
     jogYPlus() {
-      this.client.enqueueCommand(`G0 Y${(this.currentPos().y + this.jogStepMm).toFixed(3)}`);
+      this.client.enqueueCommand(
+        `G0 Y${(this.currentPos().y + this.jogStepMm).toFixed(3)}`
+      );
       this.client.requestPosUpdate();
     },
 
     jogYMinus() {
-      this.client.enqueueCommand(`G0 Y${(this.currentPos().y - this.jogStepMm).toFixed(3)}`);
+      this.client.enqueueCommand(
+        `G0 Y${(this.currentPos().y - this.jogStepMm).toFixed(3)}`
+      );
       this.client.requestPosUpdate();
     },
 
     jogZPlus() {
-      this.client.enqueueCommand(`G0 Z${(this.currentPos().z + this.jogStepMm).toFixed(3)}`);
-      this.client.enqueueCommand('?pos');
+      this.client.enqueueCommand(
+        `G0 Z${(this.currentPos().z + this.jogStepMm).toFixed(3)}`
+      );
+      this.client.enqueueCommand("?pos");
     },
 
     jogZMinus() {
-      this.client.enqueueCommand(`G0 Z${(this.currentPos().z - this.jogStepMm).toFixed(3)}`);
-      this.client.enqueueCommand('?pos');
+      this.client.enqueueCommand(
+        `G0 Z${(this.currentPos().z - this.jogStepMm).toFixed(3)}`
+      );
+      this.client.enqueueCommand("?pos");
     },
-  }
-}
+  },
+};
 </script>
 
 <style scoped>

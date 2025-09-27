@@ -5,14 +5,23 @@
     <div class="widget-content">
       <button @click="refreshSettings">REFRESH</button>
       <br />
-      <div v-if="Object.keys(settings).length === 0" class="settings-placeholder">
+      <div
+        v-if="Object.keys(settings).length === 0"
+        class="settings-placeholder"
+      >
         Click REFRESH to load settings
       </div>
       <div v-else>
-        <label>Filter <input type="text" v-model="settingsFilter"
-            placeholder="Enter filter..."></label>
-        <div class="settings-info">Showing {{ settingsCount.filtered }}/{{ settingsCount.total }}
-          items</div>
+        <label
+          >Filter
+          <input
+            type="text"
+            v-model="settingsFilter"
+            placeholder="Enter filter..."
+        /></label>
+        <div class="settings-info">
+          Showing {{ settingsCount.filtered }}/{{ settingsCount.total }} items
+        </div>
         <div class="settings-table-container">
           <table class="settings-table">
             <thead>
@@ -24,25 +33,37 @@
             <tbody>
               <tr v-for="(value, key) in filteredSettings" :key="key">
                 <td v-html="highlightKey(key)"></td>
-                <td v-if="editingKey !== key" @click="startEditing(key)"
-                  style="cursor: pointer;">
+                <td
+                  v-if="editingKey !== key"
+                  @click="startEditing(key)"
+                  style="cursor: pointer"
+                >
                   {{ value }}
-                  <span v-if="isModified(key)"
-                    class="modified-indicator">(modified)</span>
+                  <span v-if="isModified(key)" class="modified-indicator"
+                    >(modified)</span
+                  >
                 </td>
                 <td v-else>
-                  <input type="number" :value="value" @blur="saveEdit(key, $event)"
-                    @keyup.enter="saveEdit(key, $event)" ref="editInput">
+                  <input
+                    type="number"
+                    :value="value"
+                    @blur="saveEdit(key, $event)"
+                    @keyup.enter="saveEdit(key, $event)"
+                    ref="editInput"
+                  />
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div v-if="pendingEditsCount > 0" style="margin-top: var(--unit-space);">
+        <div v-if="pendingEditsCount > 0" style="margin-top: var(--unit-space)">
           <button @click="applyEdits">APPLY EDITS</button>
           <button @click="discardEdits">DISCARD EDITS</button>
         </div>
-        <div v-if="pendingEditsCount === 0" style="margin-top: var(--unit-space);">
+        <div
+          v-if="pendingEditsCount === 0"
+          style="margin-top: var(--unit-space)"
+        >
           <button @click="saveAsInit">SAVE AS INIT</button>
         </div>
       </div>
@@ -51,21 +72,21 @@
 </template>
 
 <script>
-import { spoolerApi } from '../spooler.ts';
+import { spoolerApi } from "../spooler.ts";
 
 export default {
-  name: 'Settings',
+  name: "Settings",
   props: {
-    client: Object
+    client: Object,
   },
   data() {
     return {
       settingsMachine: {},
       settingsLocal: {},
-      settingsFilter: '',
+      settingsFilter: "",
       editingKey: null,
       escapeHandler: null,
-    }
+    };
   },
   computed: {
     settings() {
@@ -122,22 +143,22 @@ export default {
   },
   mounted() {
     this.escapeHandler = (event) => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         this.cancelEdit();
       }
     };
-    document.addEventListener('keydown', this.escapeHandler);
+    document.addEventListener("keydown", this.escapeHandler);
   },
   beforeUnmount() {
     if (this.escapeHandler) {
-      document.removeEventListener('keydown', this.escapeHandler);
+      document.removeEventListener("keydown", this.escapeHandler);
     }
   },
   methods: {
     async refreshSettings() {
       this.client.enqueueCommand("get");
 
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       const host = "http://localhost:9000";
       const res = await spoolerApi.getLatestPState(host, "stg");
@@ -147,7 +168,7 @@ export default {
       }
 
       const machineSettings = res.pstate;
-      console.log('Machine settings retrieved:', machineSettings);
+      console.log("Machine settings retrieved:", machineSettings);
 
       this.settingsMachine = machineSettings;
 
@@ -228,7 +249,7 @@ export default {
     discardEdits() {
       this.settingsLocal = { ...this.settingsMachine };
       this.editingKey = null;
-      console.log('Discarded all pending edits');
+      console.log("Discarded all pending edits");
     },
 
     async saveAsInit() {
@@ -242,11 +263,11 @@ export default {
         await spoolerApi.setInit(host, initLines);
         console.log(`Saved ${initLines.length} settings as init commands`);
       } catch (error) {
-        console.error('Failed to save settings as init:', error);
+        console.error("Failed to save settings as init:", error);
       }
     },
-  }
-}
+  },
+};
 </script>
 
 <style scoped>

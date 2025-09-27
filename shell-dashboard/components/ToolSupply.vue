@@ -5,7 +5,8 @@
     <div class="widget-content">
       <div style="margin-bottom: var(--unit-space)">
         <label class="">
-          <input type="checkbox" v-model="toolSupplyShowDetails"> Individual actions
+          <input type="checkbox" v-model="toolSupplyShowDetails" /> Individual
+          actions
         </label>
       </div>
 
@@ -48,14 +49,14 @@ const tsPulledZ = 47;
 const tsFullInsertZ = -12;
 
 export default {
-  name: 'ToolSupply',
+  name: "ToolSupply",
   props: {
-    client: Object
+    client: Object,
   },
   data() {
     return {
       toolSupplyShowDetails: false,
-    }
+    };
   },
   methods: {
     clamp() {
@@ -67,16 +68,11 @@ export default {
         "G0 C240",
         "G0 C120",
         "G0 C0",
-      ].forEach(cmd => this.client.enqueueCommand(cmd));
+      ].forEach((cmd) => this.client.enqueueCommand(cmd));
     },
 
     unclamp() {
-      this.client.enqueueCommands([
-        "G0 C0",
-        "G0 C120",
-        "G0 C240",
-        "G0 C0",
-      ]);
+      this.client.enqueueCommands(["G0 C0", "G0 C120", "G0 C240", "G0 C0"]);
     },
 
     open() {
@@ -88,10 +84,7 @@ export default {
     },
 
     moveToTs() {
-      this.client.enqueueCommands([
-        "G56",
-        `G0 X0 Y0 Z${tsPulledZ.toFixed(3)}`,
-      ]);
+      this.client.enqueueCommands(["G56", `G0 X0 Y0 Z${tsPulledZ.toFixed(3)}`]);
     },
 
     tsInsert() {
@@ -106,7 +99,12 @@ export default {
 
       let ofs = 0;
       let phase = 0;
-      let offsets = [[-1, -1], [-1, 1], [1, 1], [1, -1]];
+      let offsets = [
+        [-1, -1],
+        [-1, 1],
+        [1, 1],
+        [1, -1],
+      ];
       while (true) {
         const [dx, dy] = offsets[phase];
         const x = dx * halfWidth;
@@ -128,10 +126,7 @@ export default {
     },
 
     tsPull() {
-      this.client.enqueueCommands([
-        `G0 Z${tsPulledZ.toFixed(3)}`,
-        "G53",
-      ]);
+      this.client.enqueueCommands([`G0 Z${tsPulledZ.toFixed(3)}`, "G53"]);
     },
 
     executeAttach() {
@@ -149,6 +144,6 @@ export default {
       this.unclamp();
       this.tsPull();
     },
-  }
-}
+  },
+};
 </script>

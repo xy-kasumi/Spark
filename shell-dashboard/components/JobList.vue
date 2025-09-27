@@ -4,34 +4,72 @@
     <h1>Job List</h1>
     <div class="widget-content">
       <button @click="refreshJobs">REFRESH</button>
-      <div v-if="jobs.length === 0">
-        No jobs found
-      </div>
-      <table v-else style="width: 100%; border-collapse: collapse; margin-top: var(--unit-space);">
+      <div v-if="jobs.length === 0">No jobs found</div>
+      <table
+        v-else
+        style="
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: var(--unit-space);
+        "
+      >
         <thead>
           <tr>
             <th
-              style="text-align: left; padding: calc(var(--unit-space) * 0.5); border-bottom: 1px solid var(--border-color);">
-              Status</th>
+              style="
+                text-align: left;
+                padding: calc(var(--unit-space) * 0.5);
+                border-bottom: 1px solid var(--border-color);
+              "
+            >
+              Status
+            </th>
             <th
-              style="text-align: left; padding: calc(var(--unit-space) * 0.5); border-bottom: 1px solid var(--border-color);">
-              Started</th>
+              style="
+                text-align: left;
+                padding: calc(var(--unit-space) * 0.5);
+                border-bottom: 1px solid var(--border-color);
+              "
+            >
+              Started
+            </th>
             <th
-              style="text-align: left; padding: calc(var(--unit-space) * 0.5); border-bottom: 1px solid var(--border-color);">
-              Elapsed</th>
+              style="
+                text-align: left;
+                padding: calc(var(--unit-space) * 0.5);
+                border-bottom: 1px solid var(--border-color);
+              "
+            >
+              Elapsed
+            </th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="job in jobs" :key="job.job_id">
             <td
-              style="padding: calc(var(--unit-space) * 0.5); border-bottom: 1px solid var(--border-color);">
-              {{ job.status }}</td>
+              style="
+                padding: calc(var(--unit-space) * 0.5);
+                border-bottom: 1px solid var(--border-color);
+              "
+            >
+              {{ job.status }}
+            </td>
             <td
-              style="padding: calc(var(--unit-space) * 0.5); border-bottom: 1px solid var(--border-color);">
-              {{ formatJobTime(job.time_added) }}</td>
+              style="
+                padding: calc(var(--unit-space) * 0.5);
+                border-bottom: 1px solid var(--border-color);
+              "
+            >
+              {{ formatJobTime(job.time_added) }}
+            </td>
             <td
-              style="padding: calc(var(--unit-space) * 0.5); border-bottom: 1px solid var(--border-color);">
-              {{ getElapsedTime(job) }}</td>
+              style="
+                padding: calc(var(--unit-space) * 0.5);
+                border-bottom: 1px solid var(--border-color);
+              "
+            >
+              {{ getElapsedTime(job) }}
+            </td>
           </tr>
         </tbody>
       </table>
@@ -40,14 +78,14 @@
 </template>
 
 <script>
-import { spoolerApi } from '../spooler.ts';
+import { spoolerApi } from "../spooler.ts";
 
 export default {
-  name: 'JobList',
+  name: "JobList",
   data() {
     return {
       jobs: [],
-    }
+    };
   },
   methods: {
     async refreshJobs() {
@@ -55,7 +93,7 @@ export default {
         const host = "http://localhost:9000";
         this.jobs = await spoolerApi.listJobs(host);
       } catch (error) {
-        console.error('Failed to refresh jobs:', error);
+        console.error("Failed to refresh jobs:", error);
         this.jobs = [];
       }
     },
@@ -95,7 +133,7 @@ export default {
       } else {
         return `${seconds}s`;
       }
-    }
-  }
-}
+    },
+  },
+};
 </script>

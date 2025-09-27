@@ -5,50 +5,60 @@
     <div class="widget-content">
       <button class="" @click="init">{{ initButtonText }}</button>
       <br />
-      <textarea class="" v-model="commandText" rows="10" cols="50"
-        placeholder="Enter G-code or commands"></textarea><br />
-      <button class="" @click="send" :disabled="commands.length === 0 || !assumeInitialized">{{
-        executeButtonText }}</button>
+      <textarea
+        class=""
+        v-model="commandText"
+        rows="10"
+        cols="50"
+        placeholder="Enter G-code or commands"
+      ></textarea
+      ><br />
+      <button
+        class=""
+        @click="send"
+        :disabled="commands.length === 0 || !assumeInitialized"
+      >
+        {{ executeButtonText }}
+      </button>
       <button class="" @click="cancel">CANCEL</button>
       <label class="">
-        <input type="checkbox" v-model="clearOnExec"> Clear on exec
+        <input type="checkbox" v-model="clearOnExec" /> Clear on exec
       </label>
-      <label class="">
-        <input type="checkbox" v-model="asJob"> As Job
-      </label>
+      <label class=""> <input type="checkbox" v-model="asJob" /> As Job </label>
     </div>
   </div>
 </template>
 
 <script>
-import { spoolerApi } from '../spooler.ts';
+import { spoolerApi } from "../spooler.ts";
 
 export default {
-  name: 'ManualCommand',
+  name: "ManualCommand",
   props: {
     client: Object,
     clientStatus: String,
-    assumeInitialized: Boolean
+    assumeInitialized: Boolean,
   },
-  emits: ['command-sent'],
+  emits: ["command-sent"],
   data() {
     return {
-      commandText: '',
+      commandText: "",
       clearOnExec: true,
       asJob: false,
-    }
+    };
   },
   computed: {
     commands() {
-      return this.commandText.split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
+      return this.commandText
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
     },
     initButtonText() {
-      return (this.clientStatus === 'idle') ? 'INIT' : 'ENQUEUE INIT';
+      return this.clientStatus === "idle" ? "INIT" : "ENQUEUE INIT";
     },
     executeButtonText() {
-      return (this.clientStatus === 'idle') ? 'EXECUTE' : 'ENQUEUE';
+      return this.clientStatus === "idle" ? "EXECUTE" : "ENQUEUE";
     },
   },
   methods: {
@@ -80,16 +90,16 @@ export default {
       }
 
       if (this.clearOnExec) {
-        this.commandText = '';
+        this.commandText = "";
       }
 
-      this.$emit('command-sent');
+      this.$emit("command-sent");
     },
 
     cancel() {
       if (!this.client) return;
       this.client.cancel();
     },
-  }
-}
+  },
+};
 </script>
