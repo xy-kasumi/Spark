@@ -1,6 +1,7 @@
+<!-- SPDX-FileCopyrightText: 2025 夕月霞 -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <template>
-  <div class="widget" id="widget-settings">
+  <div class="widget">
     <h1>Settings</h1>
     <div class="widget-content">
       <button @click="refreshSettings">REFRESH</button>
