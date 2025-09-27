@@ -8,27 +8,27 @@
         <label class="">
           <input
             type="radio"
-            name="tsSpan"
+            name="span"
             :value="60"
-            v-model.number="tsSpan"
+            v-model.number="span"
           />
           1m
         </label>
         <label class="">
           <input
             type="radio"
-            name="tsSpan"
+            name="span"
             :value="600"
-            v-model.number="tsSpan"
+            v-model.number="span"
           />
           10m
         </label>
         <label class="">
           <input
             type="radio"
-            name="tsSpan"
+            name="span"
             :value="3600"
-            v-model.number="tsSpan"
+            v-model.number="span"
           />
           60m
         </label>
@@ -38,31 +38,31 @@
         <label class="">
           <input
             type="radio"
-            name="tsRefreshInterval"
+            name="refreshInterval"
             :value="0"
-            v-model.number="tsRefreshInterval"
+            v-model.number="refreshInterval"
           />
           No
         </label>
         <label class="">
           <input
             type="radio"
-            name="tsRefreshInterval"
+            name="refreshInterval"
             :value="10"
-            v-model.number="tsRefreshInterval"
+            v-model.number="refreshInterval"
           />
           10s
         </label>
         <label class="">
           <input
             type="radio"
-            name="tsRefreshInterval"
+            name="refreshInterval"
             :value="60"
-            v-model.number="tsRefreshInterval"
+            v-model.number="refreshInterval"
           />
           1m
         </label>
-        <button @click="tsRefreshNow">REFRESH</button>
+        <button @click="refreshNow">REFRESH</button>
       </div>
       <canvas ref="chartCanvas" width="500" height="300"></canvas>
     </div>
@@ -95,9 +95,10 @@ export default {
   name: "Timeseries",
   data() {
     return {
-      tsSpan: 60,
-      tsRefreshInterval: 60,
+      span: 60,
+      refreshInterval: 0,
       chart: null,
+      refreshTimer: null,
     };
   },
   mounted() {
@@ -110,12 +111,35 @@ export default {
     );
   },
   beforeUnmount() {
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer);
+    }
     if (this.chart) {
       this.chart.destroy();
     }
   },
+  watch: {
+    span() {
+      this.refreshNow();
+    },
+    refreshInterval(newVal) {
+      this.setupAutoRefresh(newVal);
+    },
+  },
   methods: {
-    async tsRefreshNow() {
+    setupAutoRefresh(intervalSeconds) {
+      if (this.refreshTimer) {
+        clearInterval(this.refreshTimer);
+        this.refreshTimer = null;
+      }
+
+      if (intervalSeconds > 0) {
+        this.refreshTimer = setInterval(() => {
+          this.refreshNow();
+        }, intervalSeconds * 1000);
+      }
+    },
+    async refreshNow() {
       let visibleKeys = this.chart
         .getSortedVisibleDatasetMetas()
         .map((meta) => meta.label);
@@ -134,11 +158,11 @@ export default {
       console.log("visible keys", visibleKeys);
 
       const nowSec = Math.floor(new Date().getTime() * 1e-3);
-      const start = new Date((nowSec - this.tsSpan) * 1e3);
+      const start = new Date((nowSec - this.span) * 1e3);
       const end = new Date(nowSec * 1e3);
 
       const targetNumSteps = 100;
-      const preAdjustStep = this.tsSpan / targetNumSteps;
+      const preAdjustStep = this.span / targetNumSteps;
       let step;
 
       if (preAdjustStep < 0.5) {
