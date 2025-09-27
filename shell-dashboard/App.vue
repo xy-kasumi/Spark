@@ -121,6 +121,8 @@ export default {
         } else {
           this.busyStatusText = `${numCommands} commands in queue`;
         }
+      } else {
+        this.busyStatusText = "";
       }
     };
 
