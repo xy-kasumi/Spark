@@ -16,7 +16,7 @@
     <div class="main-content">
       <div class="column">
 
-        <div class="widget">
+        <div class="widget" id="widget-command">
           <h1>Manual Command</h1>
           <div class="widget-content">
             <button class="" @click="init">{{ initButtonText }}</button>
@@ -35,7 +35,7 @@
           </div>
         </div>
 
-        <div class="widget">
+        <div class="widget" id="widget-coordsys">
           <h1>Coordinate System</h1>
           <div class="widget-content">
             <button @click="setMachineCoords">MACHINE</button>
@@ -89,7 +89,7 @@
           </div>
         </div>
 
-        <div class="widget">
+        <div class="widget" id="widget-toolsupply">
           <h1>Tool Supply</h1>
           <div class="widget-content">
             <div style="margin-bottom: var(--unit-space)">
