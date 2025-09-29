@@ -156,20 +156,20 @@ const generateTool = (toolLength: number): THREE.Object3D => {
     const baseRadius = 10;
     const baseHeight = 10;
 
-    const toolRadius = 1.5 / 2;
+    const toolRadius = 3 / 2;
 
     // note: cylinder geom is Y direction and centered. Need to rotate and shift.
 
     const base = new THREE.Mesh(
         new THREE.CylinderGeometry(baseRadius, baseRadius, baseHeight, 6, 1),
-        new THREE.MeshPhysicalMaterial({ color: 0xe0e0e0, metalness: 0.2, roughness: 0.8, wireframe: true }));
+        new THREE.MeshPhysicalMaterial({ color: 0xe0e0e0, metalness: 0.2, roughness: 0.8 }));
     base.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
     base.position.z = baseHeight / 2;
     toolOrigin.add(base);
 
     const tool = new THREE.Mesh(
         new THREE.CylinderGeometry(toolRadius, toolRadius, toolLength, 32, 1),
-        new THREE.MeshPhysicalMaterial({ color: 0xf0f0f0, metalness: 0.9, roughness: 0.3, wireframe: true }));
+        new THREE.MeshPhysicalMaterial({ color: 0xf0f0f0, metalness: 0.9, roughness: 0.3 }));
     tool.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
     tool.position.z = -toolLength / 2;
     toolOrigin.add(tool);
@@ -177,82 +177,79 @@ const generateTool = (toolLength: number): THREE.Object3D => {
     const aAxisHelper = createRotationAxisHelper(new THREE.Vector3(0, 0, -1), 2, axisColorA); // TODO: is this polarity correct?
     toolOrigin.add(aAxisHelper);
 
-    const bAxisHelper1 = createRotationAxisHelper(new THREE.Vector3(0, 1, 0), 5, axisColorB);
-    const bAxisHelper2 = createRotationAxisHelper(new THREE.Vector3(0, 1, 0), 5, axisColorB);
-    bAxisHelper1.position.set(0, 1, 0);
-    bAxisHelper2.position.set(0, -1, 0);
-    toolOrigin.add(bAxisHelper1);
-    toolOrigin.add(bAxisHelper2);
-
     return toolOrigin;
 };
 
-// Parse single line of G-code.
-// current values: {X, Y, Z, A, B, C, GW_ABS}
-const parseGcode = (line: string, curr: any): any => {
-    const ix = line.indexOf(";");
-    const activePart = ix >= 0 ? line.substring(0, ix) : line;
-    const tokens = activePart.split(" ").filter(t => t);
-    if (tokens.length === 0) {
-        return null;
+/**
+ * Parse single line of G-code (+ comments). Can containt comment-only or empty lines.
+ */
+const parseGCodeLine = (lineStr: string): GCodeLine | string => {
+    const commentIdx = lineStr.indexOf(';');
+    const blockStr = (commentIdx >= 0 ? lineStr.slice(0, commentIdx) : lineStr).trim();
+    let block = undefined;
+    if (blockStr.length > 0) {
+        const res = parseGCodeBlock(blockStr);
+        if (typeof res === 'string') {
+            return `invalid block: ${res}`;
+        }
+        block = res;
     }
-
-    const command = tokens[0];
-    if (command === "G0" || command === "G1") {
-        const axes = ["X", "Y", "Z", "A", "B", "C", "GW", "D"];
-        const absAxes = ["X", "Y", "Z", "B", "C"];
-
-        const rawGoal: any = {};
-        for (let i = 1; i < tokens.length; i++) {
-            const token = tokens[i];
-            const axis = token.match(/^[A-Z]+/)[0];
-            const val = parseFloat(token.substring(axis.length));
-            if (!axes.includes(axis)) {
-                throw new Error(`unknown axis: ${axis}, in ${line}`);
-            }
-            if (rawGoal[axis] !== undefined) {
-                throw new Error(`duplicate axis: ${axis}, in ${line}`);
-            }
-            rawGoal[axis] = val;
-        }
-        if (rawGoal.A !== undefined && rawGoal.D !== undefined) {
-            throw new Error(`A and D cannot be set at the same time, in ${line}`);
-        }
-
-        const goal: any = {};
-        absAxes.forEach(axis => {
-            goal[axis] = rawGoal[axis] === undefined ? curr[axis] : rawGoal[axis];
-        });
-        if (rawGoal.A !== undefined) {
-            goal.A = rawGoal.A;
-        } else {
-            goal.A = curr.A + (rawGoal.D || 0);
-        }
-        goal.GW_ABS = curr.GW_ABS + (rawGoal.GW || 0);
-
-        const dur = 1; // TODO: change by distance and G0 vs G1
-        return { dur, goal };
-    } else {
-        // TODO: handle properly
-        console.log(`unhandled command: ${command}`);
-        return null;
+    return {
+        origLine: lineStr,
+        block: block,
     }
 };
 
-// Linearly interpolate between two values. Note interpolation happens independently for each axis.
-// a, b: {X, Y, Z, A, B, C, GW_ABS}
-// 0 <= t <= 1
-const lerpVals = (a: any, b: any, t: number): any => {
-    const lerp = (a, b, t) => a + (b - a) * t;
-    return {
-        X: lerp(a.X, b.X, t),
-        Y: lerp(a.Y, b.Y, t),
-        Z: lerp(a.Z, b.Z, t),
-        A: lerp(a.A, b.A, t),
-        B: lerp(a.B, b.B, t),
-        C: lerp(a.C, b.C, t),
-        GW_ABS: lerp(a.GW_ABS, b.GW_ABS, t),
-    };
+/**
+ * Parse single block of G-code.
+ * @param blockStr string like "G38.3 Z-5", "M4"
+ * @returns parsed block or error string.
+ */
+const parseGCodeBlock = (blockStr: string): GCodeBlock | string => {
+    const words = blockStr.split(' ').map(w => w.trim()).filter(w => w.length > 0);
+    if (words.length === 0) {
+        return "missing command";
+    }
+
+    const command = words[0];
+    if (!command.startsWith('G') && !command.startsWith('M')) {
+        return `invalid command: ${command}`;
+    }
+
+    const params = {};
+    const flags = [];
+    for (const paramWord of words.slice(1)) {
+        if (paramWord.length === 1) {
+            const axis = paramWord[0];
+            if (flags.includes(axis) || params[axis] !== undefined) {
+                return `duplicate flag: ${axis}`;
+            }
+            flags.push(axis);
+        } else {
+            const axis = paramWord[0];
+            const numStr = paramWord.slice(1);
+            const val = parseFloat(numStr);
+            if (isNaN(val) || !isFinite(val)) {
+                return `invalid value in word ${paramWord}: ${numStr}`;
+            }
+            if (flags.includes(axis) || params[axis] !== undefined) {
+                return `duplicate axis: ${axis}`;
+            }
+            params[axis] = val;
+        }
+    }
+    return { command, params, flags };
+};
+
+type GCodeLine = {
+    origLine: string,
+    block?: GCodeBlock,
+}
+
+type GCodeBlock = {
+    command: string, // "G1", "G38.3", "M11" etc.
+    params: Record<string, number>, // e.g. {X: 12.3} for "G1 X12.3"
+    flags: string[], // e.g. ["X"] for "G28 X"
 };
 
 
@@ -263,156 +260,53 @@ const lerpVals = (a: any, b: any, t: number): any => {
  * Scene is in mm unit. Right-handed, X+ up, machine coords.
  */
 class View3D {
-    workOffset: any;
-    wireCenter: any;
-    stockCenter: any;
-    toolRemoverCenter: any;
-    toolBankOrigin: any;
-    scene: any;
-    workStageBase: any;
-    tool: any;
+    // 3D view basis
+    scene: THREE.Scene;
+    camera: any;
+    renderer: THREE.WebGLRenderer;
+    container: HTMLElement;
+    controls: OrbitControls;
+    stats: any;
+
+    // UI
+    receiveBroadcast: boolean;
+    gcodeChannel: BroadcastChannel;
+
+    workOffset: THREE.Vector3;
+    wireCenter: THREE.Vector3;
+    stockCenter: THREE.Vector3;
+    toolRemoverCenter: THREE.Vector3;
+    toolBankOrigin: THREE.Vector3;
+    
+    workStageBase: THREE.Object3D;
+    tool: THREE.Object3D;
     toolLength: number;
     toolDiameter: number;
-    workCRot: number;
-    toolARot: number;
-    toolBRot: number;
-    prevPt: any;
-    nextPt: any;
-    speed: number;
-    segmentDur: number;
-    segmentT: number;
-    valX: number;
-    valY: number;
-    valZ: number;
-    valA: number;
-    valB: number;
-    valC: number;
-    valGW: number;
-    valD: number;
-    valGWAbs: number;
-    waterLevel: number;
-    waterPlane: any;
-    gcode: any[];
-    receiveBroadcast: boolean;
-    totalGcodeLines: number;
-    currentGcodeLine: number;
-    executingGcode: string;
-    running: boolean;
-    gcodeChannel: BroadcastChannel;
-    camera: any;
-    renderer: any;
-    container: any;
-    controls: any;
-    stats: any;
+
+    gcode: GCodeLine[] = [];
+    totalGcodeLines: number = 0;
+
+    pathVis: THREE.Object3D = null;
 
     constructor() {
         this.init();
 
-        // machine geometries
-        this.workOffset = new THREE.Vector3(20, 40, 20);
-        this.wireCenter = new THREE.Vector3(30, 15, 30);
-        this.stockCenter = new THREE.Vector3(10, 10, 10);
-        this.toolRemoverCenter = new THREE.Vector3(40, 10, 30);
-        this.toolBankOrigin = new THREE.Vector3(20, 20, 15);
-
-        // machine setup
-        const opBox = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3(70, 100, 60));
-        this.scene.add(new THREE.Box3Helper(opBox, new THREE.Color(0x000000)));
-
-        const removerBox = new THREE.Box3();
-        removerBox.setFromCenterAndSize(this.toolRemoverCenter, new THREE.Vector3(10, 10, 20));
-        this.scene.add(new THREE.Box3Helper(removerBox, new THREE.Color(0x000000)));
-
-        const toolBankBox = new THREE.Box3();
-        toolBankBox.setFromCenterAndSize(this.toolBankOrigin, new THREE.Vector3(30, 30, 30));
-        this.scene.add(new THREE.Box3Helper(toolBankBox, new THREE.Color(0x000000)));
-
-        const wireBox = new THREE.Box3();
-        wireBox.setFromCenterAndSize(this.wireCenter, new THREE.Vector3(1, 20, 1));
-        this.scene.add(new THREE.Box3Helper(wireBox, new THREE.Color(0x000000)));
-
-        const axesHelper = new THREE.AxesHelper(10);
-        this.scene.add(axesHelper);
-        axesHelper.position.set(0.1, 0.1, 0.1); // increase visibility by slight offset
-
-        const textGeom = new TextGeometry("machine", {
-            font,
-            size: 2,
-            depth: 0.1,
-        });
-        const textMesh = new THREE.Mesh(textGeom, new THREE.MeshBasicMaterial({ color: "#222222" }));
-        this.scene.add(textMesh);
-
-        const workStageBox = new THREE.Box3();
-        workStageBox.setFromCenterAndSize(new THREE.Vector3(0, 0, -5), new THREE.Vector3(20, 20, 10));
-        this.workStageBase = new THREE.Object3D();
-        this.workStageBase.position.copy(this.workOffset);
-        this.workStageBase.add(new THREE.Box3Helper(workStageBox, new THREE.Color(0x000000)));
-        this.scene.add(this.workStageBase);
-
-        this.tool = generateTool(25);
+        this.tool = generateTool(50);
         this.scene.add(this.tool);
 
         // machine-state setup
         this.toolLength = 25;
         this.toolDiameter = 1.5;
-        this.workCRot = 0;
-        this.toolARot = 0;
-        this.toolBRot = 0;
 
-        const initialVals = { X: 0, Y: 0, Z: 0, A: 0, B: 0, C: 0, GW_ABS: 0 };
-        this.prevPt = initialVals;
-        this.nextPt = initialVals;
-        this.applyVals(initialVals);
-
-        this.speed = 0.02;
-        this.segmentDur = 0;
-        this.segmentT = 0;
-
-        this.valX = 0;
-        this.valY = 0;
-        this.valZ = 0;
-        this.valA = 0;
-        this.valB = 0;
-        this.valC = 0;
-        this.valGW = 0;
-        this.valD = 0;
-
-        const stock = generateStock();
-        this.workStageBase.add(stock);
-
-        // Add water plane
-        this.waterLevel = 5; // X position of water surface
-        const waterGeom = new THREE.PlaneGeometry(60, 100);
-        const waterMat = new THREE.MeshBasicMaterial({
-            color: 0x0088ff,
-            transparent: true,
-            opacity: 0.3,
-            side: THREE.DoubleSide
-        });
-        this.waterPlane = new THREE.Mesh(waterGeom, waterMat);
-        this.waterPlane.rotation.y = Math.PI / 2; // Rotate to YZ plane
-        this.waterPlane.position.x = this.waterLevel;
-        this.waterPlane.position.y = 50; // Center at Y=50 (opBox Y size is 100)
-        this.waterPlane.position.z = 30; // Center at Z=30 (opBox Z size is 60)
-        this.scene.add(this.waterPlane);
-
-        this.gcode = [];
         this.receiveBroadcast = true;
         this.totalGcodeLines = 0;
-        this.currentGcodeLine = 0;
-        this.executingGcode = "";
-        this.running = false;
 
         this.initGui();
 
         this.gcodeChannel = new BroadcastChannel("gcode");
         this.gcodeChannel.onmessage = (e) => {
             if (this.receiveBroadcast) {
-                this.gcode = e.data.split("\n");
-                this.totalGcodeLines = this.gcode.length;
-                this.currentGcodeLine = 0;
-                this.run();
+                this.importGCode(e.data);
             } else {
                 console.log(`broadcast (size=${e.data.length}) ignored`);
             }
@@ -426,25 +320,6 @@ class View3D {
         gui.add(this, "pasteFromClipboard");
 
         gui.add(this, "totalGcodeLines").disable().listen();
-        gui.add(this, "currentGcodeLine").disable().listen();
-        gui.add(this, "executingGcode").disable().listen();
-
-        gui.add(this, "speed", 0, 1, 0.01);
-        gui.add(this, "reset");
-        gui.add(this, "run");
-        gui.add(this, "pause");
-
-        gui.add(this, "valX").decimals(3).name("X").listen();
-        gui.add(this, "valY").decimals(3).name("Y").listen();
-        gui.add(this, "valZ").decimals(3).name("Z").listen();
-        gui.add(this, "valA").decimals(3).name("A").listen();
-        gui.add(this, "valB").decimals(3).name("B").listen();
-        gui.add(this, "valC").decimals(3).name("C").listen();
-        gui.add(this, "valGWAbs").decimals(3).name("GW(abs)").listen();
-
-        gui.add(this, "waterLevel", -10, 50, 0.1).name("Water Level").onChange((v: number) => {
-            this.waterPlane.position.x = v;
-        });
     }
 
     init(): void {
@@ -491,76 +366,70 @@ class View3D {
     }
 
     pasteFromClipboard(): void {
-        this.running = false;
-        this.currentGcodeLine = 0;
-
         navigator.clipboard.readText().then(text => {
-            this.gcode = text.split("\n");
-            this.totalGcodeLines = this.gcode.length;
-            this.currentGcodeLine = 0;
+            this.importGCode(text);
         });
     }
 
-    reset(): void {
-        this.currentGcodeLine = 0;
-        this.running = false;
-    }
-
-    run(): void {
-        this.running = true;
-    }
-
-    pause(): void {
-        this.running = false;
-    }
-
-    step(): void {
-        if (this.currentGcodeLine >= this.totalGcodeLines) {
-            this.running = false;
+    private importGCode(gcodeText: string) {
+        const blocks = [];
+        const errors = [];
+        gcodeText.split("\n").forEach((l, ix) => {
+            const res = parseGCodeLine(l);
+            if (typeof res === 'string') {
+                errors.push(`line ${ix + 1}: ${res}`);
+            } else {
+                blocks.push(res);
+            }
+        });
+        if (errors.length > 0) {
+            console.error(`G-code parse errors:\n${errors.join("\n")}`);
             return;
         }
 
-        this.segmentT += this.speed;
-        if (this.segmentT >= this.segmentDur) {
-            // proceed to next segment
-            const line = this.gcode[this.currentGcodeLine];
-            this.executingGcode = line;
-            this.currentGcodeLine++;
+        this.gcode = blocks;
+        this.totalGcodeLines = this.gcode.length;
 
-            const command = parseGcode(line, this.nextPt);
-            if (command === null) {
-                return; // let next step() handle it.
-            }
-
-            this.prevPt = this.nextPt;
-            this.nextPt = command.goal;
-
-            this.segmentDur = command.dur;
-            this.segmentT = 0;
-
-            this.applyVals(this.prevPt);
-        } else {
-            // play interpolated value.
-            const currVal = lerpVals(this.prevPt, this.nextPt, this.segmentT / this.segmentDur);
-            this.applyVals(currVal);
-        }
+        this.visualizeGCode();
     }
 
-    applyVals(vals: any): void {
-        this.tool.position.set(vals.X, vals.Y, vals.Z);
-        this.tool.setRotationFromEuler(new THREE.Euler(0, vals.B / 180 * Math.PI, vals.A / 180 * Math.PI));
+    private visualizeGCode() {
+        const blocks = this.gcode.filter(l => l.block !== undefined).map(l => l.block);
+        const segs = []; // flattened list of path segments
 
-        this.workStageBase.setRotationFromAxisAngle(new THREE.Vector3(0, 0, 1), vals.C / 180 * Math.PI);
+        let curr = new THREE.Vector3();
+        const ptAfterMove = (params: Record<string, number>): THREE.Vector3 => {
+            const next = curr.clone();
+            if (params["X"] !== undefined) {
+                next.x = params["X"];
+            }
+            if (params["Y"] !== undefined) {
+                next.y = params["Y"];
+            }
+            if (params["Z"] !== undefined) {
+                next.z = params["Z"];
+            }
+            return next;
+        };
 
-        // TODO: GW
+        for (const block of blocks) {
+            if (block.command === "G0" || block.command === "G1") {
+                const next = ptAfterMove(block.params);
+                segs.push(curr, next);
+                curr = next;
+            }
+        }
 
-        this.valX = vals.X;
-        this.valY = vals.Y;
-        this.valZ = vals.Z;
-        this.valA = vals.A;
-        this.valB = vals.B;
-        this.valC = vals.C;
-        this.valGWAbs = vals.GW_ABS;
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segs.flatMap(v => [v.x, v.y, v.z])), 3));
+        const mat = new THREE.LineBasicMaterial({ color: 0x0000ff });
+        const lineSegs = new THREE.LineSegments(geom, mat);
+
+        if (this.pathVis) {
+            this.scene.remove(this.pathVis);
+        }
+        this.pathVis = lineSegs;
+        this.scene.add(lineSegs);
     }
 
     onWindowResize(): void {
@@ -574,10 +443,6 @@ class View3D {
     }
 
     animate(): void {
-        if (this.running) {
-            this.step();
-        }
-
         this.controls.update();
         this.renderer.render(this.scene, this.camera);
         this.stats.update();
