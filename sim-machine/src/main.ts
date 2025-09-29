@@ -21,48 +21,6 @@ const generateStockGeom = (): THREE.BufferGeometry => {
 };
 
 
-// Visualize tool tip path in machine coordinates.
-// path segments
-const createPathVis = (path: any[]): THREE.Object3D => {
-    if (path.length === 0) {
-        return new THREE.Object3D();
-    }
-
-    const vs = [];
-    let prevTipPosM = path[0].tipPosM;
-    for (let i = 1; i < path.length; i++) {
-        const pt = path[i];
-        if (pt.type === "remove-work") {
-            vs.push(prevTipPosM.x, prevTipPosM.y, prevTipPosM.z);
-            vs.push(pt.tipPosM.x, pt.tipPosM.y, pt.tipPosM.z);
-        }
-        prevTipPosM = pt.tipPosM;
-    }
-
-    const pathVis = new THREE.Object3D();
-
-    // add remove path vis
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vs), 3));
-    const mat = new THREE.LineBasicMaterial({ color: 0x808080 });
-    pathVis.add(new THREE.LineSegments(geom, mat));
-
-    // add refresh path vis
-    const sphGeom = new THREE.SphereGeometry(0.15);
-    const sphMat = new THREE.MeshBasicMaterial({ color: 0x606060 });
-    for (let i = 0; i < path.length; i++) {
-        const pt = path[i];
-
-        if (pt.type !== "remove-work") {
-            const sph = new THREE.Mesh(sphGeom, sphMat);
-            sph.position.copy(pt.tipPosM);
-            pathVis.add(sph);
-        }
-    }
-
-    return pathVis;
-};
-
 // orange-teal-purple color palette for ABC axes.
 const axisColorA = new THREE.Color(0xe67e22);
 const axisColorB = new THREE.Color(0x1abc9c);
@@ -286,6 +244,8 @@ class View3D {
     toolDiameter: number;
 
     colorMode: ColorMode = "type";
+    colorLegend1: string = "Blue: G0";
+    colorLegend2: string = "Red: G1";
 
     gcode: GCodeLine[] = [];
     totalGcodeLines: number = 0;
@@ -328,7 +288,10 @@ class View3D {
             if (this.gcode.length > 0) {
                 this.visualizeGCode(this.colorMode);
             }
-        }); 
+        });
+
+        gui.add(this, "colorLegend1").disable().listen();
+        gui.add(this, "colorLegend2").disable().listen();
     }
 
     init(): void {
@@ -461,6 +424,17 @@ class View3D {
                 
                 curr = next;
             }
+        }
+
+        switch (colorMode) {
+            case "type":
+                this.colorLegend1 = "Blue: G0";
+                this.colorLegend2 = "Red: G1";
+                break;
+            case "dist":
+                this.colorLegend1 = "Red: Begin";
+                this.colorLegend2 = `Blue: End(${totLen.toFixed(1)}mm)`;
+                break;
         }
 
         const geom = new THREE.BufferGeometry();
