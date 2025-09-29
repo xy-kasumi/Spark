@@ -6,7 +6,7 @@ TS_SOURCES = $(shell find src -name "*.ts")
 TS_STAMP = $(DIST_DIR)/.ts-compiled
 
 # HTML files to copy
-HTML_SOURCES = index.html test.html
+HTML_SOURCES = index.html
 HTML_TARGETS = $(addprefix $(DIST_DIR)/,$(HTML_SOURCES))
 
 .PHONY: all

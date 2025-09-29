@@ -130,7 +130,8 @@ const createRotationAxisHelper = (axis, size = 1, color = axisColorA) => {
     const basisX = basisY.clone().cross(basisZ).normalize();
 
     // init new grid
-    const lToWMat3 = new THREE.Matrix3(
+    const lToWMat3 = new THREE.Matrix3();
+    lToWMat3.set(
         basisX.x, basisY.x, basisZ.x,
         basisX.y, basisY.y, basisZ.y,
         basisX.z, basisY.z, basisZ.z,
@@ -209,7 +210,7 @@ const parseGcode = (line, curr) => {
         const axes = ["X", "Y", "Z", "A", "B", "C", "GW", "D"];
         const absAxes = ["X", "Y", "Z", "B", "C"];
 
-        const rawGoal = {};
+        const rawGoal: any = {};
         for (let i = 1; i < tokens.length; i++) {
             const token = tokens[i];
             const axis = token.match(/^[A-Z]+/)[0];
@@ -226,7 +227,7 @@ const parseGcode = (line, curr) => {
             throw new Error(`A and D cannot be set at the same time, in ${line}`);
         }
 
-        const goal = {};
+        const goal: any = {};
         absAxes.forEach(axis => {
             goal[axis] = rawGoal[axis] === undefined ? curr[axis] : rawGoal[axis];
         });
@@ -272,6 +273,48 @@ const lerpVals = (a, b, t) => {
  * Scene is in mm unit. Right-handed, X+ up, machine coords.
  */
 class View3D {
+    workOffset: any;
+    wireCenter: any;
+    stockCenter: any;
+    toolRemoverCenter: any;
+    toolBankOrigin: any;
+    scene: any;
+    workStageBase: any;
+    tool: any;
+    toolLength: number;
+    toolDiameter: number;
+    workCRot: number;
+    toolARot: number;
+    toolBRot: number;
+    prevPt: any;
+    nextPt: any;
+    speed: number;
+    segmentDur: number;
+    segmentT: number;
+    valX: number;
+    valY: number;
+    valZ: number;
+    valA: number;
+    valB: number;
+    valC: number;
+    valGW: number;
+    valD: number;
+    valGWAbs: number;
+    waterLevel: number;
+    waterPlane: any;
+    gcode: any[];
+    receiveBroadcast: boolean;
+    totalGcodeLines: number;
+    currentGcodeLine: number;
+    executingGcode: string;
+    running: boolean;
+    gcodeChannel: BroadcastChannel;
+    camera: any;
+    renderer: any;
+    container: any;
+    controls: any;
+    stats: any;
+
     constructor() {
         this.init();
 
@@ -448,7 +491,7 @@ class View3D {
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
 
         this.stats = new Stats();
-        container.appendChild(this.stats.dom);
+        this.container.appendChild(this.stats.dom);
 
         const guiStatsEl = document.createElement('div');
         guiStatsEl.classList.add('gui-stats');
@@ -556,8 +599,8 @@ class View3D {
 // entry point
 
 const loadFont = async () => {
-    return new Promise((resolve) => {
-        fontLoader.load("./Source Sans 3_Regular.json", (f) => {
+    return new Promise<void>((resolve) => {
+        fontLoader.load("./assets/Source Sans 3_Regular.json", (f) => {
             font = f;
             resolve();
         });

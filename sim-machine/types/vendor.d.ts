@@ -39,6 +39,10 @@ declare module 'three' {
     );
     [key: string]: any;
   }
+  export class Matrix3 {
+    constructor();
+    [key: string]: any;
+  }
   export class BufferGeometry {
     constructor();
     [key: string]: any;
@@ -87,6 +91,7 @@ declare module 'three' {
   export const Sphere: any;
   export const Float32BufferAttribute: any;
   export const Box3: any;
+  export const Box3Helper: any;
   export const Euler: any;
   export const CylinderGeometry: any;
   export const SphereGeometry: any;
