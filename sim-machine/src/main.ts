@@ -256,6 +256,8 @@ type GCodeBlock = {
 ////////////////////////////////////////////////////////////////////////////////
 // 3D view
 
+type ColorMode = "type" | "dist";
+
 /**
  * Scene is in mm unit. Right-handed, X+ up, machine coords.
  */
@@ -277,11 +279,13 @@ class View3D {
     stockCenter: THREE.Vector3;
     toolRemoverCenter: THREE.Vector3;
     toolBankOrigin: THREE.Vector3;
-    
+
     workStageBase: THREE.Object3D;
     tool: THREE.Object3D;
     toolLength: number;
     toolDiameter: number;
+
+    colorMode: ColorMode = "type";
 
     gcode: GCodeLine[] = [];
     totalGcodeLines: number = 0;
@@ -320,6 +324,11 @@ class View3D {
         gui.add(this, "pasteFromClipboard");
 
         gui.add(this, "totalGcodeLines").disable().listen();
+        gui.add(this, "colorMode").options(["type", "dist"]).listen().onChange(() => {
+            if (this.gcode.length > 0) {
+                this.visualizeGCode(this.colorMode);
+            }
+        }); 
     }
 
     init(): void {
@@ -390,15 +399,15 @@ class View3D {
         this.gcode = blocks;
         this.totalGcodeLines = this.gcode.length;
 
-        this.visualizeGCode();
+        this.visualizeGCode(this.colorMode);
     }
 
-    private visualizeGCode() {
+    private visualizeGCode(colorMode: "type" | "dist") {
         const blocks = this.gcode.filter(l => l.block !== undefined).map(l => l.block);
         const segs = []; // flattened list of path segments
-
-        let curr = new THREE.Vector3();
-        const ptAfterMove = (params: Record<string, number>): THREE.Vector3 => {
+        const segCols = [];
+        
+        const ptAfterMove = (curr: THREE.Vector3, params: Record<string, number>): THREE.Vector3 => {
             const next = curr.clone();
             if (params["X"] !== undefined) {
                 next.x = params["X"];
@@ -411,18 +420,53 @@ class View3D {
             }
             return next;
         };
+        const computeTotalLen = (): number => {
+            let curr = new THREE.Vector3();
+            let len = 0;
+            for (const block of blocks) {
+                if (block.command === "G0" || block.command === "G1") {
+                    const next = ptAfterMove(curr, block.params);
+                    len += next.distanceTo(curr);
+                    curr = next;
+                }
+            }
+            return len;
+        };
 
+        const colmap = (t: number): THREE.Color => {
+            const fromCol = new THREE.Color(1, 0, 0);
+            const toCol = new THREE.Color(0, 0, 1);
+            return fromCol.clone().lerp(toCol, t);
+        };
+
+        const totLen = computeTotalLen();
+        let currLen = 0;
+        let curr = new THREE.Vector3();
         for (const block of blocks) {
             if (block.command === "G0" || block.command === "G1") {
-                const next = ptAfterMove(block.params);
+                const next = ptAfterMove(curr, block.params);
+                const currDist = currLen;
+                currLen += next.distanceTo(curr);
+                const nextDist = currLen;
                 segs.push(curr, next);
+
+                if (colorMode === "type") {
+                    const segCol = new THREE.Color(block.command === "G0" ? "blue" : "red");
+                    segCols.push(segCol, segCol);
+                } else if (colorMode === "dist") {
+                    const currCol = colmap(currDist / totLen);
+                    const nextCol = colmap(nextDist / totLen);
+                    segCols.push(currCol, nextCol);
+                }
+                
                 curr = next;
             }
         }
 
         const geom = new THREE.BufferGeometry();
         geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segs.flatMap(v => [v.x, v.y, v.z])), 3));
-        const mat = new THREE.LineBasicMaterial({ color: 0x0000ff });
+        geom.setAttribute('color', new THREE.BufferAttribute(new Float32Array(segCols.flatMap(c => [c.r, c.g, c.b])), 3));
+        const mat = new THREE.LineBasicMaterial({ vertexColors: true });
         const lineSegs = new THREE.LineSegments(geom, mat);
 
         if (this.pathVis) {
