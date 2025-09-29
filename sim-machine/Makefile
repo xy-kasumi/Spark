@@ -17,10 +17,6 @@ build: $(TS_STAMP) $(DIST_DIR)/vendor $(DIST_DIR)/assets $(HTML_TARGETS)
 	@echo "Build complete! Output in $(DIST_DIR)/"
 	@echo "To serve, e.g.: cd $(DIST_DIR) && python3 -m http.server 8000"
 
-.PHONY: format
-format:
-	$(MAKE) -C wasm format
-
 $(TS_STAMP): $(TS_SOURCES)
 	@echo "Transpiling TypeScript..."
 	mkdir -p $(DIST_DIR)

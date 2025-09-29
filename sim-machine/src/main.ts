@@ -6,10 +6,9 @@ import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 
 const fontLoader = new FontLoader();
-let font = null;
+let font: any = null;
 
-// returns: THREE.BufferGeometry
-const generateStockGeom = () => {
+const generateStockGeom = (): THREE.BufferGeometry => {
     const stockRadius = 7.5;
     const stockHeight = 15;
     const geom = new THREE.CylinderGeometry(stockRadius, stockRadius, stockHeight, 64, 1);
@@ -23,10 +22,8 @@ const generateStockGeom = () => {
 
 
 // Visualize tool tip path in machine coordinates.
-//
-// [in] array of THREE.Vector3, path segments
-// returns: THREE.Object3D
-const createPathVis = (path) => {
+// path segments
+const createPathVis = (path: any[]): THREE.Object3D => {
     if (path.length === 0) {
         return new THREE.Object3D();
     }
@@ -55,7 +52,7 @@ const createPathVis = (path) => {
     const sphMat = new THREE.MeshBasicMaterial({ color: 0x606060 });
     for (let i = 0; i < path.length; i++) {
         const pt = path[i];
-        
+
         if (pt.type !== "remove-work") {
             const sph = new THREE.Mesh(sphGeom, sphMat);
             sph.position.copy(pt.tipPosM);
@@ -75,8 +72,7 @@ const axisColorC = new THREE.Color(0x9b59b6);
 // [in] axis THREE.Vector3. rotates around this axis in CCW.
 // [in] size number feature size. typically ring radius.
 // [in] color THREE.Color
-// returns: THREE.Object3D
-const createRotationAxisHelper = (axis, size = 1, color = axisColorA) => {
+const createRotationAxisHelper = (axis: THREE.Vector3, size: number = 1, color: THREE.Color = axisColorA): THREE.Object3D => {
     const NUM_RING_PTS = 32;
 
     /////
@@ -104,7 +100,7 @@ const createRotationAxisHelper = (axis, size = 1, color = axisColorA) => {
     const coneMat = new THREE.MeshBasicMaterial({ color });
     const cone0 = new THREE.Mesh(geom, coneMat);
     const cone1 = new THREE.Mesh(geom, coneMat);
-    
+
     const localHelper = new THREE.Object3D();
     localHelper.add(lineSegs);
     localHelper.add(cone0);
@@ -146,8 +142,7 @@ const createRotationAxisHelper = (axis, size = 1, color = axisColorA) => {
 };
 
 
-// returns: THREE.Object3D
-const generateStock = () => {
+const generateStock = (): THREE.Object3D => {
     const stock = new THREE.Mesh(
         generateStockGeom(),
         new THREE.MeshLambertMaterial({ color: "blue", wireframe: true, transparent: true, opacity: 0.05 }));
@@ -155,8 +150,7 @@ const generateStock = () => {
 };
 
 // Generate tool visualization with tool base origin = origin. tool is pointing towards Z-.
-// returns: THREE.Object3D
-const generateTool = (toolLength) => {
+const generateTool = (toolLength: number): THREE.Object3D => {
     const toolOrigin = new THREE.Object3D();
 
     const baseRadius = 10;
@@ -194,10 +188,8 @@ const generateTool = (toolLength) => {
 };
 
 // Parse single line of G-code.
-// [in] line string
-// [in] {X, Y, Z, A, B, C, GW_ABS} current values
-// returns: {dur: number, goal: {X, Y, Z, A, B, C, GW_ABS}} | null (if g code is empty e.g. comment or M-command)
-const parseGcode = (line, curr) => {
+// current values: {X, Y, Z, A, B, C, GW_ABS}
+const parseGcode = (line: string, curr: any): any => {
     const ix = line.indexOf(";");
     const activePart = ix >= 0 ? line.substring(0, ix) : line;
     const tokens = activePart.split(" ").filter(t => t);
@@ -239,7 +231,7 @@ const parseGcode = (line, curr) => {
         goal.GW_ABS = curr.GW_ABS + (rawGoal.GW || 0);
 
         const dur = 1; // TODO: change by distance and G0 vs G1
-        return {dur, goal};
+        return { dur, goal };
     } else {
         // TODO: handle properly
         console.log(`unhandled command: ${command}`);
@@ -248,11 +240,9 @@ const parseGcode = (line, curr) => {
 };
 
 // Linearly interpolate between two values. Note interpolation happens independently for each axis.
-// [in] a {X, Y, Z, A, B, C, GW_ABS}
-// [in] b {X, Y, Z, A, B, C, GW_ABS}
-// [in] t number, 0 <= t <= 1
-// returns: {X, Y, Z, A, B, C, GW_ABS}
-const lerpVals = (a, b, t) => {
+// a, b: {X, Y, Z, A, B, C, GW_ABS}
+// 0 <= t <= 1
+const lerpVals = (a: any, b: any, t: number): any => {
     const lerp = (a, b, t) => a + (b - a) * t;
     return {
         X: lerp(a.X, b.X, t),
@@ -370,7 +360,7 @@ class View3D {
         this.toolARot = 0;
         this.toolBRot = 0;
 
-        const initialVals = {X: 0, Y: 0, Z: 0, A: 0, B: 0, C: 0, GW_ABS: 0};
+        const initialVals = { X: 0, Y: 0, Z: 0, A: 0, B: 0, C: 0, GW_ABS: 0 };
         this.prevPt = initialVals;
         this.nextPt = initialVals;
         this.applyVals(initialVals);
@@ -394,9 +384,9 @@ class View3D {
         // Add water plane
         this.waterLevel = 5; // X position of water surface
         const waterGeom = new THREE.PlaneGeometry(60, 100);
-        const waterMat = new THREE.MeshBasicMaterial({ 
-            color: 0x0088ff, 
-            transparent: true, 
+        const waterMat = new THREE.MeshBasicMaterial({
+            color: 0x0088ff,
+            transparent: true,
             opacity: 0.3,
             side: THREE.DoubleSide
         });
@@ -429,9 +419,9 @@ class View3D {
         };
     }
 
-    initGui() {
+    initGui(): void {
         const gui = new GUI();
-        
+
         gui.add(this, "receiveBroadcast");
         gui.add(this, "pasteFromClipboard");
 
@@ -451,13 +441,13 @@ class View3D {
         gui.add(this, "valB").decimals(3).name("B").listen();
         gui.add(this, "valC").decimals(3).name("C").listen();
         gui.add(this, "valGWAbs").decimals(3).name("GW(abs)").listen();
-        
-        gui.add(this, "waterLevel", -10, 50, 0.1).name("Water Level").onChange(v => {
+
+        gui.add(this, "waterLevel", -10, 50, 0.1).name("Water Level").onChange((v: number) => {
             this.waterPlane.position.x = v;
         });
     }
 
-    init() {
+    init(): void {
         const width = window.innerWidth;
         const height = window.innerHeight;
 
@@ -500,7 +490,7 @@ class View3D {
         Object.assign(window, { scene: this.scene });
     }
 
-    pasteFromClipboard() {
+    pasteFromClipboard(): void {
         this.running = false;
         this.currentGcodeLine = 0;
 
@@ -511,20 +501,20 @@ class View3D {
         });
     }
 
-    reset() {
+    reset(): void {
         this.currentGcodeLine = 0;
         this.running = false;
     }
 
-    run() {
+    run(): void {
         this.running = true;
     }
 
-    pause() {
+    pause(): void {
         this.running = false;
     }
 
-    step() {
+    step(): void {
         if (this.currentGcodeLine >= this.totalGcodeLines) {
             this.running = false;
             return;
@@ -541,10 +531,10 @@ class View3D {
             if (command === null) {
                 return; // let next step() handle it.
             }
-            
+
             this.prevPt = this.nextPt;
             this.nextPt = command.goal;
-            
+
             this.segmentDur = command.dur;
             this.segmentT = 0;
 
@@ -556,12 +546,12 @@ class View3D {
         }
     }
 
-    applyVals(vals) {
+    applyVals(vals: any): void {
         this.tool.position.set(vals.X, vals.Y, vals.Z);
         this.tool.setRotationFromEuler(new THREE.Euler(0, vals.B / 180 * Math.PI, vals.A / 180 * Math.PI));
 
         this.workStageBase.setRotationFromAxisAngle(new THREE.Vector3(0, 0, 1), vals.C / 180 * Math.PI);
-        
+
         // TODO: GW
 
         this.valX = vals.X;
@@ -573,7 +563,7 @@ class View3D {
         this.valGWAbs = vals.GW_ABS;
     }
 
-    onWindowResize() {
+    onWindowResize(): void {
         const width = window.innerWidth;
         const height = window.innerHeight;
 
@@ -583,7 +573,7 @@ class View3D {
         this.renderer.setSize(width, height);
     }
 
-    animate() {
+    animate(): void {
         if (this.running) {
             this.step();
         }
