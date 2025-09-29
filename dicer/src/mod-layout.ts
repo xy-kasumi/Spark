@@ -6,9 +6,26 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
 import { ModuleFramework, Module } from './framework.js';
 import { ModulePlanner } from './mod-planner.js';
-import { computeAABB } from './tracking-voxel.js';
 import { visDot } from './debug.js';
 import { toTriSoup } from './wasm-geom.js';
+
+
+
+/**
+ * Compute AABB from points array
+ * @param pts Points array [x0, y0, z0, x1, y1, z1, ...]
+ * @returns AABB bounds
+ */
+const computeAABB = (pts: Float32Array | Float64Array): {min: THREE.Vector3, max: THREE.Vector3} => {
+    const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    for (let i = 0; i < pts.length; i += 3) {
+        const v = new THREE.Vector3(pts[i + 0], pts[i + 1], pts[i + 2]);
+        min.min(v);
+        max.max(v);
+    }
+    return { min, max };
+};
 
 
 /**

@@ -6,12 +6,11 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
 import { debug, visDot, visQuad } from './debug.js';
 import { ModuleFramework, Module } from './framework.js';
-//import { diceSurf } from './mesh.js';
-import { createELHShape, createCylinderShape, createBoxShape, VoxelGridGpu, GpuKernels, Shape } from './gpu-geom.js';
-//import { VoxelGridCpu } from './cpu-geom.js';
 //import { TrackingVoxelGrid, initVGForPoints } from './tracking-voxel.js';
-import { WasmGeom, toTriSoup, ManifoldHandle } from './wasm-geom.js';
+import { WasmGeom, ManifoldHandle } from './wasm-geom.js';
 import { cutPolygon } from './cpu-geom.js';
+
+
 
 /**
  * Apply translation to geometry in-place
@@ -69,212 +68,6 @@ const generateStockGeom = (stockRadius: number = 7.5, stockHeight: number = 15):
     return geom;
 };
 
-
-/**
- * Create occupancy voxel grid visualization.
- * @param vg Voxel grid to visualize (u32: 255:full, 128:partial, 0:empty)
- */
-// const createOccupancyVis = (vg: VoxelGridCpu): THREE.Object3D => {
-//     if (vg.type !== "u32") {
-//         throw `Invalid vg type for occupancy: ${vg.type}`;
-//     }
-
-//     const t0 = performance.now();
-//     const cubeSize = vg.res * 1.0;
-//     const cubeGeom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
-
-//     const meshContainer = new THREE.Object3D();
-//     meshContainer.position.copy(vg.ofs);
-//     const axesHelper = new THREE.AxesHelper();
-//     axesHelper.scale.set(vg.res * vg.numX, vg.res * vg.numY, vg.res * vg.numZ);
-
-//     const meshFull = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), vg.countIf(val => val === 255));
-//     const meshPartial = new THREE.InstancedMesh(cubeGeom, new THREE.MeshNormalMaterial({ transparent: true, opacity: 0.25 }), vg.countIf(val => val === 128));
-
-//     let instanceIxFull = 0;
-//     let instanceIxPartial = 0;
-//     for (let iz = 0; iz < vg.numZ; iz++) {
-//         for (let iy = 0; iy < vg.numY; iy++) {
-//             for (let ix = 0; ix < vg.numX; ix++) {
-//                 const v = vg.get(ix, iy, iz);
-//                 if (v === 0) {
-//                     continue;
-//                 }
-
-//                 // whatever different color gradient
-//                 meshFull.setColorAt(instanceIxFull, new THREE.Color(ix * 0.01 + 0.5, iy * 0.01 + 0.5, iz * 0.01 + 0.5));
-
-//                 const mtx = new THREE.Matrix4();
-//                 mtx.compose(
-//                     new THREE.Vector3(ix, iy, iz).addScalar(0.5).multiplyScalar(vg.res),
-//                     new THREE.Quaternion(),
-//                     new THREE.Vector3(1, 1, 1).multiplyScalar(v === 255 ? 1.0 : 0.8));
-
-//                 if (v === 255) {
-//                     meshFull.setMatrixAt(instanceIxFull, mtx);
-//                     instanceIxFull++;
-//                 } else {
-//                     meshPartial.setMatrixAt(instanceIxPartial, mtx);
-//                     instanceIxPartial++;
-//                 }
-//             }
-//         }
-//     }
-
-//     meshContainer.add(meshFull);
-//     meshContainer.add(meshPartial);
-//     meshFull.add(axesHelper);
-
-//     console.log(`  createOccupancyVis took ${performance.now() - t0}ms`);
-//     return meshContainer;
-// };
-
-// const initCreateDeviationVis = (kernels) => {
-//     // input: deviation (>=0: dev, -1: empty)
-//     // output: mask (1: visible, 0: hidden)
-//     // TODO: This uses lots of "hidden" impl detail of map. maybe better to move to voxel.js?
-//     kernels.registerMapFn("visible_dev_mask", "f32", "u32", `
-//         if (vi < 0) {
-//             vo = 0;
-//         } else if (any(index3 == vec3u(0)) || any(index3 + 1 == nums)) {
-//             vo = 1; // boundary voxel is visible regardless of neighbors.
-//         } else {
-//             let ofs = array<vec3i, 6>(
-//                 vec3i(1, 0, 0),
-//                 vec3i(-1, 0, 0),
-//                 vec3i(0, 1, 0),
-//                 vec3i(0, -1, 0),
-//                 vec3i(0, 0, 1),
-//                 vec3i(0, 0, -1),
-//             );
-//             var has_empty_neighbor = false;
-//             for (var i = 0u; i < 6u; i++) {
-//                 let nix3 = vec3u(vec3i(index3) + ofs[i]);
-//                 let nv = vs_in[compose_ix(nix3)];
-//                 if (nv < 0) {
-//                     has_empty_neighbor = true;
-//                     break;
-//                 }
-//             }
-//             // this voxel is visible through empty neighbor.
-//             vo = select(0u, 1u, has_empty_neighbor);
-//         }
-//     `);
-
-//     kernels.registerMapFn("cv_dev_data", "f32", "vec4f", `
-//         vo = vec4f(p, vi);
-//     `);
-
-//     kernels.registerMapFn("max_dev_mask", "f32", "u32", `
-//         vo = select(0u, 1u, vi >= max_dev);
-//     `, { max_dev: "f32" });
-// };
-
-/**
- * Get max deviation from voxel grid.
- * @param kernels
- * @param vg f32 voxel grid
- * @returns Maximum deviation
- * @async
- */
-// const getMaxDeviation = async (kernels: GpuKernels, vg: VoxelGridGpu) => {
-//     return (await kernels.reduce("max", vg)) as number;
-// };
-
-/**
- * Create deviation voxel grid visualization. (blue: 0 deviation, red: maxDev deviation)
- * @param kernels
- * @param vg Voxel grid to visualize (f32: >=0: deviation, -1: empty)
- * @param maxDev Maximum deviation to visualize.
- * @async
- */
-// const createDeviationVis = async (kernels: GpuKernels, vg: VoxelGridGpu, maxDev: number = 3): Promise<THREE.Object3D> => {
-//     if (vg.type !== "f32") {
-//         throw `Invalid vg type for deviation: ${vg.type}`;
-//     }
-
-//     const t0 = performance.now();
-
-//     const cubeSize = vg.res * 1.0;
-//     const cubeGeom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
-
-//     const resultVis = new THREE.Object3D();
-//     const axesHelper = new THREE.AxesHelper();
-//     axesHelper.scale.set(vg.res * vg.numX, vg.res * vg.numY, vg.res * vg.numZ);
-//     axesHelper.position.copy(vg.ofs);
-
-//     // Extract visible voxels.
-//     const maskVg = kernels.createLike(vg, "u32");
-//     const dataVg = kernels.createLike(vg, "vec4f");
-//     kernels.map("visible_dev_mask", vg, maskVg);
-//     kernels.map("cv_dev_data", vg, dataVg);
-//     const numVisible = (await kernels.reduce("sum", maskVg)) as number;
-//     const packedResultBuf = kernels.createBuffer(16 * numVisible);
-//     kernels.packRaw(maskVg, dataVg, packedResultBuf);
-//     const packedResultBufCpu = new ArrayBuffer(16 * numVisible);
-//     await kernels.copyBuffer(packedResultBuf, packedResultBufCpu);
-//     packedResultBuf.destroy();
-//     kernels.destroy(maskVg);
-//     kernels.destroy(dataVg);
-
-//     // Transform them into InstancedMesh.
-//     const mesh = new THREE.InstancedMesh(cubeGeom, new THREE.MeshLambertMaterial(), numVisible);
-//     const resultArr = new Float32Array(packedResultBufCpu); // px, py, pz, dev
-//     const mtx = new THREE.Matrix4();
-//     const col = new THREE.Color();
-//     for (let i = 0; i < numVisible; i++) {
-//         // set position
-//         mtx.makeTranslation(resultArr[i * 4 + 0], resultArr[i * 4 + 1], resultArr[i * 4 + 2]);
-//         mesh.setMatrixAt(i, mtx);
-
-//         // set color, from blue(dev=0) to red(dev=maxDev).
-//         const dev = resultArr[i * 4 + 3];
-//         const t = Math.min(1, dev / maxDev);
-//         mesh.setColorAt(i, col.setRGB(0.2 + t * 0.8, 0.2, 0.2 + (1 - t) * 0.8));
-//     }
-
-//     resultVis.add(mesh);
-//     resultVis.add(axesHelper);
-
-//     console.log(`  createDeviationVis took ${performance.now() - t0}ms`);
-//     return resultVis;
-// };
-
-/**
- * Visualize "max deviation" in voxel grid.
- * @param kernels
- * @param vg Voxel grid to visualize (f32)
- * @param maxDev Maximum deviation to visualize
- * @async
- */
-const createMaxDeviationVis = async (kernels: GpuKernels, vg: VoxelGridGpu, maxDev: number): Promise<THREE.Object3D> => {
-    // Extract cells where dev == max_dev, and pack into array.
-    const maskVg = kernels.createLike(vg, "u32");
-    kernels.map("max_dev_mask", vg, maskVg, { max_dev: maxDev });
-
-    const dataVg = kernels.createLike(vg, "vec4f");
-    kernels.map("cv_dev_data", vg, dataVg);
-
-    const numLocs = (await kernels.reduce("sum", maskVg)) as number;
-    const locsBuf = kernels.createBuffer(16 * numLocs);
-    kernels.packRaw(maskVg, dataVg, locsBuf);
-
-    const locsBufCpu = new ArrayBuffer(16 * numLocs);
-    await kernels.copyBuffer(locsBuf, locsBufCpu);
-    kernels.destroy(maskVg);
-    kernels.destroy(dataVg);
-    locsBuf.destroy();
-
-    // Convert to instanced mesh.
-    const locsArr = new Float32Array(locsBufCpu);
-    const mtx = new THREE.Matrix4();
-    const vis = new THREE.InstancedMesh(new THREE.SphereGeometry(0.1), new THREE.MeshLambertMaterial({ color: "red" }), numLocs);
-    for (let i = 0; i < numLocs; i++) {
-        mtx.makeTranslation(locsArr[i * 4 + 0], locsArr[i * 4 + 1], locsArr[i * 4 + 2]);
-        vis.setMatrixAt(i, mtx);
-    }
-    return vis;
-};
 
 interface PathSegment {
     type: string;
@@ -424,37 +217,6 @@ const offsetPoint = (p: THREE.Vector3, ...offsets: Array<[THREE.Vector3, number]
     return ret;
 };
 
-
-/**
- * Utility to create box shape from base point and axis specs.
- * @param base Base point
- * @param axisSpecs List of anchor ("center", "origin") & base vector & k. base vector * k must span full-size of the box.
- * @returns Box shape
- */
-const createBoxShapeFrom = (base: THREE.Vector3, ...axisSpecs: Array<[string, THREE.Vector3, number]>): Shape => {
-    if (axisSpecs.length !== 3) {
-        throw "Invalid axis specs";
-    }
-    const center = new THREE.Vector3().copy(base);
-    const halfVecs = [];
-    for (const [anchor, vec, len] of axisSpecs) {
-        const hv = vec.clone().multiplyScalar(len * 0.5);
-        switch (anchor) {
-            case "center":
-                halfVecs.push(hv);
-                break;
-            case "origin":
-                center.add(hv);
-                halfVecs.push(hv);
-                break;
-            default:
-                throw `Invalid anchor: ${anchor}`;
-        }
-    }
-    return createBoxShape(center, halfVecs[0], halfVecs[1], halfVecs[2]);
-};
-
-
 /**
  * Generate tool geom, origin = tool tip. In Z+ direction, there will be tool base marker.
  * @returns Tool visualization object
@@ -572,8 +334,6 @@ class PartialPath {
     minToolLength: number;
     toolIx: number;
     toolLength: number;
-    minSweepRemoveShapes: Shape[];
-    maxSweepRemoveShapes: Shape[];
     path: PathSegment[];
     prevPtTipPos: Vector3 | null;
 
@@ -595,8 +355,6 @@ class PartialPath {
         this.minToolLength = minToolLength;
         this.toolIx = toolIx;
         this.toolLength = toolLength;
-        this.minSweepRemoveShapes = [];
-        this.maxSweepRemoveShapes = [];
         this.path = [];
         this.prevPtTipPos = null; // work-coords
 
@@ -719,16 +477,6 @@ class PartialPath {
     }
 
     /**
-     * Add min-shape without changing path.
-     * This can be used when caller knows min-cut happens due to combination of multiple remove() calls,
-     * but min-cut cannot be easily attributed to individual remove() calls separately.
-     * @param shape Shape to add
-     */
-    addMinRemoveShape(shape: Shape) {
-        this.minSweepRemoveShapes.push(shape);
-    }
-
-    /**
      * Add material-removing move. (i.e. G1 move) The move must be horizontal.
      * @param tipPos Tip position in work coordinates
      * @param toolRotDelta Tool rotation delta in radians
@@ -742,11 +490,6 @@ class PartialPath {
         if (tipPos.clone().sub(this.prevPtTipPos).dot(this.normal) !== 0) {
             throw "remove path needs to be horizontal (perpendicular to normal)";
         }
-
-        if (minDiameter > 0) {
-            this.minSweepRemoveShapes.push(createELHShape(this.prevPtTipPos, tipPos, this.normal, minDiameter / 2, 100));
-        }
-        this.maxSweepRemoveShapes.push(createELHShape(this.prevPtTipPos, tipPos, this.normal, maxDiameter / 2, 100));
         this.path.push(this.#withAxisValue("remove-work", { tipPosW: tipPos, toolRotDelta: toolRotDelta }));
         this.prevPtTipPos = tipPos;
     }
@@ -765,9 +508,6 @@ class PartialPath {
         if (tipPos.clone().sub(this.prevPtTipPos).cross(this.normal).length() !== 0) {
             throw "remove path needs to be vertical (parallel to normal)";
         }
-
-        this.minSweepRemoveShapes.push(createCylinderShape(offsetPoint(tipPos, [this.normal, uncutDepth]), this.normal, diameter / 2, 200));
-        this.maxSweepRemoveShapes.push(createCylinderShape(tipPos, this.normal, diameter / 2, 200));
         this.path.push(this.#withAxisValue("remove-work", {
             tipPosW: tipPos,
             toolRotDelta: toolRotDelta,
@@ -785,14 +525,6 @@ class PartialPath {
 
     getToolLength() {
         return this.toolLength;
-    }
-
-    getMaxRemoveShapes() {
-        return this.maxSweepRemoveShapes;
-    }
-
-    getMinRemoveShapes() {
-        return this.minSweepRemoveShapes;
     }
 }
 
@@ -822,8 +554,6 @@ export class ModulePlanner implements Module {
     toolLength: number;
     showPlanPath: boolean;
     highlightSweep: number;
-    kernels: GpuKernels;
-    //    trvg: TrackingVoxelGrid;
     planPath: PathSegment[];
     highlightGui: any;
     genSweeps: "continue" | "awaiting" | "none";
@@ -999,10 +729,6 @@ export class ModulePlanner implements Module {
         ////////////////////////////////////////
         // Init
 
-        if (!this.kernels) {
-            throw new Error('WebGPU not supported; cannot start path generation');
-        }
-
         this.numSweeps = 0;
         this.removedVol = 0;
         this.toolIx = 0;
@@ -1011,77 +737,16 @@ export class ModulePlanner implements Module {
         const simStockLength = this.stockCutWidth + this.simWorkBuffer + this.aboveWorkSize;
         const stockGeom = generateStockGeom(this.stockDiameter / 2, simStockLength);
         translateGeom(stockGeom, new THREE.Vector3(0, 0, -(this.stockCutWidth + this.simWorkBuffer)));
-        //const stockSurf = convGeomToSurf(stockGeom);
         this.stockManifold = this.wasmGeom.createManifold(stockGeom);
-        /*
-        const workVg = initVGForPoints(this.stockSurf, this.resMm);
-        const targVg = workVg.clone();
-        const tst = performance.now();
-        diceSurf(this.stockSurf, workVg);
-        console.log(`diceSurf took ${performance.now() - tst}ms`);
-        const ttg = performance.now();
-        diceSurf(this.targetSurf, targVg);
-        console.log(`diceSurf took ${performance.now() - ttg}ms`);
-        console.log(`stock: ${workVg.volume()} mm^3 (${workVg.countIf(v => v > 0).toLocaleString("en-US")} voxels) / target: ${targVg.volume()} mm^3 (${targVg.countIf(v => v > 0).toLocaleString("en-US")} voxels)`);
-        */
-
-        //this.trvg = new TrackingVoxelGrid(this.kernels);
-        /*
-        await this.trvg.setFromWorkAndTarget(workVg, targVg);
-        await this.trvg.setProtectedWorkBelowZ(-this.stockCutWidth);
-        */
 
         this.planPath = [];
-        //const workDev = this.trvg.extractWorkWithDeviation();
-        //this.framework.updateVis("work-vg", [await createDeviationVis(this.kernels, workDev)], this.showWork);
-        //this.kernels.destroy(workDev);
-        //this.framework.updateVis("targ-vg", [createOccupancyVis(await this.trvg.extractTarget())], this.showTarget);
         this.framework.updateVis("plan-path-vg", [createPathVis(this.planPath)], this.showPlanPath);
-
-
-        ////////////////////////////////////////
-        // Main Loop
-
-        const feedDepth = 1; // TODO: reduce later. current values allow fast debug, but too big for actual use.
-
-        // TODO: augment this from model normal features?
-        let candidateNormals = [
-            new THREE.Vector3(1, 0, 0),
-            new THREE.Vector3(0, 1, 0),
-            new THREE.Vector3(-1, 0, 0),
-            new THREE.Vector3(0, -1, 0),
-            new THREE.Vector3(0, 0, 1),
-        ];
-
-        /**
-         * Verify and commit sweep.
-         * @param sweep Sweep to commit
-         * @returns true if committed, false if rejected.
-         * @async
-         */
-        const tryCommitSweep = async (sweep: Sweep) => {
-            console.log("old tryCommitSweep", sweep);
-        };
-
-        // rough removals
-        // TODO: implement!!!
 
         yield "break";
 
         // not done, but out of choices
         const dt = performance.now() - t0;
         console.log(`possible sweep exhausted after ${dt / 1e3}sec (${dt / this.numSweeps}ms/sweep)`);
-    }
-
-    /**
-     * Generate sphere geometry
-     * @param radius Sphere radius
-     * @returns Sphere geometry
-     */
-    private generateSphereGeometry(radius: number): THREE.BufferGeometry {
-        const geom = new THREE.SphereGeometry(radius, 32, 16);
-        geom.translate(1, 0, 0);
-        return geom;
     }
 
     // Convert a curve into multiple segments whose length is pitch (or less).
