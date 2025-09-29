@@ -1084,6 +1084,58 @@ export class ModulePlanner implements Module {
         return geom;
     }
 
+    // Convert a curve into multiple segments whose length is pitch (or less).
+    // Each segment begin repeats previous segment's end.
+    splitIntoSegments(path: THREE.Vector2[], pitch: number): THREE.Vector2[][] {
+        const segs: THREE.Vector2[][] = [];
+        let currSeg = [];
+        let currLen = 0;
+        for (const p of path) {
+            if (currSeg.length === 0) {
+                currSeg.push(p);
+                continue;
+            }
+
+            while (true) {
+                const currPt = currSeg[currSeg.length - 1];
+                const dlen = p.distanceTo(currPt);
+                if (currLen + dlen > pitch) {
+                    // need to split
+                    const segEnd = currPt.clone().lerp(p, (pitch - currLen) / dlen);
+                    currSeg.push(segEnd);
+                    segs.push(currSeg);
+
+                    // start new segment
+                    currSeg = [segEnd];
+                    currLen = 0;
+                } else {
+                    currSeg.push(p);
+                    currLen += dlen;
+                    break;
+                }
+            }
+        }
+        if (currSeg.length >= 2) {
+            segs.push(currSeg);
+        }
+        return segs;
+    }
+
+    convertToSawPath(path: THREE.Vector2[], pitch: number): THREE.Vector2[] {
+        const res = [];
+        const segs = this.splitIntoSegments(path, pitch);
+        console.log("saw cv", segs);
+        for (let i = 0; i < segs.length; i++) {
+            const fSeg = segs[i];
+            const bSeg = new Array(...segs[i]).reverse();
+            res.push(...fSeg.slice(0, -1));
+            res.push(...bSeg.slice(0, -1));
+            res.push(...fSeg.slice(0, -1));
+        }
+        res.push(path[path.length - 1]);
+        return res;
+    }
+
     /**
      * High-level mesh projection with visualization and error handling
      */
@@ -1228,6 +1280,9 @@ export class ModulePlanner implements Module {
             }
             this.framework.updateVis("misc", contourObjects);
 
+            // saw pattern
+            pathBase = this.convertToSawPath(pathBase, 0.1);
+
             const evacLength = 2;
             const insP = pathBase[0].clone().add(new THREE.Vector3(0, -evacLength, 0))
             pathBase.splice(0, 0, insP);
@@ -1240,7 +1295,7 @@ export class ModulePlanner implements Module {
             this.framework.updateVis("path-base", [line], true);
 
             const safeZ = 60;
-            const opZ = 40;
+            const opZ = 35;
 
             const wrap = (type, x, y, z) => {
                 return {
