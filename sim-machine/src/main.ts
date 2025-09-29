@@ -4,6 +4,7 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+import { GCodeLine, parseGCodeProgram, tracePath } from './gcode.js';
 
 const fontLoader = new FontLoader();
 let font: any = null;
@@ -138,83 +139,53 @@ const generateTool = (toolLength: number): THREE.Object3D => {
     return toolOrigin;
 };
 
-/**
- * Parse single line of G-code (+ comments). Can containt comment-only or empty lines.
- */
-const parseGCodeLine = (lineStr: string): GCodeLine | string => {
-    const commentIdx = lineStr.indexOf(';');
-    const blockStr = (commentIdx >= 0 ? lineStr.slice(0, commentIdx) : lineStr).trim();
-    let block = undefined;
-    if (blockStr.length > 0) {
-        const res = parseGCodeBlock(blockStr);
-        if (typeof res === 'string') {
-            return `invalid block: ${res}`;
-        }
-        block = res;
-    }
-    return {
-        origLine: lineStr,
-        block: block,
-    }
-};
+type ColorMode = "type" | "dist";
 
 /**
- * Parse single block of G-code.
- * @param blockStr string like "G38.3 Z-5", "M4"
- * @returns parsed block or error string.
+ * Create visualization for g-code path.
  */
-const parseGCodeBlock = (blockStr: string): GCodeBlock | string => {
-    const words = blockStr.split(' ').map(w => w.trim()).filter(w => w.length > 0);
-    if (words.length === 0) {
-        return "missing command";
-    }
+const createGCodePathVis = (program: GCodeLine[], colorMode: ColorMode): {vis: THREE.Object3D, legends: string[]} => {
+    const blocks = program.filter(l => l.block !== undefined).map(l => l.block);
+    const path = tracePath(blocks);
 
-    const command = words[0];
-    if (!command.startsWith('G') && !command.startsWith('M')) {
-        return `invalid command: ${command}`;
-    }
+    const segs = [];
+    const segCols = [];
 
-    const params = {};
-    const flags = [];
-    for (const paramWord of words.slice(1)) {
-        if (paramWord.length === 1) {
-            const axis = paramWord[0];
-            if (flags.includes(axis) || params[axis] !== undefined) {
-                return `duplicate flag: ${axis}`;
-            }
-            flags.push(axis);
-        } else {
-            const axis = paramWord[0];
-            const numStr = paramWord.slice(1);
-            const val = parseFloat(numStr);
-            if (isNaN(val) || !isFinite(val)) {
-                return `invalid value in word ${paramWord}: ${numStr}`;
-            }
-            if (flags.includes(axis) || params[axis] !== undefined) {
-                return `duplicate axis: ${axis}`;
-            }
-            params[axis] = val;
+    const colmap = (t: number): THREE.Color => {
+        const fromCol = new THREE.Color(1, 0, 0);
+        const toCol = new THREE.Color(0, 0, 1);
+        return fromCol.clone().lerp(toCol, t);
+    };
+
+    for (const seg of path.segments) {
+        segs.push(seg.src, seg.dst);
+
+        if (colorMode === "type") {
+            const segCol = new THREE.Color(seg.segType === "G0" ? "blue" : "red");
+            segCols.push(segCol, segCol);
+        } else if (colorMode === "dist") {
+            const srcCol = colmap(seg.srcDist / path.totalLen);
+            const dstCol = colmap(seg.dstDist / path.totalLen);
+            segCols.push(srcCol, dstCol);
         }
     }
-    return { command, params, flags };
-};
 
-type GCodeLine = {
-    origLine: string,
-    block?: GCodeBlock,
-}
+    const legends = colorMode === "type"
+        ? ["Blue: G0", "Red: G1"]
+        : ["Red: Begin", `Blue: End(${path.totalLen.toFixed(1)}mm)`];
 
-type GCodeBlock = {
-    command: string, // "G1", "G38.3", "M11" etc.
-    params: Record<string, number>, // e.g. {X: 12.3} for "G1 X12.3"
-    flags: string[], // e.g. ["X"] for "G28 X"
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segs.flatMap(v => [v.x, v.y, v.z])), 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(new Float32Array(segCols.flatMap(c => [c.r, c.g, c.b])), 3));
+    const mat = new THREE.LineBasicMaterial({ vertexColors: true });
+    const vis = new THREE.LineSegments(geom, mat);
+
+    return { vis, legends };
 };
 
 
 ////////////////////////////////////////////////////////////////////////////////
 // 3D view
-
-type ColorMode = "type" | "dist";
 
 /**
  * Scene is in mm unit. Right-handed, X+ up, machine coords.
@@ -286,7 +257,7 @@ class View3D {
         gui.add(this, "totalGcodeLines").disable().listen();
         gui.add(this, "colorMode").options(["type", "dist"]).listen().onChange(() => {
             if (this.gcode.length > 0) {
-                this.visualizeGCode(this.colorMode);
+                this.updatePathVisualization();
             }
         });
 
@@ -343,111 +314,30 @@ class View3D {
         });
     }
 
+    private updatePathVisualization(): void {
+        const { vis, legends } = createGCodePathVis(this.gcode, this.colorMode);
+
+        if (this.pathVis) {
+            this.scene.remove(this.pathVis);
+        }
+        this.pathVis = vis;
+        this.scene.add(vis);
+
+        this.colorLegend1 = legends[0];
+        this.colorLegend2 = legends[1];
+    }
+
     private importGCode(gcodeText: string) {
-        const blocks = [];
-        const errors = [];
-        gcodeText.split("\n").forEach((l, ix) => {
-            const res = parseGCodeLine(l);
-            if (typeof res === 'string') {
-                errors.push(`line ${ix + 1}: ${res}`);
-            } else {
-                blocks.push(res);
-            }
-        });
+        const { lines, errors } = parseGCodeProgram(gcodeText);
         if (errors.length > 0) {
             console.error(`G-code parse errors:\n${errors.join("\n")}`);
             return;
         }
 
-        this.gcode = blocks;
+        this.gcode = lines;
         this.totalGcodeLines = this.gcode.length;
 
-        this.visualizeGCode(this.colorMode);
-    }
-
-    private visualizeGCode(colorMode: "type" | "dist") {
-        const blocks = this.gcode.filter(l => l.block !== undefined).map(l => l.block);
-        const segs = []; // flattened list of path segments
-        const segCols = [];
-        
-        const ptAfterMove = (curr: THREE.Vector3, params: Record<string, number>): THREE.Vector3 => {
-            const next = curr.clone();
-            if (params["X"] !== undefined) {
-                next.x = params["X"];
-            }
-            if (params["Y"] !== undefined) {
-                next.y = params["Y"];
-            }
-            if (params["Z"] !== undefined) {
-                next.z = params["Z"];
-            }
-            return next;
-        };
-        const computeTotalLen = (): number => {
-            let curr = new THREE.Vector3();
-            let len = 0;
-            for (const block of blocks) {
-                if (block.command === "G0" || block.command === "G1") {
-                    const next = ptAfterMove(curr, block.params);
-                    len += next.distanceTo(curr);
-                    curr = next;
-                }
-            }
-            return len;
-        };
-
-        const colmap = (t: number): THREE.Color => {
-            const fromCol = new THREE.Color(1, 0, 0);
-            const toCol = new THREE.Color(0, 0, 1);
-            return fromCol.clone().lerp(toCol, t);
-        };
-
-        const totLen = computeTotalLen();
-        let currLen = 0;
-        let curr = new THREE.Vector3();
-        for (const block of blocks) {
-            if (block.command === "G0" || block.command === "G1") {
-                const next = ptAfterMove(curr, block.params);
-                const currDist = currLen;
-                currLen += next.distanceTo(curr);
-                const nextDist = currLen;
-                segs.push(curr, next);
-
-                if (colorMode === "type") {
-                    const segCol = new THREE.Color(block.command === "G0" ? "blue" : "red");
-                    segCols.push(segCol, segCol);
-                } else if (colorMode === "dist") {
-                    const currCol = colmap(currDist / totLen);
-                    const nextCol = colmap(nextDist / totLen);
-                    segCols.push(currCol, nextCol);
-                }
-                
-                curr = next;
-            }
-        }
-
-        switch (colorMode) {
-            case "type":
-                this.colorLegend1 = "Blue: G0";
-                this.colorLegend2 = "Red: G1";
-                break;
-            case "dist":
-                this.colorLegend1 = "Red: Begin";
-                this.colorLegend2 = `Blue: End(${totLen.toFixed(1)}mm)`;
-                break;
-        }
-
-        const geom = new THREE.BufferGeometry();
-        geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segs.flatMap(v => [v.x, v.y, v.z])), 3));
-        geom.setAttribute('color', new THREE.BufferAttribute(new Float32Array(segCols.flatMap(c => [c.r, c.g, c.b])), 3));
-        const mat = new THREE.LineBasicMaterial({ vertexColors: true });
-        const lineSegs = new THREE.LineSegments(geom, mat);
-
-        if (this.pathVis) {
-            this.scene.remove(this.pathVis);
-        }
-        this.pathVis = lineSegs;
-        this.scene.add(lineSegs);
+        this.updatePathVisualization();
     }
 
     onWindowResize(): void {
