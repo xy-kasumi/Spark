@@ -72,9 +72,6 @@ export const genPathByProjection = async (
             color: "green",
             metalness: 0.1,
             roughness: 0.8,
-            //transparent: true,
-            //wireframe: true,
-            //opacity: 0.9,
         });
         const mesh = new THREE.Mesh(wasmGeom.manifoldToGeometry(stockManifold), material);
         updateVis("work", [mesh], true);
@@ -130,19 +127,12 @@ export const genPathByProjection = async (
     }
     updateVis("misc", contourObjects, true);
 
-    // saw pattern
-    pathBase = convertToSawPath(pathBase, 0.1);
-
     const evacLength = 2;
     const insP = pathBase[0].clone().add(new THREE.Vector3(0, -evacLength, 0))
     pathBase.splice(0, 0, insP);
 
     const insQ = pathBase[pathBase.length - 1].clone().add(new THREE.Vector3(0, evacLength, 0))
     pathBase.push(insQ);
-
-    const geom = new THREE.BufferGeometry().setFromPoints(pathBase);
-    const line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 }));
-    updateVis("path-base", [line], true);
 
     const safeZ = 60;
     const opZ = 35;
