@@ -5,7 +5,6 @@
  */
 import { ModuleFramework } from './framework.js';
 import { ModulePlanner } from './mod-planner.js';
-import { ModuleLayout } from './mod-layout.js';
 import { initWasmGeom } from './wasm-geom.js';
 
 (async () => {
@@ -14,6 +13,5 @@ import { initWasmGeom } from './wasm-geom.js';
     const framework = new ModuleFramework();
 
     const wasmGeom = await initWasmGeom();
-    const modulePlanner = new ModulePlanner(framework, wasmGeom);
-    const moduleLayout = new ModuleLayout(framework, modulePlanner);
+    new ModulePlanner(framework, wasmGeom);
 })();
