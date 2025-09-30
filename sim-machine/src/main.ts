@@ -292,10 +292,11 @@ class View3D {
         this.camera.right = 25 * aspect;
         this.camera.top = 25;
         this.camera.bottom = -25;
+        this.camera.updateProjectionMatrix();
     }
 
     init(): void {
-        this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -150, 150);
+        this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -300, 300);
         this.setCameraFrustumFromWindow();
         this.camera.position.x = 15;
         this.camera.position.y = 40;
@@ -368,7 +369,6 @@ class View3D {
 
     onWindowResize(): void {
         this.setCameraFrustumFromWindow();
-        this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
