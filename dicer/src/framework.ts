@@ -19,7 +19,6 @@ import { N8AOPass } from '../vendor/n8ao/N8AO.js';
  */
 export interface Module {
     addGui(gui: GUI): void;
-    animateHook?(): void;
 }
 
 /**
@@ -182,13 +181,6 @@ export class ModuleFramework {
     }
 
     animate() {
-        // Call animateHook on all registered modules
-        for (const module of this.modules) {
-            if (module.animateHook) {
-                module.animateHook();
-            }
-        }
-
         this.controls.update();
         this.composer.render();
         this.stats.update();

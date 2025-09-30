@@ -5,98 +5,9 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
 import { ModuleFramework, Module } from './framework.js';
 import { WasmGeom, ManifoldHandle } from './wasm-geom.js';
-import { cutPolygon, translateGeom } from './cpu-geom.js';
-
-/**
- * Generate stock cylinder geometry, spanning Z [0, stockHeight]
- * @param stockRadius Radius of the stock
- * @param stockHeight Height of the stock
- * @returns Stock cylinder geometry
- */
-const generateStockGeom = (stockRadius: number = 7.5, stockHeight: number = 15): THREE.BufferGeometry => {
-    const geom = new THREE.CylinderGeometry(stockRadius, stockRadius, stockHeight, 64, 1);
-    const transf = new THREE.Matrix4().compose(
-        new THREE.Vector3(0, 0, stockHeight / 2),
-        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2),
-        new THREE.Vector3(1, 1, 1));
-    geom.applyMatrix4(transf);
-    return geom;
-};
-
-
-interface PathSegment {
-    type: string;
-    tipPosM: THREE.Vector3;
-    tipPosW: THREE.Vector3;
-    axisValues: {
-        x: number;
-        y: number;
-        z: number;
-        b: number;
-        c: number;
-    };
-    sweep: number;
-    group: string;
-    tipNormalW: THREE.Vector3;
-    toolRotDelta?: number;
-    grindDelta?: number;
-}
-
-
-/**
- * Generates a rotation matrix such that Z+ axis will be formed into "z" vector.
- * @param z Z-basis vector
- * @returns Rotation matrix
- */
-const createRotationWithZ = (z: THREE.Vector3): THREE.Matrix4 => {
-    // orthogonalize, with given Z-basis.
-    const basisZ = z;
-    let basisY;
-    const b0 = new THREE.Vector3(1, 0, 0);
-    const b1 = new THREE.Vector3(0, 1, 0);
-    if (b0.clone().cross(basisZ).length() > 0.3) {
-        basisY = b0.clone().cross(basisZ).normalize();
-    } else {
-        basisY = b1.clone().cross(basisZ).normalize();
-    }
-    const basisX = basisY.clone().cross(basisZ).normalize();
-
-    return new THREE.Matrix4(
-        basisX.x, basisY.x, basisZ.x, 0,
-        basisX.y, basisY.y, basisZ.y, 0,
-        basisX.z, basisY.z, basisZ.z, 0,
-        0, 0, 0, 1,
-    );
-}
-
-/**
- * Generate tool geom, origin = tool tip. In Z+ direction, there will be tool base marker.
- * @returns Tool visualization object
- */
-const generateTool = (toolLength: number, toolDiameter: number): THREE.Object3D => {
-    const toolOrigin = new THREE.Object3D();
-
-    const toolRadius = toolDiameter / 2;
-    const baseRadius = 5;
-
-    // note: cylinder geom is Y direction and centered. Need to rotate and shift.
-
-    const tool = new THREE.Mesh(
-        new THREE.CylinderGeometry(toolRadius, toolRadius, toolLength, 32, 1),
-        new THREE.MeshPhysicalMaterial({ color: 0xf0f0f0, metalness: 0.9, roughness: 0.3, wireframe: true }));
-    tool.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
-    tool.position.z = toolLength / 2;
-
-    const toolBase = new THREE.Mesh(
-        new THREE.CylinderGeometry(baseRadius, baseRadius, 0, 6, 1),
-        new THREE.MeshPhysicalMaterial({ color: 0xe0e0e0, metalness: 0.2, roughness: 0.8, wireframe: true }));
-    toolBase.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
-    toolBase.position.z = toolLength;
-    toolOrigin.add(toolBase);
-
-    toolOrigin.add(tool);
-    return toolOrigin;
-};
+import { translateGeom } from './cpu-geom.js';
+import { PathSegment } from './gcode.js';
+import { genPathByProjection, generateStockGeom } from './plan.js';
 
 /**
  * Spark WG1 machine physical configuration.
@@ -105,7 +16,6 @@ const sparkWg1Config = {
     toolNaturalDiameter: 3,
     toolNaturalLength: 25,
 };
-
 
 /**
  * Planner class for generating tool paths.
@@ -117,7 +27,6 @@ export class ModulePlanner implements Module {
     framework: ModuleFramework;
     machineConfig: any;
     stockDiameter: number;
-    workCRot: number;
     stockCutWidth: number;
     simWorkBuffer: number;
     showWork: boolean;
@@ -145,9 +54,6 @@ export class ModulePlanner implements Module {
         this.wasmGeom = wasmGeom;
 
         this.machineConfig = sparkWg1Config; // in future, there will be multiple options.
-
-        // tool vis
-        this.updateVisTransforms(new THREE.Vector3(-15, -15, 5), new THREE.Vector3(0, 0, 1), this.machineConfig.toolNaturalLength);
 
         // machine-state setup
         this.stockDiameter = 15;
@@ -183,17 +89,6 @@ export class ModulePlanner implements Module {
         projectionFolder.add(this, "projectMesh").name("Project");
     }
 
-    animateHook() {
-    }
-
-    updateVisTransforms(tipPos, tipNormal, toolLength) {
-        const tool = generateTool(toolLength, this.machineConfig.toolNaturalDiameter);
-        this.framework.updateVis("tool", [tool], false);
-
-        tool.position.copy(tipPos);
-        tool.setRotationFromMatrix(createRotationWithZ(tipNormal));
-    }
-
     /**
      * Setup new targets.
      *
@@ -211,58 +106,6 @@ export class ModulePlanner implements Module {
         this.aboveWorkSize = aboveWorkSize;
     }
 
-    // Convert a curve into multiple segments whose length is pitch (or less).
-    // Each segment begin repeats previous segment's end.
-    splitIntoSegments(path: THREE.Vector2[], pitch: number): THREE.Vector2[][] {
-        const segs: THREE.Vector2[][] = [];
-        let currSeg = [];
-        let currLen = 0;
-        for (const p of path) {
-            if (currSeg.length === 0) {
-                currSeg.push(p);
-                continue;
-            }
-
-            while (true) {
-                const currPt = currSeg[currSeg.length - 1];
-                const dlen = p.distanceTo(currPt);
-                if (currLen + dlen > pitch) {
-                    // need to split
-                    const segEnd = currPt.clone().lerp(p, (pitch - currLen) / dlen);
-                    currSeg.push(segEnd);
-                    segs.push(currSeg);
-
-                    // start new segment
-                    currSeg = [segEnd];
-                    currLen = 0;
-                } else {
-                    currSeg.push(p);
-                    currLen += dlen;
-                    break;
-                }
-            }
-        }
-        if (currSeg.length >= 2) {
-            segs.push(currSeg);
-        }
-        return segs;
-    }
-
-    convertToSawPath(path: THREE.Vector2[], pitch: number): THREE.Vector2[] {
-        const res = [];
-        const segs = this.splitIntoSegments(path, pitch);
-        console.log("saw cv", segs);
-        for (let i = 0; i < segs.length; i++) {
-            const fSeg = segs[i];
-            const bSeg = new Array(...segs[i]).reverse();
-            res.push(...fSeg.slice(0, -1));
-            res.push(...bSeg.slice(0, -1));
-            res.push(...fSeg.slice(0, -1));
-        }
-        res.push(path[path.length - 1]);
-        return res;
-    }
-
     /**
      * High-level mesh projection with visualization and error handling
      */
@@ -272,183 +115,11 @@ export class ModulePlanner implements Module {
         translateGeom(stockGeom, new THREE.Vector3(0, 0, -(this.stockCutWidth + this.simWorkBuffer)));
         this.stockManifold = this.wasmGeom.createManifold(stockGeom);
 
-        const viewVectors = [
-            // No AB-stage yet
-            new THREE.Vector3(0, 1, 0),
-
-            //new THREE.Vector3(0, 0, 1),
-            // crosses
-            //new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0),
-            // diagonals
-            //new THREE.Vector3(1, 1, 0).normalize(), new THREE.Vector3(1, -1, 0).normalize(),
-        ];
-
-        for (const viewVector of viewVectors) {
-
-
-            // Create and validate view vector
-            //const viewVector = new THREE.Vector3(this.viewVectorX, this.viewVectorY, this.viewVectorZ);
-            /*
-            if (viewVector.length() < 0.001) {
-                throw new Error("View vector too small");
-            }
-                */
-
-            // Generate orthonormal basis from view vector
-            const viewZ = viewVector.clone().normalize();
-            const temp = Math.abs(viewZ.dot(new THREE.Vector3(1, 0, 0))) > 0.9 ?
-                new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-            const viewX = temp.clone().sub(viewZ.clone().multiplyScalar(temp.dot(viewZ))).normalize();
-            const viewY = viewZ.clone().cross(viewX);
-            const origin = new THREE.Vector3(0, 0, 0);
-
-            console.log(`View basis: X(${viewX.x.toFixed(3)}, ${viewX.y.toFixed(3)}, ${viewX.z.toFixed(3)}) ` +
-                `Y(${viewY.x.toFixed(3)}, ${viewY.y.toFixed(3)}, ${viewY.z.toFixed(3)}) ` +
-                `Z(${viewZ.x.toFixed(3)}, ${viewZ.y.toFixed(3)}, ${viewZ.z.toFixed(3)})`);
-
-            const toolRadius = 1.5; // 0.15; // 1.5;
-            const startTime = performance.now();
-            let offsets = [toolRadius]; // [toolRadius * 3, toolRadius * 2, toolRadius * 1];
-            let contours = [];
-            let contour0 = this.wasmGeom.projectManifold(this.targetManifold, origin, viewX, viewY, viewZ);
-            // contour0 = this.wasmGeom.outermostCrossSection(contour0);
-            for (const offset of offsets) {
-                const toolCenterContour = this.wasmGeom.offsetCrossSection(contour0, offset);
-                contours = [...contours, this.wasmGeom.crossSectionToContours(toolCenterContour)];
-
-                const innerContour = this.wasmGeom.offsetCrossSectionCircle(toolCenterContour, -toolRadius, 32);
-                const cutCS = this.wasmGeom.createSquareCrossSection(100); // big enough to contain both work and target.
-                const removeCS = this.wasmGeom.subtractCrossSection(cutCS, innerContour);
-                const removeMani = this.wasmGeom.extrude(removeCS, viewX, viewY, viewZ, viewZ.clone().multiplyScalar(-50), 100); // 100mm should be big enough
-                const actualRemovedMani = this.wasmGeom.intersectMesh(this.stockManifold, removeMani);
-                console.log("removed volume", this.wasmGeom.volumeManifold(actualRemovedMani));
-                this.stockManifold = this.wasmGeom.subtractMesh(this.stockManifold, removeMani); // update
-            }
-            const endTime = performance.now();
-            console.log(`cut took ${(endTime - startTime).toFixed(2)}ms`);
-
-
-            // visualize stock manifold
-            {
-                const material = new THREE.MeshPhysicalMaterial({
-                    color: "green",
-                    metalness: 0.1,
-                    roughness: 0.8,
-                    //transparent: true,
-                    //wireframe: true,
-                    //opacity: 0.9,
-                });
-                const mesh = new THREE.Mesh(this.wasmGeom.manifoldToGeometry(this.stockManifold), material);
-                this.framework.updateVis("work", [mesh]);
-            }
-
-            // visualize remaining
-            if (false) {
-                const material = new THREE.MeshPhysicalMaterial({
-                    color: "red",
-                    metalness: 0.1,
-                    roughness: 0.8,
-                    transparent: true,
-                    wireframe: true,
-                    opacity: 0.9,
-                });
-                const mesh = new THREE.Mesh(this.wasmGeom.manifoldToGeometry(this.wasmGeom.subtractMesh(this.stockManifold, this.targetManifold)), material);
-                this.framework.updateVis("remaining", [mesh]);
-            }
-
-
-            // Visualize contours on the view plane using LineLoop
-            const contourObjects: THREE.Object3D[] = [];
-            const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
-            const material2 = new THREE.LineBasicMaterial({ color: 0x0000ff, linewidth: 2 });
-            let pathBase = [];
-            for (const contour of contours) {
-                for (const poly of contour) {
-                    let cutCurves = cutPolygon(poly, new THREE.Vector2(0, 1), 0);
-                    console.log(cutCurves);
-
-                    if (cutCurves.length === 0) {
-                        // not intersecting (bug)
-                        const points3D: THREE.Vector3[] = [];
-                        for (const point2D of poly) {
-                            const point3D = origin.clone()
-                                .add(viewX.clone().multiplyScalar(point2D.x))
-                                .add(viewY.clone().multiplyScalar(point2D.y));
-                            points3D.push(point3D);
-                        }
-                        const geometry = new THREE.BufferGeometry().setFromPoints(points3D);
-                        const lineLoop = new THREE.LineLoop(geometry, material);
-                        contourObjects.push(lineLoop);
-                    } else {
-                        cutCurves = [cutCurves[1]]; // TODO: fix
-                        let pos = true;
-                        for (const cutCurve of cutCurves) {
-                            const points3D: THREE.Vector3[] = [];
-                            const points3DWork: THREE.Vector3[] = [];
-                            for (const point2D of cutCurve) {
-                                const point3D = origin.clone()
-                                    .add(viewX.clone().multiplyScalar(point2D.x))
-                                    .add(viewY.clone().multiplyScalar(point2D.y));
-                                points3D.push(point3D);
-
-                                const points3DW = new THREE.Vector3(-19, 0, 0)
-                                    .add(new THREE.Vector3(0, 1, 0).multiplyScalar(point2D.x))
-                                    .add(new THREE.Vector3(1, 0, 0).multiplyScalar(point2D.y));
-                                points3DWork.push(points3DW);
-                            }
-                            const geometry = new THREE.BufferGeometry().setFromPoints(points3D);
-                            const line = new THREE.Line(geometry, pos ? material : material2);
-                            contourObjects.push(line);
-                            pos = !pos;
-                            pathBase = points3DWork;
-                        }
-                    }
-                }
-            }
-            this.framework.updateVis("misc", contourObjects);
-
-            // saw pattern
-            pathBase = this.convertToSawPath(pathBase, 0.1);
-
-            const evacLength = 2;
-            const insP = pathBase[0].clone().add(new THREE.Vector3(0, -evacLength, 0))
-            pathBase.splice(0, 0, insP);
-
-            const insQ = pathBase[pathBase.length - 1].clone().add(new THREE.Vector3(0, evacLength, 0))
-            pathBase.push(insQ);
-
-            const geom = new THREE.BufferGeometry().setFromPoints(pathBase);
-            const line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 }));
-            this.framework.updateVis("path-base", [line], true);
-
-            const safeZ = 60;
-            const opZ = 35;
-
-            const wrap = (type, x, y, z) => {
-                return {
-                    type: type,
-                    axisValues: {
-                        x: x,
-                        y: y,
-                        z: z,
-                        b: 0,
-                        c: 0,
-                    },
-                    // dummy
-                    tipPosM: new THREE.Vector3(),
-                    tipPosW: new THREE.Vector3(),
-                    tipNormalW: new THREE.Vector3(),
-                    sweep: 0,
-                    group: "",
-                };
-            };
-
-            this.planPath = [];
-            this.planPath.push(wrap("move", insP.x, insP.y, safeZ));
-            this.planPath.push(wrap("move", insP.x, insP.y, opZ));
-            this.planPath = this.planPath.concat(pathBase.map(pt => wrap("remove-work", pt.x, pt.y, opZ)));
-            this.planPath.push(wrap("move", insQ.x, insQ.y, safeZ));
-        }
+        const res = await genPathByProjection(
+            this.targetManifold, this.stockManifold,
+            this.wasmGeom, (group, vs, visible) => this.framework.updateVis(group, vs, visible));
+        this.planPath = res.path;
+        this.stockManifold = res.stockAfterCut;
     }
 
     /**

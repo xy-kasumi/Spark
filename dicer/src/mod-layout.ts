@@ -7,22 +7,8 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { ModuleFramework, Module } from './framework.js';
 import { ModulePlanner } from './mod-planner.js';
 import { computeAABB } from './cpu-geom.js';
-
-/**
- * Generate stock cylinder geometry, spanning Z [0, stockHeight]
- * @param stockRadius Radius of the stock
- * @param stockHeight Height of the stock
- * @returns Stock cylinder geometry
- */
-const generateStockGeom = (stockRadius: number = 7.5, stockHeight: number = 15): THREE.BufferGeometry => {
-    const geom = new THREE.CylinderGeometry(stockRadius, stockRadius, stockHeight, 64, 1);
-    const transf = new THREE.Matrix4().compose(
-        new THREE.Vector3(0, 0, stockHeight / 2),
-        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2),
-        new THREE.Vector3(1, 1, 1));
-    geom.applyMatrix4(transf);
-    return geom;
-};
+import { generateGcode } from './gcode.js';
+import { generateStockGeom } from './plan.js';
 
 const generateStockVis = (stockRadius: number = 7.5, stockHeight: number = 15, baseZ: number = 0): THREE.Object3D => {
     const geom = generateStockGeom(stockRadius, stockHeight);
@@ -31,6 +17,8 @@ const generateStockVis = (stockRadius: number = 7.5, stockHeight: number = 15, b
     mesh.position.z = -baseZ;
     return mesh;
 };
+
+const stdWorkPulseCondition = "M3 P150 Q20 R50";
 
 /**
  * Module that controls model loading, laying out the model & work, and sending out G-code.
@@ -126,12 +114,7 @@ export class ModuleLayout implements Module {
             this.framework.setVisVisibility("target", v);
         }).listen();
 
-        // tool cut
-        gui.add(this, "initToolLen", 9, 35, 0.1);
-        gui.add(this, "targToolLen", 9, 35, 0.1);
-        gui.add(this, "wireFeedRate", 10, 1000, 10);
         gui.add(this, "pulseCondition");
-
         gui.add(this, "copyGcode");
         gui.add(this, "sendGcodeToSim");
 
@@ -196,93 +179,22 @@ export class ModuleLayout implements Module {
     }
 
     copyGcode() {
-        const gcode = this.generateGcode();
+        const gcode = generateGcode(this.modPlanner.planPath || [], {
+            work: stdWorkPulseCondition,
+            grinder: this.pulseCondition,
+        });
         navigator.clipboard.writeText(gcode);
         console.log("G-code copied to clipboard");
     }
 
     sendGcodeToSim() {
-        const gcode = this.generateGcode();
+        const gcode = generateGcode(this.modPlanner.planPath || [], {
+            work: stdWorkPulseCondition,
+            grinder: this.pulseCondition,
+        });
         const bc = new BroadcastChannel("gcode");
         bc.postMessage(gcode);
         bc.close();
         console.log("G-code sent to sim");
-    }
-
-    generateGcode(): string {
-        const planPath = this.modPlanner.planPath || [];
-
-        let prevSweep = null;
-        let prevType = null;
-        let prevX = null;
-        let prevY = null;
-        let prevZ = null;
-
-        const lines = [];
-
-        const workPulseCondition = "M3 P150 Q20 R50";
-
-        // normal code
-        lines.push("G53"); // machine coords
-        lines.push("G28"); // home
-
-        lines.push("G55"); // work coords
-        lines.push(`G0 X0 Y0 Z60`);
-        prevX = 0;
-        prevY = 0;
-        prevZ = 60;
-
-        for (let i = 0; i < planPath.length; i++) {
-            const pt = planPath[i];
-            if (prevSweep !== pt.sweep) {
-                lines.push(`; sweep-${pt.sweep}`);
-                prevSweep = pt.sweep;
-            }
-
-            let gcode = [];
-            if (pt.type === "remove-work") {
-                if (prevType !== pt.type) {
-                    lines.push(workPulseCondition);
-                }
-                gcode.push("G1");
-            } else if (pt.type === "remove-tool") {
-                if (prevType !== pt.type) {
-                    lines.push(this.pulseCondition);
-                }
-                gcode.push("G1");
-            } else if (pt.type === "move-out" || pt.type === "move-in" || pt.type === "move") {
-                gcode.push("G0");
-            } else {
-                console.error("unknown path segment type", pt.type);
-            }
-            prevType = pt.type;
-
-            const vals = pt.axisValues;
-            if (prevX !== vals.x) {
-                gcode.push(`X${vals.x.toFixed(3)}`);
-                prevX = vals.x;
-            }
-            if (prevY !== vals.y) {
-                gcode.push(`Y${vals.y.toFixed(3)}`);
-                prevY = vals.y;
-            }
-            if (prevZ !== vals.z) {
-                gcode.push(`Z${vals.z.toFixed(3)}`);
-                prevZ = vals.z;
-            }
-
-            if (gcode.length > 1) {
-                lines.push(gcode.join(" "));
-            }
-        }
-
-        lines.push(`; end`);
-        lines.push(`G0 Z60`); // pull
-        lines.push(`G53`); // machine coords
-
-        //lines.push(`M103`);
-
-        lines.push("");
-        return lines.join("\n");
     }
 }
