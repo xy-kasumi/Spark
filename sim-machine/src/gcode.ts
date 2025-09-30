@@ -114,48 +114,70 @@ export type PathSegment = {
     srcDist: number, // distance from the beginning of the path.
     dstDist: number,
     segType: "G0" | "G1",
-    coordSys: "machine" | "work", // original coordinate system of the g-code block.
+    coordSys: CoordSys, // original coordinate system of the g-code block.
 };
+
+export type CoordSys = "machine" | "grinder" | "work" | "toolsupply";
 
 /**
  * Trace path from g-code blocks.
+ * @param offsets: Offset of origin of each coordsys in machine coordsys. (thus machine is always (0,0,0))
  */
-export const tracePath = (blocks: GCodeBlock[]): Path => {
-    const ptAfterMove = (curr: THREE.Vector3, params: Record<string, number>): THREE.Vector3 => {
-        const next = curr.clone();
+export const tracePath = (blocks: GCodeBlock[], offsets: Record<CoordSys, THREE.Vector3>): Path => {
+    const sysTable: Record<string, CoordSys> = {
+        "G53": "machine",
+        "G54": "grinder",
+        "G55": "work",
+        "G56": "toolsupply"
+    };
+
+    const transformToSys = (pt: THREE.Vector3, targSys: CoordSys): THREE.Vector3 => {
+        return pt.sub(offsets[targSys]);
+    };
+    const transformFromSys = (pt: THREE.Vector3, srcSys: CoordSys): THREE.Vector3 => {
+        return pt.add(offsets[srcSys]);
+    };
+
+    // Update pt in-place by the move with params.
+    const moveByParams = (pt: THREE.Vector3, params: Record<string, number>): THREE.Vector3 => {
         if (params["X"] !== undefined) {
-            next.x = params["X"];
+            pt.x = params["X"];
         }
         if (params["Y"] !== undefined) {
-            next.y = params["Y"];
+            pt.y = params["Y"];
         }
         if (params["Z"] !== undefined) {
-            next.z = params["Z"];
+            pt.z = params["Z"];
         }
-        return next;
+        return pt;
     };
 
     const segments: PathSegment[] = [];
+    let currSys: CoordSys = "machine";
     let curr = new THREE.Vector3();
     let currDist = 0;
 
     for (const block of blocks) {
         if (block.command === "G0" || block.command === "G1") {
-            const next = ptAfterMove(curr, block.params);
+            const next = moveByParams(curr.clone(), block.params);
             const segLen = next.distanceTo(curr);
             const nextDist = currDist + segLen;
 
             segments.push({
-                src: curr,
-                dst: next,
+                src: transformFromSys(curr.clone(), currSys),
+                dst: transformFromSys(next.clone(), currSys),
                 srcDist: currDist,
                 dstDist: nextDist,
                 segType: block.command,
-                coordSys: "machine",
+                coordSys: currSys,
             });
 
             curr = next;
             currDist = nextDist;
+        } else if (sysTable[block.command] !== undefined) {
+            const currInMachine = transformFromSys(curr.clone(), currSys);
+            currSys = sysTable[block.command];
+            curr = transformToSys(currInMachine, currSys);
         }
     }
 

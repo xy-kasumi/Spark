@@ -4,7 +4,7 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
-import { GCodeLine, parseGCodeProgram, tracePath } from './gcode.js';
+import { CoordSys, GCodeLine, parseGCodeProgram, tracePath } from './gcode.js';
 
 const fontLoader = new FontLoader();
 let font: any = null;
@@ -139,17 +139,14 @@ const generateTool = (toolLength: number): THREE.Object3D => {
     return toolOrigin;
 };
 
-type ColorMode = "type" | "dist";
+type ColorMode = "type" | "dist" | "coordsys";
 
 /**
  * Create visualization for g-code path.
  */
-const createGCodePathVis = (program: GCodeLine[], colorMode: ColorMode): {vis: THREE.Object3D, legends: string[]} => {
+const createGCodePathVis = (program: GCodeLine[], colorMode: ColorMode, offsets: Record<CoordSys, THREE.Vector3>): { vis: THREE.Object3D, legends: string[] } => {
     const blocks = program.filter(l => l.block !== undefined).map(l => l.block);
-    const path = tracePath(blocks);
-
-    const segs = [];
-    const segCols = [];
+    const path = tracePath(blocks, offsets);
 
     const colmap = (t: number): THREE.Color => {
         const fromCol = new THREE.Color(1, 0, 0);
@@ -157,6 +154,15 @@ const createGCodePathVis = (program: GCodeLine[], colorMode: ColorMode): {vis: T
         return fromCol.clone().lerp(toCol, t);
     };
 
+    const coordCols: Record<CoordSys, THREE.Color> =  {
+        "machine": new THREE.Color("black"),
+        "grinder": new THREE.Color("blue"),
+        "work": new THREE.Color("red"),
+        "toolsupply": new THREE.Color("green"),
+    };
+
+    const segs = [];
+    const segCols = [];
     for (const seg of path.segments) {
         segs.push(seg.src, seg.dst);
 
@@ -167,12 +173,20 @@ const createGCodePathVis = (program: GCodeLine[], colorMode: ColorMode): {vis: T
             const srcCol = colmap(seg.srcDist / path.totalLen);
             const dstCol = colmap(seg.dstDist / path.totalLen);
             segCols.push(srcCol, dstCol);
+        } else if (colorMode === "coordsys") {
+            const segCol = coordCols[seg.coordSys];
+            segCols.push(segCol, segCol);
         }
     }
 
-    const legends = colorMode === "type"
-        ? ["Blue: G0", "Red: G1"]
-        : ["Red: Begin", `Blue: End(${path.totalLen.toFixed(1)}mm)`];
+    let legends: string[];
+    if (colorMode === "type") {
+        legends = ["Blue: G0", "Red: G1"];
+    } else if (colorMode === "dist") {
+        legends = ["Red: Begin", `Blue: End(${path.totalLen.toFixed(1)}mm)`];
+    } else if (colorMode === "coordsys") {
+        legends = ["Black: machine / Blue: Grinder", "Red: Work / Green: ToolSupply"];
+    }
 
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segs.flatMap(v => [v.x, v.y, v.z])), 3));
@@ -255,7 +269,7 @@ class View3D {
         gui.add(this, "pasteFromClipboard");
 
         gui.add(this, "totalGcodeLines").disable().listen();
-        gui.add(this, "colorMode").options(["type", "dist"]).listen().onChange(() => {
+        gui.add(this, "colorMode").options(["type", "dist", "coordsys"]).listen().onChange(() => {
             if (this.gcode.length > 0) {
                 this.updatePathVisualization();
             }
@@ -315,7 +329,14 @@ class View3D {
     }
 
     private updatePathVisualization(): void {
-        const { vis, legends } = createGCodePathVis(this.gcode, this.colorMode);
+        const offsets: Record<CoordSys, THREE.Vector3> = {
+            "machine": new THREE.Vector3(0, 0, 0),
+            "grinder": new THREE.Vector3(-58, 76, -73),
+            "work": new THREE.Vector3(-57, 10, -89),
+            "toolsupply": new THREE.Vector3(-16, 98, -57),
+        };
+
+        const { vis, legends } = createGCodePathVis(this.gcode, this.colorMode, offsets);
 
         if (this.pathVis) {
             this.scene.remove(this.pathVis);
