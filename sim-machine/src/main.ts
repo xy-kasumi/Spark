@@ -349,6 +349,7 @@ class View3D {
         }
         this.pathVis = vis;
         this.scene.add(vis);
+        this.setPathVisOffset();
 
         this.colorLegend1 = legends[0];
         this.colorLegend2 = legends[1];
