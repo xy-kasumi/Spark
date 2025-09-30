@@ -219,46 +219,33 @@ class View3D {
     controls: OrbitControls;
     stats: any;
 
-    // UI
-    receiveBroadcast: boolean;
+    // Communication & G-code
     gcodeChannel: BroadcastChannel;
+    gcode: GCodeLine[] = [];
 
-    workOffset: THREE.Vector3;
-    wireCenter: THREE.Vector3;
-    stockCenter: THREE.Vector3;
-    toolRemoverCenter: THREE.Vector3;
-    toolBankOrigin: THREE.Vector3;
+    // G-code UI
+    receiveBroadcast: boolean = true;
+    totalGcodeLines: number = 0;
 
-    workStageBase: THREE.Object3D;
-    tool: THREE.Object3D;
-    toolLength: number;
-    toolDiameter: number;
-
+    // Visualizer control UIs
     colorMode: ColorMode = "type";
     colorLegend1: string = "Blue: G0";
     colorLegend2: string = "Red: G1";
+    applyToolOffset: boolean = false;
+    toolOffset: number = 50;
 
-    gcode: GCodeLine[] = [];
-    totalGcodeLines: number = 0;
-
+    // Dynamic visualization
     pathVis: THREE.Object3D = null;
 
     constructor() {
         this.init();
 
-        this.tool = generateTool(50);
-        this.scene.add(this.tool);
+        const tool = generateTool(50);
+        this.scene.add(tool);
 
         const workOriginVis = new THREE.AxesHelper(15);
         workOriginVis.position.copy(machineOffsets["work"]);
         this.scene.add(workOriginVis);
-
-        // machine-state setup
-        this.toolLength = 25;
-        this.toolDiameter = 1.5;
-
-        this.receiveBroadcast = true;
-        this.totalGcodeLines = 0;
 
         this.initGui();
 
@@ -287,6 +274,16 @@ class View3D {
 
         gui.add(this, "colorLegend1").disable().listen();
         gui.add(this, "colorLegend2").disable().listen();
+
+        gui.add(this, "applyToolOffset").listen().onChange(() => this.setPathVisOffset());
+        gui.add(this, "toolOffset", 0, 70).step(1).listen().onChange(() => this.setPathVisOffset());
+    }
+
+    private setPathVisOffset(): void {
+        const offset = this.applyToolOffset ? new THREE.Vector3(0, 0, -this.toolOffset) : new THREE.Vector3(0, 0, 0);
+        if (this.pathVis) {
+            this.pathVis.position.copy(offset);
+        }
     }
 
     private setCameraFrustumFromWindow(): void {
