@@ -6,27 +6,7 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
 import { ModuleFramework, Module } from './framework.js';
 import { ModulePlanner } from './mod-planner.js';
-import { visDot } from './debug.js';
-import { toTriSoup } from './wasm-geom.js';
-
-
-
-/**
- * Compute AABB from points array
- * @param pts Points array [x0, y0, z0, x1, y1, z1, ...]
- * @returns AABB bounds
- */
-const computeAABB = (pts: Float32Array | Float64Array): {min: THREE.Vector3, max: THREE.Vector3} => {
-    const min = new THREE.Vector3(Infinity, Infinity, Infinity);
-    const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
-    for (let i = 0; i < pts.length; i += 3) {
-        const v = new THREE.Vector3(pts[i + 0], pts[i + 1], pts[i + 2]);
-        min.min(v);
-        max.max(v);
-    }
-    return { min, max };
-};
-
+import { computeAABB } from './cpu-geom.js';
 
 /**
  * Generate stock cylinder geometry, spanning Z [0, stockHeight]
@@ -61,7 +41,6 @@ export class ModuleLayout implements Module {
     // Model data
     models: Record<string, string>;
     model: string;
-    targetSurf: Float64Array;
     origTargGeom: THREE.BufferGeometry;
     targetGeom: THREE.BufferGeometry;
 
@@ -75,9 +54,6 @@ export class ModuleLayout implements Module {
     showTargetMesh: boolean;
 
     // target configuration
-    initToolLen: number;  // must be larger than actual current tool len to avoid collision
-    targToolLen: number; // target tool length after cutting
-    wireFeedRate: number;
     pulseCondition: string; // e.g. "M4 P150 Q20 R40"
 
     // Planning module
@@ -111,9 +87,6 @@ export class ModuleLayout implements Module {
         this.showTargetMesh = true;
         this.framework.updateVis("stock", [generateStockVis(this.stockDiameter / 2, this.stockLength, this.baseZ)], this.showStockMesh);
 
-        this.initToolLen = 35;
-        this.targToolLen = 10;
-        this.wireFeedRate = 200;
         this.pulseCondition = "M4 P150 Q20 R40";
 
         this.framework.registerModule(this);
@@ -139,12 +112,12 @@ export class ModuleLayout implements Module {
 
         gui.add(this, "stockDiameter", 1, 30, 0.1).onChange(_ => {
             this.#updateStockVis();
-            this.modPlanner.initPlan(this.targetSurf, this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+            this.modPlanner.initPlan(this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
         });
         gui.add(this, "stockLength", 1, 30, 0.1).onChange(_ => {
             this.baseZ = this.stockLength - this.aboveWorkSize;
             this.#updateStockVis();
-            this.modPlanner.initPlan(this.targetSurf, this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+            this.modPlanner.initPlan(this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
         });
         gui.add(this, "showStockMesh").onChange(v => {
             this.framework.setVisVisibility("stock", v);
@@ -197,7 +170,7 @@ export class ModuleLayout implements Module {
     }
 
     private recomputeTarget() {
-        const aabb = computeAABB(toTriSoup(this.targetGeom));
+        const aabb = computeAABB(this.targetGeom);
         const height = aabb.max.z - aabb.min.z;
         const center = aabb.min.clone().add(aabb.max).multiplyScalar(0.5);
 
@@ -207,12 +180,10 @@ export class ModuleLayout implements Module {
         // Z: bottom surface matches Z=0 plane.
         this.targetGeom.translate(-center.x, -center.y, -aabb.min.z);
 
-        this.targetSurf = toTriSoup(this.targetGeom);
-
         this.aboveWorkSize = height + this.stockTopBuffer;
         this.baseZ = this.stockLength - this.aboveWorkSize;
         this.#updateStockVis();
-        this.modPlanner.initPlan(this.targetSurf, this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+        this.modPlanner.initPlan(this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
 
         const material = new THREE.MeshPhysicalMaterial({
             color: 0xb2ffc8,
@@ -246,36 +217,10 @@ export class ModuleLayout implements Module {
         let prevX = null;
         let prevY = null;
         let prevZ = null;
-        let prevB = null;
-        let prevC = null;
 
         const lines = [];
 
         const workPulseCondition = "M3 P150 Q20 R50";
-
-        /*
-        const grinderZEvacBuffer = 15; // buffer for Z evacuation after grinding
-
-        lines.push(`; init`);
-        lines.push(`G28`);  // home
-
-        lines.push(`G54`); // use grinder coordinate system
-        lines.push(`G0 Y0 Z${grinderZEvacBuffer + this.initToolLen} X-5`); // safe position
-        lines.push(`G0 Z${this.targToolLen}`); // insert tool into grinder
-
-        lines.push(`M10 R${this.wireFeedRate}`);
-        lines.push(this.pulseCondition);
-        lines.push(`G1 X5`); // cut tool end
-
-        lines.push(`G0 Z${grinderZEvacBuffer + this.targToolLen}`); // evaculate
-        lines.push(`M11`); // end wire feed
-
-        lines.push(`G53`); // revert to machine coord for next commands
-
-
-        lines.push("");
-        return lines.join("\n");
-        */
 
         // normal code
         lines.push("G53"); // machine coords
@@ -325,22 +270,6 @@ export class ModuleLayout implements Module {
                 gcode.push(`Z${vals.z.toFixed(3)}`);
                 prevZ = vals.z;
             }
-            /*
-            if (prevB !== vals.b) {
-                gcode.push(`B${(vals.b * 180 / Math.PI).toFixed(3)}`);
-                prevB = vals.b;
-            }
-            if (prevC !== vals.c) {
-                gcode.push(`C${(vals.c * 180 / Math.PI).toFixed(3)}`);
-                prevC = vals.c;
-            }
-            if (pt.toolRotDelta !== undefined) {
-                gcode.push(`D${(pt.toolRotDelta * 180 / Math.PI).toFixed(2)}`);
-            }
-            if (pt.grindDelta !== undefined) {
-                gcode.push(`GW${pt.grindDelta.toFixed(1)}`);
-            }
-            */
 
             if (gcode.length > 1) {
                 lines.push(gcode.join(" "));

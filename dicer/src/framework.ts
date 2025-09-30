@@ -13,8 +13,6 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from '../vendor/n8ao/N8AO.js';
 
-import { debug } from './debug.js';
-
 /**
  * Interface for modules that can be registered with ModuleFramework.
  * Modules must call {@link ModuleFramework.registerModule} at the end of the constructor.
@@ -42,13 +40,6 @@ export class ModuleFramework {
     // Visualization management
     visGroups: any;
 
-    // Debug logging
-    vlogDebugs: THREE.Object3D[];
-    vlogErrors: THREE.Object3D[];
-    lastNumVlogErrors: number;
-    vlogDebugEnable: boolean;
-    vlogDebugShow: boolean;
-
     // Rendering settings
     renderAoRadius: number;
     renderDistFallOff: number;
@@ -65,41 +56,12 @@ export class ModuleFramework {
 
         this.visGroups = {};
 
-        this.vlogDebugs = [];
-        this.vlogErrors = [];
-        this.lastNumVlogErrors = 0;
-
-        // Visually log debug info.
-        // [in] obj: THREE.Object3D
-        debug.vlog = (obj) => {
-            if (this.vlogDebugs.length > 1000000) {
-                console.warn("vlog: too many debugs, cannot log more");
-                return;
-            }
-            this.vlogDebugs.push(obj);
-            this.addVis("vlog-debug", [obj], this.vlogDebugShow);
-        };
-
-        // Visually log errors.
-        // [in] obj: THREE.Object3D
-        debug.vlogE = (obj) => {
-            if (this.vlogErrors.length > 1000000) {
-                console.warn("vlogE: too many errors, cannot log more");
-                return;
-            }
-            this.vlogErrors.push(obj);
-            this.scene.add(obj);
-        };
-
         // Setup extra permanent visualization
         const gridHelperBottom = new THREE.GridHelper(40, 4);
         gridHelperBottom.rotateX(Math.PI / 2);
         this.scene.add(gridHelperBottom);
 
         this.scene.add(new THREE.AxesHelper(10));
-
-        this.vlogDebugEnable = true;
-        this.vlogDebugShow = false;
 
         this.renderAoRadius = 5;
         this.renderDistFallOff = 1.0;
@@ -108,15 +70,6 @@ export class ModuleFramework {
 
         // Initialize GUI
         this.gui = new GUI();
-
-        // Add framework-specific debug controls
-        this.gui.add(this, "vlogDebugEnable").onChange(v => {
-            debug.log = v;
-        });
-        this.gui.add(this, "vlogDebugShow").onChange(v => {
-            this.updateVis("vlog-debug", this.vlogDebugs, v);
-        });
-        this.gui.add(this, "clearVlogDebug");
     }
 
     init() {
@@ -177,11 +130,6 @@ export class ModuleFramework {
         Object.assign(window, { scene: this.scene });
     }
 
-    clearVlogDebug() {
-        this.vlogDebugs = [];
-        this.updateVis("vlog-debug", this.vlogDebugs, this.vlogDebugShow);
-    }
-
     /**
      * Register a module and set up its GUI
      */
@@ -239,12 +187,6 @@ export class ModuleFramework {
             if (module.animateHook) {
                 module.animateHook();
             }
-        }
-
-        const numVlogErrors = this.vlogErrors.length;
-        if (numVlogErrors != this.lastNumVlogErrors) {
-            console.log(`Number of vlog errors: ${numVlogErrors}`);
-            this.lastNumVlogErrors = numVlogErrors;
         }
 
         this.controls.update();

@@ -366,7 +366,7 @@ function wasmEndPerf(tag: string) {
  * @param geom Input geometry
  * @returns Triangle soup array
  */
-export function toTriSoup(geom: THREE.BufferGeometry): Float64Array {
+function toTriSoup(geom: THREE.BufferGeometry): Float64Array {
     if (geom.index === null) {
         console.log("toTriSoup: converting from non-indexed geometry");
         const posArray = geom.getAttribute("position").array;

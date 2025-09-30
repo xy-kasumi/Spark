@@ -1,56 +1,11 @@
 // SPDX-FileCopyrightText: 2025 夕月霞
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import * as THREE from 'three';
-import { Vector3 } from 'three';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
-import { debug, visDot, visQuad } from './debug.js';
 import { ModuleFramework, Module } from './framework.js';
-//import { TrackingVoxelGrid, initVGForPoints } from './tracking-voxel.js';
 import { WasmGeom, ManifoldHandle } from './wasm-geom.js';
-import { cutPolygon } from './cpu-geom.js';
-
-
-
-/**
- * Apply translation to geometry in-place
- * @param geom Geometry to translate
- * @param trans Translation vector
- */
-const translateGeom = (geom: THREE.BufferGeometry, trans: THREE.Vector3) => {
-    const pos = geom.getAttribute("position").array;
-    for (let i = 0; i < pos.length; i += 3) {
-        pos[i + 0] += trans.x;
-        pos[i + 1] += trans.y;
-        pos[i + 2] += trans.z;
-    }
-};
-
-/**
- * Get "triangle soup" representation from a geometry
- * @param geom Input geometry
- * @returns Triangle soup array
- */
-const convGeomToSurf = (geom: THREE.BufferGeometry): Float32Array => {
-    if (geom.index === null) {
-        return geom.getAttribute("position").array;
-    } else {
-        const ix = geom.index.array;
-        const pos = geom.getAttribute("position").array;
-
-        const numTris = ix.length / 3;
-        const buf = new Float32Array(numTris * 9);
-        for (let i = 0; i < numTris; i++) {
-            for (let v = 0; v < 3; v++) {
-                const vIx = ix[3 * i + v];
-                buf[9 * i + 3 * v + 0] = pos[3 * vIx + 0];
-                buf[9 * i + 3 * v + 1] = pos[3 * vIx + 1];
-                buf[9 * i + 3 * v + 2] = pos[3 * vIx + 2];
-            }
-        }
-        return buf;
-    }
-};
+import { cutPolygon, translateGeom } from './cpu-geom.js';
 
 /**
  * Generate stock cylinder geometry, spanning Z [0, stockHeight]
@@ -87,93 +42,6 @@ interface PathSegment {
     grindDelta?: number;
 }
 
-interface Sweep {
-    partialPath: PartialPath;
-    ignoreOvercutErrors: boolean;
-}
-
-/**
- * Visualize tool tip path in machine coordinates.
- *
- * @param path Array of path segments
- * @param highlightSweep If specified, highlight this sweep.
- * @returns Path visualization object
- */
-const createPathVis = (path: Array<PathSegment>, highlightSweep: number = -1): THREE.Object3D => {
-    if (path.length === 0) {
-        return new THREE.Object3D();
-    }
-
-    const pathVis = new THREE.Object3D();
-
-    // add remove path vis
-    const vs = [];
-    const cs = [];
-    let prevTipPosW = path[0].tipPosW;
-    for (let i = 1; i < path.length; i++) {
-        const pt = path[i];
-        vs.push(prevTipPosW.x, prevTipPosW.y, prevTipPosW.z);
-        vs.push(pt.tipPosW.x, pt.tipPosW.y, pt.tipPosW.z);
-
-        if (pt.sweep === highlightSweep) {
-            if (pt.type === "remove-work") {
-                // red
-                cs.push(0.8, 0, 0);
-                cs.push(0.8, 0, 0);
-            } else {
-                // blue-ish gray
-                cs.push(0.5, 0.5, 1);
-                cs.push(0.5, 0.5, 1);
-            }
-        } else {
-            if (pt.type === "remove-work") {
-                // red-ish faint gray
-                cs.push(1, 0.8, 0.8);
-                cs.push(1, 0.8, 0.8);
-            } else {
-                // blue-ish faint gray
-                cs.push(0.8, 0.8, 1);
-                cs.push(0.8, 0.8, 1);
-            }
-        }
-        prevTipPosW = pt.tipPosW;
-    }
-
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vs), 3));
-    geom.setAttribute('color', new THREE.BufferAttribute(new Float32Array(cs), 3));
-    const mat = new THREE.LineBasicMaterial({ vertexColors: true });
-    pathVis.add(new THREE.LineSegments(geom, mat));
-
-    // add refresh path vis
-    const sphGeom = new THREE.SphereGeometry(0.15);
-    const sphRemoveMat = new THREE.MeshBasicMaterial({ color: "red" });
-    const sphOtherMat = new THREE.MeshBasicMaterial({ color: "blue" });
-    const sphNonHighlight = new THREE.MeshBasicMaterial({ color: "gray" });
-    for (let i = 0; i < path.length; i++) {
-        const pt = path[i];
-
-        if (pt.sweep !== highlightSweep) {
-            if (pt.type !== "remove-work") {
-                const sph = new THREE.Mesh(sphGeom, sphNonHighlight);
-                sph.position.copy(pt.tipPosW);
-                pathVis.add(sph);
-            }
-        } else {
-            if (pt.type === "remove-work") {
-                const sph = new THREE.Mesh(sphGeom, sphRemoveMat);
-                sph.position.copy(pt.tipPosW);
-                pathVis.add(sph);
-            } else {
-                const sph = new THREE.Mesh(sphGeom, sphOtherMat);
-                sph.position.copy(pt.tipPosW);
-                pathVis.add(sph);
-            }
-        }
-    }
-
-    return pathVis;
-};
 
 /**
  * Generates a rotation matrix such that Z+ axis will be formed into "z" vector.
@@ -200,22 +68,6 @@ const createRotationWithZ = (z: THREE.Vector3): THREE.Matrix4 => {
         0, 0, 0, 1,
     );
 }
-
-/**
- * Utility to created a offset point by given vector & coeffcients.
- * e.g. offset(segBegin, [feedDir, segmentLength * 0.5], [normal, feedDepth * 0.5])
- * @param p Point to offset (readonly)
- * @param offsets List of vector & coefficient pairs
- * @returns Offset point (new instance)
- */
-const offsetPoint = (p: THREE.Vector3, ...offsets: Array<[THREE.Vector3, number]>): THREE.Vector3 => {
-    const ret = p.clone();
-    const temp = new THREE.Vector3();
-    for (const [v, k] of offsets) {
-        ret.add(temp.copy(v).multiplyScalar(k));
-    }
-    return ret;
-};
 
 /**
  * Generate tool geom, origin = tool tip. In Z+ direction, there will be tool base marker.
@@ -252,281 +104,8 @@ const generateTool = (toolLength: number, toolDiameter: number): THREE.Object3D 
 const sparkWg1Config = {
     toolNaturalDiameter: 3,
     toolNaturalLength: 25,
-
-    workOffset: new THREE.Vector3(20, 40, 20), // in machine coords
-    wireCenter: new THREE.Vector3(30, 15, 30),
-    toolRemoverCenter: new THREE.Vector3(40, 10, 30),
-    toolBankOrigin: new THREE.Vector3(20, 20, 15),
-    stockCenter: new THREE.Vector3(10, 10, 10),
-
-
-    /**
-     * Computes tool base & work table pos from tip target.
-     *
-     * @param tipPos Tip position in work or machine coordinates (determined by isPosW)
-     * @param tipNormalW Tip normal in work coordinates. Tip normal corresponds to work surface, and points towards tool holder
-     * @param toolLength Tool length
-     * @param isPosW True if tipPos is in work coordinates, false if in machine coordinates
-     * @returns Machine coordinates and work coordinates
-     *   - vals: Machine instructions for moving work table & tool base
-     *   - tipPosM: Tip position in machine coordinates
-     *   - tipPosW: Tip position in work coordinates
-     */
-    solveIk(tipPos: THREE.Vector3, tipNormalW: THREE.Vector3, toolLength: number, isPosW: boolean) {
-        // Order of determination ("IK")
-        // 1. Determine B,C axis
-        // 2. Determine X,Y,Z axis
-        // TODO: A-axis
-        // (X,Y,Z) -> B * toolLen = tipPt
-
-        const EPS_ANGLE = 1e-3 / 180 * Math.PI; // 1/1000 degree
-
-        const n = tipNormalW.clone();
-        if (n.z < 0) {
-            console.error("Impossible tool normal; path will be invalid", n);
-        }
-
-        n.z = 0;
-        const bAngle = Math.asin(n.length());
-        let cAngle = 0;
-        if (bAngle < EPS_ANGLE) {
-            // Pure Z+. Prefer neutral work rot.
-            cAngle = 0;
-        } else {
-            cAngle = -Math.atan2(n.y, n.x);
-        }
-
-        const tipPosM = tipPos.clone();
-        const tipPosW = tipPos.clone();
-        if (isPosW) {
-            tipPosM.applyAxisAngle(new THREE.Vector3(0, 0, 1), cAngle);
-            tipPosM.add(this.workOffset);
-        } else {
-            tipPosW.sub(this.workOffset);
-            tipPosW.applyAxisAngle(new THREE.Vector3(0, 0, 1), -cAngle);
-        }
-
-        const offsetBaseToTip = new THREE.Vector3(-Math.sin(bAngle), 0, -Math.cos(bAngle)).multiplyScalar(toolLength);
-        const tipBasePosM = tipPosM.clone().sub(offsetBaseToTip);
-
-        return {
-            vals: {
-                x: tipBasePosM.x,
-                y: tipBasePosM.y,
-                z: tipBasePosM.z,
-                b: bAngle,
-                c: cAngle,
-            },
-            tipPosM: tipPosM,
-            tipPosW: tipPosW,
-        };
-    }
 };
 
-/**
- * Utility to accumulate correct path for short-ish tool paths. (e.g. single sweep or part of it)
- */
-class PartialPath {
-    machineConfig: any;
-    sweepIx: number;
-    group: string;
-    normal: Vector3;
-    minToolLength: number;
-    toolIx: number;
-    toolLength: number;
-    path: PathSegment[];
-    prevPtTipPos: Vector3 | null;
-
-    /**
-     * @param sweepIx - Sweep index
-     * @param group - Group name
-     * @param normal - Normal vector
-     * @param minToolLength - Minimum tool length required. Can change later with 
-     * @param toolIx - Tool index
-     * @param toolLength - Current tool length
-     * @param machineConfig - Target machine's physical configuration
-     */
-    constructor(sweepIx: number, group: string, normal: Vector3, minToolLength: number, toolIx: number, toolLength: number, machineConfig: any) {
-        this.machineConfig = machineConfig;
-
-        this.sweepIx = sweepIx;
-        this.group = group;
-        this.normal = normal;
-        this.minToolLength = minToolLength;
-        this.toolIx = toolIx;
-        this.toolLength = toolLength;
-        this.path = [];
-        this.prevPtTipPos = null; // work-coords
-
-        this.updateMinToolLength(this.minToolLength);
-    }
-
-    /**
-     * Update minimum tool length.
-     * @param newMinToolLength New minimum tool length
-     */
-    updateMinToolLength(newMinToolLength: number) {
-        if (this.machineConfig.toolNaturalLength < newMinToolLength) {
-            throw "required min tool length impossible";
-        }
-
-        if (this.toolLength < newMinToolLength) {
-            this.#changeTool();
-            this.toolLength = this.machineConfig.toolNaturalLength;
-        }
-        this.minToolLength = newMinToolLength;
-    }
-
-    #withAxisValue(type: any, pt: any): PathSegment {
-        const isPosW = pt.tipPosW !== undefined;
-        const ikResult = this.machineConfig.solveIk(isPosW ? pt.tipPosW : pt.tipPosM, this.normal, this.toolLength, isPosW);
-        return {
-            ...pt,
-            type,
-            tipPosM: ikResult.tipPosM,
-            tipPosW: ikResult.tipPosW,
-            axisValues: ikResult.vals,
-            sweep: this.sweepIx,
-            group: this.group,
-            tipNormalW: this.normal,
-        };
-    }
-
-    /**
-     * Discard given length of the tool. Replace to a new tool if necessary.
-     * @param discardLength Length of the tool to discard
-     */
-    discardToolTip(discardLength: number) {
-        const toolLenAfter = this.toolLength - discardLength;
-        if (toolLenAfter < this.minToolLength) {
-            this.#changeTool();
-            this.toolIx++;
-            this.toolLength = this.machineConfig.toolNaturalLength;
-        } else {
-            this.#grindTool(discardLength);
-            this.toolLength -= discardLength;
-        }
-    }
-
-    /**
-     * Add tool-change movement.
-     */
-    #changeTool() {
-        // TODO: proper collision avoidance
-        // TODO: emit RICH_STATE
-
-        // Remove current tool.
-        {
-            // go to tool remover
-            this.path.push(this.#withAxisValue("move", {
-                tipPosM: this.machineConfig.toolRemoverCenter,
-            }));
-            // execute "remove-tool" movement
-            const pull = new THREE.Vector3(0, 0, 5);
-            this.path.push(this.#withAxisValue("move", {
-                tipPosM: offsetPoint(this.machineConfig.toolRemoverCenter, [pull, 1]),
-            }));
-        }
-
-        this.toolIx++;
-
-        // Get new tool.
-        {
-            // goto tool bank
-            const bankToolDir = new THREE.Vector3(6, 0, 0);
-            const bankPos = offsetPoint(this.machineConfig.toolBankOrigin, [bankToolDir, this.toolIx]);
-            this.path.push(this.#withAxisValue("move", {
-                tipPosM: bankPos,
-            }));
-
-            // execute "tool-insert" movement
-            const push = new THREE.Vector3(0, 0, -5);
-            this.path.push(this.#withAxisValue("move", {
-                tipPosM: offsetPoint(bankPos, [push, 1]),
-            }));
-        }
-    }
-
-    /**
-     * Add tool-grind movement.
-     */
-    #grindTool(discardLength: number) {
-        // TODO: proper collision avoidance
-        // TODO: offset by discardLength
-        // TODO: emit RICH_STATE
-        const up = new THREE.Vector3(1, 0, 0);
-
-        // move below grinder 
-        this.path.push(this.#withAxisValue("move", {
-            tipPosM: offsetPoint(this.machineConfig.wireCenter, [up, -3]),
-        }));
-        // cut off the tool
-        this.path.push(this.#withAxisValue("remove-tool", {
-            tipPosM: offsetPoint(this.machineConfig.wireCenter, [up, 3]),
-        }));
-    }
-
-    /**
-     * Add non-material-removing move. (i.e. G0 move)
-     * @param type label for this move
-     * @param tipPos Tip position in work coordinates
-     */
-    nonRemove(type: string, tipPos: THREE.Vector3) {
-        this.path.push(this.#withAxisValue(type, { tipPosW: tipPos }));
-        this.prevPtTipPos = tipPos;
-    }
-
-    /**
-     * Add material-removing move. (i.e. G1 move) The move must be horizontal.
-     * @param tipPos Tip position in work coordinates
-     * @param toolRotDelta Tool rotation delta in radians
-     * @param maxDiameter Maximum diameter of the tool
-     * @param minDiameter Minimum diameter of the tool
-     */
-    removeHorizontal(tipPos: THREE.Vector3, toolRotDelta: number, maxDiameter: number, minDiameter: number) {
-        if (this.prevPtTipPos === null) {
-            throw "nonRemove() need to be called before removeHorizontal()";
-        }
-        if (tipPos.clone().sub(this.prevPtTipPos).dot(this.normal) !== 0) {
-            throw "remove path needs to be horizontal (perpendicular to normal)";
-        }
-        this.path.push(this.#withAxisValue("remove-work", { tipPosW: tipPos, toolRotDelta: toolRotDelta }));
-        this.prevPtTipPos = tipPos;
-    }
-
-    /**
-     * Add material-removing move. (i.e. G1 move) The move must be vertical.
-     * @param tipPos Tip position in work coordinates
-     * @param toolRotDelta Tool rotation delta in radians
-     * @param diameter Diameter of the tool
-     * @param uncutDepth Depth that might not be cut (reduce min cut by this)
-     */
-    removeVertical(tipPos: THREE.Vector3, toolRotDelta: number, diameter: number, uncutDepth: number) {
-        if (this.prevPtTipPos === null) {
-            throw "nonRemove() need to be called before removeVertical()";
-        }
-        if (tipPos.clone().sub(this.prevPtTipPos).cross(this.normal).length() !== 0) {
-            throw "remove path needs to be vertical (parallel to normal)";
-        }
-        this.path.push(this.#withAxisValue("remove-work", {
-            tipPosW: tipPos,
-            toolRotDelta: toolRotDelta,
-        }));
-        this.prevPtTipPos = tipPos;
-    }
-
-    getPath() {
-        return this.path;
-    }
-
-    getToolIx() {
-        return this.toolIx;
-    }
-
-    getToolLength() {
-        return this.toolLength;
-    }
-}
 
 /**
  * Planner class for generating tool paths.
@@ -537,24 +116,16 @@ class PartialPath {
 export class ModulePlanner implements Module {
     framework: ModuleFramework;
     machineConfig: any;
-    ewrMax: number;
     stockDiameter: number;
     workCRot: number;
-    resMm: number;
     stockCutWidth: number;
     simWorkBuffer: number;
     showWork: boolean;
-    targetSurf: any;
-    showingSweep: number;
     toolLength: number;
     showPlanPath: boolean;
-    highlightSweep: number;
     planPath: PathSegment[];
-    highlightGui: any;
-    genSweeps: "continue" | "awaiting" | "none";
     baseZ: number;
     aboveWorkSize: number;
-    gen: AsyncGenerator<"break" | undefined, void, unknown>;
 
     targetManifold: ManifoldHandle;
     stockManifold: ManifoldHandle;
@@ -578,24 +149,15 @@ export class ModulePlanner implements Module {
         // tool vis
         this.updateVisTransforms(new THREE.Vector3(-15, -15, 5), new THREE.Vector3(0, 0, 1), this.machineConfig.toolNaturalLength);
 
-        // configuration
-        this.ewrMax = 0.3;
-
         // machine-state setup
         this.stockDiameter = 15;
-        this.workCRot = 0;
-
-        this.resMm = 0.1;
         this.stockCutWidth = 1.0; // width of tool blade when cutting off the work.
         this.simWorkBuffer = 1.0; // extended bottom side of the work by this amount.
 
         this.showWork = true;
-        this.targetSurf = null;
 
-        this.showingSweep = 0;
         this.toolLength = this.machineConfig.toolNaturalLength;
         this.showPlanPath = true;
-        this.highlightSweep = 2;
 
         this.framework.registerModule(this);
     }
@@ -605,20 +167,12 @@ export class ModulePlanner implements Module {
      * @param gui GUI instance to add controls to
      */
     addGui(gui: GUI) {
-        gui.add(this, "resMm", [0.01, 0.05, 0.1, 0.2, 0.5]);
-
         gui.add(this, "showWork")
             .onChange(_ => this.framework.setVisVisibility("work", this.showWork))
             .listen();
         gui.add(this, "showPlanPath")
             .onChange(_ => this.framework.setVisVisibility("plan-path-vg", this.showPlanPath))
             .listen();
-        this.highlightGui = gui.add(this, "highlightSweep", 0, 50, 1).onChange(_ => {
-            if (!this.planPath) {
-                return;
-            }
-            this.framework.updateVis("plan-path-vg", [createPathVis(this.planPath, this.highlightSweep)], this.showPlanPath);
-        }).listen();
 
         // wasm-geom testers
         const projectionFolder = gui.addFolder("Mesh Projection");
@@ -643,13 +197,11 @@ export class ModulePlanner implements Module {
     /**
      * Setup new targets.
      *
-     * @param targetSurf Target surface geometry
      * @param baseZ Z+ in machine coords where work coords Z=0 (bottom of the targer surface).
      * @param aboveWorkSize Length of stock to be worked "above" baseZ plane. Note below-baseZ work will be still removed to cut off the work.
      * @param stockDiameter Diameter of the stock.
      */
-    initPlan(targetSurf: Float64Array, targetGeom: THREE.BufferGeometry, baseZ: number, aboveWorkSize: number, stockDiameter: number) {
-        this.targetSurf = targetSurf; // TODO: want to deprecate
+    initPlan(targetGeom: THREE.BufferGeometry, baseZ: number, aboveWorkSize: number, stockDiameter: number) {
         if (this.targetManifold) {
             this.wasmGeom.destroyManifold(this.targetManifold);
         }
