@@ -154,7 +154,7 @@ const createGCodePathVis = (program: GCodeLine[], colorMode: ColorMode, offsets:
         return fromCol.clone().lerp(toCol, t);
     };
 
-    const coordCols: Record<CoordSys, THREE.Color> =  {
+    const coordCols: Record<CoordSys, THREE.Color> = {
         "machine": new THREE.Color("black"),
         "grinder": new THREE.Color("blue"),
         "work": new THREE.Color("red"),
@@ -197,6 +197,12 @@ const createGCodePathVis = (program: GCodeLine[], colorMode: ColorMode, offsets:
     return { vis, legends };
 };
 
+const machineOffsets: Record<CoordSys, THREE.Vector3> = {
+    "machine": new THREE.Vector3(0, 0, 0),
+    "grinder": new THREE.Vector3(-58, 76, -73),
+    "work": new THREE.Vector3(-57, 10, -89),
+    "toolsupply": new THREE.Vector3(-16, 98, -57),
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 // 3D view
@@ -242,6 +248,10 @@ class View3D {
 
         this.tool = generateTool(50);
         this.scene.add(this.tool);
+
+        const workOriginVis = new THREE.AxesHelper(15);
+        workOriginVis.position.copy(machineOffsets["work"]);
+        this.scene.add(workOriginVis);
 
         // machine-state setup
         this.toolLength = 25;
@@ -329,14 +339,9 @@ class View3D {
     }
 
     private updatePathVisualization(): void {
-        const offsets: Record<CoordSys, THREE.Vector3> = {
-            "machine": new THREE.Vector3(0, 0, 0),
-            "grinder": new THREE.Vector3(-58, 76, -73),
-            "work": new THREE.Vector3(-57, 10, -89),
-            "toolsupply": new THREE.Vector3(-16, 98, -57),
-        };
 
-        const { vis, legends } = createGCodePathVis(this.gcode, this.colorMode, offsets);
+
+        const { vis, legends } = createGCodePathVis(this.gcode, this.colorMode, machineOffsets);
 
         if (this.pathVis) {
             this.scene.remove(this.pathVis);
