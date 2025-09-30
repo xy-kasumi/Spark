@@ -72,19 +72,14 @@ export class ModuleFramework {
     }
 
     init() {
-        const width = window.innerWidth;
-        const height = window.innerHeight;
-
-        const aspect = width / height;
-        this.camera = new THREE.OrthographicCamera(-25 * aspect, 25 * aspect, 25, -25, 1, 150);
-        this.camera.position.x = 15;
-        this.camera.position.y = 30;
-        this.camera.position.z = 20;
+        this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 150);
+        this.setCameraFrustumFromWindow();
+        this.camera.position.set(30, 5, 20);
         this.camera.up.set(0, 0, 1);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.renderer.setSize(width, height);
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setAnimationLoop(() => this.animate());
         this.container = document.getElementById('container') as HTMLDivElement;
         this.container.appendChild(this.renderer.domElement);
@@ -106,7 +101,7 @@ export class ModuleFramework {
         const renderPass = new RenderPass(this.scene, this.camera);
         this.composer.addPass(renderPass);
 
-        const n8aoPass = new N8AOPass(this.scene, this.camera, width, height);
+        const n8aoPass = new N8AOPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
         // We want "AO" effect to take effect at all scales, even though they're physically wrong.
         n8aoPass.configuration.screenSpaceRadius = true;
         n8aoPass.configuration.aoRadius = 64;
@@ -174,10 +169,18 @@ export class ModuleFramework {
     }
 
     onWindowResize() {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
-        this.camera.updateProjectionMatrix();
+        this.setCameraFrustumFromWindow();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.composer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    private setCameraFrustumFromWindow(): void {
+        const aspect = window.innerWidth / window.innerHeight;
+        this.camera.left = -25 * aspect;
+        this.camera.right = 25 * aspect;
+        this.camera.top = 25;
+        this.camera.bottom = -25;
+        this.camera.updateProjectionMatrix();
     }
 
     animate() {
