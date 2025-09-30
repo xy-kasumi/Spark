@@ -9,19 +9,6 @@ import { CoordSys, GCodeLine, parseGCodeProgram, tracePath } from './gcode.js';
 const fontLoader = new FontLoader();
 let font: any = null;
 
-const generateStockGeom = (): THREE.BufferGeometry => {
-    const stockRadius = 7.5;
-    const stockHeight = 15;
-    const geom = new THREE.CylinderGeometry(stockRadius, stockRadius, stockHeight, 64, 1);
-    const transf = new THREE.Matrix4().compose(
-        new THREE.Vector3(0, 0, stockHeight / 2),
-        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2),
-        new THREE.Vector3(1, 1, 1));
-    geom.applyMatrix4(transf);
-    return geom;
-};
-
-
 // orange-teal-purple color palette for ABC axes.
 const axisColorA = new THREE.Color(0xe67e22);
 const axisColorB = new THREE.Color(0x1abc9c);
@@ -98,14 +85,6 @@ const createRotationAxisHelper = (axis: THREE.Vector3, size: number = 1, color: 
     localHelper.scale.set(size, size, size);
     localHelper.applyMatrix4(new THREE.Matrix4().identity().setFromMatrix3(lToWMat3));
     return helper;
-};
-
-
-const generateStock = (): THREE.Object3D => {
-    const stock = new THREE.Mesh(
-        generateStockGeom(),
-        new THREE.MeshLambertMaterial({ color: "blue", wireframe: true, transparent: true, opacity: 0.05 }));
-    return stock;
 };
 
 // Generate tool visualization with tool base origin = origin. tool is pointing towards Z-.
@@ -204,6 +183,24 @@ const machineOffsets: Record<CoordSys, THREE.Vector3> = {
     "toolsupply": new THREE.Vector3(-16, 98, -57),
 };
 
+const createXZGrid = (): THREE.Object3D => {
+    const grid = new THREE.GridHelper(100);
+    for (const ofs of [-30, -20, -10, 10, 20, 30]) {
+        const label = ofs > 0 ? `+${ofs}` : `${ofs}`;
+        const geom = new TextGeometry(label, {
+            font: font,
+            size: 1,
+            depth: 0.1,
+        });
+        const textMesh = new THREE.Mesh(geom, new THREE.MeshBasicMaterial({ color: "gray" }));
+        textMesh.rotateY(-Math.PI / 2);
+        textMesh.rotateX(-Math.PI / 2);
+        textMesh.position.z = ofs;
+        grid.add(textMesh);
+    }
+    return grid;
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 // 3D view
 
@@ -236,6 +233,8 @@ class View3D {
 
     // Dynamic visualization
     pathVis: THREE.Object3D = null;
+    xzGrid: THREE.Object3D;
+    xyGrid: THREE.Object3D;
 
     constructor() {
         this.init();
@@ -246,6 +245,16 @@ class View3D {
         const workOriginVis = new THREE.AxesHelper(15);
         workOriginVis.position.copy(machineOffsets["work"]);
         this.scene.add(workOriginVis);
+
+        this.xzGrid = createXZGrid();
+        this.xzGrid.position.copy(machineOffsets["work"]);
+        this.xzGrid.visible = false;
+        this.scene.add(this.xzGrid);
+        this.xyGrid = createXZGrid();
+        this.xyGrid.rotateX(-Math.PI / 2);
+        this.xyGrid.position.copy(machineOffsets["work"]);
+        this.xyGrid.visible = false;
+        this.scene.add(this.xyGrid);
 
         this.initGui();
 
@@ -277,6 +286,9 @@ class View3D {
 
         gui.add(this, "applyToolOffset").listen().onChange(() => this.setPathVisOffset());
         gui.add(this, "toolOffset", 0, 70).step(1).listen().onChange(() => this.setPathVisOffset());
+
+        gui.add(this, "viewFromYPlus").name("View from Y+");
+        gui.add(this, "viewFromZPlus").name("View from Z+");
     }
 
     private setPathVisOffset(): void {
@@ -293,6 +305,22 @@ class View3D {
         this.camera.top = 25;
         this.camera.bottom = -25;
         this.camera.updateProjectionMatrix();
+    }
+
+    viewFromYPlus(): void {
+        const work = machineOffsets["work"];
+        this.camera.position.set(work.x, work.y + 80, work.z);
+        this.controls.target.copy(work);
+        this.camera.up.set(1, 0, 0);
+        this.controls.update();
+    }
+
+    viewFromZPlus(): void {
+        const work = machineOffsets["work"];
+        this.camera.position.set(work.x, work.y, work.z + 80);
+        this.controls.target.copy(work);
+        this.camera.up.set(1, 0, 0);
+        this.controls.update();
     }
 
     init(): void {
@@ -375,6 +403,17 @@ class View3D {
 
     animate(): void {
         this.controls.update();
+
+        const viewDir = new THREE.Vector3();
+        this.camera.getWorldDirection(viewDir);
+
+        const alignmentThresholdDeg = 0.1;
+        const yAngleDeg = Math.acos(Math.abs(viewDir.dot(new THREE.Vector3(0, -1, 0)))) * 180 / Math.PI;
+        const zAngleDeg = Math.acos(Math.abs(viewDir.dot(new THREE.Vector3(0, 0, -1)))) * 180 / Math.PI;
+
+        this.xzGrid.visible = yAngleDeg < alignmentThresholdDeg;
+        this.xyGrid.visible = zAngleDeg < alignmentThresholdDeg;
+
         this.renderer.render(this.scene, this.camera);
         this.stats.update();
     }
