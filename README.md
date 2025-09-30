@@ -30,7 +30,8 @@ These are necessary for building, testing, and using the machine.
 
 ### Development & Operations
 * sim-machine:
-  * purpose: visually validate G-code, iterate on machine kinematics
+  * purpose: G-code viewer
+  * note: maybe no longer a "sim".
 * sim-wear: particle-based tool vs work simulation
   * purpose: validate & iterate on "sweep" patterns without physical experiments
 * brand: contains project's visual identity such as logo
