@@ -289,12 +289,17 @@ class View3D {
         gui.add(this, "colorLegend2").disable().listen();
     }
 
-    init(): void {
-        const width = window.innerWidth;
-        const height = window.innerHeight;
+    private setCameraFrustumFromWindow(): void {
+        const aspect = window.innerWidth / window.innerHeight;
+        this.camera.left = -25 * aspect;
+        this.camera.right = 25 * aspect;
+        this.camera.top = 25;
+        this.camera.bottom = -25;
+    }
 
-        const aspect = width / height;
-        this.camera = new THREE.OrthographicCamera(-25 * aspect, 25 * aspect, 25, -25, -150, 150);
+    init(): void {
+        this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -150, 150);
+        this.setCameraFrustumFromWindow();
         this.camera.position.x = 15;
         this.camera.position.y = 40;
         this.camera.position.z = 20;
@@ -302,7 +307,7 @@ class View3D {
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.renderer.setSize(width, height);
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setAnimationLoop(() => this.animate());
         this.container = document.getElementById('container');
         this.container.appendChild(this.renderer.domElement);
@@ -339,8 +344,6 @@ class View3D {
     }
 
     private updatePathVisualization(): void {
-
-
         const { vis, legends } = createGCodePathVis(this.gcode, this.colorMode, machineOffsets);
 
         if (this.pathVis) {
@@ -367,13 +370,9 @@ class View3D {
     }
 
     onWindowResize(): void {
-        const width = window.innerWidth;
-        const height = window.innerHeight;
-
-        this.camera.aspect = width / height;
+        this.setCameraFrustumFromWindow();
         this.camera.updateProjectionMatrix();
-
-        this.renderer.setSize(width, height);
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
     animate(): void {
