@@ -35,31 +35,35 @@ export type VisUpdater = (vs: Array<THREE.Object3D>) => void;
 export const genPathByProjection = async (
     targetManifold: ManifoldHandle, stockManifold: ManifoldHandle,
     wasmGeom: WasmGeom, updateVis: VisUpdater): Promise<{ path: PathSegment[], stockAfterCut: ManifoldHandle }> => {
-    const projVector = new THREE.Vector3(0, 1, 0);
 
-    // Generate orthonormal basis from view vector
-    const viewZ = projVector.clone().normalize();
-    const temp = Math.abs(viewZ.dot(new THREE.Vector3(1, 0, 0))) > 0.9 ?
-        new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-    const viewX = temp.clone().sub(viewZ.clone().multiplyScalar(temp.dot(viewZ))).normalize();
-    const viewY = viewZ.clone().cross(viewX);
+    const viewX = new THREE.Vector3(1, 0, 0);
+    const viewY = new THREE.Vector3(0, 0, -1);
+    const viewZ = new THREE.Vector3(0, 1, 0);
     const origin = new THREE.Vector3(0, 0, 0);
 
-    console.log(`View basis: X(${viewX.x.toFixed(3)}, ${viewX.y.toFixed(3)}, ${viewX.z.toFixed(3)}) ` +
+    // Convert point on the projection plane in setup coords.
+    const pt2DToSetup = (pt: THREE.Vector2): THREE.Vector3 =>
+        origin.clone()
+            .add(viewX.clone().multiplyScalar(pt.x))
+            .add(viewY.clone().multiplyScalar(pt.y));
+
+    console.log(`projection basis: ` +
+        `X(${viewX.x.toFixed(3)}, ${viewX.y.toFixed(3)}, ${viewX.z.toFixed(3)}) ` +
         `Y(${viewY.x.toFixed(3)}, ${viewY.y.toFixed(3)}, ${viewY.z.toFixed(3)}) ` +
         `Z(${viewZ.x.toFixed(3)}, ${viewZ.y.toFixed(3)}, ${viewZ.z.toFixed(3)})`);
 
-    const toolRadius = 1.5; // 0.15; // 1.5;
+    const toolRadius = 1.5;
     const startTime = performance.now();
-    let offsets = [toolRadius]; // [toolRadius * 3, toolRadius * 2, toolRadius * 1];
-    let contours = [];
-    let contour0 = wasmGeom.projectManifold(targetManifold, origin, viewX, viewY, viewZ);
-    // contour0 = wasmGeom.outermostCrossSection(contour0);
-    for (const offset of offsets) {
-        const toolCenterContour = wasmGeom.offsetCrossSection(contour0, offset);
-        contours = [...contours, wasmGeom.crossSectionToContours(toolCenterContour)];
+    const offset = toolRadius;
 
-        const innerContour = wasmGeom.offsetCrossSectionCircle(toolCenterContour, -toolRadius, 32);
+    // compute contour
+    const toolCenterCS = wasmGeom.offsetCrossSection(wasmGeom.projectManifold(targetManifold, origin, viewX, viewY, viewZ), offset);
+    const contour = wasmGeom.crossSectionToContours(toolCenterCS);
+
+    // compute cut
+    // NOTE: this is messy, and inaccurate (removes Z<0 region errorneously). 
+    {
+        const innerContour = wasmGeom.offsetCrossSectionCircle(toolCenterCS, -toolRadius, 32);
         const cutCS = wasmGeom.createSquareCrossSection(100); // big enough to contain both work and target.
         const removeCS = wasmGeom.subtractCrossSection(cutCS, innerContour);
         const removeMani = wasmGeom.extrude(removeCS, viewX, viewY, viewZ, viewZ.clone().multiplyScalar(-50), 100); // 100mm should be big enough
@@ -67,57 +71,38 @@ export const genPathByProjection = async (
         console.log("removed volume", wasmGeom.volumeManifold(actualRemovedMani));
         stockManifold = wasmGeom.subtractMesh(stockManifold, removeMani); // update
     }
+
     const endTime = performance.now();
     console.log(`cut took ${(endTime - startTime).toFixed(2)}ms`);
 
     // Visualize contours on the view plane using LineLoop
-    const contourObjects: THREE.Object3D[] = [];
-    const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
-    const material2 = new THREE.LineBasicMaterial({ color: 0x0000ff, linewidth: 2 });
     let pathBase = [];
-    for (const contour of contours) {
-        for (const poly of contour) {
-            let cutCurves = cutPolygon(poly, new THREE.Vector2(0, 1), 0);
-            console.log(cutCurves);
 
-            if (cutCurves.length === 0) {
-                // not intersecting (bug)
-                const points3D: THREE.Vector3[] = [];
-                for (const point2D of poly) {
-                    const point3D = origin.clone()
-                        .add(viewX.clone().multiplyScalar(point2D.x))
-                        .add(viewY.clone().multiplyScalar(point2D.y));
-                    points3D.push(point3D);
-                }
-                const geometry = new THREE.BufferGeometry().setFromPoints(points3D);
-                const lineLoop = new THREE.LineLoop(geometry, material);
-                contourObjects.push(lineLoop);
-            } else {
-                cutCurves = [cutCurves[1]]; // TODO: fix
-                let pos = true;
-                for (const cutCurve of cutCurves) {
-                    const points3D: THREE.Vector3[] = [];
-                    const points3DWork: THREE.Vector3[] = [];
-                    for (const point2D of cutCurve) {
-                        const point3D = origin.clone()
-                            .add(viewX.clone().multiplyScalar(point2D.x))
-                            .add(viewY.clone().multiplyScalar(point2D.y));
-                        points3D.push(point3D);
-
-                        const points3DW = new THREE.Vector3(-19, 0, 0)
-                            .add(new THREE.Vector3(0, 1, 0).multiplyScalar(point2D.x))
-                            .add(new THREE.Vector3(1, 0, 0).multiplyScalar(point2D.y));
-                        points3DWork.push(points3DW);
-                    }
-                    const geometry = new THREE.BufferGeometry().setFromPoints(points3D);
-                    const line = new THREE.Line(geometry, pos ? material : material2);
-                    contourObjects.push(line);
-                    pos = !pos;
-                    pathBase = points3DWork;
-                }
-            }
-        }
+    if (contour.length > 1) {
+        throw new Error("A contour with multiple polygons (implies holes) is not supported yet");
     }
+    // Only retain Z+ region. Since viewY = (0,0,-1), we cut by Y=0 line, and keep (Y-)negative region to get it.
+    const poly = contour[0];
+    const cutCurves = cutPolygon(poly, new THREE.Vector2(0, 1), 0);
+    if (cutCurves.length !== 2) {
+        throw new Error(`When processing a contour (cut at Z=0), ${cutCurves.length} curves was generated (expecting 2). a bug.`)
+    }
+    const cutCurve = cutCurves[1]; // get neg of [pos, neg]
+
+    const points3D: THREE.Vector3[] = [];
+    const points3DWork: THREE.Vector3[] = [];
+    for (const point2D of cutCurve) {
+        points3D.push(pt2DToSetup(point2D));
+
+        const points3DW = new THREE.Vector3(-19, 0, 0)
+            .add(new THREE.Vector3(0, 1, 0).multiplyScalar(point2D.x))
+            .add(new THREE.Vector3(1, 0, 0).multiplyScalar(point2D.y));
+        points3DWork.push(points3DW);
+    }
+    pathBase = points3DWork;
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(points3D);
+    const contourObjects: THREE.Object3D[] = [new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 }))];
     updateVis(contourObjects);
 
     const evacLength = 2;
