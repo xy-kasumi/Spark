@@ -3,12 +3,10 @@
 import * as THREE from 'three';
 
 const manifoldRegistry = new FinalizationRegistry((heldValue: { module: any, ptr: number }) => {
-    console.log("destroying manifold", heldValue.ptr);
     heldValue.module._destroy_manifold(heldValue.ptr);
 });
 
 const crossSectionRegistry = new FinalizationRegistry((heldValue: { module: any, ptr: number }) => {
-    console.log("destroying crosssection", heldValue.ptr);
     heldValue.module._destroy_crosssection(heldValue.ptr);
 });
 
