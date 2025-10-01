@@ -119,6 +119,7 @@ export class ModulePlanner implements Module {
         this.toolLength = this.machineConfig.toolNaturalLength;
         this.showPlanPath = true;
 
+        this.loadSettings();
         this.framework.registerModule(this);
     }
 
@@ -157,6 +158,7 @@ export class ModulePlanner implements Module {
         gui.add(this, "rotY90").name("Rotate 90° around Y");
 
         gui.add(this, "stockDiameter", 1, 30, 0.1).onChange(_ => {
+            this.storeSettings();
             this.#updateStockVis();
             this.initPlan(this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
         });
@@ -177,6 +179,30 @@ export class ModulePlanner implements Module {
         gui.add(this, "sendGcodeToSim");
 
         this.loadStl(this.model);
+    }
+
+    private storeSettings(): void {
+        localStorage.setItem("dicer-settings", JSON.stringify({
+            stock: {
+                diameterMm: this.stockDiameter,
+                lengthMm: this.stockLength,
+            },
+        }));
+    }
+
+    private loadSettings(): void {
+        const val = localStorage.getItem("dicer-settings");
+        if (!val) {
+            return;
+        }
+        try {
+            const obj = JSON.parse(val);
+            this.stockDiameter = obj.stock?.diameterMm ?? this.stockDiameter;
+            this.stockLength = obj.stock?.lengthMm ?? this.stockLength;
+            console.log("Settings loaded", obj);
+        } catch {
+            console.warn("Broken settings (invalid JSON) found; discarded", val);
+        }
     }
 
     /**
