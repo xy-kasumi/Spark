@@ -122,6 +122,8 @@ export class ModulePlanner implements Module {
     addGui(gui: GUI) {
         // Model setup
         gui.add(this, 'model', this.models).onChange((model) => {
+            this.framework.updateVis("work", []);
+            this.framework.updateVis("target", []);
             this.framework.updateVis("misc", []);
             this.loadStl(model);
         });
@@ -235,16 +237,25 @@ export class ModulePlanner implements Module {
 
     rotX90() {
         this.targetGeom.rotateX(Math.PI / 2);
+        this.framework.updateVis("work", []);
+        this.framework.updateVis("target", []);
+        this.framework.updateVis("misc", []);
         this.recomputeTargetShift();
     }
 
     rotY90() {
         this.targetGeom.rotateY(Math.PI / 2);
+        this.framework.updateVis("work", []);
+        this.framework.updateVis("target", []);
+        this.framework.updateVis("misc", []);
         this.recomputeTargetShift();
     }
 
     rotZ90() {
         this.targetGeom.rotateZ(Math.PI / 2);
+        this.framework.updateVis("work", []);
+        this.framework.updateVis("target", []);
+        this.framework.updateVis("misc", []);
         this.recomputeTargetShift();
     }
 
