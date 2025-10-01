@@ -29,8 +29,8 @@ This corresponds to 3K~30K lines of code+doc.
 
 ## Assumptions
 * Dicer consumes STL file as 3D mesh
-* Voxel-based representation + SDF volumetric query is "better" than vector representations (e.g. CSG, NURBS, mesh)
-  * "Better": Amount of effort to achieve correctness is lower while being fast enough (with WebGPU available)
+* Triangle mesh representation is "better" than other representations (voxel, CSG, NURBS)
+  * "better": Amount of effort to achieve correctness is lower while being fast enough
 
 ## Hypotheses
 * Not documented (cost of separate documentation outweighs cost of re-writing code)

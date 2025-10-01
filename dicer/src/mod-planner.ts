@@ -12,6 +12,9 @@ import { genPathByProjection, generateStockGeom } from './plan.js';
 
 const stdWorkPulseCondition = "M3 P150 Q20 R50";
 
+/**
+ * Creates stock mesh visualization spanning [-baseZ, stockHeight-baseZ].
+ */
 const generateStockVis = (stockRadius: number = 7.5, stockHeight: number = 15, baseZ: number = 0): THREE.Object3D => {
     const geom = generateStockGeom(stockRadius, stockHeight);
     const mat = new THREE.MeshLambertMaterial({ color: "blue", wireframe: true, transparent: true, opacity: 0.05 });
@@ -20,13 +23,6 @@ const generateStockVis = (stockRadius: number = 7.5, stockHeight: number = 15, b
     return mesh;
 };
 
-/**
- * Spark WG1 machine physical configuration.
- */
-const sparkWg1Config = {
-    toolNaturalDiameter: 3,
-    toolNaturalLength: 25,
-};
 
 /**
  * Planner class for generating tool paths.
@@ -36,21 +32,16 @@ const sparkWg1Config = {
  */
 export class ModulePlanner implements Module {
     framework: ModuleFramework;
-    machineConfig: any;
-    stockCutWidth: number;
-    simWorkBuffer: number;
+
+    stockCutWidth: number;  // width of tool blade when cutting off the work.
+    simWorkBuffer: number;  // extended bottom side of the work by this amount.
+
     showWork: boolean;
-    toolLength: number;
     showPlanPath: boolean;
     planPath: PathSegment[];
 
     targetManifold: ManifoldHandle;
     stockManifold: ManifoldHandle;
-
-    // View vector for mesh projection
-    viewVectorX: number = 0;
-    viewVectorY: number = 0;
-    viewVectorZ: number = 1;
 
     wasmGeom: WasmGeom;
 
@@ -80,7 +71,6 @@ export class ModulePlanner implements Module {
         this.framework = framework;
         this.wasmGeom = wasmGeom;
 
-
         // Setup data
         this.models = {
             GT2_PULLEY: "GT2_pulley",
@@ -98,25 +88,23 @@ export class ModulePlanner implements Module {
         };
 
         this.model = this.models.GT2_PULLEY;
+
+        // machine-state setup
         this.stockDiameter = 15;
         this.stockLength = 20;
+
         this.stockTopBuffer = 0.5;
+        this.stockCutWidth = 1.0;
+        this.simWorkBuffer = 1.0;
+
         this.showStockMesh = true;
         this.showTargetMesh = true;
         this.framework.updateVis("stock", [generateStockVis(this.stockDiameter / 2, this.stockLength, this.baseZ)], this.showStockMesh);
 
         this.pulseCondition = "M4 P150 Q20 R40";
 
-        this.machineConfig = sparkWg1Config; // in future, there will be multiple options.
-
-        // machine-state setup
-        this.stockDiameter = 15;
-        this.stockCutWidth = 1.0; // width of tool blade when cutting off the work.
-        this.simWorkBuffer = 1.0; // extended bottom side of the work by this amount.
-
         this.showWork = true;
 
-        this.toolLength = this.machineConfig.toolNaturalLength;
         this.showPlanPath = true;
 
         this.loadSettings();
@@ -133,21 +121,7 @@ export class ModulePlanner implements Module {
      * @param gui GUI instance to add controls to
      */
     addGui(gui: GUI) {
-        gui.add(this, "showWork")
-            .onChange(_ => this.framework.setVisVisibility("work", this.showWork))
-            .listen();
-        gui.add(this, "showPlanPath")
-            .onChange(_ => this.framework.setVisVisibility("plan-path-vg", this.showPlanPath))
-            .listen();
-
-        // wasm-geom testers
-        const projectionFolder = gui.addFolder("Mesh Projection");
-        projectionFolder.add(this, "viewVectorX", -1, 1, 0.1).name("View X").listen();
-        projectionFolder.add(this, "viewVectorY", -1, 1, 0.1).name("View Y").listen();
-        projectionFolder.add(this, "viewVectorZ", -1, 1, 0.1).name("View Z").listen();
-        projectionFolder.add(this, "randomizeViewVector").name("Randomize");
-        projectionFolder.add(this, "projectMesh").name("Project");
-
+        // Model setup
         gui.add(this, 'model', this.models).onChange((model) => {
             this.framework.updateVis("targ-vg", []);
             this.framework.updateVis("work-vg", []);
@@ -156,25 +130,40 @@ export class ModulePlanner implements Module {
         });
         gui.add(this, "rotX90").name("Rotate 90° around X");
         gui.add(this, "rotY90").name("Rotate 90° around Y");
+        gui.add(this, "rotZ90").name("Rotate 90° around Z");
 
+        // Stock config
         gui.add(this, "stockDiameter", 1, 30, 0.1).onChange(_ => {
             this.storeSettings();
             this.#updateStockVis();
             this.initPlan(this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
         });
         gui.add(this, "stockLength", 1, 30, 0.1).onChange(_ => {
+            this.storeSettings();
             this.baseZ = this.stockLength - this.aboveWorkSize;
             this.#updateStockVis();
             this.initPlan(this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
         });
-        gui.add(this, "showStockMesh").onChange(v => {
-            this.framework.setVisVisibility("stock", v);
-        }).listen();
-        gui.add(this, "showTargetMesh").onChange(v => {
-            this.framework.setVisVisibility("target", v);
-        }).listen();
 
+        // Visibility flags
+        gui.add(this, "showWork")
+            .onChange(v => this.framework.setVisVisibility("work", v))
+            .listen();
+        gui.add(this, "showPlanPath")
+            .onChange(v => this.framework.setVisVisibility("plan-path-vg", v))
+            .listen();
+        gui.add(this, "showStockMesh")
+            .onChange(v => this.framework.setVisVisibility("stock", v))
+            .listen();
+        gui.add(this, "showTargetMesh")
+            .onChange(v => this.framework.setVisVisibility("target", v))
+            .listen();
+
+        // Machine operation config
         gui.add(this, "pulseCondition");
+
+        // G-code gen & sending
+        gui.add(this, "projectMesh").name("Project");
         gui.add(this, "copyGcode");
         gui.add(this, "sendGcodeToSim");
 
@@ -239,23 +228,6 @@ export class ModulePlanner implements Module {
     }
 
     /**
-     * Randomize view vector
-     */
-    randomizeViewVector() {
-        // Generate random unit vector
-        const vec = new THREE.Vector3();
-        do {
-            vec.set((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
-        } while (vec.lengthSq() < 0.01);
-
-        vec.normalize();
-        this.viewVectorX = vec.x;
-        this.viewVectorY = vec.y;
-        this.viewVectorZ = vec.z;
-    }
-
-
-    /**
      * Load STL model
      * @param fname Model filename
      */
@@ -283,6 +255,11 @@ export class ModulePlanner implements Module {
 
     rotY90() {
         this.targetGeom.rotateY(Math.PI / 2);
+        this.recomputeTarget();
+    }
+
+    rotZ90() {
+        this.targetGeom.rotateZ(Math.PI / 2);
         this.recomputeTarget();
     }
 
