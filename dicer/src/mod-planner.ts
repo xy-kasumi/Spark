@@ -206,12 +206,7 @@ export class ModulePlanner implements Module {
             targetManifold, stockManifold,
             this.wasmGeom, (group, vs, visible) => this.framework.updateVis(group, vs, visible));
         this.planPath = res.path;
-
-        this.wasmGeom.destroyManifold(stockManifold);
-        this.wasmGeom.destroyManifold(targetManifold);
-
         this.framework.updateVis("work", [generateStockAfterCutVis(res.stockAfterCut, this.wasmGeom)], true);
-        this.wasmGeom.destroyManifold(res.stockAfterCut);
     }
 
     /**

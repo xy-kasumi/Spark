@@ -2,17 +2,75 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import * as THREE from 'three';
 
-/**
- * Opaque handle to a Manifold instance. Must be destroyed via WasmGeom.destroyManifold().
- * Always non-nullptr.
- */
-export type ManifoldHandle = number & { __brand: 'ManifoldHandle' };
+const manifoldRegistry = new FinalizationRegistry((heldValue: { module: any, ptr: number }) => {
+    console.log("destroying manifold", heldValue.ptr);
+    heldValue.module._destroy_manifold(heldValue.ptr);
+});
+
+const crossSectionRegistry = new FinalizationRegistry((heldValue: { module: any, ptr: number }) => {
+    console.log("destroying crosssection", heldValue.ptr);
+    heldValue.module._destroy_crosssection(heldValue.ptr);
+});
 
 /**
- * Opaque handle to a CrossSection instance. Must be destroyed via WasmGeom.destroyCrossSection().
- * Always non-nullptr.
+ * Opaque handle to a Manifold instance.
  */
-export type CrossSectionHandle = number & { __brand: 'CrossSectionHandle' };
+export class ManifoldHandle {
+    private ptr: number;
+    private module: any;
+
+    constructor(ptr: number, module: any) {
+        this.ptr = ptr;
+        this.module = module;
+        manifoldRegistry.register(this, { module, ptr }, this);
+    }
+
+    getPtr(): number {
+        if (this.ptr === 0) {
+            throw new Error("ManifoldHandle already destroyed");
+        }
+        return this.ptr;
+    }
+
+    destroyNow() {
+        if (this.ptr === 0) {
+            return;
+        }
+        manifoldRegistry.unregister(this);
+        this.module._destroy_manifold(this.ptr);
+        this.ptr = 0;
+    }
+}
+
+/**
+ * Opaque handle to a CrossSection instance.
+ */
+export class CrossSectionHandle {
+    private ptr: number;
+    private module: any;
+
+    constructor(ptr: number, module: any) {
+        this.ptr = ptr;
+        this.module = module;
+        crossSectionRegistry.register(this, { module, ptr }, this);
+    }
+
+    getPtr(): number {
+        if (this.ptr === 0) {
+            throw new Error("CrossSectionHandle already destroyed");
+        }
+        return this.ptr;
+    }
+
+    destroyNow() {
+        if (this.ptr === 0) {
+            return;
+        }
+        crossSectionRegistry.unregister(this);
+        this.module._destroy_crosssection(this.ptr);
+        this.ptr = 0;
+    }
+}
 
 export class WasmGeom {
     module: any; // imported WASM module
@@ -88,19 +146,11 @@ export class WasmGeom {
             if (manifoldPtr === 0) {
                 return null;
             }
-            return manifoldPtr as ManifoldHandle;
+            return new ManifoldHandle(manifoldPtr, this.module);
         } finally {
             Module._free(soupPtr);
             Module._free(verticesPtr);
         }
-    }
-
-    destroyManifold(handle: ManifoldHandle) {
-        this.module._destroy_manifold(handle);
-    }
-
-    destroyCrossSection(handle: CrossSectionHandle) {
-        this.module._destroy_crosssection(handle);
     }
 
     /**
@@ -108,7 +158,7 @@ export class WasmGeom {
      */
     manifoldToGeometry(handle: ManifoldHandle): THREE.BufferGeometry | null {
         const Module = this.module;
-        const resultPtr = Module._manifold_to_trisoup(handle);
+        const resultPtr = Module._manifold_to_trisoup(handle.getPtr());
         if (!resultPtr) return null;
 
         try {
@@ -132,7 +182,7 @@ export class WasmGeom {
 
     /**
      * Project manifold onto a plane and returns its 2D contours in the plane's XY coordinates.
-     * 
+     *
      * @param origin plane origin
      * @param viewX plane X axis (unit vector)
      * @param viewY plane Y axis (unit vector)
@@ -152,8 +202,8 @@ export class WasmGeom {
         const viewZPtr = this.allocVector3(viewZ);
 
         try {
-            const resultPtr = this.module._project_manifold(handle, originPtr, viewXPtr, viewYPtr, viewZPtr);
-            return resultPtr ? resultPtr as CrossSectionHandle : null;
+            const resultPtr = this.module._project_manifold(handle.getPtr(), originPtr, viewXPtr, viewYPtr, viewZPtr);
+            return resultPtr ? new CrossSectionHandle(resultPtr, this.module) : null;
         } finally {
             this.module._free(originPtr);
             this.module._free(viewXPtr);
@@ -166,24 +216,24 @@ export class WasmGeom {
      * Apply offset to a CrossSection
      */
     offsetCrossSection(handle: CrossSectionHandle, offset: number): CrossSectionHandle | null {
-        const resultPtr = this.module._offset_crosssection(handle, offset);
-        return resultPtr ? resultPtr as CrossSectionHandle : null;
+        const resultPtr = this.module._offset_crosssection(handle.getPtr(), offset);
+        return resultPtr ? new CrossSectionHandle(resultPtr, this.module) : null;
     }
 
     /**
      * Apply circular offset to a CrossSection with specified segment count
      */
     offsetCrossSectionCircle(handle: CrossSectionHandle, offset: number, circularSegs: number): CrossSectionHandle | null {
-        const resultPtr = this.module._offset_crosssection_circle(handle, offset, circularSegs);
-        return resultPtr ? resultPtr as CrossSectionHandle : null;
+        const resultPtr = this.module._offset_crosssection_circle(handle.getPtr(), offset, circularSegs);
+        return resultPtr ? new CrossSectionHandle(resultPtr, this.module) : null;
     }
 
     /**
      * Subtract one CrossSection from another
      */
     subtractCrossSection(csA: CrossSectionHandle, csB: CrossSectionHandle): CrossSectionHandle | null {
-        const resultPtr = this.module._subtract_crosssection(csA, csB);
-        return resultPtr ? resultPtr as CrossSectionHandle : null;
+        const resultPtr = this.module._subtract_crosssection(csA.getPtr(), csB.getPtr());
+        return resultPtr ? new CrossSectionHandle(resultPtr, this.module) : null;
     }
 
     /**
@@ -191,22 +241,22 @@ export class WasmGeom {
      */
     createSquareCrossSection(size: number): CrossSectionHandle | null {
         const resultPtr = this.module._create_square_crosssection(size);
-        return resultPtr ? resultPtr as CrossSectionHandle : null;
+        return resultPtr ? new CrossSectionHandle(resultPtr, this.module) : null;
     }
 
     /**
      * Extract outermost contours from a CrossSection
      */
     outermostCrossSection(handle: CrossSectionHandle): CrossSectionHandle | null {
-        const resultPtr = this.module._outermost_crosssection(handle);
-        return resultPtr ? resultPtr as CrossSectionHandle : null;
+        const resultPtr = this.module._outermost_crosssection(handle.getPtr());
+        return resultPtr ? new CrossSectionHandle(resultPtr, this.module) : null;
     }
 
     /**
      * Convert CrossSection to contours
      */
     crossSectionToContours(handle: CrossSectionHandle): THREE.Vector2[][] {
-        const resultPtr = this.module._crosssection_to_contours(handle);
+        const resultPtr = this.module._crosssection_to_contours(handle.getPtr());
         if (!resultPtr) {
             throw new Error("crosssection_to_contours failed");
         }
@@ -233,8 +283,8 @@ export class WasmGeom {
         const originPtr = this.allocVector3(origin);
 
         try {
-            const resultPtr = this.module._extrude(handle, coordXPtr, coordYPtr, coordZPtr, originPtr, length);
-            return resultPtr ? resultPtr as ManifoldHandle : null;
+            const resultPtr = this.module._extrude(handle.getPtr(), coordXPtr, coordYPtr, coordZPtr, originPtr, length);
+            return resultPtr ? new ManifoldHandle(resultPtr, this.module) : null;
         } finally {
             this.module._free(coordXPtr);
             this.module._free(coordYPtr);
@@ -267,7 +317,7 @@ export class WasmGeom {
                 if (!offsetCS) {
                     throw new Error("offset_crosssection failed");
                 }
-                this.destroyCrossSection(currentCS);
+                currentCS.destroyNow();
                 currentCS = offsetCS;
             }
 
@@ -276,13 +326,13 @@ export class WasmGeom {
                 if (!outermostCS) {
                     throw new Error("outermost_crosssection failed");
                 }
-                this.destroyCrossSection(currentCS);
+                currentCS.destroyNow();
                 currentCS = outermostCS;
             }
 
             return this.crossSectionToContours(currentCS);
         } finally {
-            this.destroyCrossSection(currentCS);
+            currentCS.destroyNow();
         }
     }
 
@@ -293,8 +343,8 @@ export class WasmGeom {
         handleA: ManifoldHandle,
         handleB: ManifoldHandle
     ): ManifoldHandle | null {
-        const resultPtr = this.module._subtract_manifolds(handleA, handleB);
-        return resultPtr ? resultPtr as ManifoldHandle : null;
+        const resultPtr = this.module._subtract_manifolds(handleA.getPtr(), handleB.getPtr());
+        return resultPtr ? new ManifoldHandle(resultPtr, this.module) : null;
     }
 
     /**
@@ -304,15 +354,15 @@ export class WasmGeom {
         handleA: ManifoldHandle,
         handleB: ManifoldHandle
     ): ManifoldHandle | null {
-        const resultPtr = this.module._intersect_manifolds(handleA, handleB);
-        return resultPtr ? resultPtr as ManifoldHandle : null;
+        const resultPtr = this.module._intersect_manifolds(handleA.getPtr(), handleB.getPtr());
+        return resultPtr ? new ManifoldHandle(resultPtr, this.module) : null;
     }
 
     /**
      * Calculate the volume of a Manifold
      */
     volumeManifold(handle: ManifoldHandle): number {
-        return this.module._volume_manifold(handle);
+        return this.module._volume_manifold(handle.getPtr());
     }
 }
 
