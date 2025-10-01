@@ -10,17 +10,30 @@ import { translateGeom, computeAABB } from './cpu-geom.js';
 import { PathSegment, generateGcode } from './gcode.js';
 import { genPathByProjection, generateStockGeom } from './plan.js';
 
-const stdWorkPulseCondition = "M3 P150 Q20 R50";
-
 /**
- * Creates stock mesh visualization spanning [-baseZ, stockHeight-baseZ].
+ * Creates stock mesh visualization spanning [offsetZ, stockHeight + offsetZ].
+ * This is intended to be stock visualization UI, rather than accurate representation of its geometry.
  */
-const generateStockVis = (stockRadius: number = 7.5, stockHeight: number = 15, baseZ: number = 0): THREE.Object3D => {
+const generateStockVis = (stockRadius: number = 7.5, stockHeight: number = 15, offsetZ: number = 0): THREE.Object3D => {
     const geom = generateStockGeom(stockRadius, stockHeight);
     const mat = new THREE.MeshLambertMaterial({ color: "blue", wireframe: true, transparent: true, opacity: 0.05 });
     const mesh = new THREE.Mesh(geom, mat);
-    mesh.position.z = -baseZ;
+    mesh.position.z = offsetZ;
     return mesh;
+};
+
+/**
+ * Creates visualization of target geom by wrapping it.
+ */
+const generateTargetVis = (geom: THREE.BufferGeometry): THREE.Object3D => {
+    const material = new THREE.MeshPhysicalMaterial({
+        color: 0xb2ffc8,
+        metalness: 0.1,
+        roughness: 0.8,
+        transparent: true,
+        opacity: 0.8,
+    });
+    return new THREE.Mesh(geom, material);
 };
 
 
@@ -33,36 +46,29 @@ const generateStockVis = (stockRadius: number = 7.5, stockHeight: number = 15, b
 export class ModulePlanner implements Module {
     framework: ModuleFramework;
 
-    stockCutWidth: number;  // width of tool blade when cutting off the work.
-    simWorkBuffer: number;  // extended bottom side of the work by this amount.
+    showStock: boolean = true;
+    showTarget: boolean = true;
+    showWork: boolean = true;
+    showPlanPath: boolean = true;
 
-    showWork: boolean;
-    showPlanPath: boolean;
     planPath: PathSegment[];
 
-    targetManifold: ManifoldHandle;
-    stockManifold: ManifoldHandle;
-
     wasmGeom: WasmGeom;
-
 
     // Model data
     models: Record<string, string>;
     model: string;
-    origTargGeom: THREE.BufferGeometry;
-    targetGeom: THREE.BufferGeometry;
+    targetGeom: THREE.BufferGeometry; // target geom in setup coords, after rotation & centering.
+    targetHeight: number; // derived from targetGeom
 
     // Stock configuration
     stockDiameter: number;
-    stockLength: number;
-    stockTopBuffer: number;
-    baseZ: number;
-    aboveWorkSize: number;
-    showStockMesh: boolean;
-    showTargetMesh: boolean;
+    stockLength: number; // max length of the stock
+    stockDirtyLength: number; // max length of the dirty (uncertain) part of the stock that needs to be thrown away.
 
-    // target configuration
-    pulseCondition: string; // e.g. "M4 P150 Q20 R40"
+    // operation configuration
+    grinderPulseCondition: string = "M4 P150 Q20 R40";
+    workPulseCondition: string = "M3 P150 Q20 R50";
 
     /**
      * @param framework - ModuleFramework instance for visualization management
@@ -89,31 +95,14 @@ export class ModulePlanner implements Module {
 
         this.model = this.models.GT2_PULLEY;
 
-        // machine-state setup
+        // stock state setup
         this.stockDiameter = 15;
         this.stockLength = 20;
-
-        this.stockTopBuffer = 0.5;
-        this.stockCutWidth = 1.0;
-        this.simWorkBuffer = 1.0;
-
-        this.showStockMesh = true;
-        this.showTargetMesh = true;
-        this.framework.updateVis("stock", [generateStockVis(this.stockDiameter / 2, this.stockLength, this.baseZ)], this.showStockMesh);
-
-        this.pulseCondition = "M4 P150 Q20 R40";
-
-        this.showWork = true;
-
-        this.showPlanPath = true;
-
+        this.stockDirtyLength = 0.5;
         this.loadSettings();
+        this.updateStockVis();
+
         this.framework.registerModule(this);
-    }
-
-
-    #updateStockVis() {
-        this.framework.updateVis("stock", [generateStockVis(this.stockDiameter / 2, this.stockLength, this.baseZ)], this.showStockMesh);
     }
 
     /**
@@ -133,37 +122,38 @@ export class ModulePlanner implements Module {
         gui.add(this, "rotZ90").name("Rotate 90° around Z");
 
         // Stock config
-        gui.add(this, "stockDiameter", 1, 30, 0.1).onChange(_ => {
+        gui.add(this, "stockDiameter", 1, 30, 0.1).name("Stock Dia (saved)").onChange(_ => {
             this.storeSettings();
-            this.#updateStockVis();
-            this.initPlan(this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+            this.updateStockVis();
         });
-        gui.add(this, "stockLength", 1, 30, 0.1).onChange(_ => {
+        gui.add(this, "stockLength", 1, 30, 0.1).name("Stock Length (saved)").onChange(_ => {
             this.storeSettings();
-            this.baseZ = this.stockLength - this.aboveWorkSize;
-            this.#updateStockVis();
-            this.initPlan(this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+            this.updateStockVis();
+        });
+        gui.add(this, "stockDirtyLength", 0, 2, 0.1).onChange(_ => {
+            this.updateStockVis();
         });
 
         // Visibility flags
+        gui.add(this, "showStock")
+            .onChange(v => this.framework.setVisVisibility("stock", v))
+            .listen();
+        gui.add(this, "showTarget")
+            .onChange(v => this.framework.setVisVisibility("target", v))
+            .listen();
         gui.add(this, "showWork")
             .onChange(v => this.framework.setVisVisibility("work", v))
             .listen();
         gui.add(this, "showPlanPath")
             .onChange(v => this.framework.setVisVisibility("plan-path-vg", v))
             .listen();
-        gui.add(this, "showStockMesh")
-            .onChange(v => this.framework.setVisVisibility("stock", v))
-            .listen();
-        gui.add(this, "showTargetMesh")
-            .onChange(v => this.framework.setVisVisibility("target", v))
-            .listen();
 
         // Machine operation config
-        gui.add(this, "pulseCondition");
+        gui.add(this, "workPulseCondition").name("Pulse (work)");
+        gui.add(this, "grinderPulseCondition").name("Pulse (grinder)");
 
         // G-code gen & sending
-        gui.add(this, "projectMesh").name("Project");
+        gui.add(this, "generate").name("Generate");
         gui.add(this, "copyGcode");
         gui.add(this, "sendGcodeToSim");
 
@@ -195,36 +185,21 @@ export class ModulePlanner implements Module {
     }
 
     /**
-     * Setup new targets.
-     *
-     * @param baseZ Z+ in machine coords where work coords Z=0 (bottom of the targer surface).
-     * @param aboveWorkSize Length of stock to be worked "above" baseZ plane. Note below-baseZ work will be still removed to cut off the work.
-     * @param stockDiameter Diameter of the stock.
+     * Generates G-code program and stores into this.planPath.
      */
-    initPlan(targetGeom: THREE.BufferGeometry, baseZ: number, aboveWorkSize: number, stockDiameter: number) {
-        if (this.targetManifold) {
-            this.wasmGeom.destroyManifold(this.targetManifold);
-        }
-        this.targetManifold = this.wasmGeom.createManifold(targetGeom);
-        this.stockDiameter = stockDiameter;
-        this.baseZ = baseZ;
-        this.aboveWorkSize = aboveWorkSize;
-    }
-
-    /**
-     * High-level mesh projection with visualization and error handling
-     */
-    async projectMesh() {
-        const simStockLength = this.stockCutWidth + this.simWorkBuffer + this.aboveWorkSize;
-        const stockGeom = generateStockGeom(this.stockDiameter / 2, simStockLength);
-        translateGeom(stockGeom, new THREE.Vector3(0, 0, -(this.stockCutWidth + this.simWorkBuffer)));
-        this.stockManifold = this.wasmGeom.createManifold(stockGeom);
+    async generate() {
+        const stockGeom = generateStockGeom(this.stockDiameter / 2, this.stockLength);
+        translateGeom(stockGeom, new THREE.Vector3(0, 0, this.stockOffset()));
+        const stockManifold = this.wasmGeom.createManifold(stockGeom);
+        const targetManifold = this.wasmGeom.createManifold(this.targetGeom);
 
         const res = await genPathByProjection(
-            this.targetManifold, this.stockManifold,
+            targetManifold, stockManifold,
             this.wasmGeom, (group, vs, visible) => this.framework.updateVis(group, vs, visible));
         this.planPath = res.path;
-        this.stockManifold = res.stockAfterCut;
+
+        this.wasmGeom.destroyManifold(stockManifold);
+        this.wasmGeom.destroyManifold(targetManifold);
     }
 
     /**
@@ -237,7 +212,7 @@ export class ModulePlanner implements Module {
             `../assets/models/${fname}.stl`,
             (geometry: THREE.BufferGeometry) => {
                 this.targetGeom = geometry;
-                this.recomputeTarget();
+                this.recomputeTargetShift();
             },
             (progress) => {
                 console.log('Model loading progress: ', progress);
@@ -250,49 +225,53 @@ export class ModulePlanner implements Module {
 
     rotX90() {
         this.targetGeom.rotateX(Math.PI / 2);
-        this.recomputeTarget();
+        this.recomputeTargetShift();
     }
 
     rotY90() {
         this.targetGeom.rotateY(Math.PI / 2);
-        this.recomputeTarget();
+        this.recomputeTargetShift();
     }
 
     rotZ90() {
         this.targetGeom.rotateZ(Math.PI / 2);
-        this.recomputeTarget();
+        this.recomputeTargetShift();
     }
 
-    private recomputeTarget() {
+    /**
+     * Translate this.targetGeom while retaining its orientation, to lay it on the XY plane of the setup coords.
+     * Also updates this.targetHeight property and target vis.
+     */
+    private recomputeTargetShift(): void {
         const aabb = computeAABB(this.targetGeom);
         const height = aabb.max.z - aabb.min.z;
         const center = aabb.min.clone().add(aabb.max).multiplyScalar(0.5);
-
-        console.log("Model AABB", aabb);
-        // shift so that:
-        // XY: center of AABB will be set to X=Y=0.
-        // Z: bottom surface matches Z=0 plane.
         this.targetGeom.translate(-center.x, -center.y, -aabb.min.z);
+        this.targetHeight = height;
+        this.framework.updateVis("target", [generateTargetVis(this.targetGeom)]);
 
-        this.aboveWorkSize = height + this.stockTopBuffer;
-        this.baseZ = this.stockLength - this.aboveWorkSize;
-        this.#updateStockVis();
-        this.initPlan(this.targetGeom, this.baseZ, this.aboveWorkSize, this.stockDiameter);
+        // targetHeight change affects stock vis.
+        this.updateStockVis();
+    }
 
-        const material = new THREE.MeshPhysicalMaterial({
-            color: 0xb2ffc8,
-            metalness: 0.1,
-            roughness: 0.8,
-            transparent: true,
-            opacity: 0.8,
-        });
-        this.framework.updateVis("target", [new THREE.Mesh(this.targetGeom, material)]);
+    /**
+     * Update stock visualization.
+     */
+    private updateStockVis(): void {
+        this.framework.updateVis("stock", [generateStockVis(this.stockDiameter / 2, this.stockLength, this.stockOffset())], this.showStock);
+    }
+
+    /**
+     * Computes Z offset of stock (which originally exists in [0, stockLength]) that makes it fit well to the targetGeom.
+     */
+    private stockOffset(): number {
+        return (this.targetHeight + this.stockDirtyLength) - this.stockLength;
     }
 
     copyGcode() {
         const gcode = generateGcode(this.planPath || [], {
-            work: stdWorkPulseCondition,
-            grinder: this.pulseCondition,
+            work: this.workPulseCondition,
+            grinder: this.grinderPulseCondition,
         });
         navigator.clipboard.writeText(gcode);
         console.log("G-code copied to clipboard");
@@ -300,8 +279,8 @@ export class ModulePlanner implements Module {
 
     sendGcodeToSim() {
         const gcode = generateGcode(this.planPath || [], {
-            work: stdWorkPulseCondition,
-            grinder: this.pulseCondition,
+            work: this.workPulseCondition,
+            grinder: this.grinderPulseCondition,
         });
         const bc = new BroadcastChannel("gcode");
         bc.postMessage(gcode);

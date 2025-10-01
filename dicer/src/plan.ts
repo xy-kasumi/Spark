@@ -6,6 +6,7 @@ import { WasmGeom, ManifoldHandle } from './wasm-geom.js';
 import { cutPolygon } from './cpu-geom.js';
 import { SegmentType, PathSegment } from './gcode';
 
+
 /**
  * Generate stock cylinder geometry, spanning Z [0, stockHeight]
  * @param stockRadius Radius of the stock
@@ -25,7 +26,10 @@ export const generateStockGeom = (stockRadius: number = 7.5, stockHeight: number
 export type VisUpdater = (group: string, vs: Array<THREE.Object3D>, visible: boolean) => void;
 
 /**
- * High-level mesh projection with visualization and error handling
+ * Generates contour cut path (after target after the cut).
+ * 
+ * @param targetManifold target shape (setup coords). All points must fit in Z>=0 half space.
+ * @param stockManifold stock shape (setup coords).
  */
 export const genPathByProjection = async (
     targetManifold: ManifoldHandle, stockManifold: ManifoldHandle,
