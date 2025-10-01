@@ -131,7 +131,13 @@ export class WasmGeom {
     }
 
     /**
-     * Project manifold to CrossSection
+     * Project manifold onto a plane and returns its 2D contours in the plane's XY coordinates.
+     * 
+     * @param origin plane origin
+     * @param viewX plane X axis (unit vector)
+     * @param viewY plane Y axis (unit vector)
+     * @param viewZ plane normal (unit vector)
+     * @returns CrossSectionHandle or null if projection failed
      */
     projectManifold(
         handle: ManifoldHandle,

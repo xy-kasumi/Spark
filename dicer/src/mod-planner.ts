@@ -22,6 +22,15 @@ const generateStockVis = (stockRadius: number = 7.5, stockHeight: number = 15, o
     return mesh;
 };
 
+const generateStockAfterCutVis = (manifold: ManifoldHandle, wasmGeom: WasmGeom): THREE.Object3D => {
+    const material = new THREE.MeshPhysicalMaterial({
+        color: "green",
+        metalness: 0.1,
+        roughness: 0.8,
+    });
+    return new THREE.Mesh(wasmGeom.manifoldToGeometry(manifold), material);
+};
+
 /**
  * Creates visualization of target geom by wrapping it.
  */
@@ -200,6 +209,9 @@ export class ModulePlanner implements Module {
 
         this.wasmGeom.destroyManifold(stockManifold);
         this.wasmGeom.destroyManifold(targetManifold);
+
+        this.framework.updateVis("work", [generateStockAfterCutVis(res.stockAfterCut, this.wasmGeom)], true);
+        this.wasmGeom.destroyManifold(res.stockAfterCut);
     }
 
     /**

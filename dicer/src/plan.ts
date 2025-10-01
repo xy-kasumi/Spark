@@ -30,14 +30,15 @@ export type VisUpdater = (group: string, vs: Array<THREE.Object3D>, visible: boo
  * 
  * @param targetManifold target shape (setup coords). All points must fit in Z>=0 half space.
  * @param stockManifold stock shape (setup coords).
+ * @param updateVis function to update visualization in UI
  */
 export const genPathByProjection = async (
     targetManifold: ManifoldHandle, stockManifold: ManifoldHandle,
     wasmGeom: WasmGeom, updateVis: VisUpdater): Promise<{ path: PathSegment[], stockAfterCut: ManifoldHandle }> => {
-    const viewVector = new THREE.Vector3(0, 1, 0);
+    const projVector = new THREE.Vector3(0, 1, 0);
 
     // Generate orthonormal basis from view vector
-    const viewZ = viewVector.clone().normalize();
+    const viewZ = projVector.clone().normalize();
     const temp = Math.abs(viewZ.dot(new THREE.Vector3(1, 0, 0))) > 0.9 ?
         new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
     const viewX = temp.clone().sub(viewZ.clone().multiplyScalar(temp.dot(viewZ))).normalize();
@@ -68,18 +69,6 @@ export const genPathByProjection = async (
     }
     const endTime = performance.now();
     console.log(`cut took ${(endTime - startTime).toFixed(2)}ms`);
-
-
-    // visualize stock manifold
-    {
-        const material = new THREE.MeshPhysicalMaterial({
-            color: "green",
-            metalness: 0.1,
-            roughness: 0.8,
-        });
-        const mesh = new THREE.Mesh(wasmGeom.manifoldToGeometry(stockManifold), material);
-        updateVis("work", [mesh], true);
-    }
 
     // Visualize contours on the view plane using LineLoop
     const contourObjects: THREE.Object3D[] = [];
