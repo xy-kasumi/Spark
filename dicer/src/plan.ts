@@ -25,20 +25,27 @@ export const generateStockGeom = (stockRadius: number = 7.5, stockHeight: number
 
 export type VisUpdater = (vs: Array<THREE.Object3D>) => void;
 
+const createCurveVis = (curve: THREE.Vector3[]): THREE.Object3D => {
+    const geom = new THREE.BufferGeometry().setFromPoints(curve);
+    const mat = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
+    return new THREE.Line(geom, mat);
+};
+
 /**
  * Generates contour cut path (after target after the cut).
  * 
  * @param targetManifold target shape (setup coords). All points must fit in Z>=0 half space.
  * @param stockManifold stock shape (setup coords).
+ * @param targetBaseX offset in work-coords X-axis, that designates setup base plane. (typically < 0)
  * @param updateVis function to update visualization in UI
  */
 export const genPathByProjection = async (
-    targetManifold: ManifoldHandle, stockManifold: ManifoldHandle,
+    targetManifold: ManifoldHandle, stockManifold: ManifoldHandle, targetBaseX: number,
     wasmGeom: WasmGeom, updateVis: VisUpdater): Promise<{ path: PathSegment[], stockAfterCut: ManifoldHandle }> => {
 
-    const viewX = new THREE.Vector3(1, 0, 0);
-    const viewY = new THREE.Vector3(0, 0, -1);
-    const viewZ = new THREE.Vector3(0, 1, 0);
+    const viewX = new THREE.Vector3(0, 0, -1);
+    const viewY = new THREE.Vector3(0, 1, 0);
+    const viewZ = new THREE.Vector3(1, 0, 0);
     const origin = new THREE.Vector3(0, 0, 0);
 
     // Convert point on the projection plane in setup coords.
@@ -47,22 +54,27 @@ export const genPathByProjection = async (
             .add(viewX.clone().multiplyScalar(pt.x))
             .add(viewY.clone().multiplyScalar(pt.y));
 
+    const setupToWork = (pt: THREE.Vector3): THREE.Vector3 =>
+        new THREE.Vector3(-pt.z, pt.y, pt.x);
+
     console.log(`projection basis: ` +
         `X(${viewX.x.toFixed(3)}, ${viewX.y.toFixed(3)}, ${viewX.z.toFixed(3)}) ` +
         `Y(${viewY.x.toFixed(3)}, ${viewY.y.toFixed(3)}, ${viewY.z.toFixed(3)}) ` +
         `Z(${viewZ.x.toFixed(3)}, ${viewZ.y.toFixed(3)}, ${viewZ.z.toFixed(3)})`);
 
     const toolRadius = 1.5;
-    const startTime = performance.now();
     const offset = toolRadius;
 
     // compute contour
+    const startTime = performance.now();
     const toolCenterCS = wasmGeom.offsetCrossSection(wasmGeom.projectManifold(targetManifold, origin, viewX, viewY, viewZ), offset);
     const contour = wasmGeom.crossSectionToContours(toolCenterCS);
-
-    // compute cut
-    // NOTE: this is messy, and inaccurate (removes Z<0 region errorneously). 
+    if (contour.length > 1) {
+        throw new Error("A contour with multiple polygons (implies holes) is not supported yet");
+    }
     {
+        // compute cut
+        // NOTE: this is messy, and inaccurate (removes Z<0 region errorneously). 
         const innerContour = wasmGeom.offsetCrossSectionCircle(toolCenterCS, -toolRadius, 32);
         const cutCS = wasmGeom.createSquareCrossSection(100); // big enough to contain both work and target.
         const removeCS = wasmGeom.subtractCrossSection(cutCS, innerContour);
@@ -71,49 +83,30 @@ export const genPathByProjection = async (
         console.log("removed volume", wasmGeom.volumeManifold(actualRemovedMani));
         stockManifold = wasmGeom.subtractMesh(stockManifold, removeMani); // update
     }
-
     const endTime = performance.now();
     console.log(`cut took ${(endTime - startTime).toFixed(2)}ms`);
 
-    // Visualize contours on the view plane using LineLoop
-    let pathBase = [];
-
-    if (contour.length > 1) {
-        throw new Error("A contour with multiple polygons (implies holes) is not supported yet");
-    }
-    // Only retain Z+ region. Since viewY = (0,0,-1), we cut by Y=0 line, and keep (Y-)negative region to get it.
+    // Only retain Z+ region. Since viewX = (0,0,-1), we cut by X=0 line, and keep (X-)negative region to get it.
     const poly = contour[0];
-    const cutCurves = cutPolygon(poly, new THREE.Vector2(0, 1), 0);
+    const cutCurves = cutPolygon(poly, new THREE.Vector2(1, 0), 0);
     if (cutCurves.length !== 2) {
         throw new Error(`When processing a contour (cut at Z=0), ${cutCurves.length} curves was generated (expecting 2). a bug.`)
     }
     const cutCurve = cutCurves[1]; // get neg of [pos, neg]
+    const cutCurve3D: THREE.Vector3[] = cutCurve.map(p2 => pt2DToSetup(p2));
+    updateVis([createCurveVis(cutCurve3D)]);
 
-    const points3D: THREE.Vector3[] = [];
-    const points3DWork: THREE.Vector3[] = [];
-    for (const point2D of cutCurve) {
-        points3D.push(pt2DToSetup(point2D));
-
-        const points3DW = new THREE.Vector3(-19, 0, 0)
-            .add(new THREE.Vector3(0, 1, 0).multiplyScalar(point2D.x))
-            .add(new THREE.Vector3(1, 0, 0).multiplyScalar(point2D.y));
-        points3DWork.push(points3DW);
-    }
-    pathBase = points3DWork;
-
-    const geometry = new THREE.BufferGeometry().setFromPoints(points3D);
-    const contourObjects: THREE.Object3D[] = [new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 }))];
-    updateVis(contourObjects);
-
+    // convert (partial) contour into work-coords, and attach enter/exit path.
+    let pathBase: THREE.Vector3[] = cutCurve3D.map(p => setupToWork(p).add(new THREE.Vector3(targetBaseX, 0, 0)));
     const evacLength = 2;
-    const insP = pathBase[0].clone().add(new THREE.Vector3(0, -evacLength, 0))
+    const insP = pathBase[0].clone().add(new THREE.Vector3(0, evacLength, 0))
     pathBase.splice(0, 0, insP);
 
-    const insQ = pathBase[pathBase.length - 1].clone().add(new THREE.Vector3(0, evacLength, 0))
+    const insQ = pathBase[pathBase.length - 1].clone().add(new THREE.Vector3(0, -evacLength, 0))
     pathBase.push(insQ);
 
     const safeZ = 60;
-    const opZ = 35;
+    const opZ = 35; // TODO: Adjust from tool config
 
     const wrap = (type: SegmentType, x: number, y: number, z: number): PathSegment => {
         return {

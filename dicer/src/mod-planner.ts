@@ -205,6 +205,7 @@ export class ModulePlanner implements Module {
 
         const res = await genPathByProjection(
             targetManifold, stockManifold,
+            this.stockOffset(),
             this.wasmGeom, vs => this.framework.updateVis("misc", vs, this.showMisc));
         this.framework.updateVis("work", [generateStockAfterCutVis(res.stockAfterCut, this.wasmGeom)], true);
 
