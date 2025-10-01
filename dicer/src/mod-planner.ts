@@ -54,15 +54,13 @@ const generateTargetVis = (geom: THREE.BufferGeometry): THREE.Object3D => {
  */
 export class ModulePlanner implements Module {
     framework: ModuleFramework;
+    wasmGeom: WasmGeom;
 
+    // Visualization flags
     showStock: boolean = true;
     showTarget: boolean = true;
     showWork: boolean = true;
-    showPlanPath: boolean = true;
-
-    planPath: PathSegment[];
-
-    wasmGeom: WasmGeom;
+    showMisc: boolean = true;
 
     // Model data
     models: Record<string, string>;
@@ -78,6 +76,9 @@ export class ModulePlanner implements Module {
     // operation configuration
     grinderPulseCondition: string = "M4 P150 Q20 R40";
     workPulseCondition: string = "M3 P150 Q20 R50";
+
+    // generated g-code
+    gcode: string;
 
     /**
      * @param framework - ModuleFramework instance for visualization management
@@ -121,8 +122,6 @@ export class ModulePlanner implements Module {
     addGui(gui: GUI) {
         // Model setup
         gui.add(this, 'model', this.models).onChange((model) => {
-            this.framework.updateVis("targ-vg", []);
-            this.framework.updateVis("work-vg", []);
             this.framework.updateVis("misc", []);
             this.loadStl(model);
         });
@@ -153,8 +152,8 @@ export class ModulePlanner implements Module {
         gui.add(this, "showWork")
             .onChange(v => this.framework.setVisVisibility("work", v))
             .listen();
-        gui.add(this, "showPlanPath")
-            .onChange(v => this.framework.setVisVisibility("plan-path-vg", v))
+        gui.add(this, "showMisc")
+            .onChange(v => this.framework.setVisVisibility("misc", v))
             .listen();
 
         // Machine operation config
@@ -204,9 +203,13 @@ export class ModulePlanner implements Module {
 
         const res = await genPathByProjection(
             targetManifold, stockManifold,
-            this.wasmGeom, (group, vs, visible) => this.framework.updateVis(group, vs, visible));
-        this.planPath = res.path;
+            this.wasmGeom, vs => this.framework.updateVis("misc", vs, this.showMisc));
         this.framework.updateVis("work", [generateStockAfterCutVis(res.stockAfterCut, this.wasmGeom)], true);
+
+        this.gcode = generateGcode(res.path, {
+            work: this.workPulseCondition,
+            grinder: this.grinderPulseCondition,
+        });
     }
 
     /**
@@ -276,21 +279,19 @@ export class ModulePlanner implements Module {
     }
 
     copyGcode() {
-        const gcode = generateGcode(this.planPath || [], {
-            work: this.workPulseCondition,
-            grinder: this.grinderPulseCondition,
-        });
-        navigator.clipboard.writeText(gcode);
+        if (!this.gcode) {
+            return;
+        }
+        navigator.clipboard.writeText(this.gcode);
         console.log("G-code copied to clipboard");
     }
 
     sendGcodeToSim() {
-        const gcode = generateGcode(this.planPath || [], {
-            work: this.workPulseCondition,
-            grinder: this.grinderPulseCondition,
-        });
+        if (!this.gcode) {
+            return;
+        }
         const bc = new BroadcastChannel("gcode");
-        bc.postMessage(gcode);
+        bc.postMessage(this.gcode);
         bc.close();
         console.log("G-code sent to sim");
     }

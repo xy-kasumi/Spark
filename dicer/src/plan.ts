@@ -23,7 +23,7 @@ export const generateStockGeom = (stockRadius: number = 7.5, stockHeight: number
     return geom;
 };
 
-export type VisUpdater = (group: string, vs: Array<THREE.Object3D>, visible: boolean) => void;
+export type VisUpdater = (vs: Array<THREE.Object3D>) => void;
 
 /**
  * Generates contour cut path (after target after the cut).
@@ -118,7 +118,7 @@ export const genPathByProjection = async (
             }
         }
     }
-    updateVis("misc", contourObjects, true);
+    updateVis(contourObjects);
 
     const evacLength = 2;
     const insP = pathBase[0].clone().add(new THREE.Vector3(0, -evacLength, 0))
