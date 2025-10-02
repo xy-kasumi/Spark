@@ -362,15 +362,17 @@ List all added jobs.
 
 **Response Schema**
 ```yaml
-elements:
-  properties:
-    job_id: {type: string}
-    status:
-      enum: [WAITING, RUNNING, COMPLETED, CANCELED]
-    time_added: {type: float64}
-  optionalProperties:
-    time_started: {type: float64}
-    time_ended: {type: float64}
+properties:
+  jobs:
+    elements:
+      properties:
+        job_id: {type: string}
+        status:
+          enum: [WAITING, RUNNING, COMPLETED, CANCELED]
+        time_added: {type: float64}
+      optionalProperties:
+        time_started: {type: float64}
+        time_ended: {type: float64}
 ```
 
 * `status`: Current status of the job
