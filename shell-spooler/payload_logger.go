@@ -20,12 +20,16 @@ func formatSpoolerTime(t time.Time) string {
 }
 
 type PayloadLogger struct {
-	file *os.File
-	mu   sync.Mutex
+	file    *os.File
+	mu      sync.Mutex
+	isDirty bool
+	done    chan struct{}
 }
 
 func NewPayloadLogger(logDir string) *PayloadLogger {
-	pl := &PayloadLogger{}
+	pl := &PayloadLogger{
+		done: make(chan struct{}),
+	}
 
 	// Create log directory if it doesn't exist
 	if err := os.MkdirAll(logDir, 0755); err != nil {
@@ -53,6 +57,7 @@ func NewPayloadLogger(logDir string) *PayloadLogger {
 	pl.file = file
 	slog.Info("Created log file", "path", logPath)
 
+	go pl.flushLoop()
 	return pl
 }
 
@@ -91,6 +96,23 @@ func (pl *PayloadLogger) findNextFileName(logDir string, now time.Time) string {
 	return fmt.Sprintf("%s-sess%d-serial.txt", today, nextSession)
 }
 
+func (pl *PayloadLogger) flushLoop() {
+	ticker := time.NewTicker(1 * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			pl.mu.Lock()
+			if pl.isDirty && pl.file != nil {
+				pl.file.Sync()
+				pl.isDirty = false
+			}
+			pl.mu.Unlock()
+		case <-pl.done:
+			return
+		}
+	}
+}
+
 // Record line to the log. (thread-safe)
 func (pl *PayloadLogger) AddLine(dir string, payload string) {
 	if pl.file == nil {
@@ -108,8 +130,7 @@ func (pl *PayloadLogger) AddLine(dir string, payload string) {
 		return
 	}
 
-	// Flush to ensure immediate write
-	pl.file.Sync()
+	pl.isDirty = true
 }
 
 func (pl *PayloadLogger) Close() {
@@ -117,6 +138,13 @@ func (pl *PayloadLogger) Close() {
 		return
 	}
 
+	close(pl.done)
+
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+	if pl.isDirty {
+		pl.file.Sync()
+	}
 	pl.file.Close()
 	pl.file = nil
 }
