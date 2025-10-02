@@ -179,6 +179,65 @@ Response
 }
 ```
 
+### POST /get-ps
+
+Get latest p-states of specified tag.
+
+**Request Schema**
+```yaml
+properties:
+  tag: {type: string}
+optionalProperties:
+  count: {type: int}
+```
+
+* `tag`: P-state tag (e.g. "queue", "stat", "init")
+* `count`: Max number of p-states to return (must be > 0). 1 if omitted.
+
+**Response Schema**
+```yaml
+properties:
+  pstates:
+    elements:
+      properties:
+        time: {type: number}
+        kv: {values: {}}
+```
+
+* `pstates`: in latest-first order.
+* `time`: timestamp of the p-state reception
+* `kv`: flattened representation of p-state (i.e. key can contain ".")
+
+**Example**
+Request
+```json
+{
+  "tag": "pos",
+  "count": 2
+}
+```
+
+Response
+```json
+{
+  "pstates": [
+    {
+      "time": 1735689600,
+      "kv": {
+        "m.x": 1
+      }
+    },
+    {
+      "time": 1735689500,
+      "kv": {
+        "m.x": 2
+      }
+    }
+  ]
+}
+```
+
+
 ### POST /status
 
 Get spooler status summary.

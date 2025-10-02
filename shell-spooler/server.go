@@ -26,6 +26,7 @@ type SpoolerAPI interface {
 	AddJob(req *AddJobRequest) (*AddJobResponse, error)
 	ListJobs(req *ListJobsRequest) (*ListJobsResponse, error)
 	QueryTS(req *QueryTSRequest) (*QueryTSResponse, error)
+	GetPS(req *GetPSRequest) (*GetPSResponse, error)
 }
 
 type LineInfo struct {
@@ -253,6 +254,33 @@ func validateQueryTS(req *QueryTSRequest) error {
 	return nil
 }
 
+type GetPSRequest struct {
+	Tag   string `json:"tag"`
+	Count *int   `json:"count,omitempty"`
+}
+
+type PStateRecord struct {
+	Time float64                `json:"time"`
+	KV   map[string]interface{} `json:"kv"`
+}
+
+type GetPSResponse struct {
+	PStates []PStateRecord `json:"pstates"`
+}
+
+func validateGetPS(req *GetPSRequest) error {
+	if req.Tag == "" {
+		return errors.New("tag: cannot be empty")
+	}
+	if req.Count != nil && *req.Count <= 0 {
+		return errors.New("count: must be > 0")
+	}
+	if req.Count != nil && *req.Count > 10000 {
+		return errors.New("count: too big")
+	}
+	return nil
+}
+
 func registerJsonHandler[ReqT any, RespT any](path string, validate func(*ReqT) error, exec func(*ReqT) (*RespT, error)) {
 	http.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 		// Handle CORS and method validation
@@ -316,6 +344,7 @@ func StartHTTPServer(addr string, api SpoolerAPI) error {
 	registerJsonHandler("/add-job", validateAddJob, api.AddJob)
 	registerJsonHandler("/list-jobs", validateListJobs, api.ListJobs)
 	registerJsonHandler("/query-ts", validateQueryTS, api.QueryTS)
+	registerJsonHandler("/get-ps", validateGetPS, api.GetPS)
 
 	return http.ListenAndServe(addr, nil)
 }

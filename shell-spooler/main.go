@@ -31,6 +31,18 @@ func mapJob(job Job) JobInfo {
 	return jobInfo
 }
 
+func mapPState(ps PStateWithTime) PStateRecord {
+	kv := make(map[string]interface{})
+	for _, k := range ps.PState.Keys() {
+		v, _ := ps.PState.GetAny(k)
+		kv[k] = v
+	}
+	return PStateRecord{
+		Time: toUnixTimestamp(ps.Time),
+		KV:   kv,
+	}
+}
+
 func toUnixTimestamp(t time.Time) float64 {
 	return float64(t.UnixNano()) / 1e9
 }
@@ -40,6 +52,7 @@ type apiImpl struct {
 	jobSched     *JobSched
 
 	tsDB *TSDB
+	psDB *PSDB
 
 	// line serialization
 	lineMu      sync.Mutex
@@ -63,6 +76,7 @@ func (h *apiImpl) PStateRecv(ps comm.PState, tm time.Time) {
 		v, _ := ps.GetAny(k)
 		h.tsDB.Insert(ps.Tag+"."+k, tm, v)
 	}
+	h.psDB.AddPS(ps, tm)
 }
 
 func (h *apiImpl) addLineAtomic(dir string, payload string) {
@@ -245,6 +259,23 @@ func (h *apiImpl) QueryTS(req *QueryTSRequest) (*QueryTSResponse, error) {
 	return resp, nil
 }
 
+func (h *apiImpl) GetPS(req *GetPSRequest) (*GetPSResponse, error) {
+	count := 1
+	if req.Count != nil {
+		count = *req.Count
+	}
+	pss := h.psDB.GetLatestPS(req.Tag, count)
+
+	records := make([]PStateRecord, len(pss))
+	for i, ps := range pss {
+		records[i] = mapPState(ps)
+	}
+	resp := &GetPSResponse{
+		PStates: records,
+	}
+	return resp, nil
+}
+
 func main() {
 	// Flag resolution
 	portName := flag.String("port", "COM3", "Serial port name")
@@ -277,6 +308,7 @@ func main() {
 	// Storage & payload loggers
 	lineDB := NewLineDB()
 	tsDB := NewTSDB()
+	psDB := NewPSDB()
 
 	logger := NewPayloadLogger(logDirAbs)
 	defer logger.Close()
@@ -291,6 +323,7 @@ func main() {
 	apiImpl := &apiImpl{
 		lineDB:      lineDB,
 		tsDB:        tsDB,
+		psDB:        psDB,
 		logger:      logger,
 		nextLineNum: 1,
 	}
