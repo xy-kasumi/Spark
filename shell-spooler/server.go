@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"shell-spooler/comm"
 	"strings"
 	"time"
@@ -18,7 +17,6 @@ import (
 // Since request passed into SpoolerAPI is valid, returning error here means internal server error.
 type SpoolerAPI interface {
 	WriteLine(req *WriteLineRequest) (*WriteLineResponse, error)
-	QueryLines(req *QueryLinesRequest) (*QueryLinesResponse, error)
 	Cancel(req *CancelRequest) (*CancelResponse, error)
 	SetInit(req *SetInitRequest) (*SetInitResponse, error)
 	GetInit(req *GetInitRequest) (*GetInitResponse, error)
@@ -27,13 +25,6 @@ type SpoolerAPI interface {
 	ListJobs(req *ListJobsRequest) (*ListJobsResponse, error)
 	QueryTS(req *QueryTSRequest) (*QueryTSResponse, error)
 	GetPS(req *GetPSRequest) (*GetPSResponse, error)
-}
-
-type LineInfo struct {
-	LineNum int     `json:"line_num"`
-	Dir     string  `json:"dir"`     // "up" for client->host, "down" for host->client
-	Content string  `json:"content"` // content of the line, without newlines
-	Time    float64 `json:"time"`    // Unix timestamp
 }
 
 type WriteLineRequest struct {
@@ -54,63 +45,6 @@ func validateWriteLine(req *WriteLineRequest) error {
 	}
 	if req.Line == "" {
 		return errors.New("payload cannot be empty")
-	}
-	return nil
-}
-
-type QueryLinesRequest struct {
-	FromLine    *int   `json:"from_line,omitempty"`    // Optional: start from this line number (inclusive), 1-based
-	ToLine      *int   `json:"to_line,omitempty"`      // Optional: up to this line number (exclusive), 1-based
-	Tail        *int   `json:"tail,omitempty"`         // Optional: get last N lines (overrides from/to)
-	FilterDir   string `json:"filter_dir,omitempty"`   // Optional: "up" or "down" direction filter
-	FilterRegex string `json:"filter_regex,omitempty"` // Optional: regex filter (RE2 syntax)
-}
-
-type QueryLinesResponse struct {
-	Count int        `json:"count"` // total number of matching lines
-	Lines []LineInfo `json:"lines"` // actual lines (max 1000), ordered by line number (ascending)
-	Now   float64    `json:"now"`   // current Unix timestamp
-}
-
-func validateQueryLines(req *QueryLinesRequest) error {
-	tailExists := req.Tail != nil
-	rangeExists := req.FromLine != nil || req.ToLine != nil
-
-	// Validate range parameters
-	if tailExists && rangeExists {
-		return errors.New("tail: cannot be used together ranges (from_line, to_line)")
-	}
-	if rangeExists {
-		if req.FromLine != nil && *req.FromLine < 1 {
-			return errors.New("from_line: must be >= 1")
-		}
-		if req.ToLine != nil && *req.ToLine < 1 {
-			return errors.New("to_line: must be >= 1")
-		}
-		if (req.FromLine != nil && req.ToLine != nil) && *req.ToLine < *req.FromLine {
-			return errors.New("to_line must be >= from_line")
-		}
-	}
-	if tailExists && *req.Tail < 1 {
-		return errors.New("tail: must be >= 1")
-	}
-
-	// Validate tail value if provided
-	if tailExists && *req.Tail <= 0 {
-		return errors.New("tail: must be positive")
-	}
-
-	// Validate filter_dir
-	if req.FilterDir != "" && req.FilterDir != "up" && req.FilterDir != "down" {
-		return errors.New("filter_dir: must be 'up' or 'down'")
-	}
-
-	// Compile regex if provided
-	if req.FilterRegex != "" {
-		_, err := regexp.Compile(req.FilterRegex)
-		if err != nil {
-			return fmt.Errorf("filter_regex: invalid regex %v", err)
-		}
 	}
 	return nil
 }
@@ -336,7 +270,6 @@ func registerJsonHandler[ReqT any, RespT any](path string, validate func(*ReqT) 
 
 func StartHTTPServer(addr string, api SpoolerAPI) error {
 	registerJsonHandler("/write-line", validateWriteLine, api.WriteLine)
-	registerJsonHandler("/query-lines", validateQueryLines, api.QueryLines)
 	registerJsonHandler("/cancel", validateCancel, api.Cancel)
 	registerJsonHandler("/status", validateGetStatus, api.GetStatus)
 	registerJsonHandler("/set-init", validateSetInit, api.SetInit)

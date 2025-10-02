@@ -9,11 +9,19 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"sync"
 	"time"
 )
 
+// formatSpoolerTime formats a time.Time to the standard string format used by the logger
+// Uses RFC3339 with local time offset, millisecond precision, and space separator
+func formatSpoolerTime(t time.Time) string {
+	return t.Local().Format("2006-01-02 15:04:05.000-07:00")
+}
+
 type PayloadLogger struct {
 	file *os.File
+	mu   sync.Mutex
 }
 
 func NewPayloadLogger(logDir string) *PayloadLogger {
@@ -83,14 +91,17 @@ func (pl *PayloadLogger) findNextFileName(logDir string, now time.Time) string {
 	return fmt.Sprintf("%s-sess%d-serial.txt", today, nextSession)
 }
 
-func (pl *PayloadLogger) AddLine(lineNum int, dir string, payload string) {
+// Record line to the log. (thread-safe)
+func (pl *PayloadLogger) AddLine(dir string, payload string) {
 	if pl.file == nil {
 		return
 	}
 
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+
 	now := time.Now()
-	logLine := fmt.Sprintf("%s %d %s %s\n",
-		formatSpoolerTime(now), lineNum, dir, payload)
+	logLine := fmt.Sprintf("%s %s %s\n", formatSpoolerTime(now), dir, payload)
 
 	if _, err := pl.file.WriteString(logLine); err != nil {
 		slog.Error("Failed to write to log file", "error", err)

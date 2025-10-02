@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"regexp"
-	"sync"
 	"time"
 
 	"shell-spooler/comm"
@@ -54,21 +52,17 @@ type apiImpl struct {
 	tsDB *TSDB
 	psDB *PSDB
 
-	// line serialization
-	lineMu      sync.Mutex
-	nextLineNum int
-	lineDB      *LineDB
-	logger      *PayloadLogger
+	logger *PayloadLogger
 
 	initFileAbs string
 }
 
 func (h *apiImpl) PayloadSent(payload string, tm time.Time) {
-	h.addLineAtomic("down", payload)
+	h.logger.AddLine("down", payload)
 }
 
 func (h *apiImpl) PayloadRecv(payload string, tm time.Time) {
-	h.addLineAtomic("up", payload)
+	h.logger.AddLine("up", payload)
 }
 
 func (h *apiImpl) PStateRecv(ps comm.PState, tm time.Time) {
@@ -77,17 +71,6 @@ func (h *apiImpl) PStateRecv(ps comm.PState, tm time.Time) {
 		h.tsDB.Insert(ps.Tag+"."+k, tm, v)
 	}
 	h.psDB.AddPS(ps, tm)
-}
-
-func (h *apiImpl) addLineAtomic(dir string, payload string) {
-	h.lineMu.Lock()
-	defer h.lineMu.Unlock()
-
-	lineNum := h.nextLineNum
-	h.nextLineNum++
-
-	h.lineDB.AddLine(lineNum, dir, payload)
-	h.logger.AddLine(lineNum, dir, payload)
 }
 
 // SpoolerAPI implementation
@@ -107,61 +90,6 @@ func (h *apiImpl) WriteLine(req *WriteLineRequest) (*WriteLineResponse, error) {
 	resp := WriteLineResponse{
 		OK:   true,
 		Time: toUnixTimestamp(time.Now()),
-	}
-	return &resp, nil
-}
-
-func (h *apiImpl) QueryLines(req *QueryLinesRequest) (*QueryLinesResponse, error) {
-	// Compile regex if provided
-	var filterRegex *regexp.Regexp
-	if req.FilterRegex != "" {
-		filterRegex, _ = regexp.Compile(req.FilterRegex)
-	}
-
-	// Build query options
-	opts := QueryOptions{
-		FilterDir:   req.FilterDir,
-		FilterRegex: filterRegex,
-	}
-
-	// Build scan range
-	tailExists := req.Tail != nil
-	rangeExists := req.FromLine != nil || req.ToLine != nil
-	if tailExists {
-		opts.Scan = TailScan{N: *req.Tail}
-	} else if rangeExists {
-		rangeScan := RangeScan{}
-		if req.FromLine != nil {
-			rangeScan.FromLine = req.FromLine
-		}
-		if req.ToLine != nil {
-			rangeScan.ToLine = req.ToLine
-		}
-		opts.Scan = rangeScan
-	}
-
-	// Query lines from storage
-	lines := h.lineDB.Query(opts)
-
-	totalCount := len(lines)
-	const maxLines = 1000 // Limit response to 1000 lines
-	if len(lines) > maxLines {
-		lines = lines[:maxLines]
-	}
-
-	// Convert to response format
-	resp := QueryLinesResponse{
-		Count: totalCount,
-		Lines: make([]LineInfo, len(lines)),
-		Now:   toUnixTimestamp(time.Now()),
-	}
-	for i, l := range lines {
-		resp.Lines[i] = LineInfo{
-			LineNum: l.num,
-			Dir:     l.dir,
-			Content: l.content,
-			Time:    toUnixTimestamp(l.time),
-		}
 	}
 	return &resp, nil
 }
@@ -306,7 +234,6 @@ func main() {
 	slog.Info("Using init file", "path", initFileAbs)
 
 	// Storage & payload loggers
-	lineDB := NewLineDB()
 	tsDB := NewTSDB()
 	psDB := NewPSDB()
 
@@ -321,11 +248,9 @@ func main() {
 
 	// Initialize communication & server impl.
 	apiImpl := &apiImpl{
-		lineDB:      lineDB,
-		tsDB:        tsDB,
-		psDB:        psDB,
-		logger:      logger,
-		nextLineNum: 1,
+		tsDB:   tsDB,
+		psDB:   psDB,
+		logger: logger,
 	}
 
 	commInstance, err := comm.InitComm(*portName, *baud, apiImpl)
