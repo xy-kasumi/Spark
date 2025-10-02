@@ -149,7 +149,10 @@ func (cm *Comm) WriteCommand(payload string) {
 	if IsSignal(payload) {
 		panic("not a command: " + payload)
 	}
-	cm.commandCh <- payload
+	payload = cleanupGCode(payload)
+	if payload != "" {
+		cm.commandCh <- payload
+	}
 }
 
 func (cm *Comm) CommandQueueLength() int {
@@ -172,4 +175,11 @@ func (cm *Comm) Close() {
 
 func IsSignal(payload string) bool {
 	return strings.HasPrefix(payload, "!") || strings.HasPrefix(payload, "?")
+}
+
+func cleanupGCode(payload string) string {
+	if idx := strings.Index(payload, ";"); idx != -1 {
+		payload = payload[:idx]
+	}
+	return strings.TrimSpace(payload)
 }
