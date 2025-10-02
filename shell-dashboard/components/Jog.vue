@@ -13,14 +13,14 @@
           <td><button class="jog-btn" @click="jogXPlus">X+</button></td>
           <td></td>
           <td></td>
-          <td><button class="jog-btn" @click="jogZMinus">↑ Z-</button></td>
+          <td><button class="jog-btn" @click="jogZMinus">Z- (PUSH)</button></td>
         </tr>
         <tr>
           <td><button class="jog-btn" @click="jogYPlus">Y+</button></td>
           <td></td>
           <td><button class="jog-btn" @click="jogYMinus">Y-</button></td>
           <td><button class="jog-btn" @click="jogHome">HOME</button></td>
-          <td><button class="jog-btn" @click="jogZPlus">↓ Z+</button></td>
+          <td><button class="jog-btn" @click="jogZPlus">Z+ (PULL)</button></td>
         </tr>
         <tr>
           <td></td>
