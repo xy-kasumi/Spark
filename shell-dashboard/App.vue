@@ -19,7 +19,7 @@
     <!-- Main Content -->
     <div class="main-content">
       <div class="column">
-        <ManualCommand
+        <AddJob
           :client="client"
           :clientStatus="clientStatus"
           :assumeInitialized="assumeInitialized"
@@ -33,6 +33,11 @@
       <div class="column">
         <Settings :client="client" />
         <Timeseries />
+        <ManualCommand
+          :client="client"
+          :clientStatus="clientStatus"
+          :assumeInitialized="assumeInitialized"
+        />
       </div>
     </div>
   </div>
@@ -41,6 +46,7 @@
 <script>
 import { SpoolerController } from "./spooler.ts";
 import logoUrl from "./logo.png";
+import AddJob from "./components/AddJob.vue";
 import ManualCommand from "./components/ManualCommand.vue";
 import CoordinateSystem from "./components/CoordinateSystem.vue";
 import Jog from "./components/Jog.vue";
@@ -54,6 +60,7 @@ let client = null;
 
 export default {
   components: {
+    AddJob,
     ManualCommand,
     CoordinateSystem,
     Jog,

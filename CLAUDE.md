@@ -12,4 +12,5 @@
 - For C++ code under wasm/, we use Chromium formatting.
 
 ## shell-dashboard/ Guidelines
-- In dashboard, don't use npm or npx; they're unavailable. Use `./typecheck.sh` and `./build.sh` (internally calls raw tsc).
+- Use `npm run build` to build.
+- Use design tokens when writing new CSS. Ask me if new design seems to warrant new tokens.

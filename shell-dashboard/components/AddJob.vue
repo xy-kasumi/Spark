@@ -2,18 +2,19 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <template>
   <div class="widget">
-    <h1>Manual Command</h1>
+    <h1>Add Job</h1>
     <div class="widget-content">
-      <button class="" @click="init">{{ initButtonText }}</button>
-      <br />
       <textarea
         class=""
         v-model="commandText"
-        rows="10"
+        rows="1"
         cols="50"
-        placeholder="Enter G-code or commands"
-      ></textarea
-      ><br />
+        placeholder="Paste G-code here"
+      ></textarea>
+      <div v-if="commands.length > 0">
+        <span>{{ commands.length }} lines</span>
+      </div>
+      <br />
       <button
         class=""
         @click="send"
@@ -21,9 +22,6 @@
       >
         {{ executeButtonText }}
       </button>
-      <label class="">
-        <input type="checkbox" v-model="clearOnExec" /> Clear on exec
-      </label>
     </div>
   </div>
 </template>
@@ -32,7 +30,7 @@
 import { spoolerApi } from "../spooler.ts";
 
 export default {
-  name: "ManualCommand",
+  name: "AddJob",
   props: {
     client: Object,
     clientStatus: String,
@@ -42,7 +40,6 @@ export default {
   data() {
     return {
       commandText: "",
-      clearOnExec: true,
     };
   },
   computed: {
@@ -52,36 +49,23 @@ export default {
         .map((line) => line.trim())
         .filter((line) => line.length > 0);
     },
-    initButtonText() {
-      return this.clientStatus === "idle" ? "INIT" : "ENQUEUE INIT";
-    },
     executeButtonText() {
       return this.clientStatus === "idle" ? "EXECUTE" : "ENQUEUE";
     },
   },
   methods: {
-    async init() {
-      if (!this.client) {
-        return;
-      }
-
-      const host = "http://localhost:9000";
-      const initData = await spoolerApi.getInit(host);
-      for (const cmd of initData.lines) {
-        this.client.enqueueCommand(cmd);
-      }
-    },
-
     send() {
       if (!this.client || this.commands.length === 0) {
         return;
       }
 
-      this.client.enqueueCommands(this.commands);
+      const host = "http://localhost:9000";
+      spoolerApi.addJob(host, this.commands, {
+        "?pos": 1,
+        "?edm": 0.5,
+      });
 
-      if (this.clearOnExec) {
-        this.commandText = "";
-      }
+      this.commandText = "";
 
       this.$emit("command-sent");
     },
