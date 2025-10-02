@@ -26,7 +26,6 @@ class SpoolerController {
   private readonly pingIntervalMs: number;
 
   private isPolling: boolean;
-  private requestPos: boolean = false;
 
   private state: SpoolerState;
 
@@ -75,7 +74,7 @@ class SpoolerController {
         await this.sendPayload('?pos');
         const latestPos = await spoolerApi.getLatestPState(this.host, "pos");
         if (latestPos !== null) {
-          this.onUpdatePos(latestPos.pstate);
+          this.onUpdatePos?.(latestPos.pstate);
         }
       } catch (error) {
         // squash
@@ -89,10 +88,10 @@ class SpoolerController {
       try {
         const status = await spoolerApi.getStatus(this.host);
         this.state = status.busy ? 'busy' : 'idle';
-        this.onUpdateStatus(this.state, status.num_pending_commands, status.running_job || null);
+        this.onUpdateStatus?.(this.state, status.num_pending_commands, status.running_job || null);
       } catch (error) {
         this.state = 'api-offline';
-        this.onUpdateStatus(this.state, 0, null)
+        this.onUpdateStatus?.(this.state, 0, null)
       }
       await this.delay(this.pollIntervalMs);
     }
@@ -100,7 +99,7 @@ class SpoolerController {
 
   async requestPosUpdate() {
     await this.delay(100); // hack to make request after command
-    this.requestPos = true;
+    this.enqueueCommand('?pos');
   }
 
   /**
@@ -245,7 +244,7 @@ const spoolerApi = {
       filter_regex: `^${psName} `
     });
 
-    let pstate: Record<string, any>;
+    let pstate: Record<string, any> = {};
     for (const line of content.lines) {
       const content = line.content;
       for (let item of content.substring(`${psName} `.length).split(' ')) {
