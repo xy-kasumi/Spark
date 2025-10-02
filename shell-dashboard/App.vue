@@ -24,10 +24,10 @@
           :clientStatus="clientStatus"
           :assumeInitialized="assumeInitialized"
         />
+        <JobList />
         <CoordinateSystem :client="client" />
         <Jog :client="client" :latestPos="latestPos" />
         <ToolSupply :client="client" />
-        <JobList />
       </div>
 
       <div class="column">

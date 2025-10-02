@@ -4,17 +4,9 @@
   <div class="widget">
     <h1>Add Job</h1>
     <div class="widget-content">
-      <textarea
-        class=""
-        v-model="commandText"
-        rows="1"
-        cols="50"
-        placeholder="Paste G-code here"
-      ></textarea>
-      <div v-if="commands.length > 0">
-        <span>{{ commands.length }} lines</span>
-      </div>
-      <br />
+      <button class="" @click="pasteFromClipboard">PASTE FROM CLIPBOARD</button>
+      <span v-if="commands.length > 0">{{ linesInfo }}</span
+      ><br />
       <button
         class=""
         @click="send"
@@ -49,11 +41,27 @@ export default {
         .map((line) => line.trim())
         .filter((line) => line.length > 0);
     },
+    linesInfo() {
+      const count = this.commands.length;
+      if (count === 0) return "";
+      const firstCmd = this.commands[0];
+      const preview = firstCmd.length > 20 ? firstCmd.slice(0, 20) : firstCmd;
+      return `${count} lines (${preview}...)`;
+    },
     executeButtonText() {
       return this.clientStatus === "idle" ? "EXECUTE" : "ENQUEUE";
     },
   },
   methods: {
+    async pasteFromClipboard() {
+      try {
+        const text = await navigator.clipboard.readText();
+        this.commandText = text;
+      } catch (err) {
+        console.error("Failed to read clipboard:", err);
+      }
+    },
+
     send() {
       if (!this.client || this.commands.length === 0) {
         return;
