@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2025 夕月霞
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-interface LogLine {
-  line_num: number;
-  dir: 'up' | 'down';
-  content: string;
-  time: Date;
-}
-
 /**
  * @property api-offline - Spooler API not working
  * @property board-offline - API is OK, board response timed out (NOT IMPLEMENTED YET)
@@ -183,102 +176,26 @@ class SpoolerController {
  * This is separate from SpoolerController and provides raw API access.
  */
 const spoolerApi = {
-  psLatestBeginLines: new Map<string, number>(),
-
-  /**
-   * Query log lines from the spooler.
-   * @param host - Base URL of the shell-spooler server
-   * @param params - Query parameters (tail, from_line, to_line, filter_dir, filter_regex)
-   * @returns Response with count, lines array, and timestamp
-   */
-  async queryLines(host: string, params: { tail?: number; from_line?: number; to_line?: number; filter_dir?: "up" | "down"; filter_regex?: string }): Promise<{ count: number; lines: LogLine[]; now: number }> {
-    const response = await fetch(`${host}/query-lines`, {
+  async getLatestPState(host: string, psName: string): Promise<{ time: number, pstate: Record<string, any> } | null> {
+    const response = await fetch(`${host}/get-ps`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params)
+      body: JSON.stringify({ tag: psName, count: 1 })
     });
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    const result = await response.json();
-
-    // Convert Unix timestamps to Date objects
-    if (result.lines) {
-      for (const line of result.lines) {
-        line.time = new Date(line.time * 1000); // Convert Unix timestamp to Date
-      }
-    }
-
-    return result;
-  },
-
-  async getLatestPState(host: string, psName: string): Promise<{ beginTime: number, pstate: Record<string, any> } | null> {
-    const latestBeginLine = this.psLatestBeginLines.get(psName) || 1;
-    const beginLineRes = await spoolerApi.queryLines(host, {
-      from_line: latestBeginLine,
-      filter_dir: "up",
-      filter_regex: `^${psName} <.*$`
-    });
-    const endLineRes = await spoolerApi.queryLines(host, {
-      from_line: latestBeginLine,
-      filter_dir: "up",
-      filter_regex: `^${psName} .*>$`
-    });
-
-    if (beginLineRes.count === 0 || endLineRes.count === 0) {
+    const { pstates } = await response.json();
+    if (pstates.length === 0) {
       return null;
     }
 
-    const beginLine = beginLineRes.lines[beginLineRes.lines.length - 1];
-    const endLine = endLineRes.lines[endLineRes.lines.length - 1];
-    if (endLine.line_num < beginLine.line_num) {
-      return null; // mid-transfer (seeing previous ">" and ongoing p-state "<")
-    }
-
-    const content = await spoolerApi.queryLines(host, {
-      from_line: beginLine.line_num,
-      to_line: endLine.line_num + 1,
-      filter_dir: "up",
-      filter_regex: `^${psName} `
-    });
-
-    let pstate: Record<string, any> = {};
-    for (const line of content.lines) {
-      const content = line.content;
-      for (let item of content.substring(`${psName} `.length).split(' ')) {
-        item = item.trim();
-        if (item === "<") {
-          pstate = {};
-        } else if (item === ">") {
-          break;
-        } else {
-          const [key, value] = item.split(":");
-          if (value === "true") {
-            pstate[key] = true;
-          } else if (value === "false") {
-            pstate[key] = false;
-          } else if (value.startsWith('"')) {
-            // TODO: unescape
-            pstate[key] = value.substring(1, value.length - 1);
-          } else {
-            const maybeNum = parseFloat(value) as number;
-            if (!isNaN(maybeNum)) {
-              pstate[key] = maybeNum;
-            } else {
-              console.warn(`Ignoring invalid pstate item: key=${key}, value=${value}`);
-            }
-          }
-        }
-      }
-    }
-    if (pstate === undefined) {
-      console.warn("broken pstate; '<' not found. Highly likely a bug.");
-      return null;
-    }
-    this.psLatestBeginLines.set(psName, beginLine.line_num);
-    return { beginTime: beginLine.time.getTime() / 1000, pstate };
+    return {
+      time: pstates[0].time,
+      pstate: pstates[0].kv
+    };
   },
 
   /**
