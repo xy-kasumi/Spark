@@ -33,6 +33,7 @@
       <div class="column">
         <Settings :client="client" />
         <Timeseries />
+        <Errors />
         <ManualCommand
           :client="client"
           :clientStatus="clientStatus"
@@ -54,6 +55,7 @@ import ToolSupply from "./components/ToolSupply.vue";
 import JobList from "./components/JobList.vue";
 import Settings from "./components/Settings.vue";
 import Timeseries from "./components/Timeseries.vue";
+import Errors from "./components/Errors.vue";
 
 // Global client instance for performance
 let client = null;
@@ -68,6 +70,7 @@ export default {
     JobList,
     Settings,
     Timeseries,
+    Errors,
   },
   data() {
     return {

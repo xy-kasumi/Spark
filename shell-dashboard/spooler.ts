@@ -327,6 +327,27 @@ const spoolerApi = {
     }
 
     return await response.json();
+  },
+
+  async getErrors(host: string, count: number = 50): Promise<Array<{ time: Date; msg: string; src?: string }>> {
+    const response = await fetch(`${host}/get-ps`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tag: "error", count })
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`HTTP ${response.status}: ${text}`);
+    }
+
+    const { pstates } = await response.json();
+
+    return pstates.map((ps: any) => ({
+      time: new Date(ps.time * 1000),
+      msg: ps.kv.msg,
+      src: ps.kv.src
+    }));
   }
 };
 
