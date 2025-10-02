@@ -5,16 +5,20 @@ package comm
 import (
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 )
 
 type Comm struct {
-	tran        *transport
-	parser      PStateParser
-	handler     CommHandler
-	signalCh    chan string
-	commandCh   chan string
+	tran      *transport
+	parser    PStateParser
+	handler   CommHandler
+	signalCh  chan string
+	commandCh chan string
+
+	muQueue     *sync.Mutex
 	latestQueue *psQueue
+	okToSend    int
 }
 
 // Called after payload or p-state sent or received (ack-ed).
@@ -59,7 +63,7 @@ func (cm *Comm) PayloadRecv(payload string, tm time.Time) {
 	if ps.Tag == "queue" {
 		q := parseQueuePS(*ps)
 		if q != nil {
-			cm.latestQueue = q
+			cm.handleQueueStatus(q)
 		}
 	}
 	cm.handler.PStateRecv(*ps, tm)
@@ -75,6 +79,7 @@ func InitComm(serialPort string, baud int, handler CommHandler) (*Comm, error) {
 		parser:    NewPStateParser(),
 		signalCh:  make(chan string, 10),
 		commandCh: make(chan string, 10_000_000), // must be bigger than any G-code file
+		muQueue:   &sync.Mutex{},
 	}
 	tran, err := initTransport(serialPort, baud, cm)
 	if err != nil {
@@ -82,9 +87,27 @@ func InitComm(serialPort string, baud int, handler CommHandler) (*Comm, error) {
 	}
 	cm.tran = tran
 
+	go cm.pollQueue()
 	go cm.feedSignal()
 	go cm.feedCommand()
 	return cm, nil
+}
+
+func (cm *Comm) pollQueue() {
+	for {
+		time.Sleep(250 * time.Millisecond)
+		cm.signalCh <- "?queue"
+	}
+}
+
+func (cm *Comm) handleQueueStatus(q *psQueue) {
+	const maxFillRate = 0.75
+
+	cm.muQueue.Lock()
+	defer cm.muQueue.Unlock()
+
+	cm.latestQueue = q
+	cm.okToSend = int(float64(q.Cap)*maxFillRate) - q.Num
 }
 
 func (cm *Comm) feedSignal() {
@@ -94,46 +117,24 @@ func (cm *Comm) feedSignal() {
 	}
 }
 
-func (cm *Comm) queryQueueBlocking() psQueue {
-	const queueSignalTimeout = 1 * time.Second
-	for {
-		cm.latestQueue = nil
-		cm.signalCh <- "?queue"
-		sent := time.Now()
-		for {
-			if cm.latestQueue != nil {
-				return *cm.latestQueue
-			}
-			if time.Now().After(sent.Add(queueSignalTimeout)) {
-				// queue signal timeout can happen in core reboot)
-				break
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-}
-
 func (cm *Comm) feedCommand() {
-	const maxFillRate = 0.75
-	okToSend := 0
-
 	for {
-		queueQueryInterval := 100 * time.Millisecond
 		for {
-			if okToSend > 0 {
+			cm.muQueue.Lock()
+			canSend := cm.okToSend > 0
+			cm.muQueue.Unlock()
+			if canSend {
 				break
 			}
-			time.Sleep(queueQueryInterval)
-			qs := cm.queryQueueBlocking()
-			okToSend = int(float64(qs.Cap)*maxFillRate) - qs.Num
-			// When core queue has many slow commands, no point in querying too often.
-			// Gradually reduce query frequency by exponential backoff.
-			queueQueryInterval *= 2
+			time.Sleep(50 * time.Millisecond)
 		}
 
-		line := <-cm.commandCh
-		cm.tran.sendPayload(line)
-		okToSend--
+		// NOTE: without a new command sent to the core, okToSend will only increase or stay the same.
+		// Thus, same to assume that here okToSend is still > 0, because feedCommand() is only place that can send command.
+		cm.tran.sendPayload(<-cm.commandCh)
+		cm.muQueue.Lock()
+		cm.okToSend--
+		cm.muQueue.Unlock()
 	}
 }
 
@@ -144,7 +145,6 @@ func (cm *Comm) SendSignal(payload string) {
 	cm.signalCh <- payload
 }
 
-// TODO: move queue out
 func (cm *Comm) WriteCommand(payload string) {
 	if IsSignal(payload) {
 		panic("not a command: " + payload)
@@ -156,7 +156,14 @@ func (cm *Comm) WriteCommand(payload string) {
 }
 
 func (cm *Comm) CommandQueueLength() int {
-	return len(cm.commandCh)
+	cm.muQueue.Lock()
+	defer cm.muQueue.Unlock()
+
+	var numInCore int
+	if cm.latestQueue != nil {
+		numInCore = cm.latestQueue.Num
+	}
+	return len(cm.commandCh) + numInCore
 }
 
 func (cm *Comm) DrainCommandQueue() {

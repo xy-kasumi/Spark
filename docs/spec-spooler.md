@@ -201,7 +201,7 @@ optionalProperties:
 
 * `busy`: some commands are pending to execute (or being executed). Signals do not count as busy.
 * `num_pending_commands`: number of commands (either directly or via job)
-  * note this might be a slightly lower because of core queue is not counted
+  * includes commands in core queue
 * `running_job`: job_id if a job is running
 
 **Examples**
