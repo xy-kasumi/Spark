@@ -12,6 +12,7 @@
           >
           {{ busyStatusText }}
         </div>
+        <button class="header-cancel" @click="cancelAll">CANCEL ALL</button>
       </div>
     </header>
 
@@ -133,6 +134,13 @@ export default {
     if (client) {
       client.stopPolling();
     }
+  },
+
+  methods: {
+    cancelAll() {
+      if (!this.client) return;
+      this.client.cancel();
+    },
   },
 };
 </script>
@@ -291,6 +299,11 @@ label {
   align-items: center;
   gap: 15px;
   font-size: 16px;
+}
+
+.fixed-header .header-cancel {
+  margin-left: auto;
+  margin-bottom: 0;
 }
 
 /* Hide Vue templates until Vue loads */

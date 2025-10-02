@@ -21,7 +21,6 @@
       >
         {{ executeButtonText }}
       </button>
-      <button class="" @click="cancel">CANCEL</button>
       <label class="">
         <input type="checkbox" v-model="clearOnExec" /> Clear on exec
       </label>
@@ -95,11 +94,6 @@ export default {
       }
 
       this.$emit("command-sent");
-    },
-
-    cancel() {
-      if (!this.client) return;
-      this.client.cancel();
     },
   },
 };
