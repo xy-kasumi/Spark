@@ -44,8 +44,9 @@
   </div>
 </template>
 
-<script>
-import { SpoolerController, spoolerApi } from "./spooler.ts";
+<script setup lang="ts">
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { SpoolerController, spoolerApi } from "./spooler";
 import logoUrl from "./logo.png";
 import AddJob from "./components/AddJob.vue";
 import ManualCommand from "./components/ManualCommand.vue";
@@ -57,109 +58,82 @@ import Settings from "./components/Settings.vue";
 import Timeseries from "./components/Timeseries.vue";
 import Errors from "./components/Errors.vue";
 
-// Global client instance for performance
-let client = null;
+const client = ref<SpoolerController>();
+const clientStatus = ref<string>("unknown");
+const busyStatusText = ref("");
+const isPolling = ref(false);
 
-export default {
-  components: {
-    AddJob,
-    ManualCommand,
-    CoordinateSystem,
-    Jog,
-    ToolSupply,
-    JobList,
-    Settings,
-    Timeseries,
-    Errors,
-  },
-  data() {
-    return {
-      logoUrl,
-      client: null,
-      clientStatus: "unknown",
-      busyStatusText: "",
-      isPolling: false,
-    };
-  },
+const uiStatus = computed(() => {
+  switch (clientStatus.value) {
+    case "idle":
+      return "idle";
+    case "busy":
+      return "busy";
+    case "api-offline":
+    case "board-offline":
+    case "unknown":
+      return "offline";
+    default:
+      return "offline";
+  }
+});
 
-  computed: {
-    uiStatus() {
-      switch (this.clientStatus) {
-        case "idle":
-          return "idle";
-        case "busy":
-          return "busy";
-        case "api-offline":
-        case "board-offline":
-        case "unknown":
-          return "offline";
-        default:
-          return "offline";
-      }
-    },
+const statusEmoji = computed(() => {
+  switch (uiStatus.value) {
+    case "idle":
+      return "🔵";
+    case "busy":
+      return "🟠";
+    case "offline":
+      return "⚫";
+    default:
+      return "⚫";
+  }
+});
 
-    statusEmoji() {
-      switch (this.uiStatus) {
-        case "idle":
-          return "🔵";
-        case "busy":
-          return "🟠";
-        case "offline":
-          return "⚫";
-        default:
-          return "⚫";
-      }
-    },
+const assumeInitialized = computed(() => {
+  return clientStatus.value === "idle" || clientStatus.value === "busy";
+});
 
-    assumeInitialized() {
-      return this.clientStatus === "idle" || this.clientStatus === "busy";
-    },
-  },
+onMounted(() => {
+  const host = "http://localhost:9000";
+  client.value = new SpoolerController(host);
 
-  mounted() {
-    const host = "http://localhost:9000";
-    client = new SpoolerController(host);
-    this.client = client;
+  isPolling.value = true;
+  pollStatus();
+});
 
-    this.isPolling = true;
-    this.pollStatus();
-  },
+onBeforeUnmount(() => {
+  isPolling.value = false;
+});
 
-  beforeUnmount() {
-    this.isPolling = false;
-  },
-
-  methods: {
-    async pollStatus() {
-      const host = "http://localhost:9000";
-      while (this.isPolling) {
-        try {
-          const status = await spoolerApi.getStatus(host);
-          const state = status.busy ? "busy" : "idle";
-          this.clientStatus = state;
-          if (state === "busy") {
-            if (status.running_job) {
-              this.busyStatusText = `Job ${status.running_job} running`;
-            } else {
-              this.busyStatusText = `${status.num_pending_commands} commands in queue`;
-            }
-          } else {
-            this.busyStatusText = "";
-          }
-        } catch (error) {
-          this.clientStatus = "api-offline";
-          this.busyStatusText = "";
+async function pollStatus() {
+  const host = "http://localhost:9000";
+  while (isPolling.value) {
+    try {
+      const status = await spoolerApi.getStatus(host);
+      const state = status.busy ? "busy" : "idle";
+      clientStatus.value = state;
+      if (state === "busy") {
+        if (status.running_job) {
+          busyStatusText.value = `Job ${status.running_job} running`;
+        } else {
+          busyStatusText.value = `${status.num_pending_commands} commands in queue`;
         }
-        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        busyStatusText.value = "";
       }
-    },
+    } catch (error) {
+      clientStatus.value = "api-offline";
+      busyStatusText.value = "";
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
 
-    cancelAll() {
-      if (!this.client) return;
-      this.client.cancel();
-    },
-  },
-};
+function cancelAll() {
+  client.value?.cancel();
+}
 </script>
 
 <style>
