@@ -88,30 +88,23 @@
   </div>
 </template>
 
-<script>
-import { spoolerApi } from "../spooler.ts";
+<script setup lang="ts">
+import { ref } from "vue";
+import { spoolerApi } from "../spooler";
 
-export default {
-  name: "Errors",
-  data() {
-    return {
-      errors: [],
-    };
-  },
-  methods: {
-    async refreshErrors() {
-      try {
-        const host = "http://localhost:9000";
-        this.errors = await spoolerApi.getErrors(host);
-      } catch (error) {
-        console.error("Failed to refresh errors:", error);
-        this.errors = [];
-      }
-    },
+const errors = ref<Array<{ time: Date; msg: string; src?: string }>>([]);
 
-    formatTimestamp(date) {
-      return date.toLocaleString();
-    },
-  },
-};
+async function refreshErrors() {
+  try {
+    const host = "http://localhost:9000";
+    errors.value = await spoolerApi.getErrors(host);
+  } catch (error) {
+    console.error("Failed to refresh errors:", error);
+    errors.value = [];
+  }
+}
+
+function formatTimestamp(date: Date) {
+  return date.toLocaleString();
+}
 </script>

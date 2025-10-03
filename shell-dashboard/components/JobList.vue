@@ -78,63 +78,64 @@
   </div>
 </template>
 
-<script>
-import { spoolerApi } from "../spooler.ts";
+<script setup lang="ts">
+import { ref } from "vue";
+import { spoolerApi } from "../spooler";
 
-export default {
-  name: "JobList",
-  data() {
-    return {
-      jobs: [],
-    };
-  },
-  methods: {
-    async refreshJobs() {
-      try {
-        const host = "http://localhost:9000";
-        this.jobs = await spoolerApi.listJobs(host);
-      } catch (error) {
-        console.error("Failed to refresh jobs:", error);
-        this.jobs = [];
-      }
-    },
-
-    formatJobTime(date) {
-      return date.toLocaleString();
-    },
-
-    getElapsedTime(job) {
-      const now = new Date();
-      let startTime;
-      let endTime;
-
-      if (job.time_started) {
-        startTime = job.time_started;
-      } else {
-        startTime = job.time_added;
-      }
-
-      if (job.time_ended) {
-        endTime = job.time_ended;
-      } else {
-        endTime = now;
-      }
-
-      const elapsedMs = endTime.getTime() - startTime.getTime();
-      const elapsedSec = Math.floor(elapsedMs / 1000);
-
-      const hours = Math.floor(elapsedSec / 3600);
-      const minutes = Math.floor((elapsedSec % 3600) / 60);
-      const seconds = elapsedSec % 60;
-
-      if (hours > 0) {
-        return `${hours}h ${minutes}m ${seconds}s`;
-      } else if (minutes > 0) {
-        return `${minutes}m ${seconds}s`;
-      } else {
-        return `${seconds}s`;
-      }
-    },
-  },
+type Job = {
+  job_id: string;
+  status: "WAITING" | "RUNNING" | "COMPLETED" | "CANCELED";
+  time_added: Date;
+  time_started?: Date;
+  time_ended?: Date;
 };
+
+const jobs = ref<Job[]>([]);
+
+async function refreshJobs() {
+  try {
+    const host = "http://localhost:9000";
+    jobs.value = await spoolerApi.listJobs(host);
+  } catch (error) {
+    console.error("Failed to refresh jobs:", error);
+    jobs.value = [];
+  }
+}
+
+function formatJobTime(date: Date) {
+  return date.toLocaleString();
+}
+
+function getElapsedTime(job: Job) {
+  const now = new Date();
+  let startTime: Date;
+  let endTime: Date;
+
+  if (job.time_started) {
+    startTime = job.time_started;
+  } else {
+    startTime = job.time_added;
+  }
+
+  if (job.time_ended) {
+    endTime = job.time_ended;
+  } else {
+    endTime = now;
+  }
+
+  const elapsedMs = endTime.getTime() - startTime.getTime();
+  const elapsedSec = Math.floor(elapsedMs / 1000);
+
+  const hours = Math.floor(elapsedSec / 3600);
+  const minutes = Math.floor((elapsedSec % 3600) / 60);
+  const seconds = elapsedSec % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  } else {
+    return `${seconds}s`;
+  }
+}
 </script>

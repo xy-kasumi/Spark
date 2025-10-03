@@ -18,65 +18,64 @@
   </div>
 </template>
 
-<script>
-import { spoolerApi } from "../spooler.ts";
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import { spoolerApi } from "../spooler";
+import type { SpoolerController } from "../spooler";
 
-export default {
-  name: "AddJob",
-  props: {
-    client: Object,
-    clientStatus: String,
-    assumeInitialized: Boolean,
-  },
-  emits: ["command-sent"],
-  data() {
-    return {
-      commandText: "",
-    };
-  },
-  computed: {
-    commands() {
-      return this.commandText
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-    },
-    linesInfo() {
-      const count = this.commands.length;
-      if (count === 0) return "";
-      const firstCmd = this.commands[0];
-      const preview = firstCmd.length > 20 ? firstCmd.slice(0, 20) : firstCmd;
-      return `${count} lines (${preview}...)`;
-    },
-    executeButtonText() {
-      return this.clientStatus === "idle" ? "EXECUTE" : "ENQUEUE";
-    },
-  },
-  methods: {
-    async pasteFromClipboard() {
-      try {
-        const text = await navigator.clipboard.readText();
-        this.commandText = text;
-      } catch (err) {
-        console.error("Failed to read clipboard:", err);
-      }
-    },
+const props = defineProps<{
+  client?: SpoolerController;
+  clientStatus?: string;
+  assumeInitialized?: boolean;
+}>();
 
-    send() {
-      if (!this.client || this.commands.length === 0) {
-        return;
-      }
+const emit = defineEmits<{
+  "command-sent": [];
+}>();
 
-      const host = "http://localhost:9000";
-      spoolerApi.addJob(host, this.commands, {
-        "?pos": 1,
-        "?edm": 0.5,
-      });
+const commandText = ref("");
 
-      this.commandText = "";
+const commands = computed(() => {
+  return commandText.value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+});
 
-      this.$emit("command-sent");
-    },
-  },
-};
+const linesInfo = computed(() => {
+  const count = commands.value.length;
+  if (count === 0) return "";
+  const firstCmd = commands.value[0];
+  const preview = firstCmd.length > 20 ? firstCmd.slice(0, 20) : firstCmd;
+  return `${count} lines (${preview}...)`;
+});
+
+const executeButtonText = computed(() => {
+  return props.clientStatus === "idle" ? "EXECUTE" : "ENQUEUE";
+});
+
+async function pasteFromClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    commandText.value = text;
+  } catch (err) {
+    console.error("Failed to read clipboard:", err);
+  }
+}
+
+function send() {
+  if (!props.client || commands.value.length === 0) {
+    return;
+  }
+
+  const host = "http://localhost:9000";
+  spoolerApi.addJob(host, commands.value, {
+    "?pos": 1,
+    "?edm": 0.5,
+  });
+
+  commandText.value = "";
+
+  emit("command-sent");
+}
 </script>

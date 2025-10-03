@@ -28,63 +28,62 @@
   </div>
 </template>
 
-<script>
-import { spoolerApi } from "../spooler.ts";
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import { spoolerApi } from "../spooler";
+import type { SpoolerController } from "../spooler";
 
-export default {
-  name: "ManualCommand",
-  props: {
-    client: Object,
-    clientStatus: String,
-    assumeInitialized: Boolean,
-  },
-  emits: ["command-sent"],
-  data() {
-    return {
-      commandText: "",
-      clearOnExec: true,
-    };
-  },
-  computed: {
-    commands() {
-      return this.commandText
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-    },
-    initButtonText() {
-      return this.clientStatus === "idle" ? "INIT" : "ENQUEUE INIT";
-    },
-    executeButtonText() {
-      return this.clientStatus === "idle" ? "EXECUTE" : "ENQUEUE";
-    },
-  },
-  methods: {
-    async init() {
-      if (!this.client) {
-        return;
-      }
+const props = defineProps<{
+  client?: SpoolerController;
+  clientStatus?: string;
+  assumeInitialized?: boolean;
+}>();
 
-      const host = "http://localhost:9000";
-      const initData = await spoolerApi.getInit(host);
-      for (const cmd of initData.lines) {
-        this.client.enqueueCommand(cmd);
-      }
-    },
+const emit = defineEmits<{
+  "command-sent": [];
+}>();
 
-    send() {
-      if (!this.client || this.commands.length === 0) {
-        return;
-      }
+const commandText = ref("");
+const clearOnExec = ref(true);
 
-      this.client.enqueueCommands(this.commands);
+const commands = computed(() => {
+  return commandText.value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+});
 
-      if (this.clearOnExec) {
-        this.commandText = "";
-      }
+const initButtonText = computed(() => {
+  return props.clientStatus === "idle" ? "INIT" : "ENQUEUE INIT";
+});
 
-      this.$emit("command-sent");
-    },
-  },
-};
+const executeButtonText = computed(() => {
+  return props.clientStatus === "idle" ? "EXECUTE" : "ENQUEUE";
+});
+
+async function init() {
+  if (!props.client) {
+    return;
+  }
+
+  const host = "http://localhost:9000";
+  const initData = await spoolerApi.getInit(host);
+  for (const cmd of initData.lines) {
+    props.client.enqueueCommand(cmd);
+  }
+}
+
+function send() {
+  if (!props.client || commands.value.length === 0) {
+    return;
+  }
+
+  props.client.enqueueCommands(commands.value);
+
+  if (clearOnExec.value) {
+    commandText.value = "";
+  }
+
+  emit("command-sent");
+}
 </script>

@@ -12,32 +12,26 @@
   </div>
 </template>
 
-<script>
-export default {
-  name: "CoordinateSystem",
-  props: {
-    client: Object,
-  },
-  methods: {
-    setMachineCoords() {
-      this.client.enqueueCommand("G53");
-      this.client.requestPosUpdate();
-    },
+<script setup lang="ts">
+import type { SpoolerController } from "../spooler";
 
-    setWorkCoords() {
-      this.client.enqueueCommand("G55");
-      this.client.requestPosUpdate();
-    },
+const props = defineProps<{
+  client?: SpoolerController;
+}>();
 
-    setGrinderCoords() {
-      this.client.enqueueCommand("G54");
-      this.client.requestPosUpdate();
-    },
+function setMachineCoords() {
+  props.client?.enqueueCommand("G53");
+}
 
-    setToolSupplyCoords() {
-      this.client.enqueueCommand("G56");
-      this.client.requestPosUpdate();
-    },
-  },
-};
+function setWorkCoords() {
+  props.client?.enqueueCommand("G55");
+}
+
+function setGrinderCoords() {
+  props.client?.enqueueCommand("G54");
+}
+
+function setToolSupplyCoords() {
+  props.client?.enqueueCommand("G56");
+}
 </script>

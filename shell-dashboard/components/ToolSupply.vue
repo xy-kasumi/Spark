@@ -44,107 +44,103 @@
   </div>
 </template>
 
-<script>
+<script setup lang="ts">
+import { ref } from "vue";
+import type { SpoolerController } from "../spooler";
+
 const tsJustBeforeInsertZ = 0;
 const tsPulledZ = 47;
 const tsFullInsertZ = -12;
 
-export default {
-  name: "ToolSupply",
-  props: {
-    client: Object,
-  },
-  data() {
-    return {
-      toolSupplyShowDetails: false,
-    };
-  },
-  methods: {
-    clamp() {
-      [
-        "G0 C0",
-        "G0 C240",
-        "G0 C120",
-        "G0 C0",
-        "G0 C240",
-        "G0 C120",
-        "G0 C0",
-      ].forEach((cmd) => this.client.enqueueCommand(cmd));
-    },
+const props = defineProps<{
+  client?: SpoolerController;
+}>();
 
-    unclamp() {
-      this.client.enqueueCommands(["G0 C0", "G0 C120", "G0 C240", "G0 C0"]);
-    },
+const toolSupplyShowDetails = ref(false);
 
-    open() {
-      this.client.enqueueCommand("M60");
-    },
+function clamp() {
+  [
+    "G0 C0",
+    "G0 C240",
+    "G0 C120",
+    "G0 C0",
+    "G0 C240",
+    "G0 C120",
+    "G0 C0",
+  ].forEach((cmd) => props.client?.enqueueCommand(cmd));
+}
 
-    close() {
-      this.client.enqueueCommand("M61");
-    },
+function unclamp() {
+  props.client?.enqueueCommands(["G0 C0", "G0 C120", "G0 C240", "G0 C0"]);
+}
 
-    moveToTs() {
-      this.client.enqueueCommands(["G56", `G0 X0 Y0 Z${tsPulledZ.toFixed(3)}`]);
-    },
+function open() {
+  props.client?.enqueueCommand("M60");
+}
 
-    tsInsert() {
-      const cmds = [];
-      cmds.push("G56");
-      cmds.push(`G0 Z${tsJustBeforeInsertZ.toFixed(3)}`);
+function close() {
+  props.client?.enqueueCommand("M61");
+}
 
-      const halfWidth = 0.25;
-      const quarterPitch = 0.1;
-      const durZ = Math.abs(tsFullInsertZ - tsJustBeforeInsertZ);
-      const dirZ = Math.sign(tsFullInsertZ - tsJustBeforeInsertZ);
+function moveToTs() {
+  props.client?.enqueueCommands(["G56", `G0 X0 Y0 Z${tsPulledZ.toFixed(3)}`]);
+}
 
-      let ofs = 0;
-      let phase = 0;
-      let offsets = [
-        [-1, -1],
-        [-1, 1],
-        [1, 1],
-        [1, -1],
-      ];
-      while (true) {
-        const [dx, dy] = offsets[phase];
-        const x = dx * halfWidth;
-        const y = dy * halfWidth;
-        const z = tsJustBeforeInsertZ + ofs * dirZ;
-        cmds.push(`G0 X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(3)}`);
+function tsInsert() {
+  const cmds = [];
+  cmds.push("G56");
+  cmds.push(`G0 Z${tsJustBeforeInsertZ.toFixed(3)}`);
 
-        const nextOfs = ofs + quarterPitch;
-        if (nextOfs >= durZ) {
-          break;
-        } else {
-          phase = (phase + 1) % 4;
-          ofs += quarterPitch;
-        }
-      }
+  const halfWidth = 0.25;
+  const quarterPitch = 0.1;
+  const durZ = Math.abs(tsFullInsertZ - tsJustBeforeInsertZ);
+  const dirZ = Math.sign(tsFullInsertZ - tsJustBeforeInsertZ);
 
-      cmds.push(`G0 X0 Y0 Z${tsFullInsertZ.toFixed(3)}`);
-      this.client.enqueueCommands(cmds);
-    },
+  let ofs = 0;
+  let phase = 0;
+  let offsets = [
+    [-1, -1],
+    [-1, 1],
+    [1, 1],
+    [1, -1],
+  ];
+  while (true) {
+    const [dx, dy] = offsets[phase];
+    const x = dx * halfWidth;
+    const y = dy * halfWidth;
+    const z = tsJustBeforeInsertZ + ofs * dirZ;
+    cmds.push(`G0 X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(3)}`);
 
-    tsPull() {
-      this.client.enqueueCommands([`G0 Z${tsPulledZ.toFixed(3)}`, "G53"]);
-    },
+    const nextOfs = ofs + quarterPitch;
+    if (nextOfs >= durZ) {
+      break;
+    } else {
+      phase = (phase + 1) % 4;
+      ofs += quarterPitch;
+    }
+  }
 
-    executeAttach() {
-      this.moveToTs();
-      this.open();
-      this.tsInsert();
-      this.clamp();
-      this.tsPull();
-      this.close();
-    },
+  cmds.push(`G0 X0 Y0 Z${tsFullInsertZ.toFixed(3)}`);
+  props.client?.enqueueCommands(cmds);
+}
 
-    executeDetach() {
-      this.moveToTs();
-      this.tsInsert();
-      this.unclamp();
-      this.tsPull();
-    },
-  },
-};
+function tsPull() {
+  props.client?.enqueueCommands([`G0 Z${tsPulledZ.toFixed(3)}`, "G53"]);
+}
+
+function executeAttach() {
+  moveToTs();
+  open();
+  tsInsert();
+  clamp();
+  tsPull();
+  close();
+}
+
+function executeDetach() {
+  moveToTs();
+  tsInsert();
+  unclamp();
+  tsPull();
+}
 </script>
