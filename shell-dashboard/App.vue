@@ -45,7 +45,7 @@
 </template>
 
 <script>
-import { SpoolerController } from "./spooler.ts";
+import { SpoolerController, spoolerApi } from "./spooler.ts";
 import logoUrl from "./logo.png";
 import AddJob from "./components/AddJob.vue";
 import ManualCommand from "./components/ManualCommand.vue";
@@ -78,6 +78,7 @@ export default {
       client: null,
       clientStatus: "unknown",
       busyStatusText: "",
+      isPolling: false,
     };
   },
 
@@ -120,29 +121,39 @@ export default {
     client = new SpoolerController(host);
     this.client = client;
 
-    client.onUpdateStatus = (state, numCommands, runningJob) => {
-      this.clientStatus = state;
-      if (state === "busy") {
-        if (runningJob !== null) {
-          this.busyStatusText = `Job ${runningJob} running`;
-        } else {
-          this.busyStatusText = `${numCommands} commands in queue`;
-        }
-      } else {
-        this.busyStatusText = "";
-      }
-    };
-
-    client.startPolling();
+    this.isPolling = true;
+    this.pollStatus();
   },
 
   beforeUnmount() {
-    if (client) {
-      client.stopPolling();
-    }
+    this.isPolling = false;
   },
 
   methods: {
+    async pollStatus() {
+      const host = "http://localhost:9000";
+      while (this.isPolling) {
+        try {
+          const status = await spoolerApi.getStatus(host);
+          const state = status.busy ? "busy" : "idle";
+          this.clientStatus = state;
+          if (state === "busy") {
+            if (status.running_job) {
+              this.busyStatusText = `Job ${status.running_job} running`;
+            } else {
+              this.busyStatusText = `${status.num_pending_commands} commands in queue`;
+            }
+          } else {
+            this.busyStatusText = "";
+          }
+        } catch (error) {
+          this.clientStatus = "api-offline";
+          this.busyStatusText = "";
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    },
+
     cancelAll() {
       if (!this.client) return;
       this.client.cancel();

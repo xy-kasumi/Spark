@@ -11,62 +11,16 @@
 type SpoolerState = 'api-offline' | 'board-offline' | 'idle' | 'unknown' | 'busy';
 
 /**
- * SpoolerController handles state check & command queue.
+ * SpoolerController handles command queue.
  */
 class SpoolerController {
   private readonly host: string;
-  private readonly pollIntervalMs: number;
-
-  private isPolling: boolean;
-
-  private state: SpoolerState;
-
-  public onUpdateStatus: ((state: SpoolerState, numQueuedCommands: number, runningJob: string | null) => void) | null;
 
   /**
    * @param host base URL of the shell-spooler server
-   * @param pollIntervalMs API polling & state check interval in milliseconds
    */
-  constructor(host: string, pollIntervalMs = 100) {
+  constructor(host: string) {
     this.host = host;
-    this.pollIntervalMs = pollIntervalMs;
-
-    this.isPolling = false;
-
-    // Enhanced status tracking
-    this.state = 'unknown';
-
-    // Callbacks for UI updates
-    this.onUpdateStatus = null;
-  }
-
-  /**
-   * Start polling for new lines from the spooler
-   */
-  startPolling(): void {
-    this.isPolling = true;
-    this.pollStatus();
-  }
-
-  /**
-   * Stop polling
-   */
-  stopPolling(): void {
-    this.isPolling = false;
-  }
-
-  private async pollStatus(): Promise<void> {
-    while (this.isPolling) {
-      try {
-        const status = await spoolerApi.getStatus(this.host);
-        this.state = status.busy ? 'busy' : 'idle';
-        this.onUpdateStatus?.(this.state, status.num_pending_commands, status.running_job || null);
-      } catch (error) {
-        this.state = 'api-offline';
-        this.onUpdateStatus?.(this.state, 0, null)
-      }
-      await this.delay(this.pollIntervalMs);
-    }
   }
 
   async enqueueCommands(commands: string[]): Promise<void> {
@@ -109,15 +63,6 @@ class SpoolerController {
     }).catch(error => {
       console.log("cancel error", error);
     });
-  }
-
-  /**
-   * Utility function to delay execution
-   * @param ms - Milliseconds to delay
-   * @returns Promise that resolves after delay
-   */
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
 
@@ -302,3 +247,4 @@ const spoolerApi = {
 };
 
 export { SpoolerController, spoolerApi };
+export type { SpoolerState };
