@@ -7,26 +7,26 @@
       <button class="refresh-btn" @click="refresh">REFRESH</button>
       <br />
       <div>{{ posLineLocal }}</div>
-      <div>{{ posLineMachine }}</div>
+      <div>(machine) {{ posStringMachine }}</div>
       <br />
       <table class="jog-table">
         <tr>
           <td></td>
-          <td><button class="jog-btn" @click="jogXPlus">X+</button></td>
+          <td><button class="jog-btn" @click="jog('X', 1)">X+</button></td>
           <td></td>
           <td></td>
-          <td><button class="jog-btn" @click="jogZMinus">Z- (PUSH)</button></td>
+          <td><button class="jog-btn" @click="jog('Z', -1)">Z- (PUSH)</button></td>
         </tr>
         <tr>
-          <td><button class="jog-btn" @click="jogYPlus">Y+</button></td>
+          <td><button class="jog-btn" @click="jog('Y', 1)">Y+</button></td>
           <td></td>
-          <td><button class="jog-btn" @click="jogYMinus">Y-</button></td>
-          <td><button class="jog-btn" @click="jogHome">HOME</button></td>
-          <td><button class="jog-btn" @click="jogZPlus">Z+ (PULL)</button></td>
+          <td><button class="jog-btn" @click="jog('Y', -1)">Y-</button></td>
+          <td><button class="jog-btn" @click="home">HOME</button></td>
+          <td><button class="jog-btn" @click="jog('Z', 1)">Z+ (PULL)</button></td>
         </tr>
         <tr>
           <td></td>
-          <td><button class="jog-btn" @click="jogXMinus">X-</button></td>
+          <td><button class="jog-btn" @click="jog('X', -1)">X-</button></td>
           <td></td>
           <td></td>
           <td></td>
@@ -56,12 +56,78 @@ import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { spoolerApi } from "../spooler";
 import type { SpoolerController } from "../spooler";
 
+// Basic data structure
+
+type Coords = { x: number, y: number, z: number, c: number };
+type CoordSys = "machine" | "grinder" | "toolsupply" | "work";
+
+type Pos = {
+  machine: Coords;
+  currSys: CoordSys;
+  local: Coords;
+};
+
+type Axis = "X" | "Y" | "Z" | "C";
+
+const getElementByAxis = (p: Coords, axis: Axis): number => {
+  switch (axis) {
+    case "X": return p.x;
+    case "Y": return p.y;
+    case "Z": return p.z;
+    case "C": return p.c;
+  }
+};
+
+// Spooler <-> data
+
+const formatCoords = (p: Coords): string => {
+  return `X${p.x.toFixed(3)} Y${p.y.toFixed(3)} Z${p.z.toFixed(3)} C${p.c.toFixed(3)}`;
+};
+
+const extractCoords = (ps: Record<string, any>, sys: CoordSys): Coords | null => {
+  const table: Record<CoordSys, string> = {
+    machine: "m",
+    grinder: "g",
+    toolsupply: "t",
+    work: "w",
+  };
+  const prefix = table[sys];
+  const xval = ps[`${prefix}.x`];
+  const yval = ps[`${prefix}.y`];
+  const zval = ps[`${prefix}.z`];
+  const cval = ps[`${prefix}.c`];
+  if (xval === undefined || yval === undefined || zval === undefined || cval === undefined) {
+    return null;
+  }
+  return {
+    x: xval,
+    y: yval,
+    z: zval,
+    c: cval,
+  };
+};
+
+const extractPos = (ps: Record<string, any>): Pos | null => {
+  const sys: CoordSys = ps["sys"];
+  const machinePos = extractCoords(ps, "machine");
+  const localPos = extractCoords(ps, sys);
+  if (!machinePos || !localPos) {
+    return null;
+  }
+  return {
+    machine: machinePos,
+    currSys: sys,
+    local: localPos,
+  };
+};
+
+// Vue UI
 const props = defineProps<{
   client?: SpoolerController;
 }>();
 
 const jogStepMm = ref(1);
-const pos = ref<Record<string, any>>({});
+const pos = ref<Pos | null>(null);
 const isPolling = ref(false);
 
 onMounted(() => {
@@ -74,54 +140,18 @@ onBeforeUnmount(() => {
 });
 
 const posLineLocal = computed(() => {
-  if (pos.value["sys"] === "machine") {
+  const val = pos.value;
+  if (!val) {
     return "";
   }
-
-  const prefixTable: Record<string, string> = {
-    grinder: "g",
-    toolsupply: "t",
-    work: "w",
-  };
-  const sys = pos.value["sys"];
-  const prefix = prefixTable[sys];
-  if (!prefix) {
-    return `(${sys}) unknown`;
+  if (val.currSys === "machine") {
+    return "";
   }
-
-  const x = pos.value[`${prefix}.x`];
-  const y = pos.value[`${prefix}.y`];
-  const z = pos.value[`${prefix}.z`];
-  const c = pos.value[`${prefix}.c`];
-  if (
-    x === undefined ||
-    y === undefined ||
-    z === undefined ||
-    c === undefined
-  ) {
-    return `(${sys}) unknown`;
-  }
-  return `(${sys}) X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(
-    3
-  )} C${c.toFixed(3)}`;
+  return `(${val.currSys}) ${formatCoords(val.local)}`;
 });
 
-const posLineMachine = computed(() => {
-  const x = pos.value["m.x"];
-  const y = pos.value["m.y"];
-  const z = pos.value["m.z"];
-  const c = pos.value["m.c"];
-  if (
-    x === undefined ||
-    y === undefined ||
-    z === undefined ||
-    c === undefined
-  ) {
-    return "(machine) unknown";
-  }
-  return `(machine) X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(
-    3
-  )} C${c.toFixed(3)}`;
+const posStringMachine = computed(() => {
+  return pos.value ? formatCoords(pos.value.machine) : "unknown";
 });
 
 async function pollPos() {
@@ -139,66 +169,26 @@ async function updatePos() {
   await new Promise((resolve) => setTimeout(resolve, 50));
   const host = "http://localhost:9000";
   const latestPos = await spoolerApi.getLatestPState(host, "pos");
-  if (latestPos !== null) {
-    pos.value = latestPos.pstate;
+  if (latestPos === null) {
+    return;
   }
+  pos.value = extractPos(latestPos.pstate);
 }
 
 function refresh() {
   updatePos();
 }
 
-function currentPos() {
-  return {
-    x: pos.value["m.x"],
-    y: pos.value["m.y"],
-    z: pos.value["m.z"],
-  };
-}
-
-function jogHome() {
+function home() {
   props.client?.enqueueCommand("G28");
 }
 
-function jogXPlus() {
-  props.client?.enqueueCommand(
-    `G0 X${(currentPos().x + jogStepMm.value).toFixed(3)}`
-  );
-  updatePos();
-}
-
-function jogXMinus() {
-  props.client?.enqueueCommand(
-    `G0 X${(currentPos().x - jogStepMm.value).toFixed(3)}`
-  );
-  updatePos();
-}
-
-function jogYPlus() {
-  props.client?.enqueueCommand(
-    `G0 Y${(currentPos().y + jogStepMm.value).toFixed(3)}`
-  );
-  updatePos();
-}
-
-function jogYMinus() {
-  props.client?.enqueueCommand(
-    `G0 Y${(currentPos().y - jogStepMm.value).toFixed(3)}`
-  );
-  updatePos();
-}
-
-function jogZPlus() {
-  props.client?.enqueueCommand(
-    `G0 Z${(currentPos().z + jogStepMm.value).toFixed(3)}`
-  );
-  updatePos();
-}
-
-function jogZMinus() {
-  props.client?.enqueueCommand(
-    `G0 Z${(currentPos().z - jogStepMm.value).toFixed(3)}`
-  );
+function jog(axis: Axis, dir: -1 | 1) {
+  if (!props.client || !pos.value) {
+    return;
+  }
+  const newP = getElementByAxis(pos.value.local, axis) + jogStepMm.value * dir;
+  props.client.enqueueCommand(`G0 ${axis}${newP.toFixed(3)}`);
   updatePos();
 }
 </script>
