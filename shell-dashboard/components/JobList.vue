@@ -81,7 +81,9 @@ let intervalId: number | undefined;
 async function refreshJobs() {
   try {
     const host = "http://localhost:9000";
-    jobs.value = await spoolerApi.listJobs(host);
+    const jobList = await spoolerApi.listJobs(host);
+    jobList.sort((a, b) => b.time_added.getTime() - a.time_added.getTime());
+    jobs.value = jobList;
   } catch (error) {
     console.error("Failed to refresh jobs:", error);
     jobs.value = [];
