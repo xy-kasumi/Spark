@@ -285,6 +285,13 @@ label {
 .fixed-header .header-cancel {
   margin-left: auto;
   margin-bottom: 0;
+  background: #b52828;
+  border-color: #8b1f1f;
+  color: #ffffff;
+}
+
+.fixed-header .header-cancel:hover {
+  background: #c83232;
 }
 
 /* Hide Vue templates until Vue loads */
