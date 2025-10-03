@@ -64,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { spoolerApi } from "../spooler";
 
 type Job = {
@@ -76,6 +76,7 @@ type Job = {
 };
 
 const jobs = ref<Job[]>([]);
+let intervalId: number | undefined;
 
 async function refreshJobs() {
   try {
@@ -123,4 +124,15 @@ function getElapsedTime(job: Job) {
     return `${seconds}s`;
   }
 }
+
+onMounted(() => {
+  refreshJobs();
+  intervalId = window.setInterval(refreshJobs, 5000);
+});
+
+onUnmounted(() => {
+  if (intervalId !== undefined) {
+    clearInterval(intervalId);
+  }
+});
 </script>

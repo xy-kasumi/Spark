@@ -74,6 +74,7 @@ onMounted(() => {
     data: { datasets: [] },
     options: { animation: false },
   });
+  refreshNow();
 });
 
 onBeforeUnmount(() => {

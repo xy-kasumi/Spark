@@ -72,10 +72,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { spoolerApi } from "../spooler";
 
 const errors = ref<Array<{ time: Date; msg: string; src?: string }>>([]);
+let intervalId: number | undefined;
 
 async function refreshErrors() {
   try {
@@ -90,4 +91,15 @@ async function refreshErrors() {
 function formatTimestamp(date: Date) {
   return date.toLocaleString();
 }
+
+onMounted(() => {
+  refreshErrors();
+  intervalId = window.setInterval(refreshErrors, 5000);
+});
+
+onUnmounted(() => {
+  if (intervalId !== undefined) {
+    clearInterval(intervalId);
+  }
+});
 </script>
