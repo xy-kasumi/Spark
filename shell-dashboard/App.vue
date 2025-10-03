@@ -26,7 +26,7 @@
         />
         <JobList />
         <CoordinateSystem :client="client" />
-        <Jog :client="client" :latestPos="latestPos" />
+        <Jog :client="client" />
         <ToolSupply :client="client" />
       </div>
 
@@ -77,7 +77,6 @@ export default {
       logoUrl,
       client: null,
       clientStatus: "unknown",
-      latestPos: {},
       busyStatusText: "",
     };
   },
@@ -121,9 +120,6 @@ export default {
     client = new SpoolerController(host);
     this.client = client;
 
-    client.onUpdatePos = (pos) => {
-      this.latestPos = pos;
-    };
     client.onUpdateStatus = (state, numCommands, runningJob) => {
       this.clientStatus = state;
       if (state === "busy") {

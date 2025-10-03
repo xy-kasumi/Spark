@@ -4,6 +4,8 @@
   <div class="widget">
     <h1>Jog</h1>
     <div class="widget-content">
+      <button class="refresh-btn" @click="refresh">REFRESH</button>
+      <br />
       <div>{{ posLineLocal }}</div>
       <div>{{ posLineMachine }}</div>
       <br />
@@ -65,20 +67,30 @@
 </template>
 
 <script>
+import { spoolerApi } from "../spooler.ts";
+
 export default {
   name: "Jog",
   props: {
     client: Object,
-    latestPos: Object,
   },
   data() {
     return {
       jogStepMm: 1,
+      pos: {},
+      isPolling: false,
     };
+  },
+  mounted() {
+    this.isPolling = true;
+    this.pollPos();
+  },
+  beforeUnmount() {
+    this.isPolling = false;
   },
   computed: {
     posLineLocal() {
-      if (this.latestPos["sys"] === "machine") {
+      if (this.pos["sys"] === "machine") {
         return "";
       }
 
@@ -87,16 +99,16 @@ export default {
         toolsupply: "t",
         work: "w",
       };
-      const sys = this.latestPos["sys"];
+      const sys = this.pos["sys"];
       const prefix = prefixTable[sys];
       if (!prefix) {
         return `(${sys}) unknown`;
       }
 
-      const x = this.latestPos[`${prefix}.x`];
-      const y = this.latestPos[`${prefix}.y`];
-      const z = this.latestPos[`${prefix}.z`];
-      const c = this.latestPos[`${prefix}.c`];
+      const x = this.pos[`${prefix}.x`];
+      const y = this.pos[`${prefix}.y`];
+      const z = this.pos[`${prefix}.z`];
+      const c = this.pos[`${prefix}.c`];
       if (
         x === undefined ||
         y === undefined ||
@@ -111,10 +123,10 @@ export default {
     },
 
     posLineMachine() {
-      const x = this.latestPos["m.x"];
-      const y = this.latestPos["m.y"];
-      const z = this.latestPos["m.z"];
-      const c = this.latestPos["m.c"];
+      const x = this.pos["m.x"];
+      const y = this.pos["m.y"];
+      const z = this.pos["m.z"];
+      const c = this.pos["m.c"];
       if (
         x === undefined ||
         y === undefined ||
@@ -129,11 +141,35 @@ export default {
     },
   },
   methods: {
+    async pollPos() {
+      while (this.isPolling) {
+        await this.updatePos();
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    },
+
+    async updatePos() {
+      if (!this.client) {
+        return;
+      }
+      await this.client.enqueueCommand("?pos");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const host = "http://localhost:9000";
+      const latestPos = await spoolerApi.getLatestPState(host, "pos");
+      if (latestPos !== null) {
+        this.pos = latestPos.pstate;
+      }
+    },
+
+    refresh() {
+      this.updatePos();
+    },
+
     currentPos() {
       return {
-        x: this.latestPos["m.x"],
-        y: this.latestPos["m.y"],
-        z: this.latestPos["m.z"],
+        x: this.pos["m.x"],
+        y: this.pos["m.y"],
+        z: this.pos["m.z"],
       };
     },
 
@@ -145,42 +181,42 @@ export default {
       this.client.enqueueCommand(
         `G0 X${(this.currentPos().x + this.jogStepMm).toFixed(3)}`
       );
-      this.client.requestPosUpdate();
+      this.updatePos();
     },
 
     jogXMinus() {
       this.client.enqueueCommand(
         `G0 X${(this.currentPos().x - this.jogStepMm).toFixed(3)}`
       );
-      this.client.requestPosUpdate();
+      this.updatePos();
     },
 
     jogYPlus() {
       this.client.enqueueCommand(
         `G0 Y${(this.currentPos().y + this.jogStepMm).toFixed(3)}`
       );
-      this.client.requestPosUpdate();
+      this.updatePos();
     },
 
     jogYMinus() {
       this.client.enqueueCommand(
         `G0 Y${(this.currentPos().y - this.jogStepMm).toFixed(3)}`
       );
-      this.client.requestPosUpdate();
+      this.updatePos();
     },
 
     jogZPlus() {
       this.client.enqueueCommand(
         `G0 Z${(this.currentPos().z + this.jogStepMm).toFixed(3)}`
       );
-      this.client.enqueueCommand("?pos");
+      this.updatePos();
     },
 
     jogZMinus() {
       this.client.enqueueCommand(
         `G0 Z${(this.currentPos().z - this.jogStepMm).toFixed(3)}`
       );
-      this.client.enqueueCommand("?pos");
+      this.updatePos();
     },
   },
 };

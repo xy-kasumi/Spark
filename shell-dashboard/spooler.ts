@@ -16,24 +16,20 @@ type SpoolerState = 'api-offline' | 'board-offline' | 'idle' | 'unknown' | 'busy
 class SpoolerController {
   private readonly host: string;
   private readonly pollIntervalMs: number;
-  private readonly pingIntervalMs: number;
 
   private isPolling: boolean;
 
   private state: SpoolerState;
 
-  public onUpdatePos: ((pos: Record<string, any>) => void) | null;
   public onUpdateStatus: ((state: SpoolerState, numQueuedCommands: number, runningJob: string | null) => void) | null;
 
   /**
    * @param host base URL of the shell-spooler server
    * @param pollIntervalMs API polling & state check interval in milliseconds
-   * @param pingIntervalMs ping interval in milliseconds (must be multiples of pollMs)
    */
-  constructor(host: string, pollIntervalMs = 100, pingIntervalMs = 5000) {
+  constructor(host: string, pollIntervalMs = 100) {
     this.host = host;
     this.pollIntervalMs = pollIntervalMs;
-    this.pingIntervalMs = pingIntervalMs;
 
     this.isPolling = false;
 
@@ -41,7 +37,6 @@ class SpoolerController {
     this.state = 'unknown';
 
     // Callbacks for UI updates
-    this.onUpdatePos = null;
     this.onUpdateStatus = null;
   }
 
@@ -50,7 +45,6 @@ class SpoolerController {
    */
   startPolling(): void {
     this.isPolling = true;
-    this.pollPos();
     this.pollStatus();
   }
 
@@ -59,21 +53,6 @@ class SpoolerController {
    */
   stopPolling(): void {
     this.isPolling = false;
-  }
-
-  private async pollPos(): Promise<void> {
-    while (this.isPolling) {
-      try {
-        await this.sendPayload('?pos');
-        const latestPos = await spoolerApi.getLatestPState(this.host, "pos");
-        if (latestPos !== null) {
-          this.onUpdatePos?.(latestPos.pstate);
-        }
-      } catch (error) {
-        // squash
-      }
-      await this.delay(this.pingIntervalMs);
-    }
   }
 
   private async pollStatus(): Promise<void> {
@@ -87,35 +66,6 @@ class SpoolerController {
         this.onUpdateStatus?.(this.state, 0, null)
       }
       await this.delay(this.pollIntervalMs);
-    }
-  }
-
-  async requestPosUpdate() {
-    await this.delay(100); // hack to make request after command
-    this.enqueueCommand('?pos');
-  }
-
-  /**
-   * @returns Timestamp of enqueued
-   */
-  private async sendPayload(payload: string): Promise<string> {
-    try {
-      const response = await fetch(`${this.host}/write-line`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ line: payload })
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const { time }: { time: string } = await response.json();
-      return time;
-    } catch (error) {
-      // Command failed, set state to offline
-      this.state = 'api-offline';
-      throw error;
     }
   }
 
