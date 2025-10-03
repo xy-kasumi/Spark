@@ -6,19 +6,9 @@
     <div class="widget-content">
       <button class="" @click="init">{{ initButtonText }}</button>
       <br />
-      <textarea
-        class=""
-        v-model="commandText"
-        rows="10"
-        cols="50"
-        placeholder="Enter G-code or commands"
-      ></textarea
-      ><br />
-      <button
-        class=""
-        @click="send"
-        :disabled="commands.length === 0 || !assumeInitialized"
-      >
+      <textarea class="" v-model="commandText" rows="10" cols="50"
+        placeholder="Enter G-code or commands"></textarea><br />
+      <button class="" @click="send" :disabled="commands.length === 0 || !assumeInitialized">
         {{ executeButtonText }}
       </button>
       <label class="">

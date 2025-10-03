@@ -35,30 +35,15 @@
 
       <div>
         <label class="">
-          <input
-            type="radio"
-            name="jogStep"
-            :value="0.1"
-            v-model.number="jogStepMm"
-          />
+          <input type="radio" name="jogStep" :value="0.1" v-model.number="jogStepMm" />
           0.1mm
         </label>
         <label class="">
-          <input
-            type="radio"
-            name="jogStep"
-            :value="1"
-            v-model.number="jogStepMm"
-          />
+          <input type="radio" name="jogStep" :value="1" v-model.number="jogStepMm" />
           1mm
         </label>
         <label class="">
-          <input
-            type="radio"
-            name="jogStep"
-            :value="5"
-            v-model.number="jogStepMm"
-          />
+          <input type="radio" name="jogStep" :value="5" v-model.number="jogStepMm" />
           5mm
         </label>
       </div>

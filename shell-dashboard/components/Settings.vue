@@ -6,20 +6,12 @@
     <div class="widget-content">
       <button @click="refreshSettings">REFRESH</button>
       <br />
-      <div
-        v-if="Object.keys(settings).length === 0"
-        class="settings-placeholder"
-      >
+      <div v-if="Object.keys(settings).length === 0" class="settings-placeholder">
         Click REFRESH to load settings
       </div>
       <div v-else>
-        <label
-          >Filter
-          <input
-            type="text"
-            v-model="settingsFilter"
-            placeholder="Enter filter..."
-        /></label>
+        <label>Filter
+          <input type="text" v-model="settingsFilter" placeholder="Enter filter..." /></label>
         <div class="settings-info">
           Showing {{ settingsCount.filtered }}/{{ settingsCount.total }} items
         </div>
@@ -34,24 +26,13 @@
             <tbody>
               <tr v-for="(value, key) in filteredSettings" :key="key">
                 <td v-html="highlightKey(key)"></td>
-                <td
-                  v-if="editingKey !== key"
-                  @click="startEditing(key)"
-                  style="cursor: pointer"
-                >
+                <td v-if="editingKey !== key" @click="startEditing(key)" style="cursor: pointer">
                   {{ value }}
-                  <span v-if="isModified(key)" class="modified-indicator"
-                    >(modified)</span
-                  >
+                  <span v-if="isModified(key)" class="modified-indicator">(modified)</span>
                 </td>
                 <td v-else>
-                  <input
-                    type="number"
-                    :value="value"
-                    @blur="saveEdit(key, $event)"
-                    @keyup.enter="saveEdit(key, $event)"
-                    ref="editInput"
-                  />
+                  <input type="number" :value="value" @blur="saveEdit(key, $event)" @keyup.enter="saveEdit(key, $event)"
+                    ref="editInput" />
                 </td>
               </tr>
             </tbody>
@@ -61,10 +42,7 @@
           <button @click="applyEdits">APPLY EDITS</button>
           <button @click="discardEdits">DISCARD EDITS</button>
         </div>
-        <div
-          v-if="pendingEditsCount === 0"
-          style="margin-top: var(--unit-space)"
-        >
+        <div v-if="pendingEditsCount === 0" style="margin-top: var(--unit-space)">
           <button @click="saveAsInit">SAVE AS INIT</button>
         </div>
       </div>

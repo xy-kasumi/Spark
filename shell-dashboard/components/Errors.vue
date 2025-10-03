@@ -6,78 +6,61 @@
     <div class="widget-content">
       <button @click="refreshErrors">REFRESH</button>
       <div v-if="errors.length === 0">No errors found</div>
-      <div
-        v-else
-        style="
+      <div v-else style="
           max-height: 300px;
           overflow-y: auto;
           margin-top: var(--unit-space);
-        "
-      >
-        <table
-          style="
+        ">
+        <table style="
             width: 100%;
             border-collapse: collapse;
-          "
-        >
+          ">
           <thead>
             <tr>
-              <th
-                style="
+              <th style="
                   text-align: left;
                   padding: calc(var(--unit-space) * 0.5);
                   border-bottom: 1px solid var(--border-color);
-                "
-              >
+                ">
                 Timestamp
               </th>
-              <th
-                style="
+              <th style="
                   text-align: left;
                   padding: calc(var(--unit-space) * 0.5);
                   border-bottom: 1px solid var(--border-color);
-                "
-              >
+                ">
                 Error
               </th>
-              <th
-                style="
+              <th style="
                   text-align: left;
                   padding: calc(var(--unit-space) * 0.5);
                   border-bottom: 1px solid var(--border-color);
-                "
-              >
+                ">
                 Source
               </th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(error, index) in errors" :key="index">
-              <td
-                style="
+              <td style="
                   padding: calc(var(--unit-space) * 0.5);
                   border-bottom: 1px solid var(--border-color);
                   white-space: nowrap;
-                "
-              >
+                ">
                 {{ formatTimestamp(error.time) }}
               </td>
-              <td
-                style="
+              <td style="
                   padding: calc(var(--unit-space) * 0.5);
                   border-bottom: 1px solid var(--border-color);
-                "
-              >
+                ">
                 {{ error.msg }}
               </td>
-              <td
-                style="
+              <td style="
                   padding: calc(var(--unit-space) * 0.5);
                   border-bottom: 1px solid var(--border-color);
                   color: var(--text-secondary);
                   font-size: calc(var(--text-size) * 0.9);
-                "
-              >
+                ">
                 {{ error.src || '-' }}
               </td>
             </tr>

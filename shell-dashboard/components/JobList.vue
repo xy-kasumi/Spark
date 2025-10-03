@@ -6,69 +6,54 @@
     <div class="widget-content">
       <button @click="refreshJobs">REFRESH</button>
       <div v-if="jobs.length === 0">No jobs found</div>
-      <table
-        v-else
-        style="
+      <table v-else style="
           width: 100%;
           border-collapse: collapse;
           margin-top: var(--unit-space);
-        "
-      >
+        ">
         <thead>
           <tr>
-            <th
-              style="
+            <th style="
                 text-align: left;
                 padding: calc(var(--unit-space) * 0.5);
                 border-bottom: 1px solid var(--border-color);
-              "
-            >
+              ">
               Status
             </th>
-            <th
-              style="
+            <th style="
                 text-align: left;
                 padding: calc(var(--unit-space) * 0.5);
                 border-bottom: 1px solid var(--border-color);
-              "
-            >
+              ">
               Started
             </th>
-            <th
-              style="
+            <th style="
                 text-align: left;
                 padding: calc(var(--unit-space) * 0.5);
                 border-bottom: 1px solid var(--border-color);
-              "
-            >
+              ">
               Elapsed
             </th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="job in jobs" :key="job.job_id">
-            <td
-              style="
+            <td style="
                 padding: calc(var(--unit-space) * 0.5);
                 border-bottom: 1px solid var(--border-color);
-              "
-            >
+              ">
               {{ job.status }}
             </td>
-            <td
-              style="
+            <td style="
                 padding: calc(var(--unit-space) * 0.5);
                 border-bottom: 1px solid var(--border-color);
-              "
-            >
+              ">
               {{ formatJobTime(job.time_added) }}
             </td>
-            <td
-              style="
+            <td style="
                 padding: calc(var(--unit-space) * 0.5);
                 border-bottom: 1px solid var(--border-color);
-              "
-            >
+              ">
               {{ getElapsedTime(job) }}
             </td>
           </tr>

@@ -7,9 +7,7 @@
       <div class="header-content">
         <img :src="logoUrl" alt="Spark Logo" class="header-logo" />
         <div class="status-info">
-          <span :title="'Detailed status: ' + clientStatus"
-            >{{ statusEmoji }} {{ uiStatus }}</span
-          >
+          <span :title="'Detailed status: ' + clientStatus">{{ statusEmoji }} {{ uiStatus }}</span>
           {{ busyStatusText }}
         </div>
         <button class="header-cancel" @click="cancelAll">CANCEL ALL</button>
@@ -19,11 +17,7 @@
     <!-- Main Content -->
     <div class="main-content">
       <div class="column">
-        <AddJob
-          :client="client"
-          :clientStatus="clientStatus"
-          :assumeInitialized="assumeInitialized"
-        />
+        <AddJob :client="client" :clientStatus="clientStatus" :assumeInitialized="assumeInitialized" />
         <JobList />
         <CoordinateSystem :client="client" />
         <Jog :client="client" />
@@ -34,11 +28,7 @@
         <Settings :client="client" />
         <Timeseries />
         <Errors />
-        <ManualCommand
-          :client="client"
-          :clientStatus="clientStatus"
-          :assumeInitialized="assumeInitialized"
-        />
+        <ManualCommand :client="client" :clientStatus="clientStatus" :assumeInitialized="assumeInitialized" />
       </div>
     </div>
   </div>
@@ -208,7 +198,7 @@ body {
   margin-bottom: calc(var(--unit-space) * 2);
 }
 
-.widget > h1 {
+.widget>h1 {
   font-size: var(--text-size);
   font-weight: bold;
   margin: 0;
@@ -218,7 +208,7 @@ body {
   background: var(--bg-secondary);
 }
 
-.widget > .widget-content {
+.widget>.widget-content {
   padding: var(--unit-space);
 }
 

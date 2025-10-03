@@ -7,60 +7,30 @@
       <div>
         Last
         <label class="">
-          <input
-            type="radio"
-            name="span"
-            :value="60"
-            v-model.number="span"
-          />
+          <input type="radio" name="span" :value="60" v-model.number="span" />
           1m
         </label>
         <label class="">
-          <input
-            type="radio"
-            name="span"
-            :value="600"
-            v-model.number="span"
-          />
+          <input type="radio" name="span" :value="600" v-model.number="span" />
           10m
         </label>
         <label class="">
-          <input
-            type="radio"
-            name="span"
-            :value="3600"
-            v-model.number="span"
-          />
+          <input type="radio" name="span" :value="3600" v-model.number="span" />
           60m
         </label>
       </div>
       <div>
         Auto refresh
         <label class="">
-          <input
-            type="radio"
-            name="refreshInterval"
-            :value="0"
-            v-model.number="refreshInterval"
-          />
+          <input type="radio" name="refreshInterval" :value="0" v-model.number="refreshInterval" />
           No
         </label>
         <label class="">
-          <input
-            type="radio"
-            name="refreshInterval"
-            :value="10"
-            v-model.number="refreshInterval"
-          />
+          <input type="radio" name="refreshInterval" :value="10" v-model.number="refreshInterval" />
           10s
         </label>
         <label class="">
-          <input
-            type="radio"
-            name="refreshInterval"
-            :value="60"
-            v-model.number="refreshInterval"
-          />
+          <input type="radio" name="refreshInterval" :value="60" v-model.number="refreshInterval" />
           1m
         </label>
         <button @click="refreshNow">REFRESH</button>

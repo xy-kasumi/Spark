@@ -5,13 +5,8 @@
     <h1>Add Job</h1>
     <div class="widget-content">
       <button class="" @click="pasteFromClipboard">PASTE FROM CLIPBOARD</button>
-      <span v-if="commands.length > 0">{{ linesInfo }}</span
-      ><br />
-      <button
-        class=""
-        @click="send"
-        :disabled="commands.length === 0 || !assumeInitialized"
-      >
+      <span v-if="commands.length > 0">{{ linesInfo }}</span><br />
+      <button class="" @click="send" :disabled="commands.length === 0 || !assumeInitialized">
         {{ executeButtonText }}
       </button>
     </div>
