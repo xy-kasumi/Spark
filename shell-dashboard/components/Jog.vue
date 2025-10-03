@@ -66,160 +66,156 @@
   </div>
 </template>
 
-<script>
-import { spoolerApi } from "../spooler.ts";
+<script setup lang="ts">
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { spoolerApi } from "../spooler";
+import type { SpoolerController } from "../spooler";
 
-export default {
-  name: "Jog",
-  props: {
-    client: Object,
-  },
-  data() {
-    return {
-      jogStepMm: 1,
-      pos: {},
-      isPolling: false,
-    };
-  },
-  mounted() {
-    this.isPolling = true;
-    this.pollPos();
-  },
-  beforeUnmount() {
-    this.isPolling = false;
-  },
-  computed: {
-    posLineLocal() {
-      if (this.pos["sys"] === "machine") {
-        return "";
-      }
+const props = defineProps<{
+  client?: SpoolerController;
+}>();
 
-      const prefixTable = {
-        grinder: "g",
-        toolsupply: "t",
-        work: "w",
-      };
-      const sys = this.pos["sys"];
-      const prefix = prefixTable[sys];
-      if (!prefix) {
-        return `(${sys}) unknown`;
-      }
+const jogStepMm = ref(1);
+const pos = ref<Record<string, any>>({});
+const isPolling = ref(false);
 
-      const x = this.pos[`${prefix}.x`];
-      const y = this.pos[`${prefix}.y`];
-      const z = this.pos[`${prefix}.z`];
-      const c = this.pos[`${prefix}.c`];
-      if (
-        x === undefined ||
-        y === undefined ||
-        z === undefined ||
-        c === undefined
-      ) {
-        return `(${sys}) unknown`;
-      }
-      return `(${sys}) X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(
-        3
-      )} C${c.toFixed(3)}`;
-    },
+onMounted(() => {
+  isPolling.value = true;
+  pollPos();
+});
 
-    posLineMachine() {
-      const x = this.pos["m.x"];
-      const y = this.pos["m.y"];
-      const z = this.pos["m.z"];
-      const c = this.pos["m.c"];
-      if (
-        x === undefined ||
-        y === undefined ||
-        z === undefined ||
-        c === undefined
-      ) {
-        return "(machine) unknown";
-      }
-      return `(machine) X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(
-        3
-      )} C${c.toFixed(3)}`;
-    },
-  },
-  methods: {
-    async pollPos() {
-      while (this.isPolling) {
-        await this.updatePos();
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-    },
+onBeforeUnmount(() => {
+  isPolling.value = false;
+});
 
-    async updatePos() {
-      if (!this.client) {
-        return;
-      }
-      await this.client.enqueueCommand("?pos");
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      const host = "http://localhost:9000";
-      const latestPos = await spoolerApi.getLatestPState(host, "pos");
-      if (latestPos !== null) {
-        this.pos = latestPos.pstate;
-      }
-    },
+const posLineLocal = computed(() => {
+  if (pos.value["sys"] === "machine") {
+    return "";
+  }
 
-    refresh() {
-      this.updatePos();
-    },
+  const prefixTable: Record<string, string> = {
+    grinder: "g",
+    toolsupply: "t",
+    work: "w",
+  };
+  const sys = pos.value["sys"];
+  const prefix = prefixTable[sys];
+  if (!prefix) {
+    return `(${sys}) unknown`;
+  }
 
-    currentPos() {
-      return {
-        x: this.pos["m.x"],
-        y: this.pos["m.y"],
-        z: this.pos["m.z"],
-      };
-    },
+  const x = pos.value[`${prefix}.x`];
+  const y = pos.value[`${prefix}.y`];
+  const z = pos.value[`${prefix}.z`];
+  const c = pos.value[`${prefix}.c`];
+  if (
+    x === undefined ||
+    y === undefined ||
+    z === undefined ||
+    c === undefined
+  ) {
+    return `(${sys}) unknown`;
+  }
+  return `(${sys}) X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(
+    3
+  )} C${c.toFixed(3)}`;
+});
 
-    jogHome() {
-      this.client.enqueueCommand("G28");
-    },
+const posLineMachine = computed(() => {
+  const x = pos.value["m.x"];
+  const y = pos.value["m.y"];
+  const z = pos.value["m.z"];
+  const c = pos.value["m.c"];
+  if (
+    x === undefined ||
+    y === undefined ||
+    z === undefined ||
+    c === undefined
+  ) {
+    return "(machine) unknown";
+  }
+  return `(machine) X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(
+    3
+  )} C${c.toFixed(3)}`;
+});
 
-    jogXPlus() {
-      this.client.enqueueCommand(
-        `G0 X${(this.currentPos().x + this.jogStepMm).toFixed(3)}`
-      );
-      this.updatePos();
-    },
+async function pollPos() {
+  while (isPolling.value) {
+    await updatePos();
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+}
 
-    jogXMinus() {
-      this.client.enqueueCommand(
-        `G0 X${(this.currentPos().x - this.jogStepMm).toFixed(3)}`
-      );
-      this.updatePos();
-    },
+async function updatePos() {
+  if (!props.client) {
+    return;
+  }
+  await props.client.enqueueCommand("?pos");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const host = "http://localhost:9000";
+  const latestPos = await spoolerApi.getLatestPState(host, "pos");
+  if (latestPos !== null) {
+    pos.value = latestPos.pstate;
+  }
+}
 
-    jogYPlus() {
-      this.client.enqueueCommand(
-        `G0 Y${(this.currentPos().y + this.jogStepMm).toFixed(3)}`
-      );
-      this.updatePos();
-    },
+function refresh() {
+  updatePos();
+}
 
-    jogYMinus() {
-      this.client.enqueueCommand(
-        `G0 Y${(this.currentPos().y - this.jogStepMm).toFixed(3)}`
-      );
-      this.updatePos();
-    },
+function currentPos() {
+  return {
+    x: pos.value["m.x"],
+    y: pos.value["m.y"],
+    z: pos.value["m.z"],
+  };
+}
 
-    jogZPlus() {
-      this.client.enqueueCommand(
-        `G0 Z${(this.currentPos().z + this.jogStepMm).toFixed(3)}`
-      );
-      this.updatePos();
-    },
+function jogHome() {
+  props.client?.enqueueCommand("G28");
+}
 
-    jogZMinus() {
-      this.client.enqueueCommand(
-        `G0 Z${(this.currentPos().z - this.jogStepMm).toFixed(3)}`
-      );
-      this.updatePos();
-    },
-  },
-};
+function jogXPlus() {
+  props.client?.enqueueCommand(
+    `G0 X${(currentPos().x + jogStepMm.value).toFixed(3)}`
+  );
+  updatePos();
+}
+
+function jogXMinus() {
+  props.client?.enqueueCommand(
+    `G0 X${(currentPos().x - jogStepMm.value).toFixed(3)}`
+  );
+  updatePos();
+}
+
+function jogYPlus() {
+  props.client?.enqueueCommand(
+    `G0 Y${(currentPos().y + jogStepMm.value).toFixed(3)}`
+  );
+  updatePos();
+}
+
+function jogYMinus() {
+  props.client?.enqueueCommand(
+    `G0 Y${(currentPos().y - jogStepMm.value).toFixed(3)}`
+  );
+  updatePos();
+}
+
+function jogZPlus() {
+  props.client?.enqueueCommand(
+    `G0 Z${(currentPos().z + jogStepMm.value).toFixed(3)}`
+  );
+  updatePos();
+}
+
+function jogZMinus() {
+  props.client?.enqueueCommand(
+    `G0 Z${(currentPos().z - jogStepMm.value).toFixed(3)}`
+  );
+  updatePos();
+}
 </script>
 
 <style scoped>

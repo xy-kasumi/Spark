@@ -72,203 +72,200 @@
   </div>
 </template>
 
-<script>
-import { spoolerApi } from "../spooler.ts";
+<script setup lang="ts">
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { spoolerApi } from "../spooler";
+import type { SpoolerController } from "../spooler";
 
-export default {
-  name: "Settings",
-  props: {
-    client: Object,
-  },
-  data() {
-    return {
-      settingsMachine: {},
-      settingsLocal: {},
-      settingsFilter: "",
-      editingKey: null,
-      escapeHandler: null,
-    };
-  },
-  computed: {
-    settings() {
-      const result = {};
+const props = defineProps<{
+  client?: SpoolerController;
+}>();
 
-      for (const [key, value] of Object.entries(this.settingsMachine)) {
-        result[key] = value;
-      }
+const settingsMachine = ref<Record<string, number>>({});
+const settingsLocal = ref<Record<string, number>>({});
+const settingsFilter = ref("");
+const editingKey = ref<string | null>(null);
 
-      for (const [key, value] of Object.entries(this.settingsLocal)) {
-        result[key] = value;
-      }
+const settings = computed(() => {
+  const result: Record<string, number> = {};
 
-      return result;
-    },
+  for (const [key, value] of Object.entries(settingsMachine.value)) {
+    result[key] = value;
+  }
 
-    filteredSettings() {
-      if (!this.settingsFilter.trim()) {
-        return this.settings;
-      }
+  for (const [key, value] of Object.entries(settingsLocal.value)) {
+    result[key] = value;
+  }
 
-      const filter = this.settingsFilter.toLowerCase();
-      const filtered = {};
+  return result;
+});
 
-      for (const [key, value] of Object.entries(this.settings)) {
-        if (key.toLowerCase().includes(filter)) {
-          filtered[key] = value;
-        }
-      }
+const filteredSettings = computed(() => {
+  if (!settingsFilter.value.trim()) {
+    return settings.value;
+  }
 
-      return filtered;
-    },
+  const filter = settingsFilter.value.toLowerCase();
+  const filtered: Record<string, number> = {};
 
-    settingsCount() {
-      const total = Object.keys(this.settings).length;
-      const filtered = Object.keys(this.filteredSettings).length;
-      return { filtered, total };
-    },
-
-    modifiedKeys() {
-      const modified = [];
-      for (const [key, localValue] of Object.entries(this.settingsLocal)) {
-        const machineValue = this.settingsMachine[key];
-        if (machineValue !== undefined && localValue !== machineValue) {
-          modified.push(key);
-        }
-      }
-      return modified;
-    },
-
-    pendingEditsCount() {
-      return this.modifiedKeys.length;
-    },
-  },
-  mounted() {
-    this.escapeHandler = (event) => {
-      if (event.key === "Escape") {
-        this.cancelEdit();
-      }
-    };
-    document.addEventListener("keydown", this.escapeHandler);
-  },
-  beforeUnmount() {
-    if (this.escapeHandler) {
-      document.removeEventListener("keydown", this.escapeHandler);
+  for (const [key, value] of Object.entries(settings.value)) {
+    if (key.toLowerCase().includes(filter)) {
+      filtered[key] = value;
     }
-  },
-  methods: {
-    async refreshSettings() {
-      this.client.enqueueCommand("get");
+  }
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
+  return filtered;
+});
 
-      const host = "http://localhost:9000";
-      const res = await spoolerApi.getLatestPState(host, "stg");
-      if (res === null) {
-        console.error("get didn't result in settings within 500ms");
-        return;
+const settingsCount = computed(() => {
+  const total = Object.keys(settings.value).length;
+  const filtered = Object.keys(filteredSettings.value).length;
+  return { filtered, total };
+});
+
+const modifiedKeys = computed(() => {
+  const modified: string[] = [];
+  for (const [key, localValue] of Object.entries(settingsLocal.value)) {
+    const machineValue = settingsMachine.value[key];
+    if (machineValue !== undefined && localValue !== machineValue) {
+      modified.push(key);
+    }
+  }
+  return modified;
+});
+
+const pendingEditsCount = computed(() => {
+  return modifiedKeys.value.length;
+});
+
+let escapeHandler: ((event: KeyboardEvent) => void) | null = null;
+
+onMounted(() => {
+  escapeHandler = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      cancelEdit();
+    }
+  };
+  document.addEventListener("keydown", escapeHandler);
+});
+
+onBeforeUnmount(() => {
+  if (escapeHandler) {
+    document.removeEventListener("keydown", escapeHandler);
+  }
+});
+
+async function refreshSettings() {
+  props.client?.enqueueCommand("get");
+
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  const host = "http://localhost:9000";
+  const res = await spoolerApi.getLatestPState(host, "stg");
+  if (res === null) {
+    console.error("get didn't result in settings within 500ms");
+    return;
+  }
+
+  const machineSettings = res.pstate as Record<string, number>;
+  console.log("Machine settings retrieved:", machineSettings);
+
+  settingsMachine.value = machineSettings;
+
+  if (Object.keys(settingsLocal.value).length === 0) {
+    settingsLocal.value = { ...machineSettings };
+  } else {
+    const newLocal: Record<string, number> = {};
+    for (const [key, value] of Object.entries(settingsLocal.value)) {
+      if (key in machineSettings) {
+        newLocal[key] = value;
       }
+    }
+    settingsLocal.value = newLocal;
+  }
+}
 
-      const machineSettings = res.pstate;
-      console.log("Machine settings retrieved:", machineSettings);
+function highlightKey(key: string) {
+  if (!settingsFilter.value.trim()) {
+    return key;
+  }
 
-      this.settingsMachine = machineSettings;
+  const filter = settingsFilter.value.toLowerCase();
+  const keyLower = key.toLowerCase();
+  const index = keyLower.indexOf(filter);
 
-      if (Object.keys(this.settingsLocal).length === 0) {
-        this.settingsLocal = { ...machineSettings };
-      } else {
-        const newLocal = {};
-        for (const [key, value] of Object.entries(this.settingsLocal)) {
-          if (key in machineSettings) {
-            newLocal[key] = value;
-          }
-        }
-        this.settingsLocal = newLocal;
-      }
-    },
+  if (index === -1) {
+    return key;
+  }
 
-    highlightKey(key) {
-      if (!this.settingsFilter.trim()) {
-        return key;
-      }
+  const before = key.substring(0, index);
+  const match = key.substring(index, index + filter.length);
+  const after = key.substring(index + filter.length);
 
-      const filter = this.settingsFilter.toLowerCase();
-      const keyLower = key.toLowerCase();
-      const index = keyLower.indexOf(filter);
+  return `${before}<span class="highlight">${match}</span>${after}`;
+}
 
-      if (index === -1) {
-        return key;
-      }
+function startEditing(key: string) {
+  editingKey.value = key;
+}
 
-      const before = key.substring(0, index);
-      const match = key.substring(index, index + filter.length);
-      const after = key.substring(index + filter.length);
+function saveEdit(key: string, event: Event) {
+  const target = event.target as HTMLInputElement;
+  const newValue = parseFloat(target.value);
 
-      return `${before}<span class="highlight">${match}</span>${after}`;
-    },
+  if (!isNaN(newValue)) {
+    settingsLocal.value[key] = newValue;
+  }
 
-    startEditing(key) {
-      this.editingKey = key;
-    },
+  editingKey.value = null;
+}
 
-    saveEdit(key, event) {
-      const target = event.target;
-      const newValue = parseFloat(target.value);
+function cancelEdit() {
+  editingKey.value = null;
+}
 
-      if (!isNaN(newValue)) {
-        this.settingsLocal[key] = newValue;
-      }
+function isModified(key: string) {
+  return modifiedKeys.value.includes(key);
+}
 
-      this.editingKey = null;
-    },
+async function applyEdits() {
+  if (!props.client || pendingEditsCount.value === 0) {
+    return;
+  }
 
-    cancelEdit() {
-      this.editingKey = null;
-    },
+  for (const key of modifiedKeys.value) {
+    const value = settingsLocal.value[key];
+    const command = `set ${key} ${value}`;
+    props.client.enqueueCommand(command);
+  }
 
-    isModified(key) {
-      return this.modifiedKeys.includes(key);
-    },
+  for (const key of modifiedKeys.value) {
+    settingsMachine.value[key] = settingsLocal.value[key];
+  }
 
-    async applyEdits() {
-      if (!this.client || this.pendingEditsCount === 0) {
-        return;
-      }
+  console.log(`Applied ${pendingEditsCount.value} setting changes`);
+}
 
-      for (const key of this.modifiedKeys) {
-        const value = this.settingsLocal[key];
-        const command = `set ${key} ${value}`;
-        this.client.enqueueCommand(command);
-      }
+function discardEdits() {
+  settingsLocal.value = { ...settingsMachine.value };
+  editingKey.value = null;
+  console.log("Discarded all pending edits");
+}
 
-      for (const key of this.modifiedKeys) {
-        this.settingsMachine[key] = this.settingsLocal[key];
-      }
+async function saveAsInit() {
+  try {
+    const initLines: string[] = [];
+    for (const [key, value] of Object.entries(settingsLocal.value)) {
+      initLines.push(`set ${key} ${value}`);
+    }
 
-      console.log(`Applied ${this.pendingEditsCount} setting changes`);
-    },
-
-    discardEdits() {
-      this.settingsLocal = { ...this.settingsMachine };
-      this.editingKey = null;
-      console.log("Discarded all pending edits");
-    },
-
-    async saveAsInit() {
-      try {
-        const initLines = [];
-        for (const [key, value] of Object.entries(this.settingsLocal)) {
-          initLines.push(`set ${key} ${value}`);
-        }
-
-        const host = "http://localhost:9000";
-        await spoolerApi.setInit(host, initLines);
-        console.log(`Saved ${initLines.length} settings as init commands`);
-      } catch (error) {
-        console.error("Failed to save settings as init:", error);
-      }
-    },
-  },
-};
+    const host = "http://localhost:9000";
+    await spoolerApi.setInit(host, initLines);
+    console.log(`Saved ${initLines.length} settings as init commands`);
+  } catch (error) {
+    console.error("Failed to save settings as init:", error);
+  }
+}
 </script>
 
 <style scoped>
