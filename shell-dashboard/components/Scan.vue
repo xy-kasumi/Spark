@@ -21,6 +21,8 @@ import { sleep, SpoolerClient } from "../spooler";
 const props = defineProps<{
   client: SpoolerClient;
   isIdle: boolean;
+  getPStateAfter: (tag: string, time: Date) => Promise<Record<string, any>>;
+  waitUntilIdle: () => Promise<void>;
 }>();
 
 const measurements = ref<number[]>([]);
@@ -59,21 +61,19 @@ async function prepare() {
 
 async function scan() {
   // Exec measurement
-  props.client.enqueueCommands([
+  await props.client.enqueueCommands([
     "M3 P100 Q0.1 R5",
     "G38.3 Y0"
   ]);
-  await sleep(5000);
-  props.client.enqueueCommand("?pos");
-  await sleep(100);
-  const pos = await props.client.getLatestPState("pos");
+  await sleep(500); // TODO does not work reliably w/o this.
+  await props.waitUntilIdle();
+
+  const posQueryTime = await props.client.enqueueCommand("?pos");
+  const pstate = await props.getPStateAfter("pos", posQueryTime);
+
   props.client.enqueueCommand("G0 Y-8"); // evacuate
-  await sleep(1000);
-  if (pos === null) {
-    console.error("pos query failed");
-    return;
-  }
-  measurements.value.push(pos.pstate["m.y"]);
+
+  measurements.value.push(pstate["m.y"]);
 }
 
 function reset() {

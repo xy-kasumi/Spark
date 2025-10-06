@@ -42,10 +42,15 @@ export class SpoolerClient {
     return await response.json();
   }
 
-  async enqueueCommands(commands: string[]): Promise<void> {
-    for (const command of commands) {
-      await this.enqueueCommand(command);
+  async enqueueCommands(commands: string[]): Promise<Date> {
+    if (commands.length === 0) {
+      throw new Error("No commands to enqueue");
     }
+    let lastTime!: Date;
+    for (const command of commands) {
+      lastTime = await this.enqueueCommand(command);
+    }
+    return lastTime;
   }
 
   /**

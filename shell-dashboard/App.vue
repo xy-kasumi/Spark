@@ -20,9 +20,9 @@
         <AddJob :client="client" :isIdle="isIdle" />
         <JobList :client="client" />
         <CoordinateSystem :client="client" :isIdle="isIdle" />
-        <Jog :client="client" :isIdle="isIdle" />
+        <Jog :client="client" :isIdle="isIdle" :getPStateAfter="getPStateAfter" />
         <ToolSupply :client="client" :isIdle="isIdle" />
-        <Scan :client="client" :isIdle="isIdle" />
+        <Scan :client="client" :isIdle="isIdle" :getPStateAfter="getPStateAfter" :waitUntilIdle="waitUntilIdle" />
       </div>
 
       <div class="column">

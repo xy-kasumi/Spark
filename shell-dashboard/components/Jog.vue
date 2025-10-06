@@ -124,6 +124,7 @@ const extractPos = (ps: Record<string, any>): Pos | null => {
 const props = defineProps<{
   client: SpoolerClient;
   isIdle: boolean;
+  getPStateAfter: (tag: string, time: Date) => Promise<Record<string, any>>;
 }>();
 
 const jogStepMm = ref(1);
@@ -162,13 +163,9 @@ async function pollPos() {
 }
 
 async function updatePos() {
-  await props.client.enqueueCommand("?pos");
-  await sleep(50);
-  const latestPos = await props.client.getLatestPState("pos");
-  if (latestPos === null) {
-    return;
-  }
-  pos.value = extractPos(latestPos.pstate);
+  const time = await props.client.enqueueCommand("?pos");
+  const pstate = await props.getPStateAfter("pos", time);
+  pos.value = extractPos(pstate);
 }
 
 function refresh() {
