@@ -58,11 +58,12 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
-import { sleep, SpoolerClient } from "../spooler";
+import { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
   isIdle: boolean;
+  getPStateAfter: (tag: string, time: Date) => Promise<Record<string, any>>;
 }>();
 
 const settingsMachine = ref<Record<string, number>>({});
@@ -140,17 +141,8 @@ onBeforeUnmount(() => {
 });
 
 async function refreshSettings() {
-  props.client.enqueueCommand("get");
-
-  await sleep(500);
-
-  const res = await props.client.getLatestPState("stg");
-  if (res === null) {
-    console.error("get didn't result in settings within 500ms");
-    return;
-  }
-
-  const machineSettings = res.pstate as Record<string, number>;
+  const time = await props.client.enqueueCommand("get");
+  const machineSettings = await props.getPStateAfter("stg", time) as Record<string, number>;
   console.log("Machine settings retrieved:", machineSettings);
 
   settingsMachine.value = machineSettings;

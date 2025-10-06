@@ -26,8 +26,8 @@
       </div>
 
       <div class="column">
-        <Settings :client="client" :isIdle="isIdle" />
-        <Stats :client="client" :isIdle="isIdle" />
+        <Settings :client="client" :isIdle="isIdle" :getPStateAfter="getPStateAfter" />
+        <Stats :client="client" :isIdle="isIdle" :getPStateAfter="getPStateAfter" />
         <Timeseries :client="client" />
         <Errors :client="client" />
         <ManualCommand :client="client" :isIdle="isIdle" />
@@ -90,7 +90,6 @@ const isIdle = computed(() => {
   return clientStatus.value === "idle";
 });
 
-// @ts-ignore - prepared for widget use
 async function waitUntilIdle(): Promise<void> {
   if (clientStatus.value === "idle") return;
 
@@ -102,6 +101,19 @@ async function waitUntilIdle(): Promise<void> {
       }
     });
   });
+}
+
+async function getPStateAfter(tag: string, time: Date): Promise<Record<string, any>> {
+  while (true) {
+    await waitUntilIdle();
+    const res = await client.getLatestPState(tag);
+    if (res === null) {
+      continue;
+    }
+    if (res.time > time) {
+      return res.pstate;
+    }
+  }
 }
 
 onMounted(() => {

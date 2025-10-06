@@ -51,28 +51,30 @@ export class SpoolerClient {
   /**
    * Add a command to the queue
    * @param command - Command string to enqueue (ignores empty commands and G-code comments)
+   * @returns The time when the command was enqueued (from spooler)
    */
-  async enqueueCommand(command: string): Promise<void> {
+  async enqueueCommand(command: string): Promise<Date> {
     // Remove G-code style comments (everything after semicolon)
     const cleanCommand = command.split(';')[0].trim();
     if (cleanCommand.length > 100) {
       throw new Error("Command too long");
     }
-    await this.rpc('/write-line', { line: cleanCommand });
+    const response = await this.rpc('/write-line', { line: cleanCommand });
+    return new Date(response.time * 1000);
   }
 
   async cancel(): Promise<void> {
     await this.rpc('/cancel', {});
   }
 
-  async getLatestPState(psName: string): Promise<{ time: number, pstate: Record<string, any> } | null> {
+  async getLatestPState(psName: string): Promise<{ time: Date, pstate: Record<string, any> } | null> {
     const { pstates } = await this.rpc('/get-ps', { tag: psName, count: 1 });
     if (pstates.length === 0) {
       return null;
     }
 
     return {
-      time: pstates[0].time,
+      time: new Date(pstates[0].time * 1000),
       pstate: pstates[0].kv
     };
   }

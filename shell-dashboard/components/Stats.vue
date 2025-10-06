@@ -47,11 +47,12 @@
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { sleep, SpoolerClient } from "../spooler";
+import { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
   isIdle: boolean;
+  getPStateAfter: (tag: string, time: Date) => Promise<Record<string, any>>;
 }>();
 
 const stats = ref<Record<string, any>>({});
@@ -82,18 +83,9 @@ const statsCount = computed(() => {
 });
 
 async function dumpStats() {
-  props.client.enqueueCommand("stat");
-
-  await sleep(5000);
-
-  const res = await props.client.getLatestPState("stat");
-  if (res === null) {
-    console.error("stat command didn't result in stats within 5000ms");
-    return;
-  }
-
-  stats.value = res.pstate;
-  lastFetchTime.value = new Date(res.time * 1000).toLocaleString();
+  const time = await props.client.enqueueCommand("stat");
+  stats.value = await props.getPStateAfter("stat", time);
+  lastFetchTime.value = new Date().toLocaleString();
   console.log("Stats retrieved:", stats.value);
 }
 
