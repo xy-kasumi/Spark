@@ -17,10 +17,10 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { spoolerApi, sleep } from "../spooler";
-import type { SpoolerController } from "../spooler";
+import type { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
-  client?: SpoolerController;
+  client: SpoolerClient;
 }>();
 
 const measurements = ref<number[]>([]);
@@ -50,7 +50,7 @@ const max = computed(() => {
 });
 
 async function prepare() {
-  props.client?.enqueueCommands([
+  props.client.enqueueCommands([
     "G55", // work coords
     "G0 Y-8 X-15 Z60", // safe pos to the right of the work
     "G0 Z35", // insert tool
@@ -61,15 +61,15 @@ async function scan() {
   const host = "http://localhost:9000";
 
   // Exec measurement
-  props.client?.enqueueCommands([
+  props.client.enqueueCommands([
     "M3 P100 Q0.1 R5",
     "G38.3 Y0"
   ]);
   await sleep(5000);
-  props.client?.enqueueCommand("?pos");
+  props.client.enqueueCommand("?pos");
   await sleep(100);
   const pos = await spoolerApi.getLatestPState(host, "pos");
-  props.client?.enqueueCommand("G0 Y-8"); // evacuate
+  props.client.enqueueCommand("G0 Y-8"); // evacuate
   await sleep(1000);
   if (pos === null) {
     console.error("pos query failed");

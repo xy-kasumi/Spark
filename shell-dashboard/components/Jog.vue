@@ -53,8 +53,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
-import { spoolerApi } from "../spooler";
-import type { SpoolerController } from "../spooler";
+import { spoolerApi, sleep } from "../spooler";
+import type { SpoolerClient } from "../spooler";
 
 // Basic data structure
 
@@ -123,7 +123,7 @@ const extractPos = (ps: Record<string, any>): Pos | null => {
 
 // Vue UI
 const props = defineProps<{
-  client?: SpoolerController;
+  client: SpoolerClient;
 }>();
 
 const jogStepMm = ref(1);
@@ -157,16 +157,13 @@ const posStringMachine = computed(() => {
 async function pollPos() {
   while (isPolling.value) {
     await updatePos();
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await sleep(1000);
   }
 }
 
 async function updatePos() {
-  if (!props.client) {
-    return;
-  }
   await props.client.enqueueCommand("?pos");
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  await sleep(50);
   const host = "http://localhost:9000";
   const latestPos = await spoolerApi.getLatestPState(host, "pos");
   if (latestPos === null) {
@@ -180,11 +177,11 @@ function refresh() {
 }
 
 function home() {
-  props.client?.enqueueCommand("G28");
+  props.client.enqueueCommand("G28");
 }
 
 function jog(axis: Axis, dir: -1 | 1) {
-  if (!props.client || !pos.value) {
+  if (!pos.value) {
     return;
   }
   const newP = getElementByAxis(pos.value.local, axis) + jogStepMm.value * dir;

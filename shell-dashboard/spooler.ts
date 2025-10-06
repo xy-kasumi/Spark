@@ -1,24 +1,15 @@
 // SPDX-FileCopyrightText: 2025 夕月霞
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-/**
- * @property api-offline - Spooler API not working
- * @property board-offline - API is OK, board response timed out (NOT IMPLEMENTED YET)
- * @property idle - API is OK, board is known to be idle state (ready to receive commands)
- * @property unknown - API is OK, board is in unknown state
- * @property busy - API is OK, board is known to be busy
- */
-type SpoolerState = 'api-offline' | 'board-offline' | 'idle' | 'unknown' | 'busy';
-
 // Sleep for given msec.
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
- * SpoolerController handles command queue.
+ * Thin wrapper around spooler HTTP API.
  */
-class SpoolerController {
+export class SpoolerClient {
   private readonly host: string;
 
   /**
@@ -75,7 +66,7 @@ class SpoolerController {
  * Spooler API client for making HTTP requests to shell-spooler.
  * This is separate from SpoolerController and provides raw API access.
  */
-const spoolerApi = {
+export const spoolerApi = {
   async getLatestPState(host: string, psName: string): Promise<{ time: number, pstate: Record<string, any> } | null> {
     const response = await fetch(`${host}/get-ps`, {
       method: 'POST',
@@ -250,6 +241,3 @@ const spoolerApi = {
     }));
   }
 };
-
-export { SpoolerController, spoolerApi };
-export type { SpoolerState };

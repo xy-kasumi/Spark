@@ -21,10 +21,10 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { spoolerApi } from "../spooler";
-import type { SpoolerController } from "../spooler";
+import type { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
-  client?: SpoolerController;
+  client: SpoolerClient;
   clientStatus?: string;
   assumeInitialized?: boolean;
 }>();
@@ -52,10 +52,6 @@ const executeButtonText = computed(() => {
 });
 
 async function init() {
-  if (!props.client) {
-    return;
-  }
-
   const host = "http://localhost:9000";
   const initData = await spoolerApi.getInit(host);
   for (const cmd of initData.lines) {
@@ -64,7 +60,7 @@ async function init() {
 }
 
 function send() {
-  if (!props.client || commands.value.length === 0) {
+  if (commands.value.length === 0) {
     return;
   }
 

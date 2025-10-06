@@ -46,14 +46,14 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
-import type { SpoolerController } from "../spooler";
+import type { SpoolerClient } from "../spooler";
 
 const tsJustBeforeInsertZ = 0;
 const tsPulledZ = 47;
 const tsFullInsertZ = -12;
 
 const props = defineProps<{
-  client?: SpoolerController;
+  client: SpoolerClient;
 }>();
 
 const toolSupplyShowDetails = ref(false);
@@ -67,23 +67,23 @@ function clamp() {
     "G0 C240",
     "G0 C120",
     "G0 C0",
-  ].forEach((cmd) => props.client?.enqueueCommand(cmd));
+  ].forEach((cmd) => props.client.enqueueCommand(cmd));
 }
 
 function unclamp() {
-  props.client?.enqueueCommands(["G0 C0", "G0 C120", "G0 C240", "G0 C0"]);
+  props.client.enqueueCommands(["G0 C0", "G0 C120", "G0 C240", "G0 C0"]);
 }
 
 function open() {
-  props.client?.enqueueCommand("M60");
+  props.client.enqueueCommand("M60");
 }
 
 function close() {
-  props.client?.enqueueCommand("M61");
+  props.client.enqueueCommand("M61");
 }
 
 function moveToTs() {
-  props.client?.enqueueCommands(["G56", `G0 X0 Y0 Z${tsPulledZ.toFixed(3)}`]);
+  props.client.enqueueCommands(["G56", `G0 X0 Y0 Z${tsPulledZ.toFixed(3)}`]);
 }
 
 function tsInsert() {
@@ -121,11 +121,11 @@ function tsInsert() {
   }
 
   cmds.push(`G0 X0 Y0 Z${tsFullInsertZ.toFixed(3)}`);
-  props.client?.enqueueCommands(cmds);
+  props.client.enqueueCommands(cmds);
 }
 
 function tsPull() {
-  props.client?.enqueueCommands([`G0 Z${tsPulledZ.toFixed(3)}`, "G53"]);
+  props.client.enqueueCommands([`G0 Z${tsPulledZ.toFixed(3)}`, "G53"]);
 }
 
 function executeAttach() {

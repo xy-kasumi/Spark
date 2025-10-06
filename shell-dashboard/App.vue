@@ -37,7 +37,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
-import { SpoolerController, spoolerApi } from "./spooler";
+import { SpoolerClient, spoolerApi, sleep } from "./spooler";
 import logoUrl from "./logo.png";
 import AddJob from "./components/AddJob.vue";
 import ManualCommand from "./components/ManualCommand.vue";
@@ -50,7 +50,8 @@ import Settings from "./components/Settings.vue";
 import Timeseries from "./components/Timeseries.vue";
 import Errors from "./components/Errors.vue";
 
-const client = ref<SpoolerController>();
+const host = "http://localhost:9000";
+const client = new SpoolerClient(host);
 const clientStatus = ref<string>("unknown");
 const busyStatusText = ref("");
 const isPolling = ref(false);
@@ -88,9 +89,6 @@ const assumeInitialized = computed(() => {
 });
 
 onMounted(() => {
-  const host = "http://localhost:9000";
-  client.value = new SpoolerController(host);
-
   isPolling.value = true;
   pollStatus();
 });
@@ -100,7 +98,6 @@ onBeforeUnmount(() => {
 });
 
 async function pollStatus() {
-  const host = "http://localhost:9000";
   while (isPolling.value) {
     try {
       const status = await spoolerApi.getStatus(host);
@@ -119,12 +116,12 @@ async function pollStatus() {
       clientStatus.value = "api-offline";
       busyStatusText.value = "";
     }
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await sleep(100);
   }
 }
 
 function cancelAll() {
-  client.value?.cancel();
+  client.cancel();
 }
 </script>
 

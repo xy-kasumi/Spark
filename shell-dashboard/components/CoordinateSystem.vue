@@ -13,25 +13,25 @@
 </template>
 
 <script setup lang="ts">
-import type { SpoolerController } from "../spooler";
+import type { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
-  client?: SpoolerController;
+  client: SpoolerClient;
 }>();
 
 function setMachineCoords() {
-  props.client?.enqueueCommand("G53");
+  props.client.enqueueCommand("G53");
 }
 
 function setWorkCoords() {
-  props.client?.enqueueCommand("G55");
+  props.client.enqueueCommand("G55");
 }
 
 function setGrinderCoords() {
-  props.client?.enqueueCommand("G54");
+  props.client.enqueueCommand("G54");
 }
 
 function setToolSupplyCoords() {
-  props.client?.enqueueCommand("G56");
+  props.client.enqueueCommand("G56");
 }
 </script>

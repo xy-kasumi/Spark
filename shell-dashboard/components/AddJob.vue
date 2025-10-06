@@ -16,10 +16,10 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { spoolerApi } from "../spooler";
-import type { SpoolerController } from "../spooler";
+import type { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
-  client?: SpoolerController;
+  client: SpoolerClient;
   clientStatus?: string;
   assumeInitialized?: boolean;
 }>();
@@ -59,7 +59,7 @@ async function pasteFromClipboard() {
 }
 
 function send() {
-  if (!props.client || commands.value.length === 0) {
+  if (commands.value.length === 0) {
     return;
   }
 

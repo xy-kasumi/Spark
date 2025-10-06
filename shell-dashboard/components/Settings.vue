@@ -52,11 +52,11 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
-import { spoolerApi } from "../spooler";
-import type { SpoolerController } from "../spooler";
+import { spoolerApi, sleep } from "../spooler";
+import type { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
-  client?: SpoolerController;
+  client: SpoolerClient;
 }>();
 
 const settingsMachine = ref<Record<string, number>>({});
@@ -134,9 +134,9 @@ onBeforeUnmount(() => {
 });
 
 async function refreshSettings() {
-  props.client?.enqueueCommand("get");
+  props.client.enqueueCommand("get");
 
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await sleep(500);
 
   const host = "http://localhost:9000";
   const res = await spoolerApi.getLatestPState(host, "stg");
@@ -207,7 +207,7 @@ function isModified(key: string) {
 }
 
 async function applyEdits() {
-  if (!props.client || pendingEditsCount.value === 0) {
+  if (pendingEditsCount.value === 0) {
     return;
   }
 
