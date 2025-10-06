@@ -12,21 +12,21 @@
       <table class="jog-table">
         <tr>
           <td></td>
-          <td><button class="jog-btn" @click="jog('X', 1)">X+</button></td>
+          <td><button class="jog-btn" @click="jog('X', 1)" :disabled="!isIdle">X+</button></td>
           <td></td>
           <td></td>
-          <td><button class="jog-btn" @click="jog('Z', -1)">Z- (PUSH)</button></td>
+          <td><button class="jog-btn" @click="jog('Z', -1)" :disabled="!isIdle">Z- (PUSH)</button></td>
         </tr>
         <tr>
-          <td><button class="jog-btn" @click="jog('Y', 1)">Y+</button></td>
+          <td><button class="jog-btn" @click="jog('Y', 1)" :disabled="!isIdle">Y+</button></td>
           <td></td>
-          <td><button class="jog-btn" @click="jog('Y', -1)">Y-</button></td>
-          <td><button class="jog-btn" @click="home">HOME</button></td>
-          <td><button class="jog-btn" @click="jog('Z', 1)">Z+ (PULL)</button></td>
+          <td><button class="jog-btn" @click="jog('Y', -1)" :disabled="!isIdle">Y-</button></td>
+          <td><button class="jog-btn" @click="home" :disabled="!isIdle">HOME</button></td>
+          <td><button class="jog-btn" @click="jog('Z', 1)" :disabled="!isIdle">Z+ (PULL)</button></td>
         </tr>
         <tr>
           <td></td>
-          <td><button class="jog-btn" @click="jog('X', -1)">X-</button></td>
+          <td><button class="jog-btn" @click="jog('X', -1)" :disabled="!isIdle">X-</button></td>
           <td></td>
           <td></td>
           <td></td>
@@ -123,6 +123,7 @@ const extractPos = (ps: Record<string, any>): Pos | null => {
 // Vue UI
 const props = defineProps<{
   client: SpoolerClient;
+  isIdle: boolean;
 }>();
 
 const jogStepMm = ref(1);

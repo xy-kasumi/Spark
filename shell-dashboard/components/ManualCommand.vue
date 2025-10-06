@@ -4,12 +4,12 @@
   <div class="widget">
     <h1>Manual Command</h1>
     <div class="widget-content">
-      <button class="" @click="init">{{ initButtonText }}</button>
+      <button class="" @click="init" :disabled="!isIdle">INIT</button>
       <br />
       <textarea class="" v-model="commandText" rows="10" cols="50"
         placeholder="Enter G-code or commands"></textarea><br />
-      <button class="" @click="send" :disabled="commands.length === 0 || !assumeInitialized">
-        {{ executeButtonText }}
+      <button class="" @click="send" :disabled="commands.length === 0 || !isIdle">
+        EXECUTE
       </button>
       <label class="">
         <input type="checkbox" v-model="clearOnExec" /> Clear on exec
@@ -24,8 +24,7 @@ import { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
-  clientStatus?: string;
-  assumeInitialized?: boolean;
+  isIdle: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -40,14 +39,6 @@ const commands = computed(() => {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-});
-
-const initButtonText = computed(() => {
-  return props.clientStatus === "idle" ? "INIT" : "ENQUEUE INIT";
-});
-
-const executeButtonText = computed(() => {
-  return props.clientStatus === "idle" ? "EXECUTE" : "ENQUEUE";
 });
 
 async function init() {

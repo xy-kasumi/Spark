@@ -4,7 +4,7 @@
   <div class="widget">
     <h1>Stats</h1>
     <div class="widget-content">
-      <button @click="dumpStats">DUMP STATS</button>
+      <button @click="dumpStats" :disabled="!isIdle">DUMP STATS</button>
       <br />
       <div v-if="lastFetchTime" class="last-fetch">
         Last fetch: {{ lastFetchTime }}
@@ -51,6 +51,7 @@ import { sleep, SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
+  isIdle: boolean;
 }>();
 
 const stats = ref<Record<string, any>>({});

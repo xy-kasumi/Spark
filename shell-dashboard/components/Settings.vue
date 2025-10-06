@@ -4,7 +4,7 @@
   <div class="widget">
     <h1>Settings</h1>
     <div class="widget-content">
-      <button @click="refreshSettings">REFRESH</button>
+      <button @click="refreshSettings" :disabled="!isIdle">REFRESH</button>
       <br />
       <div v-if="Object.keys(settings).length === 0" class="settings-placeholder">
         Click REFRESH to load settings
@@ -45,7 +45,7 @@
           </table>
         </div>
         <div v-if="pendingEditsCount > 0" style="margin-top: var(--unit-space)">
-          <button @click="applyEdits">APPLY EDITS</button>
+          <button @click="applyEdits" :disabled="!isIdle">APPLY EDITS</button>
           <button @click="discardEdits">DISCARD EDITS</button>
         </div>
         <div v-if="pendingEditsCount === 0" style="margin-top: var(--unit-space)">
@@ -62,6 +62,7 @@ import { sleep, SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
+  isIdle: boolean;
 }>();
 
 const settingsMachine = ref<Record<string, number>>({});

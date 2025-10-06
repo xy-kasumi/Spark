@@ -12,8 +12,8 @@
       </div>
 
       <div v-if="!toolSupplyShowDetails">
-        <button class="" @click="executeAttach">ATTACH</button>
-        <button class="" @click="executeDetach">DETACH</button>
+        <button class="" @click="executeAttach" :disabled="!isIdle">ATTACH</button>
+        <button class="" @click="executeDetach" :disabled="!isIdle">DETACH</button>
       </div>
 
       <div v-if="toolSupplyShowDetails">
@@ -21,22 +21,22 @@
           ATTACH
           <br />
           <div>
-            <button class="" @click="moveToTs">MOVE</button>
-            <button class="" @click="open">OPEN</button>
-            <button class="" @click="tsInsert">INSERT</button>
-            <button class="" @click="clamp">CLAMP</button>
-            <button class="" @click="tsPull">PULL</button>
-            <button class="" @click="close">CLOSE</button>
+            <button class="" @click="moveToTs" :disabled="!isIdle">MOVE</button>
+            <button class="" @click="open" :disabled="!isIdle">OPEN</button>
+            <button class="" @click="tsInsert" :disabled="!isIdle">INSERT</button>
+            <button class="" @click="clamp" :disabled="!isIdle">CLAMP</button>
+            <button class="" @click="tsPull" :disabled="!isIdle">PULL</button>
+            <button class="" @click="close" :disabled="!isIdle">CLOSE</button>
           </div>
         </div>
         <div style="margin-bottom: var(--unit-space)">
           DETACH
           <br />
           <div>
-            <button class="" @click="moveToTs">MOVE</button>
-            <button class="" @click="tsInsert">INSERT</button>
-            <button class="" @click="unclamp">UNCLAMP</button>
-            <button class="" @click="tsPull">PULL</button>
+            <button class="" @click="moveToTs" :disabled="!isIdle">MOVE</button>
+            <button class="" @click="tsInsert" :disabled="!isIdle">INSERT</button>
+            <button class="" @click="unclamp" :disabled="!isIdle">UNCLAMP</button>
+            <button class="" @click="tsPull" :disabled="!isIdle">PULL</button>
           </div>
         </div>
       </div>
@@ -54,6 +54,7 @@ const tsFullInsertZ = -12;
 
 const props = defineProps<{
   client: SpoolerClient;
+  isIdle: boolean;
 }>();
 
 const toolSupplyShowDetails = ref(false);

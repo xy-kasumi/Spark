@@ -6,8 +6,8 @@
     <div class="widget-content">
       <button class="" @click="pasteFromClipboard">PASTE FROM CLIPBOARD</button>
       <span v-if="commands.length > 0">{{ linesInfo }}</span><br />
-      <button class="" @click="send" :disabled="commands.length === 0 || !assumeInitialized">
-        {{ executeButtonText }}
+      <button class="" @click="send" :disabled="commands.length === 0 || !isIdle">
+        EXECUTE
       </button>
     </div>
   </div>
@@ -19,8 +19,7 @@ import { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
-  clientStatus?: string;
-  assumeInitialized?: boolean;
+  isIdle: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -42,10 +41,6 @@ const linesInfo = computed(() => {
   const firstCmd = commands.value[0];
   const preview = firstCmd.length > 20 ? firstCmd.slice(0, 20) : firstCmd;
   return `${count} lines (${preview}...)`;
-});
-
-const executeButtonText = computed(() => {
-  return props.clientStatus === "idle" ? "EXECUTE" : "ENQUEUE";
 });
 
 async function pasteFromClipboard() {

@@ -17,27 +17,27 @@
     <!-- Main Content -->
     <div class="main-content">
       <div class="column">
-        <AddJob :client="client" :clientStatus="clientStatus" :assumeInitialized="assumeInitialized" />
+        <AddJob :client="client" :isIdle="isIdle" />
         <JobList :client="client" />
-        <CoordinateSystem :client="client" />
-        <Jog :client="client" />
-        <ToolSupply :client="client" />
-        <Scan :client="client" />
+        <CoordinateSystem :client="client" :isIdle="isIdle" />
+        <Jog :client="client" :isIdle="isIdle" />
+        <ToolSupply :client="client" :isIdle="isIdle" />
+        <Scan :client="client" :isIdle="isIdle" />
       </div>
 
       <div class="column">
-        <Settings :client="client" />
-        <Stats :client="client" />
+        <Settings :client="client" :isIdle="isIdle" />
+        <Stats :client="client" :isIdle="isIdle" />
         <Timeseries :client="client" />
         <Errors :client="client" />
-        <ManualCommand :client="client" :clientStatus="clientStatus" :assumeInitialized="assumeInitialized" />
+        <ManualCommand :client="client" :isIdle="isIdle" />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { SpoolerClient, sleep } from "./spooler";
 import logoUrl from "./logo.png";
 import AddJob from "./components/AddJob.vue";
@@ -86,9 +86,23 @@ const statusEmoji = computed(() => {
   }
 });
 
-const assumeInitialized = computed(() => {
-  return clientStatus.value === "idle" || clientStatus.value === "busy";
+const isIdle = computed(() => {
+  return clientStatus.value === "idle";
 });
+
+// @ts-ignore - prepared for widget use
+async function waitUntilIdle(): Promise<void> {
+  if (clientStatus.value === "idle") return;
+
+  return new Promise((resolve) => {
+    const unwatch = watch(clientStatus, (newStatus) => {
+      if (newStatus === "idle") {
+        unwatch();
+        resolve();
+      }
+    });
+  });
+}
 
 onMounted(() => {
   isPolling.value = true;

@@ -4,8 +4,8 @@
   <div class="widget">
     <h1>Scan</h1>
     <div class="widget-content">
-      <button @click="prepare">PREPARE</button>
-      <button @click="scan">SCAN</button>
+      <button @click="prepare" :disabled="!isIdle">PREPARE</button>
+      <button @click="scan" :disabled="!isIdle">SCAN</button>
       <button @click="reset">RESET</button>
       <br />
       <div>N={{ count }} (avg={{ average }}, min={{ min }}, max={{ max }})</div>
@@ -20,6 +20,7 @@ import { sleep, SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
+  isIdle: boolean;
 }>();
 
 const measurements = ref<number[]>([]);

@@ -4,10 +4,10 @@
   <div class="widget">
     <h1>Coordinate System</h1>
     <div class="widget-content">
-      <button @click="setMachineCoords">MACHINE</button>
-      <button @click="setWorkCoords">WORK</button>
-      <button @click="setGrinderCoords">GRINDER</button>
-      <button @click="setToolSupplyCoords">TOOLSUPPLY</button>
+      <button @click="setMachineCoords" :disabled="!isIdle">MACHINE</button>
+      <button @click="setWorkCoords" :disabled="!isIdle">WORK</button>
+      <button @click="setGrinderCoords" :disabled="!isIdle">GRINDER</button>
+      <button @click="setToolSupplyCoords" :disabled="!isIdle">TOOLSUPPLY</button>
     </div>
   </div>
 </template>
@@ -17,6 +17,7 @@ import { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
+  isIdle: boolean;
 }>();
 
 function setMachineCoords() {
