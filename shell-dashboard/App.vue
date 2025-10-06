@@ -7,7 +7,7 @@
       <div class="header-content">
         <img :src="logoUrl" alt="Spark Logo" class="header-logo" />
         <div class="status-info">
-          <span :title="'Detailed status: ' + clientStatus">{{ statusEmoji }} {{ uiStatus }}</span>
+          <span>{{ statusEmoji }} {{ uiStatus }}</span>
           {{ busyStatusText }}
         </div>
         <button class="header-cancel" @click="cancelAll">CANCEL ALL</button>
@@ -20,14 +20,14 @@
         <AddJob :client="client" :isIdle="isIdle" />
         <JobList :client="client" />
         <CoordinateSystem :client="client" :isIdle="isIdle" />
-        <Jog :client="client" :isIdle="isIdle" :getPStateAfter="getPStateAfter" />
+        <Jog :client="client" :isIdle="isIdle" :getPStateAfter="waitPStateAfter" />
         <ToolSupply :client="client" :isIdle="isIdle" />
-        <Scan :client="client" :isIdle="isIdle" :getPStateAfter="getPStateAfter" :waitUntilIdle="waitUntilIdle" />
+        <Scan :client="client" :isIdle="isIdle" :getPStateAfter="waitPStateAfter" :waitUntilIdle="waitUntilIdle" />
       </div>
 
       <div class="column">
-        <Settings :client="client" :isIdle="isIdle" :getPStateAfter="getPStateAfter" />
-        <Stats :client="client" :isIdle="isIdle" :getPStateAfter="getPStateAfter" />
+        <Settings :client="client" :isIdle="isIdle" :getPStateAfter="waitPStateAfter" />
+        <Stats :client="client" :isIdle="isIdle" :getPStateAfter="waitPStateAfter" />
         <Timeseries :client="client" />
         <Errors :client="client" />
         <ManualCommand :client="client" :isIdle="isIdle" />
@@ -54,23 +54,20 @@ import Errors from "./components/Errors.vue";
 
 const host = "http://localhost:9000";
 const client = new SpoolerClient(host);
-const clientStatus = ref<string>("unknown");
-const busyStatusText = ref("");
+const statusResponse = ref<{ time: Date; busy: boolean; num_pending_commands: number; running_job?: string } | null>(null);
 const isPolling = ref(false);
 
-const uiStatus = computed(() => {
-  switch (clientStatus.value) {
-    case "idle":
-      return "idle";
-    case "busy":
-      return "busy";
-    case "api-offline":
-    case "board-offline":
-    case "unknown":
-      return "offline";
-    default:
-      return "offline";
+const busyStatusText = computed(() => {
+  if (!statusResponse.value || !statusResponse.value.busy) return "";
+  if (statusResponse.value.running_job) {
+    return `Job ${statusResponse.value.running_job} running`;
   }
+  return `${statusResponse.value.num_pending_commands} commands in queue`;
+});
+
+const uiStatus = computed(() => {
+  if (!statusResponse.value) return "offline";
+  return statusResponse.value.busy ? "busy" : "idle";
 });
 
 const statusEmoji = computed(() => {
@@ -87,15 +84,20 @@ const statusEmoji = computed(() => {
 });
 
 const isIdle = computed(() => {
-  return clientStatus.value === "idle";
+  return statusResponse.value !== null && !statusResponse.value.busy;
 });
 
-async function waitUntilIdle(): Promise<void> {
-  if (clientStatus.value === "idle") return;
+async function waitUntilIdle(after: Date): Promise<void> {
+  // In-transit status is not trustable.
+  const discardWindowMs = 50;
+  const definitelyAfter = (d: Date): boolean => {
+    return d > new Date(after.getTime() + discardWindowMs);
+  };
 
+  // Wait for next transition to idle
   return new Promise((resolve) => {
-    const unwatch = watch(clientStatus, (newStatus) => {
-      if (newStatus === "idle") {
+    const unwatch = watch(statusResponse, (newStatus) => {
+      if (newStatus && !newStatus.busy && definitelyAfter(newStatus.time)) {
         unwatch();
         resolve();
       }
@@ -103,14 +105,20 @@ async function waitUntilIdle(): Promise<void> {
   });
 }
 
-async function getPStateAfter(tag: string, time: Date): Promise<Record<string, any>> {
+async function waitPStateAfter(tag: string, time: Date): Promise<Record<string, any>> {
+  // In-transit status is not trustable.
+  const discardWindowMs = 50;
+  const definitelyAfter = (d: Date): boolean => {
+    return d > new Date(time.getTime() + discardWindowMs);
+  };
+
   while (true) {
-    await waitUntilIdle();
+    await waitUntilIdle(time);
     const res = await client.getLatestPState(tag);
     if (res === null) {
       continue;
     }
-    if (res.time > time) {
+    if (definitelyAfter(res.time)) {
       return res.pstate;
     }
   }
@@ -128,21 +136,9 @@ onBeforeUnmount(() => {
 async function pollStatus() {
   while (isPolling.value) {
     try {
-      const status = await client.getStatus();
-      const state = status.busy ? "busy" : "idle";
-      clientStatus.value = state;
-      if (state === "busy") {
-        if (status.running_job) {
-          busyStatusText.value = `Job ${status.running_job} running`;
-        } else {
-          busyStatusText.value = `${status.num_pending_commands} commands in queue`;
-        }
-      } else {
-        busyStatusText.value = "";
-      }
+      statusResponse.value = await client.getStatus();
     } catch (error) {
-      clientStatus.value = "api-offline";
-      busyStatusText.value = "";
+      statusResponse.value = null;
     }
     await sleep(100);
   }

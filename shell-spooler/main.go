@@ -107,6 +107,7 @@ func (h *apiImpl) Cancel(req *CancelRequest) (*CancelResponse, error) {
 func (h *apiImpl) GetStatus(req *GetStatusRequest) (*GetStatusResponse, error) {
 	numCommands := h.commInstance.CommandQueueLength()
 	resp := GetStatusResponse{
+		Time:               toUnixTimestamp(time.Now()),
 		Busy:               numCommands > 0,
 		NumPendingCommands: numCommands,
 	}

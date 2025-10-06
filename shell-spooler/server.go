@@ -96,6 +96,7 @@ type CommandQueue struct {
 }
 
 type GetStatusResponse struct {
+	Time               float64 `json:"time"`
 	Busy               bool    `json:"busy"`
 	NumPendingCommands int     `json:"num_pending_commands"`
 	RunningJob         *string `json:"running_job,omitempty"`

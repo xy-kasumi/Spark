@@ -135,8 +135,14 @@ export class SpoolerClient {
     return jobs;
   }
 
-  async getStatus(): Promise<{ busy: boolean; num_pending_commands: number; running_job?: string }> {
-    return await this.rpc('/status', {});
+  async getStatus(): Promise<{ time: Date; busy: boolean; num_pending_commands: number; running_job?: string }> {
+    const response = await this.rpc('/status', {});
+    return {
+      time: new Date(response.time * 1000),
+      busy: response.busy,
+      num_pending_commands: response.num_pending_commands,
+      running_job: response.running_job
+    };
   }
 
   async getErrors(count: number = 50): Promise<Array<{ time: Date; msg: string; src?: string }>> {

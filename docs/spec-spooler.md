@@ -144,12 +144,14 @@ Get spooler status summary.
 
 ```yaml
 properties:
+  time: {type: float64}
   busy: {type: bool}
   num_pending_commands: {type: int}
 optionalProperties:
   running_job: {type: string}
 ```
 
+* `time`: spooler timestamp of this status
 * `busy`: some commands are pending to execute (or being executed). Signals do not count as busy.
 * `num_pending_commands`: number of commands (either directly or via job)
   * includes commands in core queue
