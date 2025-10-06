@@ -8,6 +8,7 @@ export function sleep(ms: number): Promise<void> {
 
 /**
  * Thin wrapper around spooler HTTP API.
+ * Refer to docs/spec-spooler.md for details.
  */
 export class SpoolerClient {
   private readonly host: string;
@@ -17,6 +18,28 @@ export class SpoolerClient {
    */
   constructor(host: string) {
     this.host = host;
+  }
+
+  /**
+   * Common RPC method for all HTTP API calls.
+   * @param path - API endpoint path (e.g. "/get-ps")
+   * @param req - Request body object to be JSON-encoded
+   * @returns Parsed JSON response
+   * @throws Error on HTTP errors
+   */
+  private async rpc(path: string, req: any): Promise<any> {
+    const response = await fetch(`${this.host}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req)
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`HTTP ${response.status}: ${text}`);
+    }
+
+    return await response.json();
   }
 
   async enqueueCommands(commands: string[]): Promise<void> {
@@ -35,44 +58,15 @@ export class SpoolerClient {
     if (cleanCommand.length > 100) {
       throw new Error("Command too long");
     }
-
-    const response = await fetch(`${this.host}/write-line`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ line: cleanCommand })
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
+    await this.rpc('/write-line', { line: cleanCommand });
   }
 
-  /**
-   * Clear the command queue and send cancel command
-   */
-  cancel(): void {
-    // Send cancel
-    fetch(`${this.host}/cancel`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
-    }).catch(error => {
-      console.log("cancel error", error);
-    });
+  async cancel(): Promise<void> {
+    await this.rpc('/cancel', {});
   }
 
   async getLatestPState(psName: string): Promise<{ time: number, pstate: Record<string, any> } | null> {
-    const response = await fetch(`${this.host}/get-ps`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tag: psName, count: 1 })
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const { pstates } = await response.json();
+    const { pstates } = await this.rpc('/get-ps', { tag: psName, count: 1 });
     if (pstates.length === 0) {
       return null;
     }
@@ -83,38 +77,12 @@ export class SpoolerClient {
     };
   }
 
-  /**
-   * Set init lines that will be sent to the core when spooler starts.
-   * @param lines - Array of init line strings to persist
-   */
   async setInit(lines: string[]): Promise<void> {
-    const response = await fetch(`${this.host}/set-init`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lines })
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
+    await this.rpc('/set-init', { lines });
   }
 
-  /**
-   * Get current init lines configuration.
-   * @returns Array of configured init lines (empty if none configured)
-   */
   async getInit(): Promise<{ lines: string[] }> {
-    const response = await fetch(`${this.host}/get-init`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    return await response.json();
+    return await this.rpc('/get-init', {});
   }
 
   async queryTS(start: Date, end: Date, step: number, keys: string[]): Promise<{ times: Date[]; values: Record<string, any[]> }> {
@@ -122,23 +90,13 @@ export class SpoolerClient {
     const startUnix = start.getTime() / 1000;
     const endUnix = end.getTime() / 1000;
 
-    const response = await fetch(`${this.host}/query-ts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        start: startUnix,
-        end: endUnix,
-        step: step,
-        query: keys
-      })
+    const { times, values } = await this.rpc('/query-ts', {
+      start: startUnix,
+      end: endUnix,
+      step: step,
+      query: keys
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`HTTP ${response.status}: ${text}`);
-    }
-
-    const { times, values } = await response.json();
     const dates = times.map((ts: number) => new Date(ts * 1000));
     return {
       times: dates,
@@ -147,36 +105,14 @@ export class SpoolerClient {
   }
 
   async addJob(commands: string[], signals: Record<string, number>): Promise<{ ok: boolean; job_id?: string }> {
-    const response = await fetch(`${this.host}/add-job`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        commands: commands,
-        signals: signals
-      })
+    return await this.rpc('/add-job', {
+      commands: commands,
+      signals: signals
     });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`HTTP ${response.status}: ${text}`);
-    }
-
-    return await response.json();
   }
 
   async listJobs(): Promise<Array<{ job_id: string; status: 'WAITING' | 'RUNNING' | 'COMPLETED' | 'CANCELED'; time_added: Date; time_started?: Date; time_ended?: Date }>> {
-    const response = await fetch(`${this.host}/list-jobs`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`HTTP ${response.status}: ${text}`);
-    }
-
-    const jobs = (await response.json()).jobs;
+    const { jobs } = await this.rpc('/list-jobs', {});
 
     // Convert Unix timestamps to Date objects
     for (const job of jobs) {
@@ -192,38 +128,12 @@ export class SpoolerClient {
     return jobs;
   }
 
-  /**
-   * Get spooler status summary.
-   * @returns Status object containing busy state, pending commands count, and optional running job ID
-   */
   async getStatus(): Promise<{ busy: boolean; num_pending_commands: number; running_job?: string }> {
-    const response = await fetch(`${this.host}/status`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`HTTP ${response.status}: ${text}`);
-    }
-
-    return await response.json();
+    return await this.rpc('/status', {});
   }
 
   async getErrors(count: number = 50): Promise<Array<{ time: Date; msg: string; src?: string }>> {
-    const response = await fetch(`${this.host}/get-ps`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tag: "error", count })
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`HTTP ${response.status}: ${text}`);
-    }
-
-    const { pstates } = await response.json();
+    const { pstates } = await this.rpc('/get-ps', { tag: "error", count });
 
     return pstates.map((ps: any) => ({
       time: new Date(ps.time * 1000),
