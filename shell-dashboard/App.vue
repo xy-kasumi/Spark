@@ -22,6 +22,7 @@
         <CoordinateSystem :client="client" />
         <Jog :client="client" />
         <ToolSupply :client="client" />
+        <Scan :client="client" />
       </div>
 
       <div class="column">
@@ -43,6 +44,7 @@ import ManualCommand from "./components/ManualCommand.vue";
 import CoordinateSystem from "./components/CoordinateSystem.vue";
 import Jog from "./components/Jog.vue";
 import ToolSupply from "./components/ToolSupply.vue";
+import Scan from "./components/Scan.vue";
 import JobList from "./components/JobList.vue";
 import Settings from "./components/Settings.vue";
 import Timeseries from "./components/Timeseries.vue";

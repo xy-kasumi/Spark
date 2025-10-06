@@ -10,6 +10,11 @@
  */
 type SpoolerState = 'api-offline' | 'board-offline' | 'idle' | 'unknown' | 'busy';
 
+// Sleep for given msec.
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * SpoolerController handles command queue.
  */
