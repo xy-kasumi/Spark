@@ -16,8 +16,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { spoolerApi, sleep } from "../spooler";
-import type { SpoolerClient } from "../spooler";
+import { sleep, SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
@@ -58,8 +57,6 @@ async function prepare() {
 }
 
 async function scan() {
-  const host = "http://localhost:9000";
-
   // Exec measurement
   props.client.enqueueCommands([
     "M3 P100 Q0.1 R5",
@@ -68,7 +65,7 @@ async function scan() {
   await sleep(5000);
   props.client.enqueueCommand("?pos");
   await sleep(100);
-  const pos = await spoolerApi.getLatestPState(host, "pos");
+  const pos = await props.client.getLatestPState("pos");
   props.client.enqueueCommand("G0 Y-8"); // evacuate
   await sleep(1000);
   if (pos === null) {

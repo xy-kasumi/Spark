@@ -52,8 +52,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
-import { spoolerApi, sleep } from "../spooler";
-import type { SpoolerClient } from "../spooler";
+import { sleep, SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
@@ -138,8 +137,7 @@ async function refreshSettings() {
 
   await sleep(500);
 
-  const host = "http://localhost:9000";
-  const res = await spoolerApi.getLatestPState(host, "stg");
+  const res = await props.client.getLatestPState("stg");
   if (res === null) {
     console.error("get didn't result in settings within 500ms");
     return;
@@ -237,8 +235,7 @@ async function saveAsInit() {
       initLines.push(`set ${key} ${value}`);
     }
 
-    const host = "http://localhost:9000";
-    await spoolerApi.setInit(host, initLines);
+    await props.client.setInit(initLines);
     console.log(`Saved ${initLines.length} settings as init commands`);
   } catch (error) {
     console.error("Failed to save settings as init:", error);

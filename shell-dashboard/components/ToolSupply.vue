@@ -46,7 +46,7 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
-import type { SpoolerClient } from "../spooler";
+import { SpoolerClient } from "../spooler";
 
 const tsJustBeforeInsertZ = 0;
 const tsPulledZ = 47;

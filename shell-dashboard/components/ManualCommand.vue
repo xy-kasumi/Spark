@@ -20,8 +20,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { spoolerApi } from "../spooler";
-import type { SpoolerClient } from "../spooler";
+import { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
@@ -52,8 +51,7 @@ const executeButtonText = computed(() => {
 });
 
 async function init() {
-  const host = "http://localhost:9000";
-  const initData = await spoolerApi.getInit(host);
+  const initData = await props.client.getInit();
   for (const cmd of initData.lines) {
     props.client.enqueueCommand(cmd);
   }

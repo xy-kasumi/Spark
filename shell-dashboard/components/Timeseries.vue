@@ -43,9 +43,13 @@
 <script setup lang="ts">
 import { ref, shallowRef, watch, onMounted, onBeforeUnmount } from "vue";
 import { Chart, registerables } from "chart.js";
-import { spoolerApi } from "../spooler";
+import { SpoolerClient } from "../spooler";
 
 Chart.register(...registerables);
+
+const props = defineProps<{
+  client: SpoolerClient;
+}>();
 
 function toLocalDate(d: Date) {
   const y = d.getFullYear();
@@ -156,8 +160,7 @@ async function refreshNow() {
     return (includeDate ? toLocalDate(d) + " " : "") + toLocalTime(d);
   };
 
-  const host = "http://localhost:9000";
-  const res = await spoolerApi.queryTS(host, start, end, step, keys);
+  const res = await props.client.queryTS(start, end, step, keys);
   chart.value!.data.labels = res.times.map(dateToLabel);
   chart.value!.data.datasets = keys.map((key) => ({
     label: key,

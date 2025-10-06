@@ -65,7 +65,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
-import { spoolerApi } from "../spooler";
+import { SpoolerClient } from "../spooler";
 
 type Job = {
   job_id: string;
@@ -75,13 +75,16 @@ type Job = {
   time_ended?: Date;
 };
 
+const props = defineProps<{
+  client: SpoolerClient;
+}>();
+
 const jobs = ref<Job[]>([]);
 let intervalId: number | undefined;
 
 async function refreshJobs() {
   try {
-    const host = "http://localhost:9000";
-    const jobList = await spoolerApi.listJobs(host);
+    const jobList = await props.client.listJobs();
     jobList.sort((a, b) => b.time_added.getTime() - a.time_added.getTime());
     jobs.value = jobList;
   } catch (error) {

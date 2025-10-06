@@ -15,8 +15,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { spoolerApi } from "../spooler";
-import type { SpoolerClient } from "../spooler";
+import { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
@@ -63,8 +62,7 @@ function send() {
     return;
   }
 
-  const host = "http://localhost:9000";
-  spoolerApi.addJob(host, commands.value, {
+  props.client.addJob(commands.value, {
     "?pos": 1,
     "?edm": 0.5,
   });

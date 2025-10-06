@@ -73,15 +73,18 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
-import { spoolerApi } from "../spooler";
+import { SpoolerClient } from "../spooler";
+
+const props = defineProps<{
+  client: SpoolerClient;
+}>();
 
 const errors = ref<Array<{ time: Date; msg: string; src?: string }>>([]);
 let intervalId: number | undefined;
 
 async function refreshErrors() {
   try {
-    const host = "http://localhost:9000";
-    errors.value = await spoolerApi.getErrors(host);
+    errors.value = await props.client.getErrors();
   } catch (error) {
     console.error("Failed to refresh errors:", error);
     errors.value = [];

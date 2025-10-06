@@ -18,7 +18,7 @@
     <div class="main-content">
       <div class="column">
         <AddJob :client="client" :clientStatus="clientStatus" :assumeInitialized="assumeInitialized" />
-        <JobList />
+        <JobList :client="client" />
         <CoordinateSystem :client="client" />
         <Jog :client="client" />
         <ToolSupply :client="client" />
@@ -27,8 +27,8 @@
 
       <div class="column">
         <Settings :client="client" />
-        <Timeseries />
-        <Errors />
+        <Timeseries :client="client" />
+        <Errors :client="client" />
         <ManualCommand :client="client" :clientStatus="clientStatus" :assumeInitialized="assumeInitialized" />
       </div>
     </div>
@@ -37,7 +37,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
-import { SpoolerClient, spoolerApi, sleep } from "./spooler";
+import { SpoolerClient, sleep } from "./spooler";
 import logoUrl from "./logo.png";
 import AddJob from "./components/AddJob.vue";
 import ManualCommand from "./components/ManualCommand.vue";
@@ -100,7 +100,7 @@ onBeforeUnmount(() => {
 async function pollStatus() {
   while (isPolling.value) {
     try {
-      const status = await spoolerApi.getStatus(host);
+      const status = await client.getStatus();
       const state = status.busy ? "busy" : "idle";
       clientStatus.value = state;
       if (state === "busy") {

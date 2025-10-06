@@ -53,8 +53,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
-import { spoolerApi, sleep } from "../spooler";
-import type { SpoolerClient } from "../spooler";
+import { sleep, SpoolerClient } from "../spooler";
 
 // Basic data structure
 
@@ -164,8 +163,7 @@ async function pollPos() {
 async function updatePos() {
   await props.client.enqueueCommand("?pos");
   await sleep(50);
-  const host = "http://localhost:9000";
-  const latestPos = await spoolerApi.getLatestPState(host, "pos");
+  const latestPos = await props.client.getLatestPState("pos");
   if (latestPos === null) {
     return;
   }

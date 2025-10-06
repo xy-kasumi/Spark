@@ -60,15 +60,9 @@ export class SpoolerClient {
       console.log("cancel error", error);
     });
   }
-}
 
-/**
- * Spooler API client for making HTTP requests to shell-spooler.
- * This is separate from SpoolerController and provides raw API access.
- */
-export const spoolerApi = {
-  async getLatestPState(host: string, psName: string): Promise<{ time: number, pstate: Record<string, any> } | null> {
-    const response = await fetch(`${host}/get-ps`, {
+  async getLatestPState(psName: string): Promise<{ time: number, pstate: Record<string, any> } | null> {
+    const response = await fetch(`${this.host}/get-ps`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tag: psName, count: 1 })
@@ -87,15 +81,14 @@ export const spoolerApi = {
       time: pstates[0].time,
       pstate: pstates[0].kv
     };
-  },
+  }
 
   /**
    * Set init lines that will be sent to the core when spooler starts.
-   * @param host - Base URL of the shell-spooler server
    * @param lines - Array of init line strings to persist
    */
-  async setInit(host: string, lines: string[]): Promise<void> {
-    const response = await fetch(`${host}/set-init`, {
+  async setInit(lines: string[]): Promise<void> {
+    const response = await fetch(`${this.host}/set-init`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lines })
@@ -104,15 +97,14 @@ export const spoolerApi = {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-  },
+  }
 
   /**
    * Get current init lines configuration.
-   * @param host - Base URL of the shell-spooler server
    * @returns Array of configured init lines (empty if none configured)
    */
-  async getInit(host: string): Promise<{ lines: string[] }> {
-    const response = await fetch(`${host}/get-init`, {
+  async getInit(): Promise<{ lines: string[] }> {
+    const response = await fetch(`${this.host}/get-init`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({})
@@ -123,14 +115,14 @@ export const spoolerApi = {
     }
 
     return await response.json();
-  },
+  }
 
-  async queryTS(host: string, start: Date, end: Date, step: number, keys: string[]): Promise<{ times: Date[]; values: Record<string, any[]> }> {
+  async queryTS(start: Date, end: Date, step: number, keys: string[]): Promise<{ times: Date[]; values: Record<string, any[]> }> {
     // Convert Date objects to Unix timestamps
     const startUnix = start.getTime() / 1000;
     const endUnix = end.getTime() / 1000;
 
-    const response = await fetch(`${host}/query-ts`, {
+    const response = await fetch(`${this.host}/query-ts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -152,10 +144,10 @@ export const spoolerApi = {
       times: dates,
       values: values
     };
-  },
+  }
 
-  async addJob(host: string, commands: string[], signals: Record<string, number>): Promise<{ ok: boolean; job_id?: string }> {
-    const response = await fetch(`${host}/add-job`, {
+  async addJob(commands: string[], signals: Record<string, number>): Promise<{ ok: boolean; job_id?: string }> {
+    const response = await fetch(`${this.host}/add-job`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -170,10 +162,10 @@ export const spoolerApi = {
     }
 
     return await response.json();
-  },
+  }
 
-  async listJobs(host: string): Promise<Array<{ job_id: string; status: 'WAITING' | 'RUNNING' | 'COMPLETED' | 'CANCELED'; time_added: Date; time_started?: Date; time_ended?: Date }>> {
-    const response = await fetch(`${host}/list-jobs`, {
+  async listJobs(): Promise<Array<{ job_id: string; status: 'WAITING' | 'RUNNING' | 'COMPLETED' | 'CANCELED'; time_added: Date; time_started?: Date; time_ended?: Date }>> {
+    const response = await fetch(`${this.host}/list-jobs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({})
@@ -198,15 +190,14 @@ export const spoolerApi = {
     }
 
     return jobs;
-  },
+  }
 
   /**
    * Get spooler status summary.
-   * @param host - Base URL of the shell-spooler server
    * @returns Status object containing busy state, pending commands count, and optional running job ID
    */
-  async getStatus(host: string): Promise<{ busy: boolean; num_pending_commands: number; running_job?: string }> {
-    const response = await fetch(`${host}/status`, {
+  async getStatus(): Promise<{ busy: boolean; num_pending_commands: number; running_job?: string }> {
+    const response = await fetch(`${this.host}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({})
@@ -218,10 +209,10 @@ export const spoolerApi = {
     }
 
     return await response.json();
-  },
+  }
 
-  async getErrors(host: string, count: number = 50): Promise<Array<{ time: Date; msg: string; src?: string }>> {
-    const response = await fetch(`${host}/get-ps`, {
+  async getErrors(count: number = 50): Promise<Array<{ time: Date; msg: string; src?: string }>> {
+    const response = await fetch(`${this.host}/get-ps`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tag: "error", count })
@@ -240,4 +231,4 @@ export const spoolerApi = {
       src: ps.kv.src
     }));
   }
-};
+}

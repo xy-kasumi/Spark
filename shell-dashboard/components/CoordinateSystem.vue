@@ -13,7 +13,7 @@
 </template>
 
 <script setup lang="ts">
-import type { SpoolerClient } from "../spooler";
+import { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
