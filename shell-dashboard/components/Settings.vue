@@ -25,7 +25,13 @@
             </thead>
             <tbody>
               <tr v-for="(value, key) in filteredSettings" :key="key">
-                <td v-html="highlightKey(key)"></td>
+                <td>
+                  <template v-if="keyParts(key).match">
+                    {{ keyParts(key).before }}<span class="highlight">{{ keyParts(key).match }}</span>{{
+                      keyParts(key).after }}
+                  </template>
+                  <template v-else>{{ key }}</template>
+                </td>
                 <td v-if="editingKey !== key" @click="startEditing(key)" style="cursor: pointer">
                   {{ value }}
                   <span v-if="isModified(key)" class="modified-indicator">(modified)</span>
@@ -161,9 +167,9 @@ async function refreshSettings() {
   }
 }
 
-function highlightKey(key: string) {
+function keyParts(key: string) {
   if (!settingsFilter.value.trim()) {
-    return key;
+    return { before: "", match: "", after: "" };
   }
 
   const filter = settingsFilter.value.toLowerCase();
@@ -171,14 +177,14 @@ function highlightKey(key: string) {
   const index = keyLower.indexOf(filter);
 
   if (index === -1) {
-    return key;
+    return { before: "", match: "", after: "" };
   }
 
   const before = key.substring(0, index);
   const match = key.substring(index, index + filter.length);
   const after = key.substring(index + filter.length);
 
-  return `${before}<span class="highlight">${match}</span>${after}`;
+  return { before, match, after };
 }
 
 function startEditing(key: string) {

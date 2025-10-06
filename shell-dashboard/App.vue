@@ -27,6 +27,7 @@
 
       <div class="column">
         <Settings :client="client" />
+        <Stats :client="client" />
         <Timeseries :client="client" />
         <Errors :client="client" />
         <ManualCommand :client="client" :clientStatus="clientStatus" :assumeInitialized="assumeInitialized" />
@@ -47,6 +48,7 @@ import ToolSupply from "./components/ToolSupply.vue";
 import Scan from "./components/Scan.vue";
 import JobList from "./components/JobList.vue";
 import Settings from "./components/Settings.vue";
+import Stats from "./components/Stats.vue";
 import Timeseries from "./components/Timeseries.vue";
 import Errors from "./components/Errors.vue";
 
