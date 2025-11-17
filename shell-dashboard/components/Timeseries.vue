@@ -5,7 +5,21 @@
     <h1>Timeseries</h1>
     <div class="widget-content">
       <div>
-        Last
+        <label class="">
+          <input type="radio" name="mode" value="latest" v-model="mode" />
+          Latest
+        </label>
+        <label class="">
+          <input type="radio" name="mode" value="since" v-model="mode" />
+          Since
+        </label>
+        <div v-if="mode === 'since'">
+          <input type="text" v-model="sinceText" @blur="refreshNow" placeholder="2025-12-20 12:21:02" />
+        </div>
+      </div>
+
+      <div>
+        Window
         <label class="">
           <input type="radio" name="span" :value="60" v-model.number="span" />
           1m
@@ -19,6 +33,7 @@
           60m
         </label>
       </div>
+
       <div>
         Auto refresh
         <label class="">
@@ -58,15 +73,38 @@ function toLocalDate(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
-function toLocalTime(d: Date) {
+function toLocalTime(d: Date, showMsec = true) {
   const h = String(d.getHours()).padStart(2, "0");
   const m = String(d.getMinutes()).padStart(2, "0");
   const s = String(d.getSeconds()).padStart(2, "0");
-  const ms = String(d.getMilliseconds()).padStart(3, "0");
-  return `${h}:${m}:${s}.${ms[0]}`;
+  if (showMsec) {
+    const ms = String(d.getMilliseconds()).padStart(3, "0");
+    return `${h}:${m}:${s}.${ms[0]}`;
+  } else {
+    return `${h}:${m}:${s}`;
+  }
 }
 
+function toLocalDateTime(d: Date): string {
+  return `${toLocalDate(d)} ${toLocalTime(d, false)}`;
+}
+
+// Parses local datetime string. Both date and time are mandatory.
+// Format: "YYYY-MM-DD HH:MM:SS" (e.g., "2025-12-20 12:21:02")
+// Falls back to (now - 60s) if parsing fails.
+function parseLocalDateTime(text: string): Date {
+  const parts = text.match(/(\d+)-(\d+)-(\d+)\s+(\d+):(\d+):(\d+)/);
+  if (!parts) {
+    const nowSec = Math.floor(new Date().getTime() * 1e-3);
+    return new Date((nowSec - 60) * 1e3);
+  }
+  const [, y, m, d, h, min, s] = parts;
+  return new Date(Number(y), Number(m) - 1, Number(d), Number(h), Number(min), Number(s));
+}
+
+const mode = ref<"latest" | "since">("latest");
 const span = ref(60);
+const sinceText = ref("");
 const refreshInterval = ref(0);
 const chartCanvas = ref<HTMLCanvasElement>();
 const chart = shallowRef<Chart | null>(null);
@@ -87,6 +125,17 @@ onBeforeUnmount(() => {
   }
   if (chart.value) {
     chart.value.destroy();
+  }
+});
+
+watch(mode, (newMode) => {
+  if (newMode === "since") {
+    const nowSec = Math.floor(new Date().getTime() * 1e-3);
+    const start = new Date((nowSec - span.value) * 1e3);
+    sinceText.value = toLocalDateTime(start);
+    refreshNow();
+  } else {
+    refreshNow();
   }
 });
 
@@ -129,12 +178,21 @@ async function refreshNow() {
   }
   console.log("visible keys", visibleKeys);
 
-  const nowSec = Math.floor(new Date().getTime() * 1e-3);
-  const start = new Date((nowSec - span.value) * 1e3);
-  const end = new Date(nowSec * 1e3);
+  let start: Date;
+  let end: Date;
 
+  if (mode.value === "latest") {
+    const nowSec = Math.floor(new Date().getTime() * 1e-3);
+    start = new Date((nowSec - span.value) * 1e3);
+    end = new Date(nowSec * 1e3);
+  } else {
+    start = parseLocalDateTime(sinceText.value);
+    end = new Date(start.getTime() + span.value * 1e3);
+  }
+
+  const spanSec = (end.getTime() - start.getTime()) / 1000;
   const targetNumSteps = 100;
-  const preAdjustStep = span.value / targetNumSteps;
+  const preAdjustStep = spanSec / targetNumSteps;
   let step: number;
 
   if (preAdjustStep < 0.5) {
