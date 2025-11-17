@@ -16,7 +16,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { SpoolerClient } from "../spooler";
+import { sleep, SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
@@ -65,6 +65,9 @@ async function scan() {
     "G38.3 Y0"
   ]);
   await props.waitUntilIdle(measurementTime);
+
+  // TODO: without this sleep, premature pos measurement sometimes happen
+  await sleep(500);
 
   const posQueryTime = await props.client.enqueueCommand("?pos");
   const pstate = await props.getPStateAfter("pos", posQueryTime);
