@@ -19,17 +19,21 @@
       </div>
 
       <div>
-        Window
+        Span
         <label class="">
-          <input type="radio" name="span" :value="60" v-model.number="span" />
+          <input type="radio" name="span" :value="10" v-model.number="spanSec" />
+          10s
+        </label>
+        <label class="">
+          <input type="radio" name="span" :value="60" v-model.number="spanSec" />
           1m
         </label>
         <label class="">
-          <input type="radio" name="span" :value="600" v-model.number="span" />
+          <input type="radio" name="span" :value="600" v-model.number="spanSec" />
           10m
         </label>
         <label class="">
-          <input type="radio" name="span" :value="3600" v-model.number="span" />
+          <input type="radio" name="span" :value="3600" v-model.number="spanSec" />
           60m
         </label>
       </div>
@@ -103,7 +107,7 @@ function parseLocalDateTime(text: string): Date {
 }
 
 const mode = ref<"latest" | "since">("latest");
-const span = ref(60);
+const spanSec = ref(60);
 const sinceText = ref("");
 const refreshInterval = ref(0);
 const chartCanvas = ref<HTMLCanvasElement>();
@@ -131,7 +135,7 @@ onBeforeUnmount(() => {
 watch(mode, (newMode) => {
   if (newMode === "since") {
     const nowSec = Math.floor(new Date().getTime() * 1e-3);
-    const start = new Date((nowSec - span.value) * 1e3);
+    const start = new Date((nowSec - spanSec.value) * 1e3);
     sinceText.value = toLocalDateTime(start);
     refreshNow();
   } else {
@@ -139,7 +143,7 @@ watch(mode, (newMode) => {
   }
 });
 
-watch(span, () => {
+watch(spanSec, () => {
   refreshNow();
 });
 
@@ -183,16 +187,16 @@ async function refreshNow() {
 
   if (mode.value === "latest") {
     const nowSec = Math.floor(new Date().getTime() * 1e-3);
-    start = new Date((nowSec - span.value) * 1e3);
+    start = new Date((nowSec - spanSec.value) * 1e3);
     end = new Date(nowSec * 1e3);
   } else {
     start = parseLocalDateTime(sinceText.value);
-    end = new Date(start.getTime() + span.value * 1e3);
+    end = new Date(start.getTime() + spanSec.value * 1e3);
   }
 
-  const spanSec = (end.getTime() - start.getTime()) / 1000;
+  const actualSpanSec = (end.getTime() - start.getTime()) / 1000;
   const targetNumSteps = 100;
-  const preAdjustStep = spanSec / targetNumSteps;
+  const preAdjustStep = actualSpanSec / targetNumSteps;
   let step: number;
 
   if (preAdjustStep < 0.5) {
