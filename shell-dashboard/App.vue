@@ -22,6 +22,7 @@
         <CoordinateSystem :client="client" :isIdle="isIdle" />
         <Jog :client="client" :isIdle="isIdle" :getPStateAfter="waitPStateAfter" />
         <ToolSupply :client="client" :isIdle="isIdle" />
+        <Pump :client="client" :isIdle="isIdle" />
         <Scan :client="client" :isIdle="isIdle" :getPStateAfter="waitPStateAfter" :waitUntilIdle="waitUntilIdle" />
       </div>
 
@@ -45,6 +46,7 @@ import ManualCommand from "./components/ManualCommand.vue";
 import CoordinateSystem from "./components/CoordinateSystem.vue";
 import Jog from "./components/Jog.vue";
 import ToolSupply from "./components/ToolSupply.vue";
+import Pump from "./components/Pump.vue";
 import Scan from "./components/Scan.vue";
 import JobList from "./components/JobList.vue";
 import Settings from "./components/Settings.vue";
