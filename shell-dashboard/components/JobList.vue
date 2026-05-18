@@ -132,7 +132,7 @@ function getElapsedTime(job: Job) {
 
 onMounted(() => {
   refreshJobs();
-  intervalId = window.setInterval(refreshJobs, 5000);
+  intervalId = window.setInterval(refreshJobs, 1000);
 });
 
 onUnmounted(() => {
