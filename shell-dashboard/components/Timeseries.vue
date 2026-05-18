@@ -170,12 +170,14 @@ async function refreshNow() {
     .map((meta) => meta.label);
   const keys = [
     "queue.num",
+    "edm.eff_duty",
     "edm.open",
     "edm.short",
     "edm.pb_f",
     "edm.pb_b",
     "edm.dist",
     "edm.dist_max",
+    "edm.temp",
   ];
   if (visibleKeys.length === 0) {
     visibleKeys = keys;
