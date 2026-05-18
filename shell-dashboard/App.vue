@@ -20,7 +20,7 @@
         <AddJob :client="client" :isIdle="isIdle" />
         <JobList :client="client" />
         <CoordinateSystem :client="client" :isIdle="isIdle" />
-        <Jog :client="client" :isIdle="isIdle" :getPStateAfter="waitPStateAfter" />
+        <Jog :client="client" :isIdle="isIdle" />
         <ToolSupply :client="client" :isIdle="isIdle" />
         <Pump :client="client" :isIdle="isIdle" />
         <Scan :client="client" :isIdle="isIdle" :getPStateAfter="waitPStateAfter" :waitUntilIdle="waitUntilIdle" />

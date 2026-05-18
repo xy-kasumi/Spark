@@ -124,7 +124,6 @@ const extractPos = (ps: Record<string, any>): Pos | null => {
 const props = defineProps<{
   client: SpoolerClient;
   isIdle: boolean;
-  getPStateAfter: (tag: string, time: Date) => Promise<Record<string, any>>;
 }>();
 
 const jogStepMm = ref(1);
@@ -163,9 +162,18 @@ async function pollPos() {
 }
 
 async function updatePos() {
+  // ?pos is a signal: it gets a response even when a job is busy, so we must not
+  // route through waitPStateAfter (which blocks until idle).
   const time = await props.client.enqueueCommand("?pos");
-  const pstate = await props.getPStateAfter("pos", time);
-  pos.value = extractPos(pstate);
+  const cutoffMs = time.getTime() + 50;
+  while (true) {
+    const res = await props.client.getLatestPState("pos");
+    if (res && res.time.getTime() > cutoffMs) {
+      pos.value = extractPos(res.pstate);
+      return;
+    }
+    await sleep(100);
+  }
 }
 
 function refresh() {
