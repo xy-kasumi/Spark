@@ -165,9 +165,6 @@ function setupAutoRefresh(intervalSeconds: number) {
 }
 
 async function refreshNow() {
-  let visibleKeys = chart.value!
-    .getSortedVisibleDatasetMetas()
-    .map((meta) => meta.label);
   const keys = [
     "queue.num",
     "edm.eff_duty",
@@ -179,8 +176,13 @@ async function refreshNow() {
     "edm.dist_max",
     "edm.temp",
   ];
-  if (visibleKeys.length === 0) {
-    visibleKeys = keys;
+  let visibleKeys: (string | undefined)[];
+  if (chart.value!.data.datasets.length === 0) {
+    visibleKeys = ["edm.eff_duty"];
+  } else {
+    visibleKeys = chart.value!
+      .getSortedVisibleDatasetMetas()
+      .map((meta) => meta.label);
   }
   console.log("visible keys", visibleKeys);
 
