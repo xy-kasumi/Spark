@@ -1,0 +1,30 @@
+#!/bin/sh
+# Runs the available checks for each component that has staged changes.
+# Enable with: git config core.hooksPath hooks
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+changed=$(git diff --cached --name-only --diff-filter=ACMR)
+
+changed_in() {
+	echo "$changed" | grep -q "^$1/"
+}
+
+run() {
+	dir=$1
+	shift
+	echo "==> $dir: $*"
+	(cd "$repo_root/$dir" && "$@")
+}
+
+if changed_in shell-spooler; then
+	run shell-spooler go test ./...
+fi
+
+if changed_in shell-dashboard; then
+	run shell-dashboard npm run build
+fi
+
+if changed_in dicer; then
+	run dicer make typecheck
+fi
