@@ -28,7 +28,8 @@ type SpoolerAPI interface {
 }
 
 type WriteLineRequest struct {
-	Line string `json:"line"` // single line of command. cannot contain newline.
+	Line     string `json:"line"`                // single line of payload. cannot contain newline.
+	HighPrio *bool  `json:"high_prio,omitempty"` // true: send immediately; false: queue as command. if omitted, inferred from prefix (deprecated).
 }
 
 type WriteLineResponse struct {

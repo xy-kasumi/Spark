@@ -41,8 +41,11 @@ If any job is `WAITING` or `RUNNING`, /write-line of commands will fail.
 ```yaml
 properties:
   line: {type: string}
+optionalProperties:
+  high_prio: {type: bool}
 ```
 * `line`: a valid payload. (between 1~100 bytes, does not contain newline, etc.)
+* `high_prio`: if `true`, the payload is sent immediately (bypassing the command queue and the job-pending gate); if `false`, it is queued as a command and fails while a job is `WAITING`/`RUNNING`. If omitted, priority is inferred from the payload prefix (`!`/`?`); this fallback is **deprecated** — callers should set `high_prio` explicitly.
 
 **Response Schema**
 
@@ -59,7 +62,8 @@ properties:
 Request:
 ```json
 {
-  "line": "G1 X10 Y20"
+  "line": "G1 X10 Y20",
+  "high_prio": false
 }
 ```
 
@@ -67,7 +71,7 @@ Response:
 ```json
 {
   "ok": true,
-  "now": 1735689600.123
+  "time": 1735689600.123
 }
 ```
 

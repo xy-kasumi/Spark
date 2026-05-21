@@ -138,17 +138,13 @@ func (cm *Comm) feedCommand() {
 	}
 }
 
+// SendSignal sends payload via the immediate high-priority path (bypasses the
+// command queue and its flow-control). Routing is the caller's responsibility.
 func (cm *Comm) SendSignal(payload string) {
-	if !IsSignal(payload) {
-		panic("not a signal: " + payload)
-	}
 	cm.signalCh <- payload
 }
 
 func (cm *Comm) WriteCommand(payload string) {
-	if IsSignal(payload) {
-		panic("not a command: " + payload)
-	}
 	payload = cleanupGCode(payload)
 	if payload != "" {
 		cm.commandCh <- payload

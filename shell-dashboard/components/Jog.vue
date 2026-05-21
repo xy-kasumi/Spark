@@ -164,7 +164,7 @@ async function pollPos() {
 async function updatePos() {
   // ?pos is a signal: it gets a response even when a job is busy, so we must not
   // route through waitPStateAfter (which blocks until idle).
-  const time = await props.client.enqueueCommand("?pos");
+  const time = await props.client.sendSignal("?pos");
   const cutoffMs = time.getTime() + 50;
   while (true) {
     const res = await props.client.getLatestPState("pos");

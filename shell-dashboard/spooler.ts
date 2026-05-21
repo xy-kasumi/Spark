@@ -64,7 +64,18 @@ export class SpoolerClient {
     if (cleanCommand.length > 100) {
       throw new Error("Command too long");
     }
-    const response = await this.rpc('/write-line', { line: cleanCommand });
+    const response = await this.rpc('/write-line', { line: cleanCommand, high_prio: false });
+    return new Date(response.time * 1000);
+  }
+
+  /**
+   * Send a signal via the immediate high-priority path (bypasses the command
+   * queue and the job-pending gate; sent verbatim, no G-code comment stripping).
+   * @param signal - Signal payload to send (e.g. "?pos")
+   * @returns The time when the signal was enqueued (from spooler)
+   */
+  async sendSignal(signal: string): Promise<Date> {
+    const response = await this.rpc('/write-line', { line: signal, high_prio: true });
     return new Date(response.time * 1000);
   }
 

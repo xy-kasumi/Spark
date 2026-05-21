@@ -69,7 +69,7 @@ async function scan() {
   // TODO: without this sleep, premature pos measurement sometimes happen
   await sleep(500);
 
-  const posQueryTime = await props.client.enqueueCommand("?pos");
+  const posQueryTime = await props.client.sendSignal("?pos");
   const pstate = await props.getPStateAfter("pos", posQueryTime);
   measurements.value.push(pstate["m.y"]);
 
