@@ -21,7 +21,7 @@
         <JobList :client="client" />
         <CoordinateSystem :client="client" :isIdle="isIdle" />
         <Jog :client="client" :isIdle="isIdle" />
-        <Pump :client="client" :isIdle="isIdle" />
+        <Pump :client="client" />
       </div>
 
       <div class="column">

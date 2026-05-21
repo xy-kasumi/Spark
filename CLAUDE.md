@@ -15,3 +15,6 @@
 ## shell-dashboard/ Guidelines
 - Use `npm run build` to build.
 - Use design tokens when writing new CSS. Ask me if new design seems to warrant new tokens.
+
+## Firmware / wire protocol spec
+Located at https://github.com/xy-kasumi/Spark-corefw/tree/main/docs

@@ -4,25 +4,26 @@
   <div class="widget">
     <h1>Pump</h1>
     <div class="widget-content">
-      <button @click="start" :disabled="!isIdle">START</button>
-      <button @click="stop" :disabled="!isIdle">STOP</button>
+      <label>
+        <input type="checkbox" v-model="enabled" @change="apply" />
+        Enable (override)
+      </label>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
 import { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
   client: SpoolerClient;
-  isIdle: boolean;
 }>();
 
-function start() {
-  props.client.enqueueCommand("M8");
-}
+const enabled = ref(false);
 
-function stop() {
-  props.client.enqueueCommand("M9");
+function apply() {
+  // true enables pump; false respects M8/M9. Sent immediately (not queued).
+  props.client.sendSignal(`fset ov.pump_en ${enabled.value}`);
 }
 </script>
