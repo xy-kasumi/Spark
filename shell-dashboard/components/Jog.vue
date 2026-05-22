@@ -58,7 +58,7 @@ import { sleep, SpoolerClient } from "../spooler";
 // Basic data structure
 
 type Coords = { x: number, y: number, z: number, c: number };
-type CoordSys = "machine" | "grinder" | "toolsupply" | "work";
+type CoordSys = "machine" | "grinder" | "work";
 
 type Pos = {
   machine: Coords;
@@ -87,7 +87,6 @@ const extractCoords = (ps: Record<string, any>, sys: CoordSys): Coords | null =>
   const table: Record<CoordSys, string> = {
     machine: "m",
     grinder: "g",
-    toolsupply: "t",
     work: "w",
   };
   const prefix = table[sys];

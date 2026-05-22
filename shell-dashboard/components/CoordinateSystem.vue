@@ -7,7 +7,6 @@
       <button @click="setMachineCoords" :disabled="!isIdle">MACHINE</button>
       <button @click="setWorkCoords" :disabled="!isIdle">WORK</button>
       <button @click="setGrinderCoords" :disabled="!isIdle">GRINDER</button>
-      <button @click="setToolSupplyCoords" :disabled="!isIdle">TOOLSUPPLY</button>
     </div>
   </div>
 </template>
@@ -30,9 +29,5 @@ function setWorkCoords() {
 
 function setGrinderCoords() {
   props.client.enqueueCommand("G54");
-}
-
-function setToolSupplyCoords() {
-  props.client.enqueueCommand("G56");
 }
 </script>
