@@ -170,11 +170,9 @@ async function refreshNow() {
     "edm.eff_duty",
     "edm.open",
     "edm.short",
-    "edm.pb_f",
-    "edm.pb_b",
+    "edm.retr_rem",
     "edm.dist",
     "edm.dist_max",
-    "edm.temp",
   ];
   let visibleKeys: (string | undefined)[];
   if (chart.value!.data.datasets.length === 0) {
