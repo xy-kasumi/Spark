@@ -4,8 +4,10 @@
 4x4 pair plot of completed trials:
   - diagonal:        1D marginal (eff_duty vs each param)
   - lower triangle:  2D scatter of each param pair, colored by eff_duty
-Spearman ρ(param, eff_duty) is printed to stdout as a rough per-param
-importance score (handles monotone non-linearities; misses interactions).
+Per-param η² (fraction of Var(eff_duty) explained by quantile-binning that
+one param) is printed as a rough importance score. Catches unimodal/peaked
+shapes that a rank correlation would miss; still 1D, so interactions
+between params are invisible.
 
 Usage:
     edm_analyze.py [edm_tune.jsonl] [--cycles M..N]
@@ -20,10 +22,10 @@ import numpy as np
 
 
 PARAM_LOG = {
-    "adv_thresh":  False,
-    "retr_thresh": False,
-    "adv_speed":   True,
-    "retr_speed":  True,
+    "adv_thresh":       False,
+    "retr_thresh":      False,
+    "adv_speed":        True,
+    "retr_speed_ratio": True,
 }
 PARAMS = list(PARAM_LOG)
 
@@ -33,10 +35,19 @@ def load(path: str) -> list[dict]:
         return [json.loads(line) for line in f if line.strip()]
 
 
-def spearman(x: np.ndarray, y: np.ndarray) -> float:
-    xr = np.argsort(np.argsort(x))
-    yr = np.argsort(np.argsort(y))
-    return float(np.corrcoef(xr, yr)[0, 1])
+def eta_squared(x: np.ndarray, y: np.ndarray, n_bins: int = 5) -> float:
+    """Fraction of Var(y) explained by quantile-binning x into n_bins."""
+    ss_total = float(((y - y.mean()) ** 2).sum())
+    if ss_total == 0:
+        return 0.0
+    edges = np.quantile(x, np.linspace(0, 1, n_bins + 1))
+    bin_idx = np.clip(np.digitize(x, edges[1:-1]), 0, n_bins - 1)
+    ss_between = 0.0
+    for b in range(n_bins):
+        mask = bin_idx == b
+        if mask.any():
+            ss_between += mask.sum() * (y[mask].mean() - y.mean()) ** 2
+    return float(ss_between / ss_total)
 
 
 def main() -> None:
@@ -89,10 +100,10 @@ def main() -> None:
     if sc is not None:
         fig.colorbar(sc, ax=axes.ravel().tolist(), shrink=0.6, label="eff_duty")
 
-    print("\nSpearman ρ(param, eff_duty):")
-    for p, r in sorted(((p, spearman(P[p], y)) for p in PARAMS),
-                       key=lambda kv: -abs(kv[1])):
-        print(f"  {p:12s} {r:+.3f}")
+    print("\nη²(param, eff_duty)  [fraction of Var(eff_duty) explained, 1D]:")
+    for p, r in sorted(((p, eta_squared(P[p], y)) for p in PARAMS),
+                       key=lambda kv: -kv[1]):
+        print(f"  {p:18s} {r:.3f}")
 
     plt.show()
 

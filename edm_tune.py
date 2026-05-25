@@ -22,11 +22,27 @@ import optuna
 
 
 PARAM_RANGES = {
-    "adv_thresh":  (0.05, 0.95, False),
-    "retr_thresh": (0.05, 0.95, False),
-    "adv_speed":   (0.01, 5.0,  True),
-    "retr_speed":  (0.01, 5.0,  True),
+    "adv_thresh":       (0.05, 0.95, False),
+    "retr_thresh":      (0.05, 0.95, False),
+    "adv_speed":        (0.1, 10.0,  True),
+    "retr_speed_ratio": (0.3, 3.0,  True),
 }
+
+
+ADV_SPEED_MAX  = 10.0
+RETR_SPEED_MAX = 10.0
+
+
+def to_hw(params: dict) -> dict:
+    """Map search-space params to the 4 hardware ov.edm.* values."""
+    adv_v  = min(params["adv_speed"], ADV_SPEED_MAX)
+    retr_v = min(adv_v * params["retr_speed_ratio"], RETR_SPEED_MAX)
+    return {
+        "adv_thresh":  params["adv_thresh"],
+        "retr_thresh": params["retr_thresh"],
+        "adv_speed":   adv_v,
+        "retr_speed":  retr_v,
+    }
 
 
 def rpc(endpoint: str, path: str, body: dict) -> dict:
@@ -73,7 +89,7 @@ def precheck(endpoint: str) -> None:
 
 def _fmt_params(p: dict) -> str:
     return (f"adv={p['adv_thresh']:.2f} retr={p['retr_thresh']:.2f} "
-            f"advV={p['adv_speed']:.2f} retrV={p['retr_speed']:.2f}")
+            f"advV={p['adv_speed']:.2f} retrR={p['retr_speed_ratio']:.2f}")
 
 
 def apply_params(endpoint: str, params: dict) -> float:
@@ -99,7 +115,7 @@ def make_objective(endpoint: str, wait_sec: float):
         try:
             reset_params(endpoint)
             time.sleep(wait_sec)
-            set_time = apply_params(endpoint, params)
+            set_time = apply_params(endpoint, to_hw(params))
         except RuntimeError as e:
             raise optuna.TrialPruned(str(e))
         time.sleep(wait_sec)
@@ -159,7 +175,7 @@ def run_explore(endpoint, wait_sec, explore_sec, warm_params, cycle, state, log_
 def run_exploit(endpoint, exploit_sec, best_params, cycle):
     """Pin params to `best_params` and sample eff_duty once per second."""
     try:
-        set_time = apply_params(endpoint, best_params)
+        set_time = apply_params(endpoint, to_hw(best_params))
     except RuntimeError as e:
         print(f"[cycle {cycle} exploit] aborted: {e}", flush=True)
         return
@@ -185,7 +201,7 @@ def print_summary(cycle_bests, all_best, started):
     print(f"last-cycle best:  cycle {last['cycle']} trial {last['trial']}  "
           f"eff_duty={last['value']:.3f}  {_fmt_params(last['params'])}")
     print("  reproduce:")
-    for name, value in last["params"].items():
+    for name, value in to_hw(last["params"]).items():
         print(f"    fset ov.edm.{name} {value:.6f}")
     if all_best:
         print(f"all-time best:    cycle {all_best['cycle']} trial {all_best['trial']}  "
@@ -235,7 +251,7 @@ def main() -> None:
         print(f"applying last-cycle best (cycle {last['cycle']}) to device...",
               flush=True)
         try:
-            apply_params(args.endpoint, last["params"])
+            apply_params(args.endpoint, to_hw(last["params"]))
             print("applied.", flush=True)
         except (RuntimeError, urllib.error.URLError, ConnectionError) as e:
             print(f"apply failed: {e}", file=sys.stderr)
