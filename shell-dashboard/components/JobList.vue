@@ -69,7 +69,7 @@ import { SpoolerClient } from "../spooler";
 
 type Job = {
   job_id: string;
-  status: "WAITING" | "RUNNING" | "COMPLETED" | "CANCELED";
+  status: "WAITING" | "RUNNING" | "COMPLETED" | "CANCELED" | "FAILED";
   time_added: Date;
   time_started?: Date;
   time_ended?: Date;

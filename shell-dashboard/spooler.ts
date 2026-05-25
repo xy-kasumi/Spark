@@ -130,7 +130,7 @@ export class SpoolerClient {
     });
   }
 
-  async listJobs(): Promise<Array<{ job_id: string; status: 'WAITING' | 'RUNNING' | 'COMPLETED' | 'CANCELED'; time_added: Date; time_started?: Date; time_ended?: Date }>> {
+  async listJobs(): Promise<Array<{ job_id: string; status: 'WAITING' | 'RUNNING' | 'COMPLETED' | 'CANCELED' | 'FAILED'; time_added: Date; time_started?: Date; time_ended?: Date }>> {
     const { jobs } = await this.rpc('/list-jobs', {});
 
     // Convert Unix timestamps to Date objects
