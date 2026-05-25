@@ -1,24 +1,22 @@
-# Spooler Spec
+# Spooler
 
-Spooler is  I/O buffer between UIs (e.g. shell-dashboard) and the core.
+Spooler manages the [core firmware](https://github.com/xy-kasumi/Spark-corefw/) over serial comm.
+It provides
+* Command multiplexing & long-running job streaming, via HTTP API
+* Text log for later consumption
 
-Spooler communicates with the core via serial port, and provides HTTP API.
-UI implementations can be stateless by querying spooler as needed.
+Spooler's knowledge:
+* knows
+  * line-based comm (and `; ...` comment stripping)
+  * about p-state format
+  * queue control (`?queue`, `queue`)
+  * cancellation (`!`)
+* does not know
+  * G-code, Commands (e.g. what "G1", "set", "?pos" means), p-state contents (other than queue)
 
-Within the [protocol](https://github.com/xy-kasumi/Spark-corefw/blob/main/spec/protocol.md), spooler knows
-* Transport layer
-* P-states
-* Signals (e.g. difference between "!", "?queue")
-
-Spooler does not know
-* G-code, Commands (e.g. what "G1" or "set" means)
-
-Spooler also serves as reliable comm log for debug purpose.
-
-## Core concepts
-* direction: dataflow direction. Either `up` or `down`. `up` means towards the user (core -> spooler -> UI). `down` means away from the user. (UI -> spooler -> core).
-  * This removes confusion of "RX" vs "TX"
-* init file: text file that is persisted across reboot, useful for initializing the core.
+Terminology
+* `up`: comm towards the user (core -> spooler -> UI -> user). `down` is the opposite.
+* `init file`: text file that is persisted across reboot, useful for initializing the core.
 
 ## HTTP API
 
@@ -32,9 +30,7 @@ It sticks to just 3 types of status codes.
 
 ### POST /write-line
 
-Enqueue sending of a payload.
-Signals will be immediately sent even if a job is running.
-If any job is `WAITING` or `RUNNING`, /write-line of commands will fail.
+Send a line.
 
 **Request Schema**
 
@@ -44,8 +40,10 @@ properties:
 optionalProperties:
   high_prio: {type: bool}
 ```
-* `line`: a valid payload. (between 1~100 bytes, does not contain newline, etc.)
-* `high_prio`: if `true`, the payload is sent immediately (bypassing the command queue and the job-pending gate); if `false`, it is queued as a command and fails while a job is `WAITING`/`RUNNING`. If omitted, priority is inferred from the payload prefix (`!`/`?`); this fallback is **deprecated** — callers should set `high_prio` explicitly.
+* `line`: a valid payload (should not contain newline)
+* `high_prio`:
+  * if `true`, the payload is sent immediately regardless of job
+  * if `false`, it is queued as a command and fails while a job is `WAITING`/`RUNNING`.
 
 **Response Schema**
 
@@ -156,7 +154,7 @@ optionalProperties:
 ```
 
 * `time`: spooler timestamp of this status
-* `busy`: some commands are pending to execute (or being executed). Signals do not count as busy.
+* `busy`: some commands are pending to execute (or being executed). High-prio writes do not count as busy.
 * `num_pending_commands`: number of commands (either directly or via job)
   * includes commands in core queue
 * `running_job`: job_id if a job is running
@@ -256,7 +254,7 @@ Request:
 
 ### POST /add-job
 
-Add a "job", which is a collection of commands and periodic signals.
+Add a "job", which is a command-list + polls.
 Add only succeeds if all existing jobs are ended (`CANCELED` or `COMPLETED`).
 
 Job only starts executing when command queue of both spooler and core become is fully empty.
@@ -267,12 +265,15 @@ Job completes when all `commands` are sent and core queue become fully empty.
 properties:
   commands:
     elements: {type: string}
-  signals:
+  polls:
     values: {type: float32}
 ```
 
 * `commands`: list of commands to be executed
-* `signals`: list of signals to be periodically executed
+* `polls`: list of commands to be periodically sent (interval in sec)
+
+Caller needs to be careful to only send queue-able `commands` and immediate-execute `polls`
+to avoid weird execution order or queue overload.
 
 **Response Schema**
 ```yaml
@@ -293,7 +294,7 @@ Request
     "G0 X10 Y10",
     ...
   ],
-  "signals": {
+  "polls": {
     "?pos": 1,
     "?edm": 0.5
   }

@@ -8,7 +8,7 @@ export function sleep(ms: number): Promise<void> {
 
 /**
  * Thin wrapper around spooler HTTP API.
- * Refer to docs/spec-spooler.md for details.
+ * Refer to docs/spooler.md for details.
  */
 export class SpoolerClient {
   private readonly host: string;
@@ -122,10 +122,10 @@ export class SpoolerClient {
     };
   }
 
-  async addJob(commands: string[], signals: Record<string, number>): Promise<{ ok: boolean; job_id?: string }> {
+  async addJob(commands: string[], polls: Record<string, number>): Promise<{ ok: boolean; job_id?: string }> {
     return await this.rpc('/add-job', {
       commands: commands,
-      signals: signals
+      polls: polls
     });
   }
 

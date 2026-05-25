@@ -23,7 +23,7 @@ const (
 type Job struct {
 	ID          string
 	Commands    []string
-	Signals     map[string]float32
+	Polls       map[string]float32
 	Status      JobStatus
 	TimeAdded   time.Time
 	TimeStarted *time.Time
@@ -70,7 +70,7 @@ func copyJobUnsafe(job Job) Job {
 	newJob := Job{
 		ID:        job.ID,
 		Commands:  job.Commands,
-		Signals:   job.Signals,
+		Polls:     job.Polls,
 		Status:    job.Status,
 		TimeAdded: job.TimeAdded,
 	}
@@ -85,14 +85,14 @@ func copyJobUnsafe(job Job) Job {
 	return newJob
 }
 
-func (js *JobSched) keepSendingSignals(signal string, value float32, stop chan struct{}) {
+func (js *JobSched) keepSendingPolls(poll string, value float32, stop chan struct{}) {
 	tick := time.Tick(time.Duration(value * float32(time.Second)))
 	for {
 		select {
 		case <-stop:
 			return
 		case <-tick:
-			js.commInstance.SendSignal(signal)
+			js.commInstance.SendImmediate(poll)
 		}
 	}
 }
@@ -123,8 +123,8 @@ func (js *JobSched) keepExecutingJobs() {
 
 		// Execute
 		stop := make(chan struct{})
-		for signal, value := range job.Signals {
-			go js.keepSendingSignals(signal, value, stop)
+		for poll, value := range job.Polls {
+			go js.keepSendingPolls(poll, value, stop)
 		}
 		for _, command := range job.Commands {
 			js.commInstance.WriteCommand(command)
@@ -158,7 +158,7 @@ func (js *JobSched) keepExecutingJobs() {
 	}
 }
 
-func (js *JobSched) AddJob(commands []string, signals map[string]float32) (string, bool) {
+func (js *JobSched) AddJob(commands []string, polls map[string]float32) (string, bool) {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 
@@ -170,7 +170,7 @@ func (js *JobSched) AddJob(commands []string, signals map[string]float32) (strin
 	job := Job{
 		ID:        js.issueNewJobIDUnsafe(),
 		Commands:  commands,
-		Signals:   signals,
+		Polls:     polls,
 		Status:    JobWaiting,
 		TimeAdded: time.Now().Local(),
 	}

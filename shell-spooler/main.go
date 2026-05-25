@@ -75,16 +75,8 @@ func (h *apiImpl) PStateRecv(ps comm.PState, tm time.Time) {
 
 // SpoolerAPI implementation
 func (h *apiImpl) WriteLine(req *WriteLineRequest) (*WriteLineResponse, error) {
-	var highPrio bool
-	if req.HighPrio != nil {
-		highPrio = *req.HighPrio
-	} else {
-		// Deprecated: infer priority from payload prefix. Callers should set high_prio.
-		highPrio = comm.IsSignal(req.Line)
-	}
-
-	if highPrio {
-		h.commInstance.SendSignal(req.Line)
+	if req.HighPrio {
+		h.commInstance.SendImmediate(req.Line)
 	} else {
 		if h.jobSched.HasPendingJob() {
 			return &WriteLineResponse{
@@ -107,7 +99,7 @@ func (h *apiImpl) Cancel(req *CancelRequest) (*CancelResponse, error) {
 		// Need to drain command queue ourselves
 		h.commInstance.DrainCommandQueue()
 	}
-	h.commInstance.SendSignal("!")
+	h.commInstance.SendImmediate("!")
 	return &CancelResponse{}, nil
 }
 
@@ -141,7 +133,7 @@ func (h *apiImpl) GetInit(req *GetInitRequest) (*GetInitResponse, error) {
 }
 
 func (h *apiImpl) AddJob(req *AddJobRequest) (*AddJobResponse, error) {
-	jobID, ok := h.jobSched.AddJob(req.Commands, req.Signals)
+	jobID, ok := h.jobSched.AddJob(req.Commands, req.Polls)
 	if !ok {
 		return &AddJobResponse{
 			OK:    false,

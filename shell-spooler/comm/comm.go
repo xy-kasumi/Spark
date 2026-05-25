@@ -13,7 +13,7 @@ type Comm struct {
 	tran      *transport
 	parser    PStateParser
 	handler   CommHandler
-	signalCh  chan string
+	immediateCh  chan string
 	commandCh chan string
 
 	muQueue     *sync.Mutex
@@ -77,7 +77,7 @@ func InitComm(serialPort string, baud int, handler CommHandler) (*Comm, error) {
 	cm := &Comm{
 		handler:   handler,
 		parser:    NewPStateParser(),
-		signalCh:  make(chan string, 10),
+		immediateCh:  make(chan string, 10),
 		commandCh: make(chan string, 10_000_000), // must be bigger than any G-code file
 		muQueue:   &sync.Mutex{},
 	}
@@ -88,7 +88,7 @@ func InitComm(serialPort string, baud int, handler CommHandler) (*Comm, error) {
 	cm.tran = tran
 
 	go cm.pollQueue()
-	go cm.feedSignal()
+	go cm.feedImmediate()
 	go cm.feedCommand()
 	return cm, nil
 }
@@ -96,7 +96,7 @@ func InitComm(serialPort string, baud int, handler CommHandler) (*Comm, error) {
 func (cm *Comm) pollQueue() {
 	for {
 		time.Sleep(250 * time.Millisecond)
-		cm.signalCh <- "?queue"
+		cm.immediateCh <- "?queue"
 	}
 }
 
@@ -110,9 +110,9 @@ func (cm *Comm) handleQueueStatus(q *psQueue) {
 	cm.okToSend = int(float64(q.Cap)*maxFillRate) - q.Num
 }
 
-func (cm *Comm) feedSignal() {
+func (cm *Comm) feedImmediate() {
 	for {
-		line := <-cm.signalCh
+		line := <-cm.immediateCh
 		cm.tran.sendPayload(line)
 	}
 }
@@ -138,10 +138,10 @@ func (cm *Comm) feedCommand() {
 	}
 }
 
-// SendSignal sends payload via the immediate high-priority path (bypasses the
-// command queue and its flow-control). Routing is the caller's responsibility.
-func (cm *Comm) SendSignal(payload string) {
-	cm.signalCh <- payload
+// SendImmediate sends payload bypassing the command queue and its flow-control.
+// Routing is the caller's responsibility.
+func (cm *Comm) SendImmediate(payload string) {
+	cm.immediateCh <- payload
 }
 
 func (cm *Comm) WriteCommand(payload string) {
@@ -174,10 +174,6 @@ func (cm *Comm) DrainCommandQueue() {
 
 func (cm *Comm) Close() {
 	cm.tran.Close()
-}
-
-func IsSignal(payload string) bool {
-	return strings.HasPrefix(payload, "!") || strings.HasPrefix(payload, "?")
 }
 
 func cleanupGCode(payload string) string {

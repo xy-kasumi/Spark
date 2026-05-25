@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"shell-spooler/comm"
 	"strings"
 	"time"
 )
@@ -28,8 +27,8 @@ type SpoolerAPI interface {
 }
 
 type WriteLineRequest struct {
-	Line     string `json:"line"`                // single line of payload. cannot contain newline.
-	HighPrio *bool  `json:"high_prio,omitempty"` // true: send immediately; false: queue as command. if omitted, inferred from prefix (deprecated).
+	Line     string `json:"line"`      // single line of payload. cannot contain newline.
+	HighPrio bool   `json:"high_prio"` // true: send immediately; false: queue as command.
 }
 
 type WriteLineResponse struct {
@@ -109,7 +108,7 @@ func validateGetStatus(req *GetStatusRequest) error {
 
 type AddJobRequest struct {
 	Commands []string           `json:"commands"`
-	Signals  map[string]float32 `json:"signals"`
+	Polls    map[string]float32 `json:"polls"`
 }
 
 type AddJobResponse struct {
@@ -119,16 +118,16 @@ type AddJobResponse struct {
 
 func validateAddJob(req *AddJobRequest) error {
 	for _, command := range req.Commands {
-		if strings.Contains(command, "\n") || command == "" || comm.IsSignal(command) {
+		if strings.Contains(command, "\n") || command == "" {
 			return errors.New("invalid command")
 		}
 	}
-	for signal, interval := range req.Signals {
-		if strings.Contains(signal, "\n") || !strings.HasPrefix(signal, "?") || !comm.IsSignal(signal) {
-			return errors.New("invalid signal")
+	for poll, interval := range req.Polls {
+		if strings.Contains(poll, "\n") || poll == "" {
+			return errors.New("invalid poll")
 		}
 		if interval <= 0 {
-			return errors.New("signal interval: must be > 0")
+			return errors.New("poll interval: must be > 0")
 		}
 	}
 	return nil
