@@ -11,7 +11,7 @@ This repo is mostly about software & machine CAD.
 
 To construct a Spark machine, you need these too:
 * https://github.com/xy-kasumi/Spark-corefw
-  * Zephyr-based firmware for main board (currently only supports BTT Octopus Pro)
+  * firmware for main board (currently only supports BTT Octopus Pro)
 * https://github.com/xy-kasumi/Spark-pulser
   * EDM board (PCB design & firmware)
 
@@ -20,6 +20,7 @@ To construct a Spark machine, you need these too:
 Directories are roughly divided into two groups.
 
 ### Build & Use
+
 * docs: contains assembly manuals and specs
 * dicer: web page that generates G-code from STL for the machine
 * shell-dashboard: web page to control the machine
@@ -29,21 +30,12 @@ Directories are roughly divided into two groups.
 These are necessary for building, testing, and using the machine.
 
 ### Development & Operations
-* sim-machine:
-  * purpose: G-code viewer
-  * note: maybe no longer a "sim".
+
 * sim-wear: particle-based tool vs work simulation
   * purpose: validate & iterate on "sweep" patterns without physical experiments
 * brand: contains project's visual identity such as logo
 
 These are useful resources to further the development of the machine and/or the Spark project.
-
-Simulations should be independent of each other.
-They should actually add net value to the project.
-Typically they do so by allowing quicker iteration.
-
-dicer can send G-code directly to sim-machine (if they're served from the same origin),
-by using [Broadcast Channel API](https://developer.mozilla.org/en-US/docs/Web/API/Broadcast_Channel_API).
 
 ### Tips
 Note: "localhost" and "127.0.0.1" are considered different origins.
