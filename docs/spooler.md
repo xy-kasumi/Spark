@@ -334,11 +334,14 @@ properties:
 ```
 
 * `status`: Current status of the job
-  * `WAITING`: added but not started (time_started, time_ended are undef)
-  * `RUNNING`: job is currently being executed (time_started exists, time_ended is undef)
-  * `COMPLETED`: entirety of job was executed (time_started, time_ended exists)
-  * `CANCELED`: job was cancled without becoming completed (time_started, time_ended exists)
+  * `WAITING`: added but not started
+  * `RUNNING`: job is currently being executed
+  * `COMPLETED`: job was executed succesfully (all commands consumed)
+  * `CANCELED`: job was cancled without becoming completed
+  * `FAILED`: job has failed by device disconnection or critical errors
 * `time_added`, `time_started`, `time_ended`: timestamps
+  * `time_started`: undef for `WAITING`
+  * `time_ended`: undef for `WAITING` or `RUNNING`
 
 
 ### POST /query-ts
