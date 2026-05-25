@@ -17,6 +17,7 @@ Spooler's knowledge:
 Terminology
 * `up`: comm towards the user (core -> spooler -> UI -> user). `down` is the opposite.
 * `init file`: text file that is persisted across reboot, useful for initializing the core.
+* `session`: a contiguous span during which the device is alive (responding to `?queue`).
 
 ## HTTP API
 
@@ -52,7 +53,7 @@ properties:
   ok: {type: bool}
   time: {type: float64}
 ```
-* `ok`: commands was enqueued
+* `ok`: command was enqueued. `false` also indicates the device is currently dead.
 * `time`: time of spooler enqueue (timestamp)
 
 **Examples**
@@ -147,6 +148,7 @@ Get spooler status summary.
 ```yaml
 properties:
   time: {type: float64}
+  device_alive: {type: bool}
   busy: {type: bool}
   num_pending_commands: {type: int}
 optionalProperties:
@@ -154,6 +156,8 @@ optionalProperties:
 ```
 
 * `time`: spooler timestamp of this status
+* `device_alive`: true iff the spooler currently believes the device is responsive
+  (responding to `?queue`).
 * `busy`: some commands are pending to execute (or being executed). High-prio writes do not count as busy.
 * `num_pending_commands`: number of commands (either directly or via job)
   * includes commands in core queue
@@ -169,19 +173,18 @@ Request:
 Response:
 ```json
 {
+  "time": 1735689600.123,
+  "device_alive": true,
   "busy": true,
-  "command_queue": {
-    "spooler": 13,
-    "core": 24
-  }
+  "num_pending_commands": 37
 }
 ```
 
 ### POST /cancel
 
 Cancel everything through the stack, including:
-* currently running command in core
-* command queue in core
+* currently running command in core (if device is alive)
+* command queue in core (if device is alive)
 * command queue in spooler
 * waiting / running job in spooler
 
@@ -283,7 +286,8 @@ optionalProperties:
   job_id: {type: string}
 ```
 
-* `job_id`: Unique id describing the job in the spooler session. Undef if !ok.
+* `ok`: job was accepted. `false` also indicates the device is currently dead.
+* `job_id`: Unique id describing the job in the spooler. Undef if !ok.
 
 **Examples**
 Request
@@ -326,7 +330,7 @@ properties:
       properties:
         job_id: {type: string}
         status:
-          enum: [WAITING, RUNNING, COMPLETED, CANCELED]
+          enum: [WAITING, RUNNING, COMPLETED, CANCELED, FAILED]
         time_added: {type: float64}
       optionalProperties:
         time_started: {type: float64}
@@ -338,7 +342,7 @@ properties:
   * `RUNNING`: job is currently being executed
   * `COMPLETED`: job was executed succesfully (all commands consumed)
   * `CANCELED`: job was cancled without becoming completed
-  * `FAILED`: job has failed by device disconnection or critical errors
+  * `FAILED`: job was terminated because of device death or other critical errors
 * `time_added`, `time_started`, `time_ended`: timestamps
   * `time_started`: undef for `WAITING`
   * `time_ended`: undef for `WAITING` or `RUNNING`

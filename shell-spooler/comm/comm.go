@@ -9,16 +9,24 @@ import (
 	"time"
 )
 
-type Comm struct {
-	tran      *transport
-	parser    PStateParser
-	handler   CommHandler
-	immediateCh  chan string
-	commandCh chan string
+// deadThreshold is the maximum time without a queue p-state before the device is declared dead.
+const deadThreshold = 1 * time.Second
 
-	muQueue     *sync.Mutex
-	latestQueue *psQueue
-	okToSend    int
+type Comm struct {
+	tran        *Transport
+	parser      PStateParser
+	handler     CommHandler
+	immediateCh chan string
+	commandCh   chan string
+
+	muQueue       *sync.Mutex
+	latestQueue   *psQueue
+	okToSend      int
+	lastQueueTime time.Time
+
+	stop      chan struct{}
+	dead      chan struct{}
+	closeOnce sync.Once
 }
 
 // Called after payload or p-state sent or received (ack-ed).
@@ -73,30 +81,41 @@ func (cm *Comm) PStateRecv(ps PState, tm time.Time) {
 	panic("unreachable")
 }
 
-func InitComm(serialPort string, baud int, handler CommHandler) (*Comm, error) {
+// AttachComm wires a Comm onto an already-open Transport, takes over its handler slot,
+// and starts the polling / flow-control / liveness goroutines.
+func AttachComm(tran *Transport, handler CommHandler) *Comm {
 	cm := &Comm{
-		handler:   handler,
-		parser:    NewPStateParser(),
-		immediateCh:  make(chan string, 10),
-		commandCh: make(chan string, 10_000_000), // must be bigger than any G-code file
-		muQueue:   &sync.Mutex{},
+		tran:          tran,
+		handler:       handler,
+		parser:        NewPStateParser(),
+		immediateCh:   make(chan string, 10),
+		commandCh:     make(chan string, 10_000_000), // must be bigger than any G-code file
+		muQueue:       &sync.Mutex{},
+		lastQueueTime: time.Now(),
+		stop:          make(chan struct{}),
+		dead:          make(chan struct{}),
 	}
-	tran, err := initTransport(serialPort, baud, cm)
-	if err != nil {
-		return nil, err
-	}
-	cm.tran = tran
+	tran.SetHandler(cm)
 
 	go cm.pollQueue()
 	go cm.feedImmediate()
 	go cm.feedCommand()
-	return cm, nil
+	go cm.watchLiveness()
+	return cm
 }
 
 func (cm *Comm) pollQueue() {
 	for {
-		time.Sleep(250 * time.Millisecond)
-		cm.immediateCh <- "?queue"
+		select {
+		case <-cm.stop:
+			return
+		case <-time.After(250 * time.Millisecond):
+		}
+		select {
+		case cm.immediateCh <- "?queue":
+		case <-cm.stop:
+			return
+		}
 	}
 }
 
@@ -108,17 +127,47 @@ func (cm *Comm) handleQueueStatus(q *psQueue) {
 
 	cm.latestQueue = q
 	cm.okToSend = int(float64(q.Cap)*maxFillRate) - q.Num
+	cm.lastQueueTime = time.Now()
+}
+
+func (cm *Comm) watchLiveness() {
+	tick := time.NewTicker(500 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-cm.stop:
+			return
+		case <-tick.C:
+			cm.muQueue.Lock()
+			elapsed := time.Since(cm.lastQueueTime)
+			cm.muQueue.Unlock()
+			if elapsed > deadThreshold {
+				close(cm.dead)
+				return
+			}
+		}
+	}
+}
+
+// WaitDead blocks until the device is declared dead (no queue p-state for deadThreshold).
+func (cm *Comm) WaitDead() {
+	<-cm.dead
 }
 
 func (cm *Comm) feedImmediate() {
 	for {
-		line := <-cm.immediateCh
-		cm.tran.sendPayload(line)
+		select {
+		case <-cm.stop:
+			return
+		case line := <-cm.immediateCh:
+			cm.tran.sendPayload(line)
+		}
 	}
 }
 
 func (cm *Comm) feedCommand() {
 	for {
+		// Wait until flow control allows a send, or we are stopped.
 		for {
 			cm.muQueue.Lock()
 			canSend := cm.okToSend > 0
@@ -126,12 +175,20 @@ func (cm *Comm) feedCommand() {
 			if canSend {
 				break
 			}
-			time.Sleep(50 * time.Millisecond)
+			select {
+			case <-cm.stop:
+				return
+			case <-time.After(50 * time.Millisecond):
+			}
 		}
 
-		// NOTE: without a new command sent to the core, okToSend will only increase or stay the same.
-		// Thus, same to assume that here okToSend is still > 0, because feedCommand() is only place that can send command.
-		cm.tran.sendPayload(<-cm.commandCh)
+		var line string
+		select {
+		case <-cm.stop:
+			return
+		case line = <-cm.commandCh:
+		}
+		cm.tran.sendPayload(line)
 		cm.muQueue.Lock()
 		cm.okToSend--
 		cm.muQueue.Unlock()
@@ -139,15 +196,22 @@ func (cm *Comm) feedCommand() {
 }
 
 // SendImmediate sends payload bypassing the command queue and its flow-control.
-// Routing is the caller's responsibility.
+// Routing is the caller's responsibility. Silently dropped if the Comm is stopped.
 func (cm *Comm) SendImmediate(payload string) {
-	cm.immediateCh <- payload
+	select {
+	case cm.immediateCh <- payload:
+	case <-cm.stop:
+	}
 }
 
 func (cm *Comm) WriteCommand(payload string) {
 	payload = cleanupGCode(payload)
-	if payload != "" {
-		cm.commandCh <- payload
+	if payload == "" {
+		return
+	}
+	select {
+	case cm.commandCh <- payload:
+	case <-cm.stop:
 	}
 }
 
@@ -167,13 +231,17 @@ func (cm *Comm) DrainCommandQueue() {
 		select {
 		case <-cm.commandCh:
 		default:
-			return // nothing in writeCh now
+			return
 		}
 	}
 }
 
+// Detach this Comm from the underlying transport (transport itself is left open).
 func (cm *Comm) Close() {
-	cm.tran.Close()
+	cm.closeOnce.Do(func() {
+		cm.tran.SetHandler(nil)
+		close(cm.stop)
+	})
 }
 
 func cleanupGCode(payload string) string {

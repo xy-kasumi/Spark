@@ -18,6 +18,7 @@ const (
 	JobRunning   JobStatus = "RUNNING"
 	JobCompleted JobStatus = "COMPLETED"
 	JobCanceled  JobStatus = "CANCELED"
+	JobFailed    JobStatus = "FAILED"
 )
 
 type Job struct {
@@ -30,7 +31,8 @@ type Job struct {
 	TimeEnded   *time.Time
 }
 
-// JobSched stores list of jobs and manage their execution
+// JobSched stores list of jobs and manage their execution.
+// The active Comm is swapped per device session via SetComm; nil means "no live device".
 // ~unsafe methods are not mutex-protected, caller must protect with mutex
 type JobSched struct {
 	mu        sync.Mutex
@@ -40,14 +42,36 @@ type JobSched struct {
 	commInstance *comm.Comm
 }
 
-// Create & start running new scheduler. At most one scheduler should be created for a single Comm instance.
-func InitJobSched(commInstance *comm.Comm) *JobSched {
+// InitJobSched creates and starts the scheduler. The scheduler idles until SetComm is called.
+func InitJobSched() *JobSched {
 	sched := &JobSched{
-		nextJobID:    1,
-		commInstance: commInstance,
+		nextJobID: 1,
 	}
 	go sched.keepExecutingJobs()
 	return sched
+}
+
+// SetComm attaches (or detaches with nil) the active Comm. While nil, AddJob fails fast
+// and the executor idles.
+func (js *JobSched) SetComm(c *comm.Comm) {
+	js.mu.Lock()
+	defer js.mu.Unlock()
+	js.commInstance = c
+}
+
+// FailRunningJobs marks every WAITING or RUNNING job as FAILED. Used when the device dies.
+func (js *JobSched) FailRunningJobs() {
+	js.mu.Lock()
+	defer js.mu.Unlock()
+	now := time.Now().Local()
+	for i := range js.jobs {
+		s := js.jobs[i].Status
+		if s == JobWaiting || s == JobRunning {
+			js.jobs[i].Status = JobFailed
+			t := now
+			js.jobs[i].TimeEnded = &t
+		}
+	}
 }
 
 func (js *JobSched) issueNewJobIDUnsafe() string {
@@ -85,35 +109,38 @@ func copyJobUnsafe(job Job) Job {
 	return newJob
 }
 
-func (js *JobSched) keepSendingPolls(poll string, value float32, stop chan struct{}) {
+func keepSendingPolls(cm *comm.Comm, poll string, value float32, stop chan struct{}) {
 	tick := time.Tick(time.Duration(value * float32(time.Second)))
 	for {
 		select {
 		case <-stop:
 			return
 		case <-tick:
-			js.commInstance.SendImmediate(poll)
+			cm.SendImmediate(poll)
 		}
 	}
 }
 
 func (js *JobSched) keepExecutingJobs() {
 	for {
-		// Wait until a job become runnable.
+		// Wait until a job becomes runnable on a live Comm.
 		var job *Job
+		var cmAt *comm.Comm
 		for {
-			job = func() *Job {
+			job, cmAt = func() (*Job, *comm.Comm) {
 				js.mu.Lock()
 				defer js.mu.Unlock()
-				job := js.findJobUnsafe([]JobStatus{JobWaiting})
-				if job != nil && js.commInstance.CommandQueueLength() == 0 {
-					// Mark as started
-					tStart := time.Now().Local()
-					job.Status = JobRunning
-					job.TimeStarted = &tStart
-					return job
+				if js.commInstance == nil {
+					return nil, nil
 				}
-				return nil
+				j := js.findJobUnsafe([]JobStatus{JobWaiting})
+				if j != nil && js.commInstance.CommandQueueLength() == 0 {
+					tStart := time.Now().Local()
+					j.Status = JobRunning
+					j.TimeStarted = &tStart
+					return j, js.commInstance
+				}
+				return nil, nil
 			}()
 			if job != nil {
 				break
@@ -121,28 +148,31 @@ func (js *JobSched) keepExecutingJobs() {
 			time.Sleep(500 * time.Millisecond)
 		}
 
-		// Execute
+		// Execute using the Comm captured at job-start; ignore later SetComm swaps.
 		stop := make(chan struct{})
 		for poll, value := range job.Polls {
-			go js.keepSendingPolls(poll, value, stop)
+			go keepSendingPolls(cmAt, poll, value, stop)
 		}
 		for _, command := range job.Commands {
-			js.commInstance.WriteCommand(command)
+			cmAt.WriteCommand(command)
 		}
 
-		// Wait job completion (== cmd queue become empty) or cancellation
+		// Wait for job completion (queue drained), cancellation, or device-death FAILED.
 		for {
 			ended := func() bool {
 				js.mu.Lock()
 				defer js.mu.Unlock()
 				if job.Status == JobCanceled {
 					close(stop)
-					js.commInstance.DrainCommandQueue()
+					cmAt.DrainCommandQueue()
 					return true
 				}
-				if js.commInstance.CommandQueueLength() == 0 {
+				if job.Status == JobFailed {
 					close(stop)
-					// Mark job as completed
+					return true
+				}
+				if cmAt.CommandQueueLength() == 0 {
+					close(stop)
 					tEnd := time.Now().Local()
 					job.Status = JobCompleted
 					job.TimeEnded = &tEnd
@@ -162,11 +192,13 @@ func (js *JobSched) AddJob(commands []string, polls map[string]float32) (string,
 	js.mu.Lock()
 	defer js.mu.Unlock()
 
+	if js.commInstance == nil {
+		return "", false
+	}
 	if js.findJobUnsafe([]JobStatus{JobWaiting, JobRunning}) != nil || js.commInstance.CommandQueueLength() > 0 {
 		return "", false
 	}
 
-	// Add new job
 	job := Job{
 		ID:        js.issueNewJobIDUnsafe(),
 		Commands:  commands,

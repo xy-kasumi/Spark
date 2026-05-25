@@ -6,19 +6,22 @@ import (
 	"bufio"
 	"bytes"
 	"log/slog"
+	"sync"
 	"time"
 	"unicode"
 
 	"go.bug.st/serial"
 )
 
-type transport struct {
+type Transport struct {
 	port    serial.Port
-	handler CommHandler
 	writeCh chan string
+
+	mu      sync.RWMutex
+	handler CommHandler
 }
 
-func initTransport(serialPort string, baud int, handler CommHandler) (*transport, error) {
+func OpenTransport(serialPort string, baud int) (*Transport, error) {
 	mode := &serial.Mode{BaudRate: baud}
 	port, err := serial.Open(serialPort, mode)
 	if err != nil {
@@ -26,9 +29,8 @@ func initTransport(serialPort string, baud int, handler CommHandler) (*transport
 	}
 	slog.Info("Opened serial port", "port", serialPort, "baud", baud)
 
-	tran := &transport{
+	tran := &Transport{
 		port:    port,
-		handler: handler,
 		writeCh: make(chan string),
 	}
 
@@ -38,16 +40,27 @@ func initTransport(serialPort string, baud int, handler CommHandler) (*transport
 	return tran, nil
 }
 
-func (tran *transport) sendPayload(payload string) {
+func (tran *Transport) SetHandler(h CommHandler) {
+	tran.mu.Lock()
+	defer tran.mu.Unlock()
+	tran.handler = h
+}
+
+func (tran *Transport) snapshotHandler() CommHandler {
+	tran.mu.RLock()
+	defer tran.mu.RUnlock()
+	return tran.handler
+}
+
+func (tran *Transport) sendPayload(payload string) {
 	tran.writeCh <- payload
 }
 
-func (tran *transport) readLoop() {
+func (tran *Transport) readLoop() {
 	r := bufio.NewReader(tran.port)
 	slog.Debug("Starting serial read goroutine")
 
 	for {
-		// Read line from serial
 		lineBytes, err := r.ReadBytes('\n')
 		if err != nil {
 			slog.Error("Serial port read error", "error", err)
@@ -71,29 +84,31 @@ func (tran *transport) readLoop() {
 			continue
 		}
 
-		tran.handler.PayloadRecv(payload, time.Now())
+		if h := tran.snapshotHandler(); h != nil {
+			h.PayloadRecv(payload, time.Now())
+		}
 		slog.Debug("Received", "line", payload)
 	}
 }
 
-func (tran *transport) writeLoop() {
+func (tran *Transport) writeLoop() {
 	for {
 		line := <-tran.writeCh
 
-		// Write to serial port
 		_, err := tran.port.Write([]byte(line + "\n"))
 		if err != nil {
 			slog.Error("Serial port write error", "error", err)
-			// Keep trying
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
 
-		tran.handler.PayloadSent(line, time.Now())
+		if h := tran.snapshotHandler(); h != nil {
+			h.PayloadSent(line, time.Now())
+		}
 		slog.Debug("Sent", "line", line)
 	}
 }
 
-func (tran *transport) Close() {
+func (tran *Transport) Close() {
 	tran.port.Close()
 }

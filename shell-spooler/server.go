@@ -89,14 +89,9 @@ func validateGetInit(req *GetInitRequest) error {
 type GetStatusRequest struct {
 }
 
-type CommandQueue struct {
-	Spooler int `json:"spooler"`
-	Core    int `json:"core"`
-	Job     int `json:"job"`
-}
-
 type GetStatusResponse struct {
 	Time               float64 `json:"time"`
+	DeviceAlive        bool    `json:"device_alive"`
 	Busy               bool    `json:"busy"`
 	NumPendingCommands int     `json:"num_pending_commands"`
 	RunningJob         *string `json:"running_job,omitempty"`
@@ -138,7 +133,7 @@ type ListJobsRequest struct {
 
 type JobInfo struct {
 	JobID       string   `json:"job_id"`
-	Status      string   `json:"status"` // "WAITING", "RUNNING", "COMPLETED", "CANCELED"
+	Status      string   `json:"status"` // "WAITING", "RUNNING", "COMPLETED", "CANCELED", "FAILED"
 	TimeAdded   float64  `json:"time_added"`
 	TimeStarted *float64 `json:"time_started,omitempty"`
 	TimeEnded   *float64 `json:"time_ended,omitempty"`

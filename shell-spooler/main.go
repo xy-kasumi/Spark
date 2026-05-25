@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"shell-spooler/comm"
@@ -45,71 +46,86 @@ func toUnixTimestamp(t time.Time) float64 {
 	return float64(t.UnixNano()) / 1e9
 }
 
-type apiImpl struct {
-	commInstance *comm.Comm
-	jobSched     *JobSched
-
-	tsDB *TSDB
-	psDB *PSDB
-
+// Session bundles the resources that exist only while the device is alive.
+type Session struct {
+	cm     *comm.Comm
 	logger *PayloadLogger
+}
+
+// sessionHandler is the CommHandler attached to a session's Comm. It routes payloads
+// to the per-session log and p-state updates to the cross-session databases.
+type sessionHandler struct {
+	logger *PayloadLogger
+	tsDB   *TSDB
+	psDB   *PSDB
+}
+
+func (sh *sessionHandler) PayloadSent(payload string, tm time.Time) {
+	sh.logger.AddLine("down", payload)
+}
+
+func (sh *sessionHandler) PayloadRecv(payload string, tm time.Time) {
+	sh.logger.AddLine("up", payload)
+}
+
+func (sh *sessionHandler) PStateRecv(ps comm.PState, tm time.Time) {
+	for _, k := range ps.Keys() {
+		v, _ := ps.GetAny(k)
+		sh.tsDB.Insert(ps.Tag+"."+k, tm, v)
+	}
+	sh.psDB.AddPS(ps, tm)
+}
+
+type apiImpl struct {
+	session atomic.Pointer[Session]
+
+	jobSched *JobSched
+	tsDB     *TSDB
+	psDB     *PSDB
 
 	initFileAbs string
 }
 
-func (h *apiImpl) PayloadSent(payload string, tm time.Time) {
-	h.logger.AddLine("down", payload)
-}
-
-func (h *apiImpl) PayloadRecv(payload string, tm time.Time) {
-	h.logger.AddLine("up", payload)
-}
-
-func (h *apiImpl) PStateRecv(ps comm.PState, tm time.Time) {
-	for _, k := range ps.Keys() {
-		v, _ := ps.GetAny(k)
-		h.tsDB.Insert(ps.Tag+"."+k, tm, v)
-	}
-	h.psDB.AddPS(ps, tm)
-}
-
 // SpoolerAPI implementation
 func (h *apiImpl) WriteLine(req *WriteLineRequest) (*WriteLineResponse, error) {
+	s := h.session.Load()
+	if s == nil {
+		return &WriteLineResponse{OK: false, Time: toUnixTimestamp(time.Now())}, nil
+	}
 	if req.HighPrio {
-		h.commInstance.SendImmediate(req.Line)
+		s.cm.SendImmediate(req.Line)
 	} else {
 		if h.jobSched.HasPendingJob() {
-			return &WriteLineResponse{
-				OK:   false,
-				Time: toUnixTimestamp(time.Now()),
-			}, nil
+			return &WriteLineResponse{OK: false, Time: toUnixTimestamp(time.Now())}, nil
 		}
-		h.commInstance.WriteCommand(req.Line)
+		s.cm.WriteCommand(req.Line)
 	}
-	resp := WriteLineResponse{
-		OK:   true,
-		Time: toUnixTimestamp(time.Now()),
-	}
-	return &resp, nil
+	return &WriteLineResponse{OK: true, Time: toUnixTimestamp(time.Now())}, nil
 }
 
 func (h *apiImpl) Cancel(req *CancelRequest) (*CancelResponse, error) {
-	ok := h.jobSched.CancelJob()
-	if !ok {
-		// Need to drain command queue ourselves
-		h.commInstance.DrainCommandQueue()
+	s := h.session.Load()
+	if s == nil {
+		return &CancelResponse{}, nil
 	}
-	h.commInstance.SendImmediate("!")
+	if !h.jobSched.CancelJob() {
+		// Need to drain command queue ourselves
+		s.cm.DrainCommandQueue()
+	}
+	s.cm.SendImmediate("!")
 	return &CancelResponse{}, nil
 }
 
 func (h *apiImpl) GetStatus(req *GetStatusRequest) (*GetStatusResponse, error) {
-	numCommands := h.commInstance.CommandQueueLength()
-	resp := GetStatusResponse{
-		Time:               toUnixTimestamp(time.Now()),
-		Busy:               numCommands > 0,
-		NumPendingCommands: numCommands,
+	resp := GetStatusResponse{Time: toUnixTimestamp(time.Now())}
+	s := h.session.Load()
+	if s == nil {
+		return &resp, nil
 	}
+	resp.DeviceAlive = true
+	numCommands := s.cm.CommandQueueLength()
+	resp.Busy = numCommands > 0
+	resp.NumPendingCommands = numCommands
 	if jobID, ok := h.jobSched.FindRunningJobID(); ok {
 		resp.RunningJob = &jobID
 	}
@@ -135,16 +151,9 @@ func (h *apiImpl) GetInit(req *GetInitRequest) (*GetInitResponse, error) {
 func (h *apiImpl) AddJob(req *AddJobRequest) (*AddJobResponse, error) {
 	jobID, ok := h.jobSched.AddJob(req.Commands, req.Polls)
 	if !ok {
-		return &AddJobResponse{
-			OK:    false,
-			JobID: nil,
-		}, nil
+		return &AddJobResponse{OK: false, JobID: nil}, nil
 	}
-
-	return &AddJobResponse{
-		OK:    true,
-		JobID: &jobID,
-	}, nil
+	return &AddJobResponse{OK: true, JobID: &jobID}, nil
 }
 
 func (h *apiImpl) ListJobs(req *ListJobsRequest) (*ListJobsResponse, error) {
@@ -153,14 +162,10 @@ func (h *apiImpl) ListJobs(req *ListJobsRequest) (*ListJobsResponse, error) {
 	for i, job := range jobs {
 		jobInfos[i] = mapJob(job)
 	}
-
-	return &ListJobsResponse{
-		Jobs: jobInfos,
-	}, nil
+	return &ListJobsResponse{Jobs: jobInfos}, nil
 }
 
 func (h *apiImpl) QueryTS(req *QueryTSRequest) (*QueryTSResponse, error) {
-	// Convert Unix timestamps to time.Time
 	tmStart := time.Unix(0, int64(req.Start*1e9))
 	tmEnd := time.Unix(0, int64(req.End*1e9))
 	step := time.Duration(int64(req.Step * 1e9))
@@ -180,11 +185,7 @@ func (h *apiImpl) QueryTS(req *QueryTSRequest) (*QueryTSResponse, error) {
 		jsonMap[k] = jsonVals
 	}
 
-	resp := &QueryTSResponse{
-		Times:  tsF64,
-		Values: jsonMap,
-	}
-	return resp, nil
+	return &QueryTSResponse{Times: tsF64, Values: jsonMap}, nil
 }
 
 func (h *apiImpl) GetPS(req *GetPSRequest) (*GetPSResponse, error) {
@@ -198,14 +199,10 @@ func (h *apiImpl) GetPS(req *GetPSRequest) (*GetPSResponse, error) {
 	for i, ps := range pss {
 		records[i] = mapPState(ps)
 	}
-	resp := &GetPSResponse{
-		PStates: records,
-	}
-	return resp, nil
+	return &GetPSResponse{PStates: records}, nil
 }
 
 func main() {
-	// Flag resolution
 	portName := flag.String("port", "COM3", "Serial port name")
 	baud := flag.Int("baud", 115200, "Serial port baud rate")
 	addr := flag.String("addr", ":9000", "HTTP listen address")
@@ -223,52 +220,63 @@ func main() {
 		slog.Error("Failed to resolve log directory path", "logDir", *logDir, "error", err)
 		return
 	}
-
 	initFileAbs, err := filepath.Abs(*initFile)
 	if err != nil {
 		slog.Error("Failed to resolve init file path", "initFile", *initFile, "error", err)
 		return
 	}
-
 	slog.Info("Using log directory", "path", logDirAbs)
 	slog.Info("Using init file", "path", initFileAbs)
 
-	// Storage & payload loggers
-	tsDB := NewTSDB()
-	psDB := NewPSDB()
-
-	logger := NewPayloadLogger(logDirAbs)
-	defer logger.Close()
-
-	_, err = fetchInitLines(initFileAbs) // Prepare the file to detect path error early
-	if err != nil {
+	if _, err := fetchInitLines(initFileAbs); err != nil {
 		slog.Error("Init file error", "error", err)
 		return
 	}
 
-	// Initialize communication & server impl.
-	apiImpl := &apiImpl{
-		tsDB:   tsDB,
-		psDB:   psDB,
-		logger: logger,
+	// Cross-session resources
+	tsDB := NewTSDB()
+	psDB := NewPSDB()
+	jobSched := InitJobSched()
+
+	api := &apiImpl{
+		jobSched:    jobSched,
+		tsDB:        tsDB,
+		psDB:        psDB,
+		initFileAbs: initFileAbs,
 	}
 
-	commInstance, err := comm.InitComm(*portName, *baud, apiImpl)
+	tran, err := comm.OpenTransport(*portName, *baud)
 	if err != nil {
-		slog.Error("Failed to initialize comm", "port", portName, "baud", baud, "error", err)
+		slog.Error("Failed to open serial transport", "port", *portName, "baud", *baud, "error", err)
 		return
 	}
-	defer commInstance.Close()
+	defer tran.Close()
 
-	jobSched := InitJobSched(commInstance)
+	// HTTP server runs in parallel with the session loop.
+	slog.Info("HTTP server starting", "addr", *addr)
+	go func() {
+		if err := StartHTTPServer(*addr, api); err != nil {
+			slog.Error("HTTP server error", "error", err)
+		}
+	}()
 
-	apiImpl.commInstance = commInstance
-	apiImpl.initFileAbs = initFileAbs
-	apiImpl.jobSched = jobSched
+	for {
+		comm.WaitAlive(tran)
 
-	// Start HTTP server
-	slog.Info("HTTP server starting", "port", *addr)
-	if err := StartHTTPServer(*addr, apiImpl); err != nil {
-		slog.Error("HTTP server error", "error", err)
+		slog.Info("Session started")
+		logger := NewPayloadLogger(logDirAbs)
+		handler := &sessionHandler{logger: logger, tsDB: tsDB, psDB: psDB}
+		cm := comm.AttachComm(tran, handler)
+		api.session.Store(&Session{cm: cm, logger: logger})
+		jobSched.SetComm(cm)
+
+		cm.WaitDead()
+		slog.Info("Session ended (device dead)")
+
+		api.session.Store(nil)
+		jobSched.SetComm(nil)
+		jobSched.FailRunningJobs()
+		cm.Close()
+		logger.Close()
 	}
 }
