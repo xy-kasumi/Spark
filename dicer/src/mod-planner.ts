@@ -164,8 +164,7 @@ export class ModulePlanner implements Module {
 
         // G-code gen & sending
         gui.add(this, "generate").name("Generate");
-        gui.add(this, "copyGcode");
-        gui.add(this, "sendGcodeToSim");
+        gui.add(this, "downloadGcode");
 
         this.loadStl(this.model);
     }
@@ -290,21 +289,18 @@ export class ModulePlanner implements Module {
         return (this.targetHeight + this.stockDirtyLength) - this.stockLength;
     }
 
-    copyGcode() {
+    downloadGcode() {
         if (!this.gcode) {
             return;
         }
-        navigator.clipboard.writeText(this.gcode);
-        console.log("G-code copied to clipboard");
+        const blob = new Blob([this.gcode], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${this.model}.gcode`;
+        a.click();
+        URL.revokeObjectURL(url);
+        console.log(`G-code downloaded as ${a.download}`);
     }
 
-    sendGcodeToSim() {
-        if (!this.gcode) {
-            return;
-        }
-        const bc = new BroadcastChannel("gcode");
-        bc.postMessage(this.gcode);
-        bc.close();
-        console.log("G-code sent to sim");
-    }
 }

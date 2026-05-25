@@ -4,7 +4,14 @@
   <div class="widget">
     <h1>Add Job</h1>
     <div class="widget-content">
-      <button class="" @click="pasteFromClipboard">PASTE FROM CLIPBOARD</button>
+      <input
+        ref="fileInput"
+        type="file"
+        accept=".gcode,.txt"
+        style="display: none"
+        @change="onFileChange"
+      />
+      <button class="" @click="fileInput?.click()">FROM FILE</button>
       <span v-if="commands.length > 0">{{ linesInfo }}</span><br />
       <button class="" @click="send" :disabled="commands.length === 0 || !isIdle">
         EXECUTE
@@ -14,7 +21,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, useTemplateRef } from "vue";
 import { SpoolerClient } from "../spooler";
 
 const props = defineProps<{
@@ -27,6 +34,7 @@ const emit = defineEmits<{
 }>();
 
 const commandText = ref("");
+const fileInput = useTemplateRef<HTMLInputElement>("fileInput");
 
 const commands = computed(() => {
   return commandText.value
@@ -40,16 +48,22 @@ const linesInfo = computed(() => {
   if (count === 0) return "";
   const firstCmd = commands.value[0];
   const preview = firstCmd.length > 20 ? firstCmd.slice(0, 20) : firstCmd;
-  return `${count} lines (${preview}...)`;
+  const kb = new Blob([commandText.value]).size / 1000;
+  return `${count} lines, ${kb.toFixed(1)} kB (${preview}...)`;
 });
 
-async function pasteFromClipboard() {
-  try {
-    const text = await navigator.clipboard.readText();
-    commandText.value = text;
-  } catch (err) {
-    console.error("Failed to read clipboard:", err);
+async function onFileChange(ev: Event) {
+  const input = ev.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) {
+    return;
   }
+  try {
+    commandText.value = await file.text();
+  } catch (err) {
+    console.error("Failed to read file:", err);
+  }
+  input.value = "";
 }
 
 function send() {
