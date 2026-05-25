@@ -42,13 +42,13 @@ export class SpoolerClient {
     return await response.json();
   }
 
-  async enqueueCommands(commands: string[]): Promise<Date> {
+  async enqueueCommands(commands: string[], highPrio: boolean = false): Promise<Date> {
     if (commands.length === 0) {
       throw new Error("No commands to enqueue");
     }
     let lastTime!: Date;
     for (const command of commands) {
-      lastTime = await this.enqueueCommand(command);
+      lastTime = await this.enqueueCommand(command, highPrio);
     }
     return lastTime;
   }
@@ -56,15 +56,16 @@ export class SpoolerClient {
   /**
    * Add a command to the queue
    * @param command - Command string to enqueue (ignores empty commands and G-code comments)
+   * @param highPrio - if true, send immediately bypassing the job-pending gate
    * @returns The time when the command was enqueued (from spooler)
    */
-  async enqueueCommand(command: string): Promise<Date> {
+  async enqueueCommand(command: string, highPrio: boolean = false): Promise<Date> {
     // Remove G-code style comments (everything after semicolon)
     const cleanCommand = command.split(';')[0].trim();
     if (cleanCommand.length > 100) {
       throw new Error("Command too long");
     }
-    const response = await this.rpc('/write-line', { line: cleanCommand, high_prio: false });
+    const response = await this.rpc('/write-line', { line: cleanCommand, high_prio: highPrio });
     return new Date(response.time * 1000);
   }
 

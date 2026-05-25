@@ -8,11 +8,14 @@
       <br />
       <textarea class="" v-model="commandText" rows="10" cols="50"
         placeholder="Enter G-code or commands"></textarea><br />
-      <button class="" @click="send" :disabled="commands.length === 0 || !isIdle">
+      <button class="" @click="send" :disabled="commands.length === 0 || (!highPrio && !isIdle)">
         EXECUTE
       </button>
       <label class="">
         <input type="checkbox" v-model="clearOnExec" /> Clear on exec
+      </label>
+      <label class="">
+        <input type="checkbox" v-model="highPrio" /> high-prio
       </label>
     </div>
   </div>
@@ -33,6 +36,7 @@ const emit = defineEmits<{
 
 const commandText = ref("");
 const clearOnExec = ref(true);
+const highPrio = ref(false);
 
 const commands = computed(() => {
   return commandText.value
@@ -53,7 +57,7 @@ function send() {
     return;
   }
 
-  props.client.enqueueCommands(commands.value);
+  props.client.enqueueCommands(commands.value, highPrio.value);
 
   if (clearOnExec.value) {
     commandText.value = "";
