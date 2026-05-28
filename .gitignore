@@ -3,3 +3,4 @@
 *.pyc
 job*.png
 probe_*.jsonl
+probe_*.png

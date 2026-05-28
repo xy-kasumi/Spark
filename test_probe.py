@@ -33,6 +33,7 @@ def get_ps(endpoint: str, tag: str, count: int = 1) -> list[dict]:
 
 
 def get_status(endpoint: str) -> dict:
+    time.sleep(0.5) # hack to get correct value
     return rpc(endpoint, "/status", {})
 
 
@@ -87,11 +88,6 @@ def main() -> None:
 
     ix = 0
     try:
-        print("(pre) retracting")
-        write_line(args.spooler, f"G0 {axis_u}{args.src}")
-        wait_idle(args.spooler)
-        return
-
         with open(fname, "a", buffering=1) as fp:
             while ix < args.count:
                 st = get_status(args.spooler)
@@ -101,8 +97,6 @@ def main() -> None:
                 print("%d/%d: retracting" % (ix + 1, args.count))
                 write_line(args.spooler, f"G0 {axis_u}{args.src}")
                 wait_idle(args.spooler)
-                print("done")
-                return
             
                 print("%d/%d: probing" % (ix + 1, args.count))
                 write_line(args.spooler, f"G38.3 {axis_u}{args.dst}")
