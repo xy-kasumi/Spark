@@ -19,10 +19,11 @@ type Comm struct {
 	immediateCh chan string
 	commandCh   chan string
 
-	muQueue       *sync.Mutex
-	latestQueue   *psQueue
-	okToSend      int
-	lastQueueTime time.Time
+	muQueue         *sync.Mutex
+	latestQueue     *psQueue
+	okToSend        int
+	lastQueueTime   time.Time
+	lastCmdSentTime time.Time
 
 	stop      chan struct{}
 	dead      chan struct{}
@@ -206,6 +207,7 @@ func (cm *Comm) feedCommand() {
 		cm.tran.sendPayload(line)
 		cm.muQueue.Lock()
 		cm.okToSend--
+		cm.lastCmdSentTime = time.Now()
 		cm.muQueue.Unlock()
 	}
 }
@@ -238,7 +240,12 @@ func (cm *Comm) CommandQueueLength() int {
 	if cm.latestQueue != nil {
 		numInCore = cm.latestQueue.Num
 	}
-	return len(cm.commandCh) + numInCore
+	n := len(cm.commandCh) + numInCore
+	// If queue data is stale, count as in-transit.
+	if n == 0 && cm.lastCmdSentTime.After(cm.lastQueueTime) {
+		n = 1
+	}
+	return n
 }
 
 func (cm *Comm) DrainCommandQueue() {
