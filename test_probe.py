@@ -33,7 +33,6 @@ def get_ps(endpoint: str, tag: str, count: int = 1) -> list[dict]:
 
 
 def get_status(endpoint: str) -> dict:
-    time.sleep(0.5) # hack to get correct value
     return rpc(endpoint, "/status", {})
 
 
