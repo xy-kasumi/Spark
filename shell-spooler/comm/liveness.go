@@ -23,7 +23,7 @@ func newProbeHandler() *probeHandler {
 func (p *probeHandler) PayloadSent(payload string, tm time.Time) {}
 
 func (p *probeHandler) PayloadRecv(payload string, tm time.Time) {
-	if !strings.HasPrefix(payload, "queue") {
+	if !strings.HasPrefix(payload, "queue") && !strings.HasPrefix(payload, "sys") {
 		return
 	}
 	p.once.Do(func() { close(p.signal) })
@@ -37,7 +37,7 @@ func WaitAlive(tran *Transport) {
 	tran.SetHandler(probe)
 	defer tran.SetHandler(nil)
 
-	tick := time.NewTicker(500 * time.Millisecond)
+	tick := time.NewTicker(1000 * time.Millisecond)
 	defer tick.Stop()
 
 	// Send one now to quickly detect already-alive case.
