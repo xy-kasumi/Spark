@@ -26,6 +26,7 @@ type Comm struct {
 
 	stop      chan struct{}
 	dead      chan struct{}
+	deadOnce  sync.Once
 	closeOnce sync.Once
 }
 
@@ -72,6 +73,13 @@ func (cm *Comm) PayloadRecv(payload string, tm time.Time) {
 		q := parseQueuePS(*ps)
 		if q != nil {
 			cm.handleQueueStatus(q)
+		}
+	}
+	// A boot event means the device restarted; treat it as a disconnect so the
+	// session is torn down and rebuilt against the fresh device state.
+	if ps.Tag == "sys" {
+		if ev, ok := ps.GetString("ev"); ok && ev == "boot" {
+			cm.declareDead()
 		}
 	}
 	cm.handler.PStateRecv(*ps, tm)
@@ -142,14 +150,21 @@ func (cm *Comm) watchLiveness() {
 			elapsed := time.Since(cm.lastQueueTime)
 			cm.muQueue.Unlock()
 			if elapsed > deadThreshold {
-				close(cm.dead)
+				cm.declareDead()
 				return
 			}
 		}
 	}
 }
 
-// WaitDead blocks until the device is declared dead (no queue p-state for deadThreshold).
+// declareDead transitions the device to the dead state exactly once, unblocking
+// WaitDead. Safe to call from multiple goroutines (liveness watchdog, boot event).
+func (cm *Comm) declareDead() {
+	cm.deadOnce.Do(func() { close(cm.dead) })
+}
+
+// WaitDead blocks until the device is declared dead (no queue p-state for
+// deadThreshold, or a sys boot event signaling a device restart).
 func (cm *Comm) WaitDead() {
 	<-cm.dead
 }

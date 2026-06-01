@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// probeHandler watches inbound payloads for anything starting with "queue".
+// probeHandler watches inbound payloads for anything starting with "queue" or "sys".
 type probeHandler struct {
 	once   sync.Once
 	signal chan struct{}

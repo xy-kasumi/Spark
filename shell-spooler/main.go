@@ -55,9 +55,10 @@ type Session struct {
 // sessionHandler is the CommHandler attached to a session's Comm. It routes payloads
 // to the per-session log and p-state updates to the cross-session databases.
 type sessionHandler struct {
-	logger *PayloadLogger
-	tsDB   *TSDB
-	psDB   *PSDB
+	logger   *PayloadLogger
+	tsDB     *TSDB
+	psDB     *PSDB
+	jobSched *JobSched
 }
 
 func (sh *sessionHandler) PayloadSent(payload string, tm time.Time) {
@@ -74,6 +75,15 @@ func (sh *sessionHandler) PStateRecv(ps comm.PState, tm time.Time) {
 		sh.tsDB.Insert(ps.Tag+"."+k, tm, v)
 	}
 	sh.psDB.AddPS(ps, tm)
+
+	// A fault event means the device entered fault mode and silently ignores
+	// writes; the session stays up, but any pending/running jobs can no longer
+	// make progress, so fail them.
+	if ps.Tag == "sys" {
+		if ev, ok := ps.GetString("ev"); ok && ev == "fault" {
+			sh.jobSched.FailRunningJobs()
+		}
+	}
 }
 
 type apiImpl struct {
@@ -265,7 +275,7 @@ func main() {
 
 		slog.Info("Session started")
 		logger := NewPayloadLogger(logDirAbs)
-		handler := &sessionHandler{logger: logger, tsDB: tsDB, psDB: psDB}
+		handler := &sessionHandler{logger: logger, tsDB: tsDB, psDB: psDB, jobSched: jobSched}
 		cm := comm.AttachComm(tran, handler)
 		api.session.Store(&Session{cm: cm, logger: logger})
 		jobSched.SetComm(cm)
