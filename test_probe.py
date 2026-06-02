@@ -65,14 +65,16 @@ def get_pos(endpoint: str) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--src", type=float, required=True)
+    ap.add_argument("--src2", type=float)  # used only in mode == both
+    ap.add_argument("--back", type=float)  # used only in mode == both
     ap.add_argument("--dst", type=float, required=True)
-    ap.add_argument("--axis", choices=["x", "y", "z"], default="y")
+    ap.add_argument("--mode", choices=["single", "both"], default="single")
     ap.add_argument("--count", type=int, default=10)
     ap.add_argument("--spooler", default="localhost:9000")
     args = ap.parse_args()
 
-    axis_u = args.axis.upper()
-    pos_key = f"w.{args.axis}"  # work coord
+    # Y-axis (side movement): probe direction
+    # Z-axis: retraction
 
     try:
         st = get_status(args.spooler)
@@ -82,8 +84,11 @@ def main() -> None:
         sys.exit(f"spooler at {args.spooler} reports device_alive=false; aborting")
 
     ts = datetime.datetime.now().strftime("%Y-%m-%d_%H%M")
-    fname = f"probe_{ts}_{args.axis}_{args.src}_{args.dst}.jsonl"
+    fname = f"probe_{ts}_{args.mode}_{args.src}_{args.dst}.jsonl"
     print(f"writing to {fname}", flush=True)
+
+    base_z = get_pos(args.spooler)["w.z"]
+    retract_z = base_z + args.back # Z+ means away from work
 
     ix = 0
     try:
@@ -92,21 +97,55 @@ def main() -> None:
                 st = get_status(args.spooler)
                 if not st.get("device_alive"):
                     sys.exit("device died; aborting")
+                
+                if args.mode == "single":
+                    print("%d/%d: preparing probe" % (ix + 1, args.count))
+                    write_line(args.spooler, f"G0 Y{args.src}")
+                    wait_idle(args.spooler)
+                
+                    print("%d/%d: probing" % (ix + 1, args.count))
+                    write_line(args.spooler, f"G38.3 Y{args.dst}")
+                    wait_idle(args.spooler)
+                    hit = float(get_pos(args.spooler)["w.y"])
+                    print("%d/%d: hit at %.3f" % (ix + 1, args.count, hit))
 
-                print("%d/%d: retracting" % (ix + 1, args.count))
-                write_line(args.spooler, f"G0 {axis_u}{args.src}")
-                wait_idle(args.spooler)
-            
-                print("%d/%d: probing" % (ix + 1, args.count))
-                write_line(args.spooler, f"G38.3 {axis_u}{args.dst}")
-                wait_idle(args.spooler)
-                kv = get_pos(args.spooler)
-                hit = float(kv[pos_key])
-                print("%d/%d: hit at %.3f" % (ix + 1, args.count, hit))
+                    rec = {"ix": ix, "hit": hit}
+                    fp.write(json.dumps(rec) + "\n")
+                    print(rec, flush=True)
+                else:
+                    print("%d/%d: preparing probe(1)" % (ix + 1, args.count))
+                    write_line(args.spooler, f"G0 Y{args.src}")
+                    wait_idle(args.spooler)
 
-                rec = {"ix": ix, "hit": hit}
-                fp.write(json.dumps(rec) + "\n")
-                print(rec, flush=True)
+                    print("%d/%d: probe(1)" % (ix + 1, args.count))
+                    write_line(args.spooler, f"G38.3 Y{args.dst}")
+                    wait_idle(args.spooler)
+                    hit1 = float(get_pos(args.spooler)["w.y"])
+                    print("%d/%d: hit1 at %.3f" % (ix + 1, args.count, hit1))
+
+                    print("%d/%d: transitioning (1->2)" % (ix + 1, args.count))
+                    write_line(args.spooler, f"G0 Y{args.src}")
+                    write_line(args.spooler, f"G0 Z{retract_z}")
+                    write_line(args.spooler, f"G0 Y{args.src2}")
+                    write_line(args.spooler, f"G0 Z{base_z}")
+                    wait_idle(args.spooler)
+
+                    print("%d/%d: probe(2)" % (ix + 1, args.count))
+                    write_line(args.spooler, f"G38.3 Y{args.dst}")
+                    wait_idle(args.spooler)
+                    hit2 = float(get_pos(args.spooler)["w.y"])
+                    print("%d/%d: hit2 at %.3f" % (ix + 1, args.count, hit2))
+
+                    print("%d/%d: transitioning (2->1)" % (ix + 1, args.count))
+                    write_line(args.spooler, f"G0 Y{args.src2}")
+                    write_line(args.spooler, f"G0 Z{retract_z}")
+                    write_line(args.spooler, f"G0 Y{args.src}")
+                    write_line(args.spooler, f"G0 Z{base_z}")
+                    wait_idle(args.spooler)
+
+                    rec = {"ix": ix, "hit1": hit1, "hit2": hit2}
+                    fp.write(json.dumps(rec) + "\n")
+                    print(rec, flush=True)
                 ix += 1
     except KeyboardInterrupt:
         print("\nCtrl-C: canceling…", flush=True)
