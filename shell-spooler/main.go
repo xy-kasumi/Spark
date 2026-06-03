@@ -280,6 +280,17 @@ func main() {
 		api.session.Store(&Session{cm: cm, logger: logger})
 		jobSched.SetComm(cm)
 
+		// Initialize the freshly-alive core with the init lines. Read from file
+		// each session so /set-init edits take effect on the next session.
+		if initLines, err := fetchInitLines(initFileAbs); err != nil {
+			slog.Error("Failed to read init file; skipping core init", "error", err)
+		} else if len(initLines) > 0 {
+			for _, line := range initLines {
+				cm.WriteCommand(line)
+			}
+			slog.Info("Sent init lines", "count", len(initLines))
+		}
+
 		cm.WaitDead()
 		slog.Info("Session ended (device dead)")
 

@@ -16,7 +16,7 @@ Spooler's knowledge:
 
 Terminology
 * `up`: comm towards the user (core -> spooler -> UI -> user). `down` is the opposite.
-* `init file`: text file that is persisted across reboot, useful for initializing the core.
+* `init file`: text file that is persisted across reboot, useful for initializing the core. Its lines are queued as commands at the start of each session.
 * `session`: a contiguous span during which the device is alive (responding to `?queue`).
 
 ## HTTP API
