@@ -31,6 +31,9 @@ export const generateGcode = (path: PathSegment[], pulseConds: PulseConditions):
 
     lines.push("G55"); // work coords
     lines.push(`G0 X0 Y0 Z60`);
+    lines.push(`G0 X-12`);
+    lines.push(`G29 W20 D25`); // calibrate
+
     prevX = 0;
     prevY = 0;
     prevZ = 60;
