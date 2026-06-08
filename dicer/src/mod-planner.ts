@@ -101,6 +101,7 @@ export class ModulePlanner implements Module {
             BEARING_OUTER: "bearing_outer",
             SPRING_CONTACT: "spring_contact",
             WAVE_R2: "wave_r2",
+            THICKNESS: "thickness",
         };
 
         this.model = this.models.GT2_PULLEY;
