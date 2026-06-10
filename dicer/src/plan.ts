@@ -105,8 +105,11 @@ export const genPathByProjection = async (
     const insQ = pathBase[pathBase.length - 1].clone().add(new THREE.Vector3(0, -evacLength, 0))
     pathBase.push(insQ);
 
+    // TODO: make these injected
+    const numPass = 4;
     const safeZ = 60;
-    const opZ = 35; // TODO: Adjust from tool config
+    const opZInit = 37; // determined from initial tool length & machine geometry
+    const deltaZ = 4 + 0.2; // 4: work thickness, 0.2: deburr/clearance buffer
 
     const wrap = (type: SegmentType, x: number, y: number, z: number): PathSegment => {
         return {
@@ -119,48 +122,15 @@ export const genPathByProjection = async (
         };
     };
 
-    let planPath = [];
-    planPath.push(wrap("move", insP.x, insP.y, safeZ));
-    planPath.push(wrap("move", insP.x, insP.y, opZ));
-    planPath = planPath.concat(pathBase.map(pt => wrap("remove-work", pt.x, pt.y, opZ)));
-    planPath.push(wrap("move", insQ.x, insQ.y, safeZ));
+    console.log("planning", insP, insQ, pathBase);
+    let planPath: PathSegment[] = [];
+    for (let i = 0; i < numPass; i++) {
+        const opZ = opZInit - deltaZ * i;
+
+        planPath.push(wrap("move", insP.x, insP.y, safeZ));
+        planPath.push(wrap("move", insP.x, insP.y, opZ));
+        planPath = planPath.concat(pathBase.map(pt => wrap("remove-work", pt.x, pt.y, opZ)));
+        planPath.push(wrap("move", insQ.x, insQ.y, safeZ));
+    }
     return { path: planPath, stockAfterCut: stockManifold };
-};
-
-
-// Convert a curve into multiple segments whose length is pitch (or less).
-// Each segment begin repeats previous segment's end.
-const splitIntoSegments = (path: THREE.Vector2[], pitch: number): THREE.Vector2[][] => {
-    const segs: THREE.Vector2[][] = [];
-    let currSeg: THREE.Vector2[] = [];
-    let currLen = 0;
-    for (const p of path) {
-        if (currSeg.length === 0) {
-            currSeg.push(p);
-            continue;
-        }
-
-        while (true) {
-            const currPt = currSeg[currSeg.length - 1];
-            const dlen = p.distanceTo(currPt);
-            if (currLen + dlen > pitch) {
-                // need to split
-                const segEnd = currPt.clone().lerp(p, (pitch - currLen) / dlen);
-                currSeg.push(segEnd);
-                segs.push(currSeg);
-
-                // start new segment
-                currSeg = [segEnd];
-                currLen = 0;
-            } else {
-                currSeg.push(p);
-                currLen += dlen;
-                break;
-            }
-        }
-    }
-    if (currSeg.length >= 2) {
-        segs.push(currSeg);
-    }
-    return segs;
 };
