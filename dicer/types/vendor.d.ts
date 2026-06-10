@@ -145,11 +145,6 @@ declare module 'three/addons/*' {
   export default {} as any;
 }
 
-declare module 'vendor/n8ao/N8AO.js' {
-  export const N8AOPass: any;
-  export default {} as any;
-}
-
 declare module 'vendor/three/three.module.min.js' {
   export default {} as any;
 }

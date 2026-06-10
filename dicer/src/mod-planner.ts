@@ -65,8 +65,8 @@ export class ModulePlanner implements Module {
     // Model data
     models: Record<string, string>;
     model: string;
-    targetGeom: THREE.BufferGeometry; // target geom in setup coords, after rotation & centering.
-    targetHeight: number; // derived from targetGeom
+    targetGeom!: THREE.BufferGeometry; // target geom in setup coords, after rotation & centering.
+    targetHeight!: number; // derived from targetGeom
 
     // Stock configuration
     stockDiameter: number;
@@ -78,7 +78,7 @@ export class ModulePlanner implements Module {
     workPulseCondition: string = "M3 P150 Q20 R50";
 
     // generated g-code
-    gcode: string;
+    gcode!: string;
 
     /**
      * @param framework - ModuleFramework instance for visualization management
@@ -122,7 +122,7 @@ export class ModulePlanner implements Module {
      */
     addGui(gui: GUI) {
         // Model setup
-        gui.add(this, 'model', this.models).onChange((model) => {
+        gui.add(this, 'model', this.models).onChange((model: string) => {
             this.framework.updateVis("work", []);
             this.framework.updateVis("target", []);
             this.framework.updateVis("misc", []);
@@ -133,30 +133,30 @@ export class ModulePlanner implements Module {
         gui.add(this, "rotZ90").name("Rotate 90° around Z");
 
         // Stock config
-        gui.add(this, "stockDiameter", 1, 30, 0.1).name("Stock Dia (saved)").onChange(_ => {
+        gui.add(this, "stockDiameter", 1, 30, 0.1).name("Stock Dia (saved)").onChange((_: number) => {
             this.storeSettings();
             this.updateStockVis();
         });
-        gui.add(this, "stockLength", 1, 30, 0.1).name("Stock Length (saved)").onChange(_ => {
+        gui.add(this, "stockLength", 1, 30, 0.1).name("Stock Length (saved)").onChange((_: number) => {
             this.storeSettings();
             this.updateStockVis();
         });
-        gui.add(this, "stockDirtyLength", 0, 2, 0.1).onChange(_ => {
+        gui.add(this, "stockDirtyLength", 0, 2, 0.1).onChange((_: number) => {
             this.updateStockVis();
         });
 
         // Visibility flags
         gui.add(this, "showStock")
-            .onChange(v => this.framework.setVisVisibility("stock", v))
+            .onChange((v: boolean) => this.framework.setVisVisibility("stock", v))
             .listen();
         gui.add(this, "showTarget")
-            .onChange(v => this.framework.setVisVisibility("target", v))
+            .onChange((v: boolean) => this.framework.setVisVisibility("target", v))
             .listen();
         gui.add(this, "showWork")
-            .onChange(v => this.framework.setVisVisibility("work", v))
+            .onChange((v: boolean) => this.framework.setVisVisibility("work", v))
             .listen();
         gui.add(this, "showMisc")
-            .onChange(v => this.framework.setVisVisibility("misc", v))
+            .onChange((v: boolean) => this.framework.setVisVisibility("misc", v))
             .listen();
 
         // Machine operation config
@@ -200,8 +200,8 @@ export class ModulePlanner implements Module {
     async generate() {
         const stockGeom = generateStockGeom(this.stockDiameter / 2, this.stockLength);
         translateGeom(stockGeom, new THREE.Vector3(0, 0, this.stockOffset()));
-        const stockManifold = this.wasmGeom.createManifold(stockGeom);
-        const targetManifold = this.wasmGeom.createManifold(this.targetGeom);
+        const stockManifold = this.wasmGeom.createManifold(stockGeom)!;
+        const targetManifold = this.wasmGeom.createManifold(this.targetGeom)!;
 
         const res = await genPathByProjection(
             targetManifold, stockManifold,
@@ -227,10 +227,10 @@ export class ModulePlanner implements Module {
                 this.targetGeom = geometry;
                 this.recomputeTargetShift();
             },
-            (progress) => {
+            (progress: ProgressEvent) => {
                 console.log('Model loading progress: ', progress);
             },
-            (error) => {
+            (error: unknown) => {
                 console.error('Model loading error: ', error);
             }
         );

@@ -27,14 +27,14 @@ export interface Module {
  * but there is offset for work stock setup.
  */
 export class ModuleFramework {
-    // Three.js core objects
-    camera: THREE.OrthographicCamera;
-    renderer: THREE.WebGLRenderer;
-    scene: THREE.Scene;
-    composer: EffectComposer;
-    controls: OrbitControls;
+    // Three.js core objects (assigned in init(), called from the constructor)
+    camera!: THREE.OrthographicCamera;
+    renderer!: THREE.WebGLRenderer;
+    scene!: THREE.Scene;
+    composer!: EffectComposer;
+    controls!: OrbitControls;
     stats: any;
-    container: HTMLDivElement;
+    container!: HTMLDivElement;
 
     // Visualization management
     visGroups: any;
@@ -153,7 +153,7 @@ export class ModuleFramework {
 
     updateVis(group: string, vs: Array<THREE.Object3D>, visible: boolean = true) {
         if (this.visGroups[group]) {
-            this.visGroups[group].forEach(v => this.scene.remove(v));
+            this.visGroups[group].forEach((v: THREE.Object3D) => this.scene.remove(v));
         }
         this.visGroups[group] = vs;
         for (let v of vs) {
@@ -164,7 +164,7 @@ export class ModuleFramework {
 
     setVisVisibility(group: string, visible: boolean) {
         if (this.visGroups[group]) {
-            this.visGroups[group].forEach(v => v.visible = visible);
+            this.visGroups[group].forEach((v: THREE.Object3D) => v.visible = visible);
         }
     }
 

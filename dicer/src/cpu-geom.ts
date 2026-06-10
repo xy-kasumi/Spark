@@ -40,7 +40,7 @@ export const cutPolygon = (poly: Vector2[], normal: Vector2, ofs: number): Vecto
         throw "Invalid polygon";
     }
 
-    const prev = (ix) => (ix + len - 1) % len;
+    const prev = (ix: number) => (ix + len - 1) % len;
 
     const sides: boolean[] = [];
     for (const point of poly) {

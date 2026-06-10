@@ -67,7 +67,7 @@ export const genPathByProjection = async (
 
     // compute contour
     const startTime = performance.now();
-    const toolCenterCS = wasmGeom.offsetCrossSection(wasmGeom.projectManifold(targetManifold, origin, viewX, viewY, viewZ), offset);
+    const toolCenterCS = wasmGeom.offsetCrossSection(wasmGeom.projectManifold(targetManifold, origin, viewX, viewY, viewZ)!, offset)!;
     const contour = wasmGeom.crossSectionToContours(toolCenterCS);
     if (contour.length > 1) {
         throw new Error("A contour with multiple polygons (implies holes) is not supported yet");
@@ -75,13 +75,13 @@ export const genPathByProjection = async (
     {
         // compute cut
         // NOTE: this is messy, and inaccurate (removes Z<0 region errorneously). 
-        const innerContour = wasmGeom.offsetCrossSectionCircle(toolCenterCS, -toolRadius, 32);
-        const cutCS = wasmGeom.createSquareCrossSection(100); // big enough to contain both work and target.
-        const removeCS = wasmGeom.subtractCrossSection(cutCS, innerContour);
-        const removeMani = wasmGeom.extrude(removeCS, viewX, viewY, viewZ, viewZ.clone().multiplyScalar(-50), 100); // 100mm should be big enough
-        const actualRemovedMani = wasmGeom.intersectMesh(stockManifold, removeMani);
+        const innerContour = wasmGeom.offsetCrossSectionCircle(toolCenterCS, -toolRadius, 32)!;
+        const cutCS = wasmGeom.createSquareCrossSection(100)!; // big enough to contain both work and target.
+        const removeCS = wasmGeom.subtractCrossSection(cutCS, innerContour)!;
+        const removeMani = wasmGeom.extrude(removeCS, viewX, viewY, viewZ, viewZ.clone().multiplyScalar(-50), 100)!; // 100mm should be big enough
+        const actualRemovedMani = wasmGeom.intersectMesh(stockManifold, removeMani)!;
         console.log("removed volume", wasmGeom.volumeManifold(actualRemovedMani));
-        stockManifold = wasmGeom.subtractMesh(stockManifold, removeMani); // update
+        stockManifold = wasmGeom.subtractMesh(stockManifold, removeMani)!; // update
     }
     const endTime = performance.now();
     console.log(`cut took ${(endTime - startTime).toFixed(2)}ms`);
@@ -132,7 +132,7 @@ export const genPathByProjection = async (
 // Each segment begin repeats previous segment's end.
 const splitIntoSegments = (path: THREE.Vector2[], pitch: number): THREE.Vector2[][] => {
     const segs: THREE.Vector2[][] = [];
-    let currSeg = [];
+    let currSeg: THREE.Vector2[] = [];
     let currLen = 0;
     for (const p of path) {
         if (currSeg.length === 0) {
@@ -163,19 +163,4 @@ const splitIntoSegments = (path: THREE.Vector2[], pitch: number): THREE.Vector2[
         segs.push(currSeg);
     }
     return segs;
-};
-
-const convertToSawPath = (path: THREE.Vector2[], pitch: number): THREE.Vector2[] => {
-    const res = [];
-    const segs = splitIntoSegments(path, pitch);
-    console.log("saw cv", segs);
-    for (let i = 0; i < segs.length; i++) {
-        const fSeg = segs[i];
-        const bSeg = new Array(...segs[i]).reverse();
-        res.push(...fSeg.slice(0, -1));
-        res.push(...bSeg.slice(0, -1));
-        res.push(...fSeg.slice(0, -1));
-    }
-    res.push(path[path.length - 1]);
-    return res;
 };

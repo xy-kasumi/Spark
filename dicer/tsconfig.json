@@ -3,19 +3,16 @@
     "target": "ES2022",
     "lib": ["ES2022", "DOM"],
     "module": "ES2022",
-    "moduleResolution": "node",
     "allowJs": false,
     "checkJs": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "strict": true,
     "outDir": "./dist",
+    "rootDir": "./src",
     "sourceMap": true,
-    "removeComments": false,
-    "baseUrl": ".",
-    "paths": {
-      "vendor/n8ao/N8AO.js": ["vendor/n8ao/N8AO"]
-    }
+    "removeComments": false
   },
   "include": [
     "src/**/*",
