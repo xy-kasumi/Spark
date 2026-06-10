@@ -74,7 +74,6 @@ export class ModulePlanner implements Module {
     stockDirtyLength: number; // max length of the dirty (uncertain) part of the stock that needs to be thrown away.
 
     // operation configuration
-    grinderPulseCondition: string = "M4 P150 Q20 R40";
     workPulseCondition: string = "M3 P150 Q20 R50";
 
     // generated g-code
@@ -161,11 +160,10 @@ export class ModulePlanner implements Module {
 
         // Machine operation config
         gui.add(this, "workPulseCondition").name("Pulse (work)");
-        gui.add(this, "grinderPulseCondition").name("Pulse (grinder)");
 
         // G-code gen & sending
         gui.add(this, "generate").name("Generate");
-        gui.add(this, "downloadGcode");
+        gui.add(this, "downloadGcode").name("Download G-code")
 
         this.loadStl(this.model);
     }
@@ -211,7 +209,6 @@ export class ModulePlanner implements Module {
 
         this.gcode = generateGcode(res.path, {
             work: this.workPulseCondition,
-            grinder: this.grinderPulseCondition,
         });
     }
 

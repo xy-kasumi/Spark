@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 夕月霞
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-export type SegmentType = "remove-work" | "remove-tool" | "move-in" | "move-out" | "move";
+export type SegmentType = "remove-work" | "move-in" | "move-out" | "move";
 
 export type PathSegment = {
     type: SegmentType;
@@ -14,7 +14,6 @@ export type PathSegment = {
 
 export type PulseConditions = {
     work: string, // M-line
-    grinder: string, // M-line
 };
 
 export const generateGcode = (path: PathSegment[], pulseConds: PulseConditions): string => {
@@ -44,11 +43,6 @@ export const generateGcode = (path: PathSegment[], pulseConds: PulseConditions):
         if (pt.type === "remove-work") {
             if (prevType !== pt.type) {
                 lines.push(pulseConds.work);
-            }
-            gcode.push("G1");
-        } else if (pt.type === "remove-tool") {
-            if (prevType !== pt.type) {
-                lines.push(pulseConds.grinder);
             }
             gcode.push("G1");
         } else if (pt.type === "move-out" || pt.type === "move-in" || pt.type === "move") {
