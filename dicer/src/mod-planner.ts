@@ -101,6 +101,7 @@ export class ModulePlanner implements Module {
             SPRING_CONTACT: "spring_contact",
             WAVE_R2: "wave_r2",
             THICKNESS: "thickness",
+            FLUSH_END: "flush_end",
         };
 
         this.model = this.models.GT2_PULLEY;
