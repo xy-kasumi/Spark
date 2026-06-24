@@ -3,24 +3,31 @@
 
 export type SegmentType = "remove-work" | "move-in" | "move-out" | "move";
 
+/**
+ * Pulse condition (e.g. "M3 P150 Q20 R50"), as a single G-code line.
+ * Use {@link asPulseCondition} to construct one.
+ */
+export type PulseCondition = string & { readonly __pulseCondition: unique symbol };
+
+export const asPulseCondition = (s: string): PulseCondition => s as PulseCondition;
+
 export type PathSegment = {
-    type: SegmentType;
+    type: SegmentType,
     axisValues: {
         x: number;
         y: number;
         z: number;
-    };
+    },
+    /// Only available iff type === "remove-work".
+    workPulse: PulseCondition | null,
 };
 
-export type PulseConditions = {
-    work: string, // M-line
-};
-
-export const generateGcode = (path: PathSegment[], pulseConds: PulseConditions): string => {
+export const generateGcode = (path: PathSegment[]): string => {
     let prevType = null;
     let prevX = null;
     let prevY = null;
     let prevZ = null;
+    let prevPulse = null;
 
     const lines = [];
 
@@ -41,8 +48,9 @@ export const generateGcode = (path: PathSegment[], pulseConds: PulseConditions):
         const pt = path[i];
         let gcode = [];
         if (pt.type === "remove-work") {
-            if (prevType !== pt.type) {
-                lines.push(pulseConds.work);
+            if (prevType !== pt.type && prevPulse !== pt.workPulse) {
+                lines.push(pt.workPulse);
+                prevPulse = pt.workPulse;
             }
             gcode.push("G1");
         } else if (pt.type === "move-out" || pt.type === "move-in" || pt.type === "move") {

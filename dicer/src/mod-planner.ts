@@ -7,7 +7,7 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { ModuleFramework, Module } from './framework.js';
 import { WasmGeom, ManifoldHandle } from './wasm-geom.js';
 import { translateGeom, computeAABB } from './cpu-geom.js';
-import { PathSegment, generateGcode } from './gcode.js';
+import { PathSegment, generateGcode, asPulseCondition } from './gcode.js';
 import { genPathByProjection, generateStockGeom } from './plan.js';
 
 /**
@@ -45,6 +45,12 @@ const generateTargetVis = (geom: THREE.BufferGeometry): THREE.Object3D => {
     return new THREE.Mesh(geom, material);
 };
 
+const createCurveVis = (curve: THREE.Vector3[]): THREE.Object3D => {
+    const geom = new THREE.BufferGeometry().setFromPoints(curve);
+    const mat = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
+    return new THREE.Line(geom, mat);
+};
+
 
 /**
  * Planner class for generating tool paths.
@@ -74,7 +80,12 @@ export class ModulePlanner implements Module {
     stockDirtyLength: number; // max length of the dirty (uncertain) part of the stock that needs to be thrown away.
 
     // operation configuration
-    workPulseCondition: string = "M3 P150 Q20 R50";
+    workRoughPulseCondition: string = "M3 P200 Q10 R49";
+    workMidPulseCondition: string = "M3 P25 Q10 R19";
+    workFinishPulseCondition: string = "M3 P10 Q1 R9";
+
+    workRoughOffset: number = 0.045;
+    workMidOffset: number = 0.025;
 
     // generated g-code
     gcode!: string;
@@ -160,7 +171,11 @@ export class ModulePlanner implements Module {
             .listen();
 
         // Machine operation config
-        gui.add(this, "workPulseCondition").name("Pulse (work)");
+        gui.add(this, "workRoughPulseCondition").name("Pulse (work, rough)");
+        gui.add(this, "workRoughOffset").name("Offset (work, rough)");
+        gui.add(this, "workMidPulseCondition").name("Pulse (work, mid)");
+        gui.add(this, "workMidOffset").name("Offset (work, mid)");
+        gui.add(this, "workFinishPulseCondition").name("Pulse (work, finish)");
 
         // G-code gen & sending
         gui.add(this, "generate").name("Generate");
@@ -202,22 +217,60 @@ export class ModulePlanner implements Module {
         const stockManifold = this.wasmGeom.createManifold(stockGeom)!;
         const targetManifold = this.wasmGeom.createManifold(this.targetGeom)!;
 
-        const res = await genPathByProjection(
+        const safeZ = 60;
+        const deltaZ = 4 + 0.2; // 4: work thickness, 0.2: deburr/clearance buffer
+        const initZ = 37; // determined from initial tool length & machine geometry
+        const pathAccum = [];
+        const visAccum = [];
+
+        let res = await genPathByProjection(
             targetManifold, stockManifold,
             this.stockOffset(),
             {
-                numPass: 4,
-                safe: 60,
-                init: 37, // determined from initial tool length & machine geometry
-                delta: 4 + 0.2, // 4: work thickness, 0.2: deburr/clearance buffer
+                numPass: 2,
+                init: initZ,
+                safe: safeZ,
+                delta: deltaZ,
+            },
+            this.workRoughOffset,
+            asPulseCondition(this.workRoughPulseCondition),
+            this.wasmGeom);
+        pathAccum.push(...res.path);
+        visAccum.push(createCurveVis(res.cutCurve3D));
+        
+        res = await genPathByProjection(
+            targetManifold, res.stockAfterCut,
+            this.stockOffset(),
+            {
+                numPass: 1,
+                init: initZ - deltaZ * 2,
+                safe: safeZ,
+                delta: deltaZ,
+            },
+            this.workMidOffset,
+            asPulseCondition(this.workMidPulseCondition),
+            this.wasmGeom);
+        pathAccum.push(...res.path);
+        visAccum.push(createCurveVis(res.cutCurve3D));
+
+        res = await genPathByProjection(
+            targetManifold, res.stockAfterCut,
+            this.stockOffset(),
+            {
+                numPass: 1,
+                init: initZ - deltaZ * 3,
+                safe: safeZ,
+                delta: deltaZ,
             },
             0,
-            this.wasmGeom, vs => this.framework.updateVis("misc", vs, this.showMisc));
+            asPulseCondition(this.workFinishPulseCondition),
+            this.wasmGeom);
+        pathAccum.push(...res.path);
+        visAccum.push(createCurveVis(res.cutCurve3D));
+        
+        this.framework.updateVis("misc", visAccum, this.showMisc)
         this.framework.updateVis("work", [generateStockAfterCutVis(res.stockAfterCut, this.wasmGeom)], true);
-
-        this.gcode = generateGcode(res.path, {
-            work: this.workPulseCondition,
-        });
+        this.gcode = generateGcode(pathAccum);
     }
 
     /**

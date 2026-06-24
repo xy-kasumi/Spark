@@ -4,7 +4,7 @@ import * as THREE from 'three';
 
 import { WasmGeom, ManifoldHandle } from './wasm-geom.js';
 import { cutPolygon } from './cpu-geom.js';
-import { SegmentType, PathSegment } from './gcode';
+import { SegmentType, PathSegment, PulseCondition } from './gcode';
 
 
 /**
@@ -39,11 +39,6 @@ export type ToolZ = {
     delta: number;
 };
 
-const createCurveVis = (curve: THREE.Vector3[]): THREE.Object3D => {
-    const geom = new THREE.BufferGeometry().setFromPoints(curve);
-    const mat = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
-    return new THREE.Line(geom, mat);
-};
 
 /**
  * Generates contour cut path (after target after the cut).
@@ -56,7 +51,8 @@ const createCurveVis = (curve: THREE.Vector3[]): THREE.Object3D => {
 export const genPathByProjection = async (
     targetManifold: ManifoldHandle, stockManifold: ManifoldHandle, targetBaseX: number,
     toolZ: ToolZ, extraOffset: number,
-    wasmGeom: WasmGeom, updateVis: VisUpdater): Promise<{ path: PathSegment[], stockAfterCut: ManifoldHandle }> => {
+    pulse: PulseCondition,
+    wasmGeom: WasmGeom): Promise<{ path: PathSegment[], stockAfterCut: ManifoldHandle, cutCurve3D: THREE.Vector3[] }> => {
 
     const viewX = new THREE.Vector3(0, 0, -1);
     const viewY = new THREE.Vector3(0, 1, 0);
@@ -109,7 +105,6 @@ export const genPathByProjection = async (
     }
     const cutCurve = cutCurves[1]; // get neg of [pos, neg]
     const cutCurve3D: THREE.Vector3[] = cutCurve.map(p2 => pt2DToSetup(p2));
-    updateVis([createCurveVis(cutCurve3D)]);
 
     // convert (partial) contour into work-coords, and attach enter/exit path.
     let pathBase: THREE.Vector3[] = cutCurve3D.map(p => setupToWork(p).add(new THREE.Vector3(targetBaseX, 0, 0)));
@@ -128,6 +123,7 @@ export const genPathByProjection = async (
                 y: y,
                 z: z,
             },
+            workPulse: pulse,
         };
     };
 
@@ -141,5 +137,5 @@ export const genPathByProjection = async (
         planPath = planPath.concat(pathBase.map(pt => wrap("remove-work", pt.x, pt.y, opZ)));
         planPath.push(wrap("move", insQ.x, insQ.y, toolZ.safe));
     }
-    return { path: planPath, stockAfterCut: stockManifold };
+    return { path: planPath, stockAfterCut: stockManifold, cutCurve3D };
 };
