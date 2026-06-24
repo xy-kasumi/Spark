@@ -205,6 +205,13 @@ export class ModulePlanner implements Module {
         const res = await genPathByProjection(
             targetManifold, stockManifold,
             this.stockOffset(),
+            {
+                numPass: 4,
+                safe: 60,
+                init: 37, // determined from initial tool length & machine geometry
+                delta: 4 + 0.2, // 4: work thickness, 0.2: deburr/clearance buffer
+            },
+            0,
             this.wasmGeom, vs => this.framework.updateVis("misc", vs, this.showMisc));
         this.framework.updateVis("work", [generateStockAfterCutVis(res.stockAfterCut, this.wasmGeom)], true);
 

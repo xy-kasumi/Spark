@@ -25,6 +25,20 @@ export const generateStockGeom = (stockRadius: number = 7.5, stockHeight: number
 
 export type VisUpdater = (vs: Array<THREE.Object3D>) => void;
 
+/**
+ * Z-axis parameters for multi-pass cutting (work-coords).
+ */
+export type ToolZ = {
+    /** number of cutting passes */
+    numPass: number;
+    /** safe Z for rapid moves */
+    safe: number;
+    /** operating Z of the first pass */
+    init: number;
+    /** tool length usage per pass */
+    delta: number;
+};
+
 const createCurveVis = (curve: THREE.Vector3[]): THREE.Object3D => {
     const geom = new THREE.BufferGeometry().setFromPoints(curve);
     const mat = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
@@ -41,6 +55,7 @@ const createCurveVis = (curve: THREE.Vector3[]): THREE.Object3D => {
  */
 export const genPathByProjection = async (
     targetManifold: ManifoldHandle, stockManifold: ManifoldHandle, targetBaseX: number,
+    toolZ: ToolZ, extraOffset: number,
     wasmGeom: WasmGeom, updateVis: VisUpdater): Promise<{ path: PathSegment[], stockAfterCut: ManifoldHandle }> => {
 
     const viewX = new THREE.Vector3(0, 0, -1);
@@ -63,7 +78,7 @@ export const genPathByProjection = async (
         `Z(${viewZ.x.toFixed(3)}, ${viewZ.y.toFixed(3)}, ${viewZ.z.toFixed(3)})`);
 
     const toolRadius = 1.5;
-    const offset = toolRadius;
+    const offset = toolRadius + extraOffset;
 
     // compute contour
     const startTime = performance.now();
@@ -105,12 +120,6 @@ export const genPathByProjection = async (
     const insQ = pathBase[pathBase.length - 1].clone().add(new THREE.Vector3(0, -evacLength, 0))
     pathBase.push(insQ);
 
-    // TODO: make these injected
-    const numPass = 4;
-    const safeZ = 60;
-    const opZInit = 37; // determined from initial tool length & machine geometry
-    const deltaZ = 4 + 0.2; // 4: work thickness, 0.2: deburr/clearance buffer
-
     const wrap = (type: SegmentType, x: number, y: number, z: number): PathSegment => {
         return {
             type: type,
@@ -124,13 +133,13 @@ export const genPathByProjection = async (
 
     console.log("planning", insP, insQ, pathBase);
     let planPath: PathSegment[] = [];
-    for (let i = 0; i < numPass; i++) {
-        const opZ = opZInit - deltaZ * i;
+    for (let i = 0; i < toolZ.numPass; i++) {
+        const opZ = toolZ.init - toolZ.delta * i;
 
-        planPath.push(wrap("move", insP.x, insP.y, safeZ));
+        planPath.push(wrap("move", insP.x, insP.y, toolZ.safe));
         planPath.push(wrap("move", insP.x, insP.y, opZ));
         planPath = planPath.concat(pathBase.map(pt => wrap("remove-work", pt.x, pt.y, opZ)));
-        planPath.push(wrap("move", insQ.x, insQ.y, safeZ));
+        planPath.push(wrap("move", insQ.x, insQ.y, toolZ.safe));
     }
     return { path: planPath, stockAfterCut: stockManifold };
 };
