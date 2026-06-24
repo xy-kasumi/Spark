@@ -185,9 +185,9 @@ def main() -> int:
                     help="log directory (archive/ subdir is skipped)")
     ap.add_argument("--out", default=".",
                     help="output directory for PNGs")
-    ap.add_argument("--threshold-min", type=float, default=15.0,
+    ap.add_argument("--threshold-min", type=float, default=5.0,
                     help="jobs shorter than this are listed but not graphed")
-    ap.add_argument("--bin-sec", type=float, default=30.0,
+    ap.add_argument("--bin-sec", type=float, default=10.0,
                     help="bin width in seconds for eff_duty aggregation")
     args = ap.parse_args()
 
