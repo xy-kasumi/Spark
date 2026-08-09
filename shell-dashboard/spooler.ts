@@ -97,18 +97,17 @@ export class SpoolerClient {
   }
 
   /**
-   * Get the latest system event.
-   * "fault" latches until power-cycle, so a "fault" result means the machine is
-   * currently faulted (read-only; writes are silently ignored by the firmware).
-   * @returns latest event, or null if the machine hasn't reported one yet
+   * Check whether the machine faulted after the given time. Fault mode latches
+   * until power-cycle (writes are silently ignored by the firmware).
+   *
+   * The core reports "fault" as a one-shot event and offers no way to query the
+   * flag, so a fault that happened before `since` is indistinguishable from no
+   * fault at all. Callers observing from `since` onwards see every fault from
+   * then on, and nothing before it.
    */
-  async getLatestSysEvent(): Promise<"boot" | "fault" | null> {
+  async isFaultedSince(since: Date): Promise<boolean> {
     const res = await this.getLatestPState("sys");
-    if (res === null) {
-      return null;
-    }
-    const ev = res.pstate.ev;
-    return ev === "boot" || ev === "fault" ? ev : null;
+    return res !== null && res.pstate.ev === "fault" && res.time > since;
   }
 
   async setInit(lines: string[]): Promise<void> {

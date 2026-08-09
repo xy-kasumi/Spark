@@ -54,9 +54,11 @@ const host = "http://localhost:9000";
 const client = new SpoolerClient(host);
 const statusResponse = ref<{ time: Date; busy: boolean; num_pending_commands: number; running_job?: string } | null>(null);
 const isPolling = ref(false);
-const sysEvent = ref<"boot" | "fault" | null>(null);
+const isFaulted = ref(false);
 
-const isFaulted = computed(() => sysEvent.value === "fault");
+// Faults are only observable as they happen, so this page can only report the
+// ones that occur while it is open.
+const openTime = new Date();
 
 const busyStatusText = computed(() => {
   if (!statusResponse.value || !statusResponse.value.busy) return "";
@@ -131,7 +133,7 @@ async function waitPStateAfter(tag: string, time: Date): Promise<Record<string, 
 onMounted(() => {
   isPolling.value = true;
   pollStatus();
-  pollSysEvent();
+  pollFault();
 });
 
 onBeforeUnmount(() => {
@@ -149,14 +151,12 @@ async function pollStatus() {
   }
 }
 
-// Fault latches until power-cycle, and a power-cycle emits a fresh "boot",
-// so the latest sys event always reflects the current fault state.
-async function pollSysEvent() {
+async function pollFault() {
   while (isPolling.value) {
     try {
-      sysEvent.value = await client.getLatestSysEvent();
+      isFaulted.value = await client.isFaultedSince(openTime);
     } catch (error) {
-      sysEvent.value = null;
+      isFaulted.value = false;
     }
     await sleep(1000);
   }
