@@ -54,6 +54,9 @@ const host = "http://localhost:9000";
 const client = new SpoolerClient(host);
 const statusResponse = ref<{ time: Date; busy: boolean; num_pending_commands: number; running_job?: string } | null>(null);
 const isPolling = ref(false);
+const sysEvent = ref<"boot" | "fault" | null>(null);
+
+const isFaulted = computed(() => sysEvent.value === "fault");
 
 const busyStatusText = computed(() => {
   if (!statusResponse.value || !statusResponse.value.busy) return "";
@@ -64,6 +67,7 @@ const busyStatusText = computed(() => {
 });
 
 const uiStatus = computed(() => {
+  if (isFaulted.value) return "fault";
   if (!statusResponse.value) return "offline";
   return statusResponse.value.busy ? "busy" : "idle";
 });
@@ -74,6 +78,8 @@ const statusEmoji = computed(() => {
       return "🔵";
     case "busy":
       return "🟠";
+    case "fault":
+      return "🔴";
     case "offline":
       return "⚫";
     default:
@@ -125,6 +131,7 @@ async function waitPStateAfter(tag: string, time: Date): Promise<Record<string, 
 onMounted(() => {
   isPolling.value = true;
   pollStatus();
+  pollSysEvent();
 });
 
 onBeforeUnmount(() => {
@@ -139,6 +146,19 @@ async function pollStatus() {
       statusResponse.value = null;
     }
     await sleep(100);
+  }
+}
+
+// Fault latches until power-cycle, and a power-cycle emits a fresh "boot",
+// so the latest sys event always reflects the current fault state.
+async function pollSysEvent() {
+  while (isPolling.value) {
+    try {
+      sysEvent.value = await client.getLatestSysEvent();
+    } catch (error) {
+      sysEvent.value = null;
+    }
+    await sleep(1000);
   }
 }
 

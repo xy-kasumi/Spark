@@ -96,6 +96,21 @@ export class SpoolerClient {
     };
   }
 
+  /**
+   * Get the latest system event.
+   * "fault" latches until power-cycle, so a "fault" result means the machine is
+   * currently faulted (read-only; writes are silently ignored by the firmware).
+   * @returns latest event, or null if the machine hasn't reported one yet
+   */
+  async getLatestSysEvent(): Promise<"boot" | "fault" | null> {
+    const res = await this.getLatestPState("sys");
+    if (res === null) {
+      return null;
+    }
+    const ev = res.pstate.ev;
+    return ev === "boot" || ev === "fault" ? ev : null;
+  }
+
   async setInit(lines: string[]): Promise<void> {
     await this.rpc('/set-init', { lines });
   }
