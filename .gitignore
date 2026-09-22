@@ -6,3 +6,5 @@ probe_*.jsonl
 probe_*.png
 
 *.FCBak
+
+__marimo__/
