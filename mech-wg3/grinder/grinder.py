@@ -124,6 +124,7 @@ def _(
 
     flange_sc_f = puller_tens * (gear_rad_arm / (flange_dia / 2))
 
+    dist_gear_center = (gear_z_motor + gear_z_spool) * gear_module / 2
 
     checks_puller = [
         ("puller speed", puller_min_speed, ">", targ_speed),
@@ -138,7 +139,8 @@ def _(
         "---\n" +
         f"* {gear_max_rad_f = :}\n" +
         f"* {gear_rad_arm = :}\n" + 
-        f"* {bearing_max_rad_f = :}\n"
+        f"* {bearing_max_rad_f = :}\n" +
+        f"* {dist_gear_center = :}\n"
     )
 
 
